@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.3
+-- Lycoles Universal Inspector v3.4
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.3"
+local VERSION = "3.4"
 
 local endpoint = ""
 local autoSend = true
@@ -32,6 +32,10 @@ local WATCH_INTERVAL = 20
 local watchSeen = {}
 local watchSkippedCharacters = 0
 local watchUploaded = 0
+local changeQueue = {}
+local changeCount = 0
+local observed = setmetatable({}, {__mode = "k"})
+local changeUploaded = 0
 local WATCH_BATCH = 1500
 
 local function trim(value)
@@ -199,7 +203,7 @@ local status = create("TextLabel", {
 }, panel)
 
 local queueLabel = create("TextLabel", {
-    Text = "Queue: 0 | Uploaded: 0 | Characters skipped: 0",
+    Text = "New: 0 | Changed: 0 | Sent: 0 | Skipped: 0",
     Size = UDim2.fromOffset(484, 18),
     Position = UDim2.fromOffset(12, 328),
     BackgroundTransparency = 1,
@@ -209,8 +213,9 @@ local queueLabel = create("TextLabel", {
 }, panel)
 
 local function refreshQueue()
-    queueLabel.Text = "Queue: " .. watchCount .. " | Uploaded: " .. watchUploaded
-        .. " | Characters skipped: " .. watchSkippedCharacters
+    queueLabel.Text = "New: " .. watchCount .. " | Changed: " .. changeCount
+        .. " | Sent: " .. (watchUploaded + changeUploaded)
+        .. " | Skipped: " .. watchSkippedCharacters
 end
 
 local output = create("TextBox", {
@@ -423,19 +428,62 @@ local function watchEntry(obj, root, label)
     return entry
 end
 
+-- Track selected client-replicated state changes without reading private text.
+local function observeObject(obj, root, label)
+    if observed[obj] then return end
+    if label == "Workspace" and isCharacterDescendant(obj) then return end
+    local property
+    if obj:IsA("BoolValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
+        property = "Value"
+    elseif obj:IsA("ProximityPrompt") then
+        property = "Enabled"
+    elseif obj:IsA("GuiObject") then
+        property = "Visible"
+    end
+    if not property then return end
+    local path = watchPath(obj, root, label)
+    if not path or path:find("LycolesUniversalInspector", 1, true) then return end
+    observed[obj] = true
+    local ok, signal = pcall(function() return obj:GetPropertyChangedSignal(property) end)
+    if not ok then return end
+    local connection = signal:Connect(function()
+        if not alive or not watchEnabled then return end
+        local valid, value = pcall(function() return obj[property] end)
+        if not valid or (type(value) ~= "boolean" and type(value) ~= "number") then return end
+        if type(value) == "number" and (value ~= value or math.abs(value) > 1e12) then return end
+        local currentPath = watchPath(obj, root, label)
+        if not currentPath then return end
+        local key = currentPath .. ":" .. property
+        if not changeQueue[key] then changeCount = changeCount + 1 end
+        changeQueue[key] = {
+            path = currentPath:sub(1, 400), class = obj.ClassName,
+            category = "state-change", property = property, value = value
+        }
+    end)
+    table.insert(watchConnections, connection)
+end
+
 local function flushWatch()
-    if watchBusy or not watchEnabled or watchCount == 0 or running then return end
+    if watchBusy or not watchEnabled or (watchCount == 0 and changeCount == 0) or running then return end
     if not autoSend or not validEndpoint(endpoint) then return end
     local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then return end
     watchBusy = true
     local batch = {}
-    for path, entry in pairs(watchQueue) do
+    local changesInBatch = 0
+    for key, entry in pairs(changeQueue) do
+        batch[#batch + 1] = entry
+        changeQueue[key] = nil
+        changeCount = changeCount - 1
+        changesInBatch = changesInBatch + 1
+        if #batch >= WATCH_BATCH then break end
+    end
+    if #batch < WATCH_BATCH then for path, entry in pairs(watchQueue) do
         batch[#batch + 1] = entry
         watchQueue[path] = nil
         watchCount = watchCount - 1
         if #batch >= WATCH_BATCH then break end
-    end
+    end end
     task.spawn(function()
         local report = {
             version = VERSION, placeId = game.PlaceId, gameId = game.GameId,
@@ -443,7 +491,7 @@ local function flushWatch()
             inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             objects = batch, counts = {}, groups = {},
             scanStats = {
-                mode = "dynamic-additions", scanned = #batch,
+                mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
                 byCategory = {}
             }
@@ -451,9 +499,11 @@ local function flushWatch()
         local ok, parts = pcall(prepareParts, report)
         if not ok then
             for _, entry in ipairs(batch) do
-                if not watchQueue[entry.path] then
-                    watchQueue[entry.path] = entry
-                    watchCount = watchCount + 1
+                if entry.category == "state-change" then
+                    local key = entry.path .. ":" .. entry.property
+                    if not changeQueue[key] then changeQueue[key] = entry; changeCount = changeCount + 1 end
+                elseif not watchQueue[entry.path] then
+                    watchQueue[entry.path] = entry; watchCount = watchCount + 1
                 end
             end
             watchBusy = false
@@ -473,14 +523,17 @@ local function flushWatch()
         end
         if not success then
             for _, entry in ipairs(batch) do
-                if not watchQueue[entry.path] then
-                    watchQueue[entry.path] = entry
-                    watchCount = watchCount + 1
+                if entry.category == "state-change" then
+                    local key = entry.path .. ":" .. entry.property
+                    if not changeQueue[key] then changeQueue[key] = entry; changeCount = changeCount + 1 end
+                elseif not watchQueue[entry.path] then
+                    watchQueue[entry.path] = entry; watchCount = watchCount + 1
                 end
             end
             status.Text = "Dynamic upload failed; queued for retry"
         elseif alive then
-            watchUploaded = watchUploaded + #batch
+            watchUploaded = watchUploaded + (#batch - changesInBatch)
+            changeUploaded = changeUploaded + changesInBatch
             status.Text = "Dynamic update sent: " .. #batch .. " objects"
         end
         refreshQueue()
@@ -504,6 +557,7 @@ local function startWatching()
                         watchSkippedCharacters = watchSkippedCharacters + 1
                         return
                     end
+                    observeObject(obj, spec.root, spec.label)
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -512,6 +566,16 @@ local function startWatching()
                     end
                 end)
             end))
+        end
+        if spec.root then
+            task.spawn(function()
+                local descendants = spec.root:GetDescendants()
+                for i, obj in ipairs(descendants) do
+                    if not alive then return end
+                    observeObject(obj, spec.root, spec.label)
+                    if i % 500 == 0 then task.wait() end
+                end
+            end)
         end
     end
     task.spawn(function()
