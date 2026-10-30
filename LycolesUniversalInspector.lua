@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.1
+-- Lycoles Universal Inspector v3.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.1"
+local VERSION = "3.2"
 
 local endpoint = ""
 local autoSend = true
@@ -106,6 +106,66 @@ local function button(label, x)
     }, panel)
 end
 
+-- Draggable panel and compact minimised launcher.
+local UserInputService = game:GetService("UserInputService")
+local dragging = false
+local dragStart, panelStart
+local header = panel:FindFirstChildOfClass("TextLabel")
+if header then
+    header.Active = true
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            panelStart = panel.Position
+        end
+    end)
+end
+local dragEndConnection = UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+local dragMoveConnection = UserInputService.InputChanged:Connect(function(input)
+    if not dragging or not dragStart then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    local delta = input.Position - dragStart
+    panel.Position = UDim2.new(
+        panelStart.X.Scale, panelStart.X.Offset + delta.X,
+        panelStart.Y.Scale, panelStart.Y.Offset + delta.Y
+    )
+end)
+local minimise = create("TextButton", {
+    Name = "Minimise", Text = "_",
+    Size = UDim2.fromOffset(36, 30),
+    Position = UDim2.new(1, -42, 0, 9),
+    BackgroundColor3 = Color3.fromRGB(100, 100, 100),
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 20, ZIndex = 3
+}, panel)
+local mini = create("TextButton", {
+    Name = "RestoreInspector",
+    Text = "Lycoles +",
+    Size = UDim2.fromOffset(115, 36),
+    Position = UDim2.new(0, 15, 0, 100),
+    BackgroundColor3 = Color3.fromRGB(55, 55, 55),
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 14,
+    Visible = false,
+    Active = true
+}, gui)
+minimise.MouseButton1Click:Connect(function()
+    panel.Visible = false
+    mini.Visible = true
+end)
+mini.MouseButton1Click:Connect(function()
+    mini.Visible = false
+    panel.Visible = true
+end)
+
 local scan = button("SCAN", 12)
 local copy = button("COPY JSON", 136)
 local save = button("SAVE JSON", 260)
@@ -184,6 +244,8 @@ local automatic = create("TextButton", {
 _G.LycolesInspectorClose = function()
     alive = false
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
+    dragEndConnection:Disconnect()
+    dragMoveConnection:Disconnect()
     gui:Destroy()
 end
 
