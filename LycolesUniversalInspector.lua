@@ -1,4 +1,4 @@
--- Lycoles Universal Inspector v1.2
+-- Lycoles Universal Inspector v1.3
 -- Read-only inspection. Does not invoke remotes or transmit data.
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
@@ -17,7 +17,7 @@ local function create(class,props,parent)
  return item
 end
 local panel=create("Frame",{Size=UDim2.fromOffset(510,340),Position=UDim2.new(0.5,-255,0.5,-170),BackgroundColor3=Color3.fromRGB(55,55,55),BorderColor3=Color3.new(0,0,0),BorderSizePixel=3,Active=true},gui)
-create("TextLabel",{Text="Lycoles Universal Inspector v1.2",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
+create("TextLabel",{Text="Lycoles Universal Inspector v1.3",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
 local function button(label,x)
  return create("TextButton",{Text=label,Size=UDim2.fromOffset(116,40),Position=UDim2.fromOffset(x,56),BackgroundColor3=Color3.fromRGB(105,105,105),BorderColor3=Color3.new(0,0,0),BorderSizePixel=2,TextColor3=Color3.new(1,1,1),TextSize=14,Active=true},panel)
 end
@@ -30,14 +30,29 @@ local output=create("TextBox",{Text="",Size=UDim2.fromOffset(484,178),Position=U
 local alive=true
 _G.LycolesInspectorClose=function() alive=false gui:Destroy() end
 local last=nil
+local endpoint=""
+local autoSend=false
 local running=false
+local function transmit()
+ if not last then status.Text="Scan not finished" return end
+ if endpoint=="" then status.Text="Set receiver URL first" return end
+ if not string.match(endpoint,"^https://") then status.Text="HTTPS receiver required" return end
+ local request=(syn and syn.request) or http_request or request
+ if type(request)~="function" then status.Text="HTTP requests unavailable" return end
+ status.Text="Sending report..."
+ task.spawn(function()
+  local ok,res=pcall(request,{Url=endpoint,Method="POST",Headers={["Content-Type"]="application/json"},Body=last})
+  if not alive then return end
+  if ok and res and res.Success then status.Text="Report sent" else status.Text="Send failed: "..tostring(ok and res and res.StatusCode or res) end
+ end)
+end
 local function inspect()
  if running then return end
  running=true
  status.Text="Scanning..."
  task.spawn(function()
   local ok,result=pcall(function()
-   local report={version="1.2",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
+   local report={version="1.3",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
    local roots={game:GetService("ReplicatedStorage"),workspace,player:FindFirstChild("PlayerGui")}
    local relevant={RemoteEvent=true,RemoteFunction=true,ProximityPrompt=true,ClickDetector=true,ModuleScript=true,LocalScript=true,ScreenGui=true}
    local words={"order","rack","shipping","stock","city","nation","factory","army","shop","upgrade","teleport","build","attack","move","deploy","select","map","airfront"}
@@ -87,6 +102,7 @@ local function inspect()
   if encoded then
    last=reportJson
    status.Text="Scan complete - "..#result.objects.." entries"
+   if autoSend then transmit() end
    output.Text="PlaceId: "..tostring(result.placeId).."\nEntries: "..#result.objects.."\nRemotes: "..tostring(result.counts.RemoteEvent or 0).." events, "..tostring(result.counts.RemoteFunction or 0).." functions\nPress COPY JSON to share results."
   else
    status.Text="JSON error: "..tostring(reportJson)
@@ -108,4 +124,46 @@ save.MouseButton1Click:Connect(function()
  status.Text=ok and "Saved JSON" or "Save failed"
 end)
 close.MouseButton1Click:Connect(_G.LycolesInspectorClose)
+local config=Instance.new("Frame")
+config.Name="Delivery"
+config.Size=UDim2.fromOffset(510,92)
+config.Position=UDim2.fromOffset(0,340)
+config.BackgroundColor3=Color3.fromRGB(55,55,55)
+config.BorderColor3=Color3.new(0,0,0)
+config.BorderSizePixel=2
+config.Parent=panel
+local url=Instance.new("TextBox")
+url.Size=UDim2.fromOffset(484,30)
+url.Position=UDim2.fromOffset(12,7)
+url.PlaceholderText="HTTPS receiver URL (do not paste credentials)"
+url.Text=""
+url.ClearTextOnFocus=false
+url.TextSize=13
+url.TextColor3=Color3.new(1,1,1)
+url.BackgroundColor3=Color3.fromRGB(35,35,35)
+url.Parent=config
+url.FocusLost:Connect(function() endpoint=url.Text end)
+local send=Instance.new("TextButton")
+send.Size=UDim2.fromOffset(180,38)
+send.Position=UDim2.fromOffset(12,45)
+send.Text="SEND JSON"
+send.TextColor3=Color3.new(1,1,1)
+send.BackgroundColor3=Color3.fromRGB(90,90,90)
+send.BorderSizePixel=2
+send.Parent=config
+send.MouseButton1Click:Connect(function() endpoint=url.Text transmit() end)
+local automatic=Instance.new("TextButton")
+automatic.Size=UDim2.fromOffset(290,38)
+automatic.Position=UDim2.fromOffset(208,45)
+automatic.Text="AUTO-SEND: OFF"
+automatic.TextColor3=Color3.new(1,1,1)
+automatic.BackgroundColor3=Color3.fromRGB(90,90,90)
+automatic.BorderSizePixel=2
+automatic.Parent=config
+automatic.MouseButton1Click:Connect(function()
+ endpoint=url.Text
+ if endpoint=="" or not string.match(endpoint,"^https://") then status.Text="Set HTTPS receiver first" return end
+ autoSend=not autoSend
+ automatic.Text=autoSend and "AUTO-SEND: ON (this session)" or "AUTO-SEND: OFF"
+end)
 inspect()
