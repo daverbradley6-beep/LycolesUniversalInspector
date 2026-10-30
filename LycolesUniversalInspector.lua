@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.2
+-- Lycoles Universal Inspector v3.3
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.2"
+local VERSION = "3.3"
 
 local endpoint = ""
 local autoSend = true
@@ -28,7 +28,10 @@ local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
 local lastGameName = nil
-local WATCH_INTERVAL = 60
+local WATCH_INTERVAL = 20
+local watchSeen = {}
+local watchSkippedCharacters = 0
+local watchUploaded = 0
 local WATCH_BATCH = 1500
 
 local function trim(value)
@@ -75,7 +78,7 @@ local function create(className, properties, parent)
 end
 
 local panel = create("Frame", {
-    Size = UDim2.fromOffset(510, 440),
+    Size = UDim2.fromOffset(510, 460),
     Position = UDim2.new(0.5, -255, 0.5, -220),
     BackgroundColor3 = Color3.fromRGB(55, 55, 55),
     BorderColor3 = Color3.new(0, 0, 0),
@@ -111,8 +114,14 @@ local UserInputService = game:GetService("UserInputService")
 local dragging = false
 local dragStart, panelStart
 local header = panel:FindFirstChildOfClass("TextLabel")
+local dragInput = nil
 if header then
     header.Active = true
+    header.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
     header.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
@@ -130,6 +139,7 @@ local dragEndConnection = UserInputService.InputEnded:Connect(function(input)
 end)
 local dragMoveConnection = UserInputService.InputChanged:Connect(function(input)
     if not dragging or not dragStart then return end
+    if input ~= dragInput and input.UserInputType ~= Enum.UserInputType.Touch then return end
     if input.UserInputType ~= Enum.UserInputType.MouseMovement
         and input.UserInputType ~= Enum.UserInputType.Touch then return end
     local delta = input.Position - dragStart
@@ -179,7 +189,7 @@ local watchToggle = create("TextButton", {
 
 local status = create("TextLabel", {
     Text = "Ready",
-    Size = UDim2.fromOffset(484, 40),
+    Size = UDim2.fromOffset(365, 40),
     Position = UDim2.fromOffset(12, 105),
     BackgroundTransparency = 1,
     TextColor3 = Color3.new(1, 1, 1),
@@ -187,6 +197,21 @@ local status = create("TextLabel", {
     TextWrapped = true,
     TextXAlignment = Enum.TextXAlignment.Left
 }, panel)
+
+local queueLabel = create("TextLabel", {
+    Text = "Queue: 0 | Uploaded: 0 | Characters skipped: 0",
+    Size = UDim2.fromOffset(484, 18),
+    Position = UDim2.fromOffset(12, 328),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(190, 230, 190),
+    TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, panel)
+
+local function refreshQueue()
+    queueLabel.Text = "Queue: " .. watchCount .. " | Uploaded: " .. watchUploaded
+        .. " | Characters skipped: " .. watchSkippedCharacters
+end
 
 local output = create("TextBox", {
     Text = "",
@@ -206,7 +231,7 @@ local output = create("TextBox", {
 local config = create("Frame", {
     Name = "Delivery",
     Size = UDim2.fromOffset(510, 92),
-    Position = UDim2.fromOffset(0, 340),
+    Position = UDim2.fromOffset(0, 352),
     BackgroundColor3 = Color3.fromRGB(55, 55, 55),
     BorderColor3 = Color3.new(0, 0, 0),
     BorderSizePixel = 2
@@ -355,6 +380,17 @@ local function watchVec(v)
         z = math.floor(v.Z * 100) / 100}
 end
 
+local function isCharacterDescendant(obj)
+    local current = obj
+    while current and current ~= workspace do
+        if current:IsA("Model") and Players:GetPlayerFromCharacter(current) then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
 local function watchEntry(obj, root, label)
     local path = watchPath(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return nil end
@@ -444,8 +480,10 @@ local function flushWatch()
             end
             status.Text = "Dynamic upload failed; queued for retry"
         elseif alive then
+            watchUploaded = watchUploaded + #batch
             status.Text = "Dynamic update sent: " .. #batch .. " objects"
         end
+        refreshQueue()
         watchBusy = false
     end)
 end
@@ -462,8 +500,13 @@ local function startWatching()
                 if not alive or not watchEnabled then return end
                 task.defer(function()
                     if not alive or not watchEnabled then return end
+                    if spec.label == "Workspace" and isCharacterDescendant(obj) then
+                        watchSkippedCharacters = watchSkippedCharacters + 1
+                        return
+                    end
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
-                    if ok and entry and not watchQueue[entry.path] then
+                    if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
+                        watchSeen[entry.path] = true
                         watchQueue[entry.path] = entry
                         watchCount = watchCount + 1
                     end
@@ -474,7 +517,10 @@ local function startWatching()
     task.spawn(function()
         while alive do
             task.wait(WATCH_INTERVAL)
-            if alive then flushWatch() end
+            if alive then
+                refreshQueue()
+                flushWatch()
+            end
         end
     end)
 end
