@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v2.2
+-- Lycoles Universal Inspector v3.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "2.2"
+local VERSION = "3.0"
 
 local endpoint = ""
 local autoSend = true
@@ -229,14 +229,18 @@ local function prepareParts(report)
             scanStats = report.scanStats, objects = items
         })
     end
+    -- Linear-time batching; repeated JSON-encoding of growing chunks
+    -- becomes prohibitively slow for universal scans.
+    local chunkBytes = 0
     for _, entry in ipairs(objects) do
-        table.insert(chunk, entry)
-        if encodedSize(chunk) > MAX_PART_BYTES then
-            table.remove(chunk)
-            if #chunk == 0 then error("Single object exceeds report size") end
+        local entryBytes = #HttpService:JSONEncode(entry) + 2
+        if chunkBytes + entryBytes > 85000 and #chunk > 0 then
             table.insert(chunks, chunk)
-            chunk = {entry}
+            chunk = {}
+            chunkBytes = 0
         end
+        table.insert(chunk, entry)
+        chunkBytes = chunkBytes + entryBytes
     end
     if #chunk > 0 or #chunks == 0 then table.insert(chunks, chunk) end
     local parts = {}
@@ -284,54 +288,33 @@ local function inspect()
             end
 
 
-            -- Scan all candidates before applying quotas: no traversal-order starvation.
-            -- Avoid transmitting GUI text, player data, script source or remote arguments.
+            -- Universal snapshot: collect every instance in the three client-visible roots.
+            -- Names, hierarchy, spatial data, and interaction metadata only.
+            -- Never collect chat text, player identifiers, script source, or remote payloads.
             local roots = {
-                game:GetService("ReplicatedStorage"),
-                workspace,
-                player:FindFirstChild("PlayerGui")
-            }
-            local candidates = {
-                networking = {}, interactions = {},
-                scripts = {}, interface = {}, other = {}
-            }
-            local keywords = {
-                "order", "inventory", "shop", "upgrade", "teleport",
-                "build", "attack", "move", "deploy", "select",
-                "map", "interact", "quest", "craft", "trade"
+                {instance = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
+                {instance = workspace, label = "Workspace"},
+                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"}
             }
             report.scanStats = {
-                scanned = 0, eligible = 0, recorded = 0,
-                omitted = 0, byCategory = {}
+                scanned = 0, eligible = 0, recorded = 0, omitted = 0,
+                mode = "universal-snapshot", byCategory = {}
             }
-            local function categoryOf(obj, name)
-                local class = obj.ClassName
-                if class == "RemoteEvent" or class == "RemoteFunction" then
+            local function categoryOf(obj)
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
+                    or obj:IsA("UnreliableRemoteEvent") then
                     return "networking"
-                end
-                if class == "ProximityPrompt" or class == "ClickDetector" then
+                elseif obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector") then
                     return "interactions"
-                end
-                if class == "ModuleScript" or class == "LocalScript" then
+                elseif obj:IsA("LuaSourceContainer") then
                     return "scripts"
-                end
-                if obj:IsA("GuiObject") or class == "ScreenGui" then
-                    if (class == "TextButton" or class == "ImageButton")
-                        and (name == "textbutton" or name == "imagebutton") then
-                        return nil
-                    end
+                elseif obj:IsA("GuiBase2d") or obj:IsA("GuiObject") then
                     return "interface"
+                else
+                    return "other"
                 end
-                for _, word in ipairs(keywords) do
-                    if string.find(name, word, 1, true) then
-                        return "other"
-                    end
-                end
-                return nil
             end
-            -- Construct stable paths relative to the scanned service.
-            -- GetFullName() can omit service prefixes in some games.
-            local function stablePath(obj, root, rootLabel)
+            local function stablePath(obj, root, label)
                 local names = {}
                 local current = obj
                 while current and current ~= root do
@@ -339,70 +322,70 @@ local function inspect()
                     current = current.Parent
                 end
                 if current ~= root then return nil end
-                return rootLabel .. "." .. table.concat(names, ".")
+                return label .. "." .. table.concat(names, ".")
             end
-            for _, root in ipairs(roots) do
+            local function vec3(v)
+                return {x = math.floor(v.X * 100) / 100,
+                    y = math.floor(v.Y * 100) / 100,
+                    z = math.floor(v.Z * 100) / 100}
+            end
+            for _, spec in ipairs(roots) do
+                local root = spec.instance
                 if root then
-                    local guiRoot = root == player:FindFirstChild("PlayerGui")
-                    local rootLabel = guiRoot and "PlayerGui"
-                        or (root == workspace and "Workspace" or "ReplicatedStorage")
-                    for i, obj in ipairs(root:GetDescendants()) do
+                    local descendants = root:GetDescendants()
+                    for i, obj in ipairs(descendants) do
                         if not alive then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
                         report.counts[obj.ClassName] =
                             (report.counts[obj.ClassName] or 0) + 1
-                        local path = stablePath(obj, root, rootLabel)
-                        if not path then
-                            -- Descendant was reparented while scanning.
-                            continue
-                        end
-                        local excluded =
-                            string.find(path, "LycolesUniversalInspector", 1, true)
-                            or string.find(path, "DefaultChatSystemChatEvents", 1, true)
-                            or string.find(path, "PlayerGui.Chat", 1, true)
-                        if not excluded then
-                            local category = categoryOf(obj, string.lower(obj.Name))
-                            if category then
-                                local entry = {
-                                    path = string.sub(path, 1, 400),
-                                    class = obj.ClassName,
-                                    category = category
-                                }
-                                if obj:IsA("ProximityPrompt") then
-                                    entry.maxActivationDistance = obj.MaxActivationDistance
-                                    entry.holdDuration = obj.HoldDuration
-                                elseif obj:IsA("ClickDetector") then
-                                    entry.maxActivationDistance = obj.MaxActivationDistance
-                                elseif obj:IsA("GuiObject") then
-                                    entry.visible = obj.Visible
-                                end
-                                if obj:IsA("ModuleScript") then
-                                    local group = string.match(path,
-                                        "ReplicatedStorage%.([%w_]+)") or "other"
-                                    report.groups[group] =
-                                        (report.groups[group] or 0) + 1
-                                end
-                                table.insert(candidates[category], entry)
-                                report.scanStats.eligible =
-                                    report.scanStats.eligible + 1
+                        local path = stablePath(obj, root, spec.label)
+                        if path and not string.find(path, "LycolesUniversalInspector", 1, true) then
+                            local category = categoryOf(obj)
+                            local entry = {
+                                path = string.sub(path, 1, 400),
+                                class = obj.ClassName,
+                                category = category
+                            }
+                            -- Position/size help locate objects with generic names.
+                            if obj:IsA("BasePart") then
+                                entry.position = vec3(obj.Position)
+                                entry.size = vec3(obj.Size)
+                            elseif obj:IsA("Model") then
+                                local okPivot, pivot = pcall(function()
+                                    return obj:GetPivot()
+                                end)
+                                if okPivot then entry.position = vec3(pivot.Position) end
+                            elseif obj:IsA("Attachment") then
+                                entry.position = vec3(obj.WorldPosition)
                             end
+                            if obj:IsA("ProximityPrompt") then
+                                entry.maxActivationDistance = obj.MaxActivationDistance
+                                entry.holdDuration = obj.HoldDuration
+                            elseif obj:IsA("ClickDetector") then
+                                entry.maxActivationDistance = obj.MaxActivationDistance
+                            elseif obj:IsA("GuiObject") then
+                                entry.visible = obj.Visible
+                            end
+                            if obj:IsA("ModuleScript") then
+                                local group = string.match(path,
+                                    "ReplicatedStorage%.([%w_]+)") or "other"
+                                report.groups[group] = (report.groups[group] or 0) + 1
+                            end
+                            table.insert(report.objects, entry)
+                            report.scanStats.eligible = report.scanStats.eligible + 1
+                            local cat = report.scanStats.byCategory[category]
+                            if not cat then
+                                cat = {eligible = 0, recorded = 0, omitted = 0}
+                                report.scanStats.byCategory[category] = cat
+                            end
+                            cat.eligible = cat.eligible + 1
+                            cat.recorded = cat.recorded + 1
                         end
-                        if i % 500 == 0 then task.wait() end
+                        if i % 500 == 0 then
+                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            task.wait()
+                        end
                     end
-                end
-            end
-            -- Preserve every eligible entry; transport splits oversized reports.
-            local order = {
-                "networking", "interactions", "scripts", "interface", "other"
-            }
-            for _, category in ipairs(order) do
-                local items = candidates[category]
-                table.sort(items, function(a, b) return a.path < b.path end)
-                report.scanStats.byCategory[category] = {
-                    eligible = #items, recorded = #items, omitted = 0
-                }
-                for _, entry in ipairs(items) do
-                    table.insert(report.objects, entry)
                 end
             end
             report.scanStats.recorded = #report.objects
