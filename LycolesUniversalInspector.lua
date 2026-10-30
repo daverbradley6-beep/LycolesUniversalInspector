@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v2.1
+-- Lycoles Universal Inspector v2.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "2.1"
+local VERSION = "2.2"
 
 local endpoint = ""
 local autoSend = true
@@ -329,18 +329,32 @@ local function inspect()
                 end
                 return nil
             end
+            -- Construct stable paths relative to the scanned service.
+            -- GetFullName() can omit service prefixes in some games.
+            local function stablePath(obj, root, rootLabel)
+                local names = {}
+                local current = obj
+                while current and current ~= root do
+                    table.insert(names, 1, current.Name)
+                    current = current.Parent
+                end
+                if current ~= root then return nil end
+                return rootLabel .. "." .. table.concat(names, ".")
+            end
             for _, root in ipairs(roots) do
                 if root then
                     local guiRoot = root == player:FindFirstChild("PlayerGui")
+                    local rootLabel = guiRoot and "PlayerGui"
+                        or (root == workspace and "Workspace" or "ReplicatedStorage")
                     for i, obj in ipairs(root:GetDescendants()) do
                         if not alive then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
                         report.counts[obj.ClassName] =
                             (report.counts[obj.ClassName] or 0) + 1
-                        local path = obj:GetFullName()
-                        if guiRoot then
-                            path = "PlayerGui" ..
-                                string.sub(path, #root:GetFullName() + 1)
+                        local path = stablePath(obj, root, rootLabel)
+                        if not path then
+                            -- Descendant was reparented while scanning.
+                            continue
                         end
                         local excluded =
                             string.find(path, "LycolesUniversalInspector", 1, true)
