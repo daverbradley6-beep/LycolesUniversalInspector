@@ -1,4 +1,4 @@
--- Lycoles Universal Inspector v1.0
+-- Lycoles Universal Inspector v1.1
 -- Read-only inspection. Does not invoke remotes or transmit data.
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
@@ -17,7 +17,7 @@ local function create(class,props,parent)
  return item
 end
 local panel=create("Frame",{Size=UDim2.fromOffset(510,340),Position=UDim2.new(0.5,-255,0.5,-170),BackgroundColor3=Color3.fromRGB(55,55,55),BorderColor3=Color3.new(0,0,0),BorderSizePixel=3,Active=true},gui)
-create("TextLabel",{Text="Lycoles Universal Inspector v1.0",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
+create("TextLabel",{Text="Lycoles Universal Inspector v1.1",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
 local function button(label,x)
  return create("TextButton",{Text=label,Size=UDim2.fromOffset(116,40),Position=UDim2.fromOffset(x,56),BackgroundColor3=Color3.fromRGB(105,105,105),BorderColor3=Color3.new(0,0,0),BorderSizePixel=2,TextColor3=Color3.new(1,1,1),TextSize=14,Active=true},panel)
 end
@@ -37,10 +37,10 @@ local function inspect()
  status.Text="Scanning..."
  task.spawn(function()
   local ok,result=pcall(function()
-   local report={version="1.0",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={}}
+   local report={version="1.1",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={}}
    local roots={game:GetService("ReplicatedStorage"),workspace,player:FindFirstChild("PlayerGui")}
-   local relevant={RemoteEvent=true,RemoteFunction=true,ProximityPrompt=true,ClickDetector=true}
-   local words={"order","rack","shipping","stock","city","nation","factory","army","unit","shop","upgrade","teleport"}
+   local relevant={RemoteEvent=true,RemoteFunction=true,ProximityPrompt=true,ClickDetector=true,ModuleScript=true,LocalScript=true,ScreenGui=true,TextButton=true,ImageButton=true}
+   local words={"order","rack","shipping","stock","city","nation","factory","army","shop","upgrade","teleport","build","attack","move","deploy","select","map","airfront"}
    for _,root in ipairs(roots) do
     if root then
      for i,obj in ipairs(root:GetDescendants()) do
@@ -53,8 +53,18 @@ local function inspect()
         if string.find(name,word,1,true) then include=true break end
        end
       end
-      if include and #report.objects<350 then
+      if include and #report.objects<600 and not string.find(obj:GetFullName(),"LycolesUniversalInspector",1,true) then
        local entry={path=obj:GetFullName(),class=obj.ClassName}
+       if obj:IsA("GuiButton") then entry.text=obj:IsA("TextButton") and string.sub(obj.Text,1,90) or nil end
+       if obj:IsA("GuiObject") then entry.visible=obj.Visible end
+       local attrs=obj:GetAttributes()
+       if next(attrs) then
+        entry.attributes={}
+        for k,v in pairs(attrs) do
+         local t=type(v)
+         if t=="string" or t=="number" or t=="boolean" then entry.attributes[k]=v end
+        end
+       end
        if obj:IsA("ProximityPrompt") then entry.action=obj.ActionText end
        table.insert(report.objects,entry)
       end
