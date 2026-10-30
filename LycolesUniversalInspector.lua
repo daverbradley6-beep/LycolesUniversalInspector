@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.0
+-- Lycoles Universal Inspector v3.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.0"
+local VERSION = "3.1"
 
 local endpoint = ""
 local autoSend = true
@@ -22,6 +22,14 @@ local pendingParts = nil
 local MAX_PART_BYTES = 105000
 local running = false
 local alive = true
+local watchEnabled = true
+local watchConnections = {}
+local watchQueue = {}
+local watchCount = 0
+local watchBusy = false
+local lastGameName = nil
+local WATCH_INTERVAL = 60
+local WATCH_BATCH = 1500
 
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -102,6 +110,12 @@ local scan = button("SCAN", 12)
 local copy = button("COPY JSON", 136)
 local save = button("SAVE JSON", 260)
 local close = button("CLOSE", 384)
+local watchToggle = create("TextButton", {
+    Text = "WATCH: ON", Size = UDim2.fromOffset(116, 28),
+    Position = UDim2.fromOffset(384, 104),
+    BackgroundColor3 = Color3.fromRGB(85, 105, 85),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 12
+}, panel)
 
 local status = create("TextLabel", {
     Text = "Ready",
@@ -169,6 +183,7 @@ local automatic = create("TextButton", {
 
 _G.LycolesInspectorClose = function()
     alive = false
+    for _, connection in ipairs(watchConnections) do connection:Disconnect() end
     gui:Destroy()
 end
 
@@ -260,6 +275,154 @@ local function prepareParts(report)
     return parts
 end
 
+-- Dynamic discovery records newly replicated instances without accessing script source.
+-- Changes are uploaded as independent, searchable delta scans.
+local function watchPath(obj, root, label)
+    local names, current = {}, obj
+    while current and current ~= root do
+        table.insert(names, 1, current.Name)
+        current = current.Parent
+    end
+    if current ~= root then return nil end
+    return label .. "." .. table.concat(names, ".")
+end
+
+local function watchVec(v)
+    return {x = math.floor(v.X * 100) / 100,
+        y = math.floor(v.Y * 100) / 100,
+        z = math.floor(v.Z * 100) / 100}
+end
+
+local function watchEntry(obj, root, label)
+    local path = watchPath(obj, root, label)
+    if not path or path:find("LycolesUniversalInspector", 1, true) then return nil end
+    local category = "other"
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+        category = "networking"
+    elseif obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector") then
+        category = "interactions"
+    elseif obj:IsA("LuaSourceContainer") then
+        category = "scripts"
+    elseif obj:IsA("GuiBase2d") or obj:IsA("GuiObject") then
+        category = "interface"
+    end
+    local entry = {path = path:sub(1, 400), class = obj.ClassName, category = category}
+    if obj:IsA("BasePart") then
+        entry.position, entry.size = watchVec(obj.Position), watchVec(obj.Size)
+    elseif obj:IsA("Model") then
+        local ok, pivot = pcall(function() return obj:GetPivot() end)
+        if ok then entry.position = watchVec(pivot.Position) end
+    elseif obj:IsA("Attachment") then
+        entry.position = watchVec(obj.WorldPosition)
+    elseif obj:IsA("ProximityPrompt") then
+        entry.maxActivationDistance = obj.MaxActivationDistance
+        entry.holdDuration = obj.HoldDuration
+    elseif obj:IsA("ClickDetector") then
+        entry.maxActivationDistance = obj.MaxActivationDistance
+    elseif obj:IsA("GuiObject") then
+        entry.visible = obj.Visible
+    end
+    return entry
+end
+
+local function flushWatch()
+    if watchBusy or not watchEnabled or watchCount == 0 or running then return end
+    if not autoSend or not validEndpoint(endpoint) then return end
+    local requestFn = (syn and syn.request) or http_request or request
+    if type(requestFn) ~= "function" then return end
+    watchBusy = true
+    local batch = {}
+    for path, entry in pairs(watchQueue) do
+        batch[#batch + 1] = entry
+        watchQueue[path] = nil
+        watchCount = watchCount - 1
+        if #batch >= WATCH_BATCH then break end
+    end
+    task.spawn(function()
+        local report = {
+            version = VERSION, placeId = game.PlaceId, gameId = game.GameId,
+            placeVersion = game.PlaceVersion, gameName = lastGameName,
+            inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            objects = batch, counts = {}, groups = {},
+            scanStats = {
+                mode = "dynamic-additions", scanned = #batch,
+                eligible = #batch, recorded = #batch, omitted = 0,
+                byCategory = {}
+            }
+        }
+        local ok, parts = pcall(prepareParts, report)
+        if not ok then
+            for _, entry in ipairs(batch) do
+                if not watchQueue[entry.path] then
+                    watchQueue[entry.path] = entry
+                    watchCount = watchCount + 1
+                end
+            end
+            watchBusy = false
+            return
+        end
+        local success = true
+        for _, body in ipairs(parts) do
+            if not alive then success = false break end
+            local sent, response = pcall(requestFn, {
+                Url = endpoint, Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            local code = sent and response and tonumber(response.StatusCode)
+            if code ~= 200 and code ~= 201 then success = false break end
+            task.wait(0.15)
+        end
+        if not success then
+            for _, entry in ipairs(batch) do
+                if not watchQueue[entry.path] then
+                    watchQueue[entry.path] = entry
+                    watchCount = watchCount + 1
+                end
+            end
+            status.Text = "Dynamic upload failed; queued for retry"
+        elseif alive then
+            status.Text = "Dynamic update sent: " .. #batch .. " objects"
+        end
+        watchBusy = false
+    end)
+end
+
+local function startWatching()
+    local roots = {
+        {root = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
+        {root = workspace, label = "Workspace"},
+        {root = player:FindFirstChild("PlayerGui"), label = "PlayerGui"}
+    }
+    for _, spec in ipairs(roots) do
+        if spec.root then
+            table.insert(watchConnections, spec.root.DescendantAdded:Connect(function(obj)
+                if not alive or not watchEnabled then return end
+                task.defer(function()
+                    if not alive or not watchEnabled then return end
+                    local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
+                    if ok and entry and not watchQueue[entry.path] then
+                        watchQueue[entry.path] = entry
+                        watchCount = watchCount + 1
+                    end
+                end)
+            end))
+        end
+    end
+    task.spawn(function()
+        while alive do
+            task.wait(WATCH_INTERVAL)
+            if alive then flushWatch() end
+        end
+    end)
+end
+
+watchToggle.MouseButton1Click:Connect(function()
+    watchEnabled = not watchEnabled
+    watchToggle.Text = watchEnabled and "WATCH: ON" or "WATCH: OFF"
+    status.Text = watchEnabled and "Dynamic discovery enabled" or "Dynamic discovery paused"
+end)
+
 local function inspect()
     if running then return end
 
@@ -285,6 +448,7 @@ local function inspect()
             end)
             if okName and type(info) == "table" and type(info.Name) == "string" then
                 report.gameName = info.Name
+                lastGameName = info.Name
             end
 
 
@@ -515,4 +679,5 @@ else
     status.Text = "Enter receiver URL once"
 end
 
+startWatching()
 inspect()
