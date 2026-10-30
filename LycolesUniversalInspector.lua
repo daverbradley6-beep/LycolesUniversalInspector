@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.4
+-- Lycoles Universal Inspector v3.5
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.4"
+local VERSION = "3.5"
 
 local endpoint = ""
 local autoSend = true
@@ -21,6 +21,11 @@ local last = nil
 local pendingParts = nil
 local MAX_PART_BYTES = 105000
 local running = false
+local uploading = false
+local uploadGeneration = 0
+local pendingAcknowledged = {}
+local MAX_UPLOAD_ATTEMPTS = 3
+local UPLOAD_RETRY_DELAYS = {1, 3, 6}
 local alive = true
 local watchEnabled = true
 local watchConnections = {}
@@ -273,13 +278,50 @@ local automatic = create("TextButton", {
 
 _G.LycolesInspectorClose = function()
     alive = false
+    uploadGeneration = uploadGeneration + 1
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
     dragEndConnection:Disconnect()
     dragMoveConnection:Disconnect()
     gui:Destroy()
 end
 
+-- Return a verified acknowledgement; never log the secret-bearing endpoint.
+local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCount)
+    local lastError = "request not attempted"
+    for attempt = 1, MAX_UPLOAD_ATTEMPTS do
+        if not alive then return false, "inspector closed" end
+        local ok, response = pcall(requestFn, {
+            Url = receiver, Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = body
+        })
+        local code = ok and response and tonumber(response.StatusCode)
+        if code == 200 or code == 201 then
+            local decodedOk, ack = pcall(function()
+                return HttpService:JSONDecode(response.Body or "")
+            end)
+            if decodedOk and type(ack) == "table" and ack.ok == true
+                and ack.scanId == scanId and ack.partIndex == partIndex
+                and ack.partCount == partCount and type(ack.id) == "string" then
+                return true, ack.id
+            end
+            lastError = "invalid acknowledgement"
+        else
+            lastError = "HTTP " .. tostring(code or "request error")
+        end
+        warn("Lycoles upload attempt failed", partIndex, attempt, lastError)
+        if attempt < MAX_UPLOAD_ATTEMPTS then
+            task.wait(UPLOAD_RETRY_DELAYS[attempt])
+        end
+    end
+    return false, lastError
+end
+
 local function transmit()
+    if uploading then
+        status.Text = "Upload already running"
+        return
+    end
     if not pendingParts or #pendingParts == 0 then
         status.Text = "Scan not finished"
         return
@@ -297,27 +339,39 @@ local function transmit()
     saveEndpoint()
     local receiver = endpoint
     local parts = pendingParts
-    status.Text = "Sending 0/" .. #parts .. " parts..."
+    local first = HttpService:JSONDecode(parts[1])
+    local scanId = first.scanId
+    local partCount = #parts
+    uploading = true
+    uploadGeneration = uploadGeneration + 1
+    local generation = uploadGeneration
     task.spawn(function()
+        local succeeded = 0
         for i, body in ipairs(parts) do
-            if not alive then return end
-            local ok, response = pcall(requestFn, {
-                Url = receiver, Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-            local code = ok and response and tonumber(response.StatusCode)
-            if code ~= 200 and code ~= 201 then
-                local msg = ok and response and tostring(response.Body or "") or tostring(response)
-                status.Text = "Part " .. i .. "/" .. #parts .. " failed: "
-                    .. tostring(code or "request error")
-                warn("Lycoles upload failed", i, msg)
+            if not alive or generation ~= uploadGeneration then
+                uploading = false
                 return
             end
-            status.Text = "Sending " .. i .. "/" .. #parts .. " parts..."
+            if pendingAcknowledged[i] then
+                succeeded = succeeded + 1
+            else
+                status.Text = "Uploading " .. i .. "/" .. partCount
+                local ok, message = uploadPart(requestFn, receiver, body, scanId, i, partCount)
+                if not ok then
+                    status.Text = "Part " .. i .. "/" .. partCount .. " failed (" .. message .. "); SEND JSON to retry"
+                    uploading = false
+                    return
+                end
+                pendingAcknowledged[i] = message
+                succeeded = succeeded + 1
+            end
+            status.Text = "Verified " .. succeeded .. "/" .. partCount .. " parts"
             task.wait(0.15)
         end
-        if alive then status.Text = "Report sent (" .. #parts .. "/" .. #parts .. " parts)" end
+        uploading = false
+        if alive then
+            status.Text = "Upload complete: " .. succeeded .. "/" .. partCount .. " acknowledged"
+        end
     end)
 end
 
@@ -464,7 +518,7 @@ local function observeObject(obj, root, label)
 end
 
 local function flushWatch()
-    if watchBusy or not watchEnabled or (watchCount == 0 and changeCount == 0) or running then return end
+    if watchBusy or not watchEnabled or (watchCount == 0 and changeCount == 0) or running or uploading then return end
     if not autoSend or not validEndpoint(endpoint) then return end
     local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then return end
@@ -512,13 +566,10 @@ local function flushWatch()
         local success = true
         for _, body in ipairs(parts) do
             if not alive then success = false break end
-            local sent, response = pcall(requestFn, {
-                Url = endpoint, Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-            local code = sent and response and tonumber(response.StatusCode)
-            if code ~= 200 and code ~= 201 then success = false break end
+            local part = HttpService:JSONDecode(body)
+            local sent = uploadPart(requestFn, endpoint, body,
+                part.scanId, part.partIndex, part.partCount)
+            if not sent then success = false break end
             task.wait(0.15)
         end
         if not success then
@@ -596,7 +647,18 @@ watchToggle.MouseButton1Click:Connect(function()
 end)
 
 local function inspect()
-    if running then return end
+    if running or uploading then
+        status.Text = "Wait for current scan/upload to finish"
+        return
+    end
+    if pendingParts and #pendingParts > 0 then
+        for i = 1, #pendingParts do
+            if not pendingAcknowledged[i] then
+                status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
+                return
+            end
+        end
+    end
 
     running = true
     status.Text = "Scanning..."
@@ -746,6 +808,7 @@ local function inspect()
         if encoded then
             last = resultData.json
             pendingParts = resultData.parts
+            pendingAcknowledged = {}
             status.Text = "Scan complete - " .. #result.objects
                 .. " entries in " .. #pendingParts .. " part(s)"
             output.Text =
