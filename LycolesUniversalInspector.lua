@@ -1,4 +1,4 @@
--- Lycoles Universal Inspector v1.6
+-- Lycoles Universal Inspector v1.7
 -- Read-only inspection; uploads only when SEND JSON or AUTO-SEND is selected.
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
@@ -17,7 +17,7 @@ local function create(class,props,parent)
  return item
 end
 local panel=create("Frame",{Size=UDim2.fromOffset(510,440),Position=UDim2.new(0.5,-255,0.5,-220),BackgroundColor3=Color3.fromRGB(55,55,55),BorderColor3=Color3.new(0,0,0),BorderSizePixel=3,Active=true},gui)
-create("TextLabel",{Text="Lycoles Universal Inspector v1.6",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
+create("TextLabel",{Text="Lycoles Universal Inspector v1.7",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
 local function button(label,x)
  return create("TextButton",{Text=label,Size=UDim2.fromOffset(116,40),Position=UDim2.fromOffset(x,56),BackgroundColor3=Color3.fromRGB(105,105,105),BorderColor3=Color3.new(0,0,0),BorderSizePixel=2,TextColor3=Color3.new(1,1,1),TextSize=14,Active=true},panel)
 end
@@ -48,7 +48,7 @@ local function transmit()
  task.spawn(function()
   local ok,res=pcall(request,{Url=endpoint,Method="POST",Headers={["Content-Type"]="application/json"},Body=last})
   if not alive then return end
-  if ok and res and (res.Success or res.StatusCode==200 or res.StatusCode==201) then status.Text="Report sent" else
+  if ok and res and (res.StatusCode==200 or res.StatusCode==201) then status.Text="Report sent" else
    local code=ok and res and res.StatusCode or "request error"
    local body=ok and res and tostring(res.Body or "") or tostring(res)
    status.Text="POST "..safePath.." failed "..tostring(code)..": "..string.sub(body,1,75)
@@ -62,16 +62,17 @@ local function inspect()
  status.Text="Scanning..."
  task.spawn(function()
   local ok,result=pcall(function()
-   local report={version="1.6",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
+   local report={version="1.7",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
    local roots={game:GetService("ReplicatedStorage"),workspace,player:FindFirstChild("PlayerGui")}
    local relevant={RemoteEvent=true,RemoteFunction=true,ProximityPrompt=true,ClickDetector=true,ModuleScript=true,LocalScript=true,ScreenGui=true}
-   local words={"order","rack","shipping","stock","city","nation","factory","army","shop","upgrade","teleport","build","attack","move","deploy","select","map","airfront"}
+   local words={"order","inventory","shop","upgrade","teleport","build","attack","move","deploy","select","map","interact","quest","craft","trade"}
    for _,root in ipairs(roots) do
     if root then
      for i,obj in ipairs(root:GetDescendants()) do
       if not alive then break end
       report.counts[obj.ClassName]=(report.counts[obj.ClassName] or 0)+1
       local path=obj:GetFullName()
+      if root==player:FindFirstChild("PlayerGui") then path="PlayerGui"..string.sub(path,#root:GetFullName()+1) end
       local isChat=string.find(path,"DefaultChatSystemChatEvents",1,true) or string.find(path,"PlayerGui.Chat",1,true)
       local include=not isChat and (relevant[obj.ClassName] or false)
       local name=string.lower(obj.Name)
@@ -83,19 +84,9 @@ local function inspect()
       if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and (obj.Name=="TextButton" or obj.Name=="ImageButton") then include=false end
       if include and #report.objects<600 and not string.find(path,"LycolesUniversalInspector",1,true) then
        local entry={path=path,class=obj.ClassName}
-       if obj:IsA("GuiButton") then entry.text=obj:IsA("TextButton") and string.sub(obj.Text,1,90) or nil end
        if obj:IsA("GuiObject") then entry.visible=obj.Visible end
-       local attrs=obj:GetAttributes()
-       if next(attrs) then
-        entry.attributes={}
-        for k,v in pairs(attrs) do
-         local t=type(v)
-         if t=="string" or t=="number" or t=="boolean" then entry.attributes[k]=v end
-        end
-       end
-       if obj:IsA("ProximityPrompt") then entry.action=obj.ActionText end
        if obj:IsA("ModuleScript") then
-        entry.category=string.match(path,"Airfront%.([%w_]+)") or "other"
+        entry.category=string.match(path,"ReplicatedStorage%.([%w_]+)") or "other"
         report.groups[entry.category]=(report.groups[entry.category] or 0)+1
        end
        table.insert(report.objects,entry)
@@ -152,7 +143,10 @@ url.TextSize=13
 url.TextColor3=Color3.new(1,1,1)
 url.BackgroundColor3=Color3.fromRGB(35,35,35)
 url.Parent=config
-url.FocusLost:Connect(function() endpoint=url.Text end)
+url.FocusLost:Connect(function()
+ endpoint=url.Text
+ if autoSend and last and endpoint~="" then transmit() end
+end)
 local send=Instance.new("TextButton")
 send.Size=UDim2.fromOffset(180,38)
 send.Position=UDim2.fromOffset(12,45)
