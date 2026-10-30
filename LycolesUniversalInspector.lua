@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "1.8"
+local VERSION = "1.9"
 
 local endpoint = ""
 local autoSend = true
@@ -246,10 +246,20 @@ local function inspect()
                 version = VERSION,
                 placeId = game.PlaceId,
                 gameId = game.GameId,
+                placeVersion = game.PlaceVersion,
+                inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                gameName = nil,
                 objects = {},
                 counts = {},
                 groups = {}
             }
+
+            local okName, info = pcall(function()
+                return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+            end)
+            if okName and type(info) == "table" and type(info.Name) == "string" then
+                report.gameName = info.Name
+            end
 
             local roots = {
                 game:GetService("ReplicatedStorage"),
@@ -375,7 +385,8 @@ local function inspect()
                 "Scan complete - " .. #result.objects .. " entries"
 
             output.Text =
-                "PlaceId: " .. tostring(result.placeId)
+                "Game: " .. tostring(result.gameName or "Unknown")
+                .. "\\nPlaceId: " .. tostring(result.placeId)
                 .. "\nEntries: " .. #result.objects
                 .. "\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0)
