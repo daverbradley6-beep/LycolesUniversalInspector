@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v1.8
+-- Lycoles Universal Inspector v2.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "1.9"
+local VERSION = "2.0"
 
 local endpoint = ""
 local autoSend = true
@@ -261,107 +261,127 @@ local function inspect()
                 report.gameName = info.Name
             end
 
+
+            -- Scan all candidates before applying quotas: no traversal-order starvation.
+            -- Avoid transmitting GUI text, player data, script source or remote arguments.
             local roots = {
                 game:GetService("ReplicatedStorage"),
                 workspace,
                 player:FindFirstChild("PlayerGui")
             }
-
-            local relevant = {
-                RemoteEvent = true,
-                RemoteFunction = true,
-                ProximityPrompt = true,
-                ClickDetector = true,
-                ModuleScript = true,
-                LocalScript = true,
-                ScreenGui = true
+            local limits = {
+                networking = 170,
+                interactions = 75,
+                scripts = 115,
+                interface = 55,
+                other = 25
             }
-
-            local words = {
-                "order", "inventory", "shop", "upgrade",
-                "teleport", "build", "attack", "move",
-                "deploy", "select", "map", "interact",
-                "quest", "craft", "trade"
+            local candidates = {
+                networking = {}, interactions = {},
+                scripts = {}, interface = {}, other = {}
             }
-
+            local keywords = {
+                "order", "inventory", "shop", "upgrade", "teleport",
+                "build", "attack", "move", "deploy", "select",
+                "map", "interact", "quest", "craft", "trade"
+            }
+            report.scanStats = {
+                scanned = 0, eligible = 0, recorded = 0,
+                omitted = 0, byCategory = {}
+            }
+            local function categoryOf(obj, name)
+                local class = obj.ClassName
+                if class == "RemoteEvent" or class == "RemoteFunction" then
+                    return "networking"
+                end
+                if class == "ProximityPrompt" or class == "ClickDetector" then
+                    return "interactions"
+                end
+                if class == "ModuleScript" or class == "LocalScript" then
+                    return "scripts"
+                end
+                if obj:IsA("GuiObject") or class == "ScreenGui" then
+                    if (class == "TextButton" or class == "ImageButton")
+                        and (name == "textbutton" or name == "imagebutton") then
+                        return nil
+                    end
+                    return "interface"
+                end
+                for _, word in ipairs(keywords) do
+                    if string.find(name, word, 1, true) then
+                        return "other"
+                    end
+                end
+                return nil
+            end
             for _, root in ipairs(roots) do
                 if root then
+                    local guiRoot = root == player:FindFirstChild("PlayerGui")
                     for i, obj in ipairs(root:GetDescendants()) do
                         if not alive then break end
-
+                        report.scanStats.scanned = report.scanStats.scanned + 1
                         report.counts[obj.ClassName] =
                             (report.counts[obj.ClassName] or 0) + 1
-
                         local path = obj:GetFullName()
-
-                        if root == player:FindFirstChild("PlayerGui") then
+                        if guiRoot then
                             path = "PlayerGui" ..
                                 string.sub(path, #root:GetFullName() + 1)
                         end
-
-                        local isChat =
-                            string.find(path, "DefaultChatSystemChatEvents", 1, true)
+                        local excluded =
+                            string.find(path, "LycolesUniversalInspector", 1, true)
+                            or string.find(path, "DefaultChatSystemChatEvents", 1, true)
                             or string.find(path, "PlayerGui.Chat", 1, true)
-
-                        local include =
-                            not isChat and (relevant[obj.ClassName] or false)
-
-                        local name = string.lower(obj.Name)
-
-                        if not include and not isChat then
-                            for _, word in ipairs(words) do
-                                if string.find(name, word, 1, true) then
-                                    include = true
-                                    break
+                        if not excluded then
+                            local category = categoryOf(obj, string.lower(obj.Name))
+                            if category then
+                                local entry = {
+                                    path = string.sub(path, 1, 400),
+                                    class = obj.ClassName,
+                                    category = category
+                                }
+                                if obj:IsA("ProximityPrompt") then
+                                    entry.maxActivationDistance = obj.MaxActivationDistance
+                                    entry.holdDuration = obj.HoldDuration
+                                elseif obj:IsA("ClickDetector") then
+                                    entry.maxActivationDistance = obj.MaxActivationDistance
+                                elseif obj:IsA("GuiObject") then
+                                    entry.visible = obj.Visible
                                 end
+                                if obj:IsA("ModuleScript") then
+                                    local group = string.match(path,
+                                        "ReplicatedStorage%.([%w_]+)") or "other"
+                                    report.groups[group] =
+                                        (report.groups[group] or 0) + 1
+                                end
+                                table.insert(candidates[category], entry)
+                                report.scanStats.eligible =
+                                    report.scanStats.eligible + 1
                             end
                         end
-
-                        if (
-                            obj:IsA("TextButton")
-                            or obj:IsA("ImageButton")
-                        ) and (
-                            obj.Name == "TextButton"
-                            or obj.Name == "ImageButton"
-                        ) then
-                            include = false
-                        end
-
-                        if include
-                            and #report.objects < 600
-                            and not string.find(
-                                path, "LycolesUniversalInspector", 1, true
-                            )
-                        then
-                            local entry = {
-                                path = path,
-                                class = obj.ClassName
-                            }
-
-                            if obj:IsA("GuiObject") then
-                                entry.visible = obj.Visible
-                            end
-
-                            if obj:IsA("ModuleScript") then
-                                entry.category =
-                                    string.match(
-                                        path,
-                                        "ReplicatedStorage%.([%w_]+)"
-                                    ) or "other"
-
-                                report.groups[entry.category] =
-                                    (report.groups[entry.category] or 0) + 1
-                            end
-
-                            table.insert(report.objects, entry)
-                        end
-
-                        if i % 500 == 0 then
-                            task.wait()
-                        end
+                        if i % 500 == 0 then task.wait() end
                     end
                 end
             end
+            -- Remote endpoints first, then interactions, scripts and interface.
+            local order = {
+                "networking", "interactions", "scripts", "interface", "other"
+            }
+            for _, category in ipairs(order) do
+                local items = candidates[category]
+                table.sort(items, function(a, b) return a.path < b.path end)
+                local take = math.min(#items, limits[category])
+                report.scanStats.byCategory[category] = {
+                    eligible = #items,
+                    recorded = take,
+                    omitted = #items - take
+                }
+                for i = 1, take do
+                    table.insert(report.objects, items[i])
+                end
+            end
+            report.scanStats.recorded = #report.objects
+            report.scanStats.omitted =
+                report.scanStats.eligible - report.scanStats.recorded
 
             return report
         end)
@@ -386,7 +406,7 @@ local function inspect()
 
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
-                .. "\\nPlaceId: " .. tostring(result.placeId)
+                .. "\nPlaceId: " .. tostring(result.placeId)
                 .. "\nEntries: " .. #result.objects
                 .. "\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0)
