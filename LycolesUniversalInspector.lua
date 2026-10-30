@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v2.0
+-- Lycoles Universal Inspector v2.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,11 +13,13 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "2.0"
+local VERSION = "2.1"
 
 local endpoint = ""
 local autoSend = true
 local last = nil
+local pendingParts = nil
+local MAX_PART_BYTES = 105000
 local running = false
 local alive = true
 
@@ -171,67 +173,87 @@ _G.LycolesInspectorClose = function()
 end
 
 local function transmit()
-    if not last then
+    if not pendingParts or #pendingParts == 0 then
         status.Text = "Scan not finished"
         return
     end
-
     endpoint = trim(url.Text)
-
     if not validEndpoint(endpoint) then
         status.Text = "Use https://HOST/ingest/KEY"
         return
     end
-
-    local requestFn =
-        (syn and syn.request)
-        or http_request
-        or request
-
+    local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then
         status.Text = "HTTP requests unavailable"
         return
     end
-
     saveEndpoint()
-
-    status.Text = "Sending report..."
-
-    local reportBody = last
     local receiver = endpoint
-
+    local parts = pendingParts
+    status.Text = "Sending 0/" .. #parts .. " parts..."
     task.spawn(function()
-        local ok, response = pcall(requestFn, {
-            Url = receiver,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = reportBody
-        })
-
-        if not alive then return end
-
-        local code = ok and response and
-            tonumber(response.StatusCode)
-
-        if code == 200 or code == 201 then
-            status.Text = "Report sent"
-        else
-            local body = ok and response and
-                tostring(response.Body or "") or tostring(response)
-
-            status.Text =
-                "Send failed " .. tostring(code or "request error")
-                .. ": " .. string.sub(body, 1, 75)
-
-            warn(
-                "Lycoles delivery error",
-                tostring(code or "request error"),
-                string.sub(body, 1, 300)
-            )
+        for i, body in ipairs(parts) do
+            if not alive then return end
+            local ok, response = pcall(requestFn, {
+                Url = receiver, Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            local code = ok and response and tonumber(response.StatusCode)
+            if code ~= 200 and code ~= 201 then
+                local msg = ok and response and tostring(response.Body or "") or tostring(response)
+                status.Text = "Part " .. i .. "/" .. #parts .. " failed: "
+                    .. tostring(code or "request error")
+                warn("Lycoles upload failed", i, msg)
+                return
+            end
+            status.Text = "Sending " .. i .. "/" .. #parts .. " parts..."
+            task.wait(0.15)
         end
+        if alive then status.Text = "Report sent (" .. #parts .. "/" .. #parts .. " parts)" end
     end)
+end
+
+local function prepareParts(report)
+    local scanId = HttpService:GenerateGUID(false)
+    local objects = report.objects
+    local chunks = {}
+    local chunk = {}
+    local function encodedSize(items)
+        return #HttpService:JSONEncode({
+            version = report.version, placeId = report.placeId,
+            gameId = report.gameId, placeVersion = report.placeVersion,
+            inspectedAt = report.inspectedAt, gameName = report.gameName,
+            scanId = scanId, partIndex = 99999, partCount = 99999,
+            counts = report.counts, groups = report.groups,
+            scanStats = report.scanStats, objects = items
+        })
+    end
+    for _, entry in ipairs(objects) do
+        table.insert(chunk, entry)
+        if encodedSize(chunk) > MAX_PART_BYTES then
+            table.remove(chunk)
+            if #chunk == 0 then error("Single object exceeds report size") end
+            table.insert(chunks, chunk)
+            chunk = {entry}
+        end
+    end
+    if #chunk > 0 or #chunks == 0 then table.insert(chunks, chunk) end
+    local parts = {}
+    for i, items in ipairs(chunks) do
+        local part = {
+            version = report.version, placeId = report.placeId,
+            gameId = report.gameId, placeVersion = report.placeVersion,
+            inspectedAt = report.inspectedAt, gameName = report.gameName,
+            scanId = scanId, partIndex = i, partCount = #chunks,
+            counts = report.counts, groups = report.groups,
+            scanStats = report.scanStats, objects = items
+        }
+        local body = HttpService:JSONEncode(part)
+        if #body > 145000 then error("Part exceeds receiver limit") end
+        table.insert(parts, body)
+    end
+    return parts
 end
 
 local function inspect()
@@ -268,13 +290,6 @@ local function inspect()
                 game:GetService("ReplicatedStorage"),
                 workspace,
                 player:FindFirstChild("PlayerGui")
-            }
-            local limits = {
-                networking = 170,
-                interactions = 75,
-                scripts = 115,
-                interface = 55,
-                other = 25
             }
             local candidates = {
                 networking = {}, interactions = {},
@@ -362,26 +377,22 @@ local function inspect()
                     end
                 end
             end
-            -- Remote endpoints first, then interactions, scripts and interface.
+            -- Preserve every eligible entry; transport splits oversized reports.
             local order = {
                 "networking", "interactions", "scripts", "interface", "other"
             }
             for _, category in ipairs(order) do
                 local items = candidates[category]
                 table.sort(items, function(a, b) return a.path < b.path end)
-                local take = math.min(#items, limits[category])
                 report.scanStats.byCategory[category] = {
-                    eligible = #items,
-                    recorded = take,
-                    omitted = #items - take
+                    eligible = #items, recorded = #items, omitted = 0
                 }
-                for i = 1, take do
-                    table.insert(report.objects, items[i])
+                for _, entry in ipairs(items) do
+                    table.insert(report.objects, entry)
                 end
             end
             report.scanStats.recorded = #report.objects
-            report.scanStats.omitted =
-                report.scanStats.eligible - report.scanStats.recorded
+            report.scanStats.omitted = 0
 
             return report
         end)
@@ -394,35 +405,29 @@ local function inspect()
             return
         end
 
-        local encoded, reportJson = pcall(function()
-            return HttpService:JSONEncode(result)
+        local encoded, resultData = pcall(function()
+            local json = HttpService:JSONEncode(result)
+            local parts = prepareParts(result)
+            return {json = json, parts = parts}
         end)
-
         if encoded then
-            last = reportJson
-
-            status.Text =
-                "Scan complete - " .. #result.objects .. " entries"
-
+            last = resultData.json
+            pendingParts = resultData.parts
+            status.Text = "Scan complete - " .. #result.objects
+                .. " entries in " .. #pendingParts .. " part(s)"
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
-                .. "\nPlaceId: " .. tostring(result.placeId)
-                .. "\nEntries: " .. #result.objects
-                .. "\nRemotes: "
-                .. tostring(result.counts.RemoteEvent or 0)
-                .. " events, "
-                .. tostring(result.counts.RemoteFunction or 0)
-                .. " functions"
-                .. "\nAUTO-SEND: "
-                .. (autoSend and "ON" or "OFF")
-
-            if autoSend and validEndpoint(endpoint) then
-                transmit()
-            end
+                .. "\\nPlaceId: " .. tostring(result.placeId)
+                .. "\\nEntries: " .. #result.objects
+                .. "\\nRemotes: "
+                .. tostring(result.counts.RemoteEvent or 0) .. " events, "
+                .. tostring(result.counts.RemoteFunction or 0) .. " functions"
+                .. "\\nParts: " .. #pendingParts
+                .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
+            if autoSend and validEndpoint(endpoint) then transmit() end
         else
-            status.Text = "JSON error: " .. tostring(reportJson)
+            status.Text = "JSON error: " .. tostring(resultData)
         end
-
         running = false
     end)
 end
