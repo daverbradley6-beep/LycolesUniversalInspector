@@ -1,4 +1,4 @@
--- Lycoles Universal Inspector v1.3
+-- Lycoles Universal Inspector v1.4
 -- Read-only inspection. Does not invoke remotes or transmit data.
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
@@ -17,7 +17,7 @@ local function create(class,props,parent)
  return item
 end
 local panel=create("Frame",{Size=UDim2.fromOffset(510,340),Position=UDim2.new(0.5,-255,0.5,-170),BackgroundColor3=Color3.fromRGB(55,55,55),BorderColor3=Color3.new(0,0,0),BorderSizePixel=3,Active=true},gui)
-create("TextLabel",{Text="Lycoles Universal Inspector v1.3",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
+create("TextLabel",{Text="Lycoles Universal Inspector v1.4",Size=UDim2.new(1,0,0,48),BackgroundColor3=Color3.fromRGB(80,80,80),TextColor3=Color3.new(1,1,1),TextSize=18,Font=Enum.Font.GothamBold},panel)
 local function button(label,x)
  return create("TextButton",{Text=label,Size=UDim2.fromOffset(116,40),Position=UDim2.fromOffset(x,56),BackgroundColor3=Color3.fromRGB(105,105,105),BorderColor3=Color3.new(0,0,0),BorderSizePixel=2,TextColor3=Color3.new(1,1,1),TextSize=14,Active=true},panel)
 end
@@ -37,13 +37,19 @@ local function transmit()
  if not last then status.Text="Scan not finished" return end
  if endpoint=="" then status.Text="Set receiver URL first" return end
  if not string.match(endpoint,"^https://") then status.Text="HTTPS receiver required" return end
+ if not string.find(endpoint,"/ingest/",1,true) then status.Text="URL must contain /ingest/KEY" return end
  local request=(syn and syn.request) or http_request or request
  if type(request)~="function" then status.Text="HTTP requests unavailable" return end
  status.Text="Sending report..."
  task.spawn(function()
   local ok,res=pcall(request,{Url=endpoint,Method="POST",Headers={["Content-Type"]="application/json"},Body=last})
   if not alive then return end
-  if ok and res and res.Success then status.Text="Report sent" else status.Text="Send failed: "..tostring(ok and res and res.StatusCode or res) end
+  if ok and res and (res.Success or res.StatusCode==200 or res.StatusCode==201) then status.Text="Report sent" else
+   local code=ok and res and res.StatusCode or "request error"
+   local body=ok and res and tostring(res.Body or "") or tostring(res)
+   status.Text="Send failed "..tostring(code)..": "..string.sub(body,1,100)
+   warn("Lycoles delivery error",code,string.sub(body,1,500))
+  end
  end)
 end
 local function inspect()
@@ -52,7 +58,7 @@ local function inspect()
  status.Text="Scanning..."
  task.spawn(function()
   local ok,result=pcall(function()
-   local report={version="1.3",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
+   local report={version="1.4",placeId=game.PlaceId,gameId=game.GameId,objects={},counts={},groups={}}
    local roots={game:GetService("ReplicatedStorage"),workspace,player:FindFirstChild("PlayerGui")}
    local relevant={RemoteEvent=true,RemoteFunction=true,ProximityPrompt=true,ClickDetector=true,ModuleScript=true,LocalScript=true,ScreenGui=true}
    local words={"order","rack","shipping","stock","city","nation","factory","army","shop","upgrade","teleport","build","attack","move","deploy","select","map","airfront"}
