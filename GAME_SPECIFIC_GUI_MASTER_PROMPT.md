@@ -130,3 +130,8 @@ Treat a complete full scan as the immutable object-inventory baseline. Validate 
 ## v17 generated function standard
 
 When contracts pass review, generate real, callable read-only client functions using the fixed action templates in `tools/generate_client_actions.py`. Include generated functions in the release, separately from the diagnostic GUI. Never describe an unimplemented game feature as a working button. Require live runtime testing before claiming a function is verified.
+
+
+## v18 working GUI requirement
+
+For each explicitly reviewed client action, the generated actions GUI must wire a visible button to an actual function and render success/error feedback. Do not create inert or fabricated gameplay controls. The GUI is a separate release artifact, not proof of runtime testing or server gameplay capability.
