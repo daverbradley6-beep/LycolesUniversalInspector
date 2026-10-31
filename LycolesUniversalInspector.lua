@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.8.0
+-- Lycoles Universal Inspector v6.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.8.0"
+local VERSION = "6.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -44,7 +44,16 @@ local changeCount = 0
 local observed = setmetatable({}, {__mode = "k"})
 local changeUploaded = 0
 local WATCH_BATCH = 1500
-local interactionObserveEnabled = false
+local interactionObserveEnabled = true
+local AUTO_EVIDENCE_ENABLED = true
+local AUTO_EVIDENCE_IDLE_SECONDS = 12
+local AUTO_EVIDENCE_COOLDOWN_SECONDS = 45
+local AUTO_EVIDENCE_MAX_RESCANS = 4
+local autoEvidenceLastInteraction = 0
+local autoEvidenceLastScan = 0
+local autoEvidenceLastSequence = 0
+local autoEvidenceRescans = 0
+local autoEvidenceLastFailure = nil
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
@@ -1547,6 +1556,7 @@ local function observeInteractionObject(obj, root, label)
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
+        autoEvidenceLastInteraction = os.clock()
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
@@ -2026,7 +2036,7 @@ local function inspect(requestType)
     end
 
     scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or "manual"
+    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or (requestType == "auto-evidence" and "auto-evidence" or "manual")
     running = true
     siblingContextCache = setmetatable({}, {__mode="k"})
     status.Text = "Scanning..."
@@ -2330,6 +2340,14 @@ local function inspect(requestType)
                 lastSweepError=observerStats.lastSweepError
             }
             report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
+            report.automationDiagnostics = {
+                enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
+                cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
+                automaticRescans=autoEvidenceRescans, lastFailure=autoEvidenceLastFailure,
+                capturedInteractionCount=interactionEventCount,
+                indexIntegrityWarning="Receiver must verify unique object paths, all indexed parts, and object counts independently",
+                limitations={"Read-only client observation","No script source or server authority","No proof of replayable gameplay actions"}
+            }
             report.diagnostics = {
                 complete = scanComplete,
                 completenessBasis = "required-root-success-and-object-accounting",
@@ -2384,6 +2402,7 @@ local function inspect(requestType)
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
                 interactionDiagnostics = result.interactionDiagnostics,
+                automationDiagnostics = result.automationDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
@@ -2425,6 +2444,55 @@ local function inspect(requestType)
     end)
 end
 
+-- v6 automatic evidence collection: observe ordinary user gameplay without requiring
+-- the user to perform a fresh manual scan after every interaction.
+-- Bounded rescan budget avoids repeatedly uploading huge worlds.
+local autoEvidenceToggle = Instance.new("TextButton")
+autoEvidenceToggle.Name = "AutoEvidenceToggle"
+autoEvidenceToggle.Size = UDim2.fromOffset(144, 26)
+autoEvidenceToggle.Position = UDim2.new(1, -150, 0, 4)
+autoEvidenceToggle.Text = "AUTO EVIDENCE: ON"
+autoEvidenceToggle.TextSize = 11
+autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
+autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
+autoEvidenceToggle.Parent = interactionToggle.Parent
+autoEvidenceToggle.MouseButton1Click:Connect(function()
+    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+    autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "AUTO EVIDENCE: ON" or "AUTO EVIDENCE: OFF"
+    autoEvidenceToggle.BackgroundColor3 = AUTO_EVIDENCE_ENABLED
+        and Color3.fromRGB(50,105,85) or Color3.fromRGB(85,85,105)
+    status.Text = AUTO_EVIDENCE_ENABLED and "Automatic evidence enabled" or "Automatic evidence paused"
+end)
+
+-- Existing observer already captures pre/post state and GUI transitions. This
+-- scheduler consolidates those records into full reports after activity settles.
+task.spawn(function()
+    while alive do
+        task.wait(3)
+        if alive and AUTO_EVIDENCE_ENABLED and interactionObserveEnabled
+            and observerStats.sweepCompleted and interactionEventCount > autoEvidenceLastSequence
+            and autoEvidenceLastInteraction > 0
+            and os.clock()-autoEvidenceLastInteraction >= AUTO_EVIDENCE_IDLE_SECONDS
+            and os.clock()-autoEvidenceLastScan >= AUTO_EVIDENCE_COOLDOWN_SECONDS
+            and autoEvidenceRescans < AUTO_EVIDENCE_MAX_RESCANS
+            and not running and not uploading then
+            local allSent = true
+            if pendingParts then
+                for i=1,#pendingParts do
+                    if not pendingAcknowledged[i] then allSent=false break end
+                end
+            end
+            if allSent then
+                autoEvidenceLastSequence=interactionEventCount
+                autoEvidenceLastScan=os.clock()
+                autoEvidenceRescans=autoEvidenceRescans+1
+                inspect("auto-evidence")
+            else
+                autoEvidenceLastFailure="Previous scan parts not acknowledged"
+            end
+        end
+    end
+end)
 scan.MouseButton1Click:Connect(function() inspect("manual") end)
 
 copy.MouseButton1Click:Connect(function()
@@ -2512,5 +2580,13 @@ else
 end
 
 startWatching()
+-- Automatically attach passive listeners; users do not need to toggle INTERACT manually.
+observerStats.activationCount = observerStats.activationCount + 1
+observerStats.lastEnabledAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
+interactionToggle.Text = 'INTERACT: ON (AUTO)'
+task.spawn(function()
+ local ok,err=pcall(sweepInteractionControls)
+ if not ok then observerStats.bindingErrors=observerStats.bindingErrors+1; observerStats.lastSweepError=tostring(err):sub(1,250) end
+end)
 -- Startup scan is discovery-only; after enabling interaction recording, run SCAN again.
 inspect("startup-baseline")
