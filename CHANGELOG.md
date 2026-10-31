@@ -1,3 +1,11 @@
+## 4.7.0
+- Add conservative control-name feature attribution for manually activated controls.
+- Capture bounded local numeric/Boolean state before and 0.5 seconds after manual interactions, without reading text fields.
+- Record temporal state-change evidence without asserting causality or server verification.
+- Reflect observed interactions and possible state changes in feature readiness; implementation and testing remain unverified.
+- Preserve interaction and state-delta events on multipart preparation retry.
+- No runtime test yet; receiver indexing of new fields remains to be verified.
+
 ## 4.6.0
 - Add per-feature implementation readiness records (discovered, observed, implemented, tested), with conservative default false for unverified stages.
 - Add successive-scan feature-candidate count deltas. These are not causal before/after gameplay verification.
