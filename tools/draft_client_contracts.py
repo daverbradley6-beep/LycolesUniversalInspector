@@ -12,6 +12,9 @@ CAPABILITIES=(
     ("read_leaderstats","leaderstats",("IntValue","NumberValue","StringValue","BoolValue")),
     ("list_player_gui","gui",("ScreenGui","BillboardGui","SurfaceGui")),
     ("list_proximity_prompts","prompts",("ProximityPrompt",)),
+    ("list_visible_gui_buttons","gui-controls",("TextButton","ImageButton")),
+    ("read_local_player_attributes","player-attributes",("Player",)),
+    ("inspect_local_character","character",("Humanoid","HumanoidRootPart")),
 )
 
 def draft(plan):
