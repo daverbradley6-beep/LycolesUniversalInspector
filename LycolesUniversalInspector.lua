@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.5.0
+-- Lycoles Universal Inspector v5.6.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.5.0"
+local VERSION = "5.6.0"
 
 local endpoint = ""
 local autoSend = true
@@ -231,28 +231,42 @@ local function safeInventorySummary()
     local gui=player:FindFirstChildOfClass("PlayerGui")
     if not gui then return result end
     local count=0
+    -- Only derive expensive ancestry keys for actual slot/indicator candidates.
     for _,obj in ipairs(gui:GetDescendants()) do
         count=count+1
         if count>25000 then result.truncated=true break end
         if obj:IsA("GuiObject") then
             local name=obj.Name:lower()
-            local path=inventoryGuiPath(obj,gui)
-            local lower=path:lower()
-            local inInventory=lower:find("itemsbg",1,true) or
-                lower:find("inventory",1,true) or lower:find("petsrightbase",1,true)
-            if inInventory then
-                if name:match("^slot%d+") or name:find("petslot",1,true) then
+            local isSlot=name:match("^slot%d+") or name:find("petslot",1,true)
+            local isIndicator=name:find("equipped",1,true) or name:find("tickimage",1,true)
+            if isSlot or isIndicator then
+                local ancestor=obj.Parent
+                local inInventory=false
+                while ancestor and ancestor~=gui do
+                    local ancestorName=ancestor.Name:lower()
+                    if ancestorName=="itemsbg" or ancestorName=="itemsnewmenu" or
+                        ancestorName:find("inventory",1,true) or
+                        ancestorName=="petsrightbase" then
+                        inInventory=true
+                        break
+                    end
+                    ancestor=ancestor.Parent
+                end
+                if inInventory then
+                local path=inventoryGuiPath(obj,gui)
+                if isSlot then
                     result.guiSlots=result.guiSlots+1
                     if #result.guiSlotSamples<100 then
                         result.guiSlotSamples[#result.guiSlotSamples+1]={
                             key=path,visible=obj.Visible,class=obj.ClassName}
                     end
-                elseif name:find("equipped",1,true) or name:find("tickimage",1,true) then
+                elseif isIndicator then
                     result.guiEquippedIndicators=result.guiEquippedIndicators+1
                     if #result.guiIndicatorSamples<100 then
                         result.guiIndicatorSamples[#result.guiIndicatorSamples+1]={
                             key=path,visible=obj.Visible,class=obj.ClassName}
                     end
+                end
                 end
             end
         end
@@ -1576,6 +1590,16 @@ local function observeInteractionObject(obj, root, label)
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
+        local inventoryAction=workflow and workflow.action or nil
+        if not inventoryAction then
+            local controlName=obj.Name:lower()
+            if controlName:find("nextbutton",1,true) or controlName:find("previousbutton",1,true)
+                or controlName:find("pagebutton",1,true) then
+                inventoryAction="pagination"
+            elseif controlName:match("^slot%d+") then
+                inventoryAction="selection"
+            end
+        end
         local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
         local beforePosition = nil
         local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -1688,6 +1712,7 @@ local function observeInteractionObject(obj, root, label)
                         local guiEvidence=compareInventoryGuiSamples(
                             inventorySummaryBefore,inventoryAfter)
                         historyItem.inventoryObservationScope={
+                            actionContext=inventoryAction,
                             guiEvidence=guiEvidence,
                             beforeCounts={slots=inventorySummaryBefore.guiSlots,
                                 indicators=inventorySummaryBefore.guiEquippedIndicators},
@@ -1698,7 +1723,16 @@ local function observeInteractionObject(obj, root, label)
                             truncated=inventorySummaryBefore.truncated or inventoryAfter.truncated
                         }
                         historyItem.inventoryGuiCandidate=
-                            #guiEvidence.indicatorChanges>0 or #guiEvidence.slotChanges>0
+                            #guiEvidence.indicatorChanges>0 or
+                            (#guiEvidence.slotChanges>0 and inventoryAction~="pagination")
+                        historyItem.inventoryPageChangeCandidate=
+                            inventoryAction=="pagination" and #guiEvidence.slotChanges>0
+                        historyItem.inventoryEvidenceKind=
+                            #guiEvidence.indicatorChanges>0 and "equipped-indicator-ui-change"
+                            or (#guiEvidence.slotChanges>0 and
+                                (inventoryAction=="pagination" and "page-visibility-ui-change"
+                                or "slot-ui-change"))
+                            or "no-inventory-ui-change"
                         historyItem.inventoryOutcomeVerified=false
                     end
                     historyItem.guiStateChanges=historyItem.guiStateChanges or {}
@@ -2265,13 +2299,13 @@ local function inspect(requestType)
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=changeCount, totalInteractionEvents=interactionEventCount,
+                pendingObservationEvents=0, cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
-                inventoryDiscovery="unique-relative-path-inventory-only-change-diffs",
+                inventoryDiscovery="candidate-first-gui-sampling-and-action-aware-diffs",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
                 stateChangeLimit=MAX_STATE_CHANGES,
