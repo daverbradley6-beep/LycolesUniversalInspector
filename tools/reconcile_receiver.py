@@ -38,6 +38,21 @@ def compare(local, receiver):
     if any(type(x) is not int or x < 1 for x in (expected,indexed,receiver_expected)):
         return {"schemaVersion":"24.0","scanId":scan_id,"placeId":place_id,
                 "status":"INSUFFICIENT_PART_METADATA","verifiedEquivalent":False}
+    local_hashes=local.get("partHashes")
+    remote_hashes=match.get("partHashes")
+    if isinstance(local_hashes,dict) and isinstance(remote_hashes,dict):
+        if set(local_hashes)!=set(remote_hashes):
+            return {"schemaVersion":"24.0","scanId":scan_id,"placeId":place_id,
+                    "status":"PART_HASH_SET_MISMATCH","verifiedEquivalent":False}
+        if any(not isinstance(v,str) or len(v)!=64 for v in local_hashes.values()):
+            raise ValueError("Expected SHA-256 hex digests")
+        if any(local_hashes[k]!=remote_hashes[k] for k in local_hashes):
+            return {"schemaVersion":"24.0","scanId":scan_id,"placeId":place_id,
+                    "status":"PART_HASH_MISMATCH","verifiedEquivalent":False}
+        if len(local_hashes)==expected and expected==receiver_expected and indexed==expected:
+            return {"schemaVersion":"24.0","scanId":scan_id,"placeId":place_id,
+                    "status":"PART_HASHES_MATCH","verifiedEquivalent":True,
+                    "verifiedScope":"All declared part payload hashes only"}
     if expected != receiver_expected or indexed != expected:
         status = "PART_COUNT_MISMATCH"
     else:
