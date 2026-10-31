@@ -48,15 +48,18 @@ def validate_lua(lua,place_id):
 def build(parts_dir,output):
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
+    workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
     place=generator.validate(plan)
+    workflows=workflows_compiler.compile_workflows(plan)
     lua=generator.render(plan)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"10.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"13.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
+        "workflowEvidenceSummary":workflows["summary"],
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
         "implementedGameplayAutomation":[],
         "validation":validation,
@@ -66,6 +69,7 @@ def build(parts_dir,output):
     }
     files={
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
+      "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "LycolesGeneratedUtility.lua":lua.encode(),
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
