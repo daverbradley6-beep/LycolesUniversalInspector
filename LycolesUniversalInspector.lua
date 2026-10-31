@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v6.0.0
+-- Lycoles Universal Inspector v7.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "6.0.0"
+local VERSION = "7.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -717,6 +717,17 @@ local function transmit()
     local first = HttpService:JSONDecode(parts[1])
     local scanId = first.scanId
     local partCount = #parts
+    -- Reject mismatched parts before any upload; the receiver requires
+    -- consistent scan identity, ordering and total count.
+    for i, body in ipairs(parts) do
+        local ok, item = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(item)~="table" or item.scanId~=scanId
+            or item.partIndex~=i or item.partCount~=partCount
+            or item.placeId~=game.PlaceId then
+            status.Text="Upload blocked: inconsistent part "..tostring(i)
+            return
+        end
+    end
     uploading = true
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
@@ -755,8 +766,8 @@ local function transmit()
         if failed then
             status.Text = failed .. "; SEND JSON to retry"
         elseif succeeded == partCount then
-            status.Text = "Upload complete: " .. succeeded .. "/" .. partCount
-                .. " acknowledged in " .. tostring(elapsed) .. "s"
+            status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
+                .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
         else
             status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
         end
@@ -887,6 +898,8 @@ local function prepareParts(report)
             featureReadiness=meta and report.featureReadiness or nil,
             interactionDiagnostics=meta and summary or nil,
             featureSnapshotDelta=meta and report.featureSnapshotDelta or nil,
+            automationDiagnostics=meta and report.automationDiagnostics or nil,
+            diagnostics=meta and report.diagnostics or nil,
             interactionHistoryChunk=historyBatch,
             interactionHistoryStart=historyStart,
             objects=items
@@ -2345,7 +2358,7 @@ local function inspect(requestType)
                 cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
                 automaticRescans=autoEvidenceRescans, lastFailure=autoEvidenceLastFailure,
                 capturedInteractionCount=interactionEventCount,
-                indexIntegrityWarning="Receiver must verify unique object paths, all indexed parts, and object counts independently",
+                indexIntegrityWarning="Use receiver GET /reports/READ_KEY/SCAN_ID/integrity to verify object indexing",
                 limitations={"Read-only client observation","No script source or server authority","No proof of replayable gameplay actions"}
             }
             report.diagnostics = {
