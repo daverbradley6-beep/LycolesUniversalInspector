@@ -1,3 +1,12 @@
+## v10.0.0 — One-command Release Build and CI (experimental)
+
+- Add `tools/build_release.py` for a single scan-parts-to-Lua release build.
+- Add structural source checks, explicit place guard, SHA-256 manifest, deterministic ZIP archive.
+- Add end-to-end regression tests for release reproducibility and fail-closed behaviour.
+- Add GitHub Actions CI workflow for Python compilation, regression tests and sample artifact upload.
+- Preserve clear distinction between client diagnostics and unsupported server gameplay automation.
+- Not yet verified: GitHub Actions run status, Roblox runtime behaviour, deployed receiver, automatic publishing to game-specific repositories.
+
 ## v9.0.0 — Deterministic Client Utility Generation (experimental)
 
 - Add `tools/generate_script.py` to convert validated v8 capability plans into place-specific Roblox Lua utilities.
