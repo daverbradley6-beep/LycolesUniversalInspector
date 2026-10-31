@@ -1,3 +1,10 @@
+## 4.4.1
+- Validate every multipart payload against the actual encoded byte size and split oversized object chunks.
+- Send scan-wide counts, diagnostics and feature evidence only in the first part to avoid repeated metadata.
+- Add scan-local ordinal identifiers; these are not stable across sessions.
+- Preserve read-only inspection and existing acknowledgement/retry handling.
+- Receiver indexing changes and Potassium runtime verification are not included.
+
 ## v4.3.0 — Scan identity and payload tuning
 
 - Distinguish objects sharing the same hierarchy path using scan-local occurrence suffixes; retain all objects instead of discarding path collisions.
