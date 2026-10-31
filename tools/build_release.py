@@ -45,21 +45,27 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
-def build(parts_dir,output):
+def build(parts_dir,output,contracts_path=None):
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
+    validated_contracts=None
+    if contracts_path is not None:
+        validator=load_module('validate_contracts.py','lycoles_contracts')
+        data=json.loads(pathlib.Path(contracts_path).read_text(encoding='utf-8'))
+        validated_contracts=validator.validate_contracts(plan,data)
     lua=generator.render(plan)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"14.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"15.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "workflowEvidenceSummary":workflows["summary"],
+        "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
         "implementedGameplayAutomation":[],
         "validation":validation,
@@ -79,6 +85,8 @@ def build(parts_dir,output):
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if validated_contracts is not None:
+        files['validated-contracts.json']=(json.dumps(validated_contracts,indent=2,sort_keys=True)+'\n').encode()
     for name,contents in files.items():
         (output/name).write_bytes(contents)
     bundle=output/("Lycoles-"+str(place)+"-"+plan["integrity"]["scanId"]+".zip")
@@ -94,8 +102,9 @@ def build(parts_dir,output):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("parts_dir");parser.add_argument("--output",default="build")
+    parser.add_argument("--contracts",default=None)
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output);return 0
+    try: build(args.parts_dir,args.output,args.contracts);return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 
