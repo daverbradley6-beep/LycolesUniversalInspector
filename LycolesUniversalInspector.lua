@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.0.0
+-- Lycoles Universal Inspector v5.1.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.0.0"
+local VERSION = "5.1.0"
 
 local endpoint = ""
 local autoSend = true
@@ -53,8 +53,10 @@ local unattributedInteractionCount = 0
 local interactionHistory = {}
 local MAX_INTERACTION_HISTORY = 180
 local MAX_PENDING_ACTIONS = 24
+local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
+local MAX_STATE_CHANGES = 24
 local pendingActions = {}
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0}
+local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0}
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
@@ -1168,7 +1170,11 @@ local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
     rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
     freegiftsgui="rewards", freegiftsnewmenu="rewards",
-    shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel"
+    shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel",
+    travelareanewmenu="travel", petsrightbase="pets", petsbutton="pets",
+    confirmSellNewMenu="inventory", confirmsellnewmenu="inventory",
+    fortunewheelmenugui="rewards", fortuneothermenusgui="rewards",
+    buyspinsmenu="shops"
 }
 local function relevantStateEvidence(feature, changes)
     if not feature then return nil end
@@ -1221,38 +1227,90 @@ local function workflowContext(obj, feature)
     return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
         kind=actionKind(obj.Name), clientOnly=true}
 end
+local function classifyInteraction(obj)
+    -- Specific local menu context wins over generic controls like EquipButton.
+    local node=obj.Parent
+    local depth=0
+    while node and depth < 10 do
+        local lower=node.Name:lower()
+        if lower=="petsrightbase" or lower=="petcraftinggui" or lower=="fusepets" then
+            workflowStats.classifiedByContext=workflowStats.classifiedByContext+1
+            return "pets",1,"specific-menu-context"
+        end
+        if lower=="travelareanewmenu" then return "travel",1,"specific-menu-context" end
+        if lower=="confirmsellnewmenu" then
+            return nil,0,"confirmation-awaiting-link"
+        end
+        node=node.Parent
+        depth=depth+1
+    end
+    local feature,count=featureForName(obj.Name)
+    if feature then return feature,count,"control-name" end
+    node=obj.Parent
+    depth=0
+    while node and depth<8 do
+        local hint=MENU_FEATURE_HINTS[node.Name:lower()]
+        if hint then return hint,1,"menu-context-hint" end
+        local candidate,matches=featureForName(node.Name)
+        if candidate then return candidate,matches,"ancestor-name" end
+        if node:IsA("ScreenGui") then break end
+        node=node.Parent
+        depth=depth+1
+    end
+    return nil,0,"unattributed"
+end
 local function linkWorkflow(obj, feature, sequence)
     local name=obj.Name:lower()
-    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confirm"
+    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confimbutton"
+        or name=="confirm" or name=="acceptbutton" or name=="okbutton"
     local isNo=name=="nobutton" or name=="cancelbutton" or name=="cancel"
+        or name=="declinebutton"
     local now=os.clock()
     for i=#pendingActions,1,-1 do
-        if now-pendingActions[i].clock > 12 then
+        if now-pendingActions[i].clock > 15 then
             table.remove(pendingActions,i)
             workflowStats.expired=workflowStats.expired+1
         end
     end
-    local parent=obj.Parent
-    local confirmation=false
-    for i=1,5 do
-        if not parent then break end
-        local n=parent.Name:lower()
-        if n:find("confirm",1,true) or n:find("choice",1,true) then confirmation=true end
-        parent=parent.Parent
+    local node=obj
+    local contextFeature=feature
+    local dialog=false
+    local menuName=nil
+    for i=1,9 do
+        if not node then break end
+        local n=node.Name:lower()
+        if n:find("confirm",1,true) or n:find("confim",1,true)
+            or n:find("choice",1,true) or n=="travelareanewmenu"
+            or n=="rebirthnewmenu" then
+            dialog=true
+            menuName=node.Name
+        end
+        node=node.Parent
     end
-    if (isYes or isNo) and confirmation then
-        local previous=pendingActions[#pendingActions]
-        if previous then
-            table.remove(pendingActions)
+    if (isYes or isNo) and dialog then
+        local bestIndex=nil
+        for i=#pendingActions,1,-1 do
+            local pending=pendingActions[i]
+            if (contextFeature and pending.feature==contextFeature)
+                or (menuName and menuName:lower():find(pending.kind,1,true))
+                or (pending.kind=="sell" and menuName and menuName:lower():find("sell",1,true)) then
+                bestIndex=i
+                break
+            end
+        end
+        if bestIndex then
+            local previous=table.remove(pendingActions,bestIndex)
             if isNo then workflowStats.cancelled=workflowStats.cancelled+1
             else workflowStats.linkedConfirmations=workflowStats.linkedConfirmations+1 end
             return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
                 inferredFeature=previous.feature,action=previous.kind,context=previous.context,
-                confidence="temporal-context-heuristic",verified=false}
+                dialog=menuName,confidence="context-and-time-heuristic",verified=false}
         end
+        return {phase=isNo and "unlinked-cancel" or "unlinked-confirm",
+            dialog=menuName,confidence="no-matching-initiator",verified=false}
     end
     local kind=actionKind(obj.Name)
-    if kind and kind~="travel" then
+    if kind then
         local context=workflowContext(obj,feature)
         pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
         if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
@@ -1260,25 +1318,45 @@ local function linkWorkflow(obj, feature, sequence)
     end
     return nil
 end
-local function classifyInteraction(obj)
-    local feature, count = featureForName(obj.Name)
-    if feature then return feature, count, "control-name" end
-    local ancestor = obj.Parent
-    local depth = 0
-    while ancestor and depth < 6 do
-        local candidate, matches = featureForName(ancestor.Name)
-        if candidate then return candidate, matches, "ancestor-name" end
-        ancestor = ancestor.Parent
-        depth = depth + 1
+local function relevantActionEvidence(feature, workflow, changes)
+    local kind=workflow and workflow.action
+    if not kind and feature=="rebirth" then kind="rebirth" end
+    local signals={}
+    for _,change in ipairs(changes) do
+        local key=change.key:lower()
+        if key:find("strength",1,true) then
+            signals[#signals+1]="strength-change"
+        elseif key:find("rebirth",1,true) then
+            signals[#signals+1]="rebirth-change"
+        elseif key:find("pet",1,true) or key:find("equip",1,true)
+            or key:find("inventory",1,true) then
+            signals[#signals+1]="inventory-related-value-change"
+        elseif key:find("coin",1,true) or key:find("gem",1,true)
+            or key:find("currency",1,true) then
+            signals[#signals+1]="currency-related-value-change"
+        elseif key:find("quest",1,true) or key:find("reward",1,true) then
+            signals[#signals+1]="quest-or-reward-related-value-change"
+        end
     end
-    ancestor = obj.Parent
-    while ancestor do
-        local hint = MENU_FEATURE_HINTS[ancestor.Name:lower()]
-        if hint then return hint, 1, "menu-context-hint" end
-        if ancestor:IsA("ScreenGui") then break end
-        ancestor = ancestor.Parent
+    local corroborated=false
+    if kind=="rebirth" then
+        for _,change in ipairs(changes) do
+            if change.key:lower():find("rebirth",1,true) and
+                type(change.before)=="number" and type(change.after)=="number"
+                and change.after>change.before then corroborated=true end
+        end
+    elseif kind=="equip" or kind=="sell" or kind=="craft" then
+        for _,signal in ipairs(signals) do
+            if signal=="inventory-related-value-change" then corroborated=true end
+        end
+    elseif kind=="purchase" or kind=="claim" then
+        for _,signal in ipairs(signals) do
+            if signal=="currency-related-value-change" or signal=="quest-or-reward-related-value-change"
+                or signal=="inventory-related-value-change" then corroborated=true end
+        end
     end
-    return nil, 0, "unattributed"
+    return {action=kind,signals=signals,clientStateCorroborated=corroborated,
+        serverVerified=false,causalVerification=false,confidence="temporal-observation"}
 end
 
 local function observeInteractionObject(obj, root, label)
@@ -1327,6 +1405,9 @@ local function observeInteractionObject(obj, root, label)
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
         local before = safeInteractionState()
         local beforeGui = safeNearbyGuiState(obj)
+        local beforePosition = nil
+        local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if rootPart then beforePosition=rootPart.Position end
         if feature then
             local item = featureInteractions[feature] or {count=0,stateChanges=0}
             item.count = item.count + 1
@@ -1343,36 +1424,75 @@ local function observeInteractionObject(obj, root, label)
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
         local interactionSequence = observationSequence
-        task.delay(0.5, function()
-            if not alive then return end
-            local after = safeInteractionState()
-            local guiChanges = compareNearbyGuiState(beforeGui, safeNearbyGuiState(obj))
-            historyItem.guiStateChanges = guiChanges
-            historyItem.guiStateChangeCount = #guiChanges
-            workflowStats.guiTransitions=workflowStats.guiTransitions+#guiChanges
-            historyItem.guiEvidenceStatus = #guiChanges > 0 and "temporal-gui-transition-observed" or "none-observed"
-            local changes = {}
-            for key, value in pairs(before) do
-                if after[key] ~= nil and after[key] ~= value and #changes < 12 then
-                    changes[#changes+1] = {key=key,before=value,after=after[key]}
-                end
-            end
-            if #changes > 0 then
-                historyItem.evidenceLevel = "temporal-state-change-observed"
-                historyItem.stateChangeCount = #changes
-                historyItem.stateChanges = changes
-                historyItem.featureStateEvidence = relevantStateEvidence(feature, changes)
-                observerStats.stateDeltaEvents = observerStats.stateDeltaEvents + 1
-                if feature then featureInteractions[feature].stateChanges = featureInteractions[feature].stateChanges + 1 end
-                changeCount = changeCount + 1
-                changeQueue[#changeQueue+1] = {
-                    path=path:sub(1,400), class=obj.ClassName, category="interaction-state-delta",
-                    featureCandidate=feature, sequence=interactionSequence, changes=changes,
-                    observationWindowSeconds=0.5, causalVerification=false,
-                    evidence="temporal-correlation-only", sessionId=sessionId, snapshotId=snapshotId
-                }
-            end
-        end)
+        for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+            task.delay(delaySeconds, function()
+                if not alive then return end
+                local ok,err=pcall(function()
+                    local after=safeInteractionState()
+                    local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
+                    local changes={}
+                    for key,value in pairs(before) do
+                        if after[key]~=nil and after[key]~=value and #changes<MAX_STATE_CHANGES then
+                            changes[#changes+1]={key=key,before=value,after=after[key]}
+                        end
+                    end
+                    for key,value in pairs(after) do
+                        if before[key]==nil and #changes<MAX_STATE_CHANGES then
+                            changes[#changes+1]={key=key,transition="added",after=value}
+                        end
+                    end
+                    for key,value in pairs(before) do
+                        if after[key]==nil and #changes<MAX_STATE_CHANGES then
+                            changes[#changes+1]={key=key,transition="removed",before=value}
+                        end
+                    end
+                    local distance=nil
+                    local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if beforePosition and currentRoot then
+                        distance=(currentRoot.Position-beforePosition).Magnitude
+                        distance=math.floor(distance*10+0.5)/10
+                    end
+                    local evidence=relevantActionEvidence(feature,workflow,changes)
+                    local window={seconds=delaySeconds,stateChanges=changes,
+                        stateChangeCount=#changes,guiChanges=guiChanges,
+                        guiChangeCount=#guiChanges,travelDistanceStuds=distance,
+                        actionEvidence=evidence}
+                    historyItem.observationWindows=historyItem.observationWindows or {}
+                    historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                    historyItem.guiStateChanges=guiChanges
+                    historyItem.guiStateChangeCount=#guiChanges
+                    historyItem.guiEvidenceStatus=#guiChanges>0 and "temporal-gui-transition-observed" or "none-observed"
+                    workflowStats.guiTransitions=workflowStats.guiTransitions+#guiChanges
+                    workflowStats.multiWindowSamples=workflowStats.multiWindowSamples+1
+                    if #changes>0 then
+                        historyItem.evidenceLevel="temporal-state-change-observed"
+                        historyItem.stateChangeCount=#changes
+                        historyItem.stateChanges=changes
+                        historyItem.featureStateEvidence=relevantStateEvidence(feature,changes)
+                        observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
+                        if feature then
+                            local item=featureInteractions[feature]
+                            if item then item.stateChanges=item.stateChanges+1 end
+                        end
+                    end
+                    if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
+                        historyItem.clientStateCorroborated=true
+                        workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
+                    end
+                    if #changes>0 or #guiChanges>0 or (distance and distance>10 and feature=="travel") then
+                        changeCount=changeCount+1
+                        changeQueue[#changeQueue+1]={
+                            path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
+                            featureCandidate=feature,sequence=historyItem.sequence,
+                            observationWindowSeconds=delaySeconds,changes=changes,
+                            guiChanges=guiChanges,travelDistanceStuds=distance,
+                            actionEvidence=evidence,causalVerification=false,
+                            sessionId=sessionId,snapshotId=snapshotId}
+                    end
+                end)
+                if not ok then workflowStats.observationFailures=workflowStats.observationFailures+1 end
+            end)
+        end
     end)
     table.insert(watchConnections, connection)
 end
@@ -1907,7 +2027,8 @@ local function inspect(requestType)
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
-                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000,
+                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
+                stateChangeLimit=MAX_STATE_CHANGES,
                 featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
