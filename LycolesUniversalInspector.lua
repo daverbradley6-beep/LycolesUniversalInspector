@@ -83,7 +83,11 @@ end
 -- Local-only bounded snapshots. No player IDs, chat, text fields or server claims.
 local function safeInteractionState()
     local state, count = {}, 0
-    local roots = {player:FindFirstChild("leaderstats"), player:FindFirstChild("Data")}
+    local roots = {}
+    for _, name in ipairs({"leaderstats", "Data"}) do
+        local root = player:FindFirstChild(name)
+        if root then roots[#roots+1] = root end
+    end
     for _, root in ipairs(roots) do
         if root then
             local items = root:GetDescendants()
