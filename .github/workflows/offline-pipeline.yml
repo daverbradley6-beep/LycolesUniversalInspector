@@ -1,0 +1,52 @@
+name: Lycoles offline pipeline CI
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/offline-pipeline.yml'
+  pull_request:
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/offline-pipeline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python sources
+        run: python -m compileall -q tools tests
+      - name: Run offline regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Generate example release bundle
+        shell: bash
+        run: |
+          mkdir -p example-parts
+          python - <<'PY'
+          import json,pathlib
+          p=pathlib.Path("example-parts")
+          base={"scanId":"ciExample123","placeId":3623096087,"partCount":2,"objects":[]}
+          one=dict(base,partIndex=1,scanStats={"recorded":2,"complete":True},
+                   featureEvidence={"example":{}},
+                   objects=[{"path":"Workspace.A","class":"Part","scanOrdinal":1}])
+          two=dict(base,partIndex=2,
+                   objects=[{"path":"Workspace.B","class":"Part","scanOrdinal":2}])
+          (p/"1.json").write_text(json.dumps(one))
+          (p/"2.json").write_text(json.dumps(two))
+          PY
+          python tools/build_release.py example-parts --output build
+      - name: Upload sample build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lycoles-v10-example-release
+          path: build/
+          retention-days: 7
