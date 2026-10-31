@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "27.0.0"
+local VERSION = "28.0.0"
 
 local endpoint = ""
 local autoSend = true
