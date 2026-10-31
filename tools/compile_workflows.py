@@ -61,6 +61,35 @@ def compile_workflows(plan):
         "notice":"Passive client observations are not executable server action contracts."
     }
 
+def render_review(workflows):
+    """Produce an actionable per-game engineering backlog from passive evidence."""
+    if not isinstance(workflows,dict) or not isinstance(workflows.get("workflows"),list):
+        raise ValueError("Invalid workflow specifications")
+    place=workflows.get("placeId")
+    lines=["# Game-specific implementation review", "",
+           "Place ID: "+str(place), "",
+           "This report distinguishes observed client evidence from reproducible actions.",
+           "No gameplay action is marked executable without a validated implementation contract.",
+           "", "## Evidence-ranked features", ""]
+    priority={"client-outcome-observed":0,"client-state-corroborated":1,
+              "temporal-transition-observed":2,"interaction-observed":3,"discovered-only":4}
+    ranked=sorted(workflows["workflows"],key=lambda w:(
+        priority.get(w["evidenceLevel"],5),-w["observedInteractions"],w["feature"]))
+    for i,w in enumerate(ranked,1):
+        name=w["feature"].replace("\\n"," ").replace("\\r"," ").replace("#","").strip()
+        lines.extend(["### "+str(i)+". "+name, "",
+            "- Evidence: "+w["evidenceLevel"],
+            "- Observed interactions: "+str(w["observedInteractions"]),
+            "- Client corroboration: "+str(w["corroboratedInteractions"]),
+            "- Temporal transitions: "+str(w["temporalTransitions"]),
+            "- Executable contract: not established",
+            "- Next validation: "+", ".join(w["requiredValidation"]), ""])
+    if not ranked: lines.append("No candidate features were identified.")
+    lines.extend(["## Release decision", "",
+       "Client diagnostic utilities may be generated; gameplay automation is not approved.",
+       "A passive scan cannot prove server-authoritative operations or anti-cheat safety.", ""])
+    return "\\n".join(lines)
+
 def main():
     import argparse
     p=argparse.ArgumentParser(description=__doc__)
