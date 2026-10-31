@@ -135,3 +135,8 @@ When contracts pass review, generate real, callable read-only client functions u
 ## v18 working GUI requirement
 
 For each explicitly reviewed client action, the generated actions GUI must wire a visible button to an actual function and render success/error feedback. Do not create inert or fabricated gameplay controls. The GUI is a separate release artifact, not proof of runtime testing or server gameplay capability.
+
+
+## v19 evidence-to-contract process
+
+Generate action proposals from the validated class inventory; never infer that an observed GUI, controller or remote can be safely invoked. Review and explicitly approve a supported read-only action contract before generating its Lua function and wired GUI control. Keep gameplay automation candidates distinct from working features.
