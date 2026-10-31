@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.6.0
+-- Lycoles Universal Inspector v4.7.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.6.0"
+local VERSION = "4.7.0"
 
 local endpoint = ""
 local autoSend = true
@@ -64,6 +64,49 @@ local FEATURE_TERMS = {
 -- Readiness is evidence-based: discovery never implies a working feature.
 -- Compare successive client-visible snapshots without treating changes as proof of cause.
 local previousFeatureSnapshot = nil
+local featureInteractions = {}
+local function featureForName(name)
+    local separated = tostring(name):gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")
+    local tokens = {}
+    for token in separated:lower():gmatch("[%a%d]+") do tokens[token] = true end
+    local matches = {}
+    for feature, terms in pairs(FEATURE_TERMS) do
+        for _, term in ipairs(terms) do
+            if tokens[term] or tokens[term.."s"] or (term=="rebirth" and tokens.rebirthing) then
+                matches[#matches+1] = feature
+                break
+            end
+        end
+    end
+    return #matches == 1 and matches[1] or nil, #matches
+end
+-- Local-only bounded snapshots. No player IDs, chat, text fields or server claims.
+local function safeInteractionState()
+    local state, count = {}, 0
+    local roots = {player:FindFirstChild("leaderstats"), player:FindFirstChild("Data")}
+    for _, root in ipairs(roots) do
+        if root then
+            local items = root:GetDescendants()
+            for _, obj in ipairs(items) do
+                if count >= 100 then break end
+                if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
+                    local key = (root.Name.."."..obj.Name):sub(1,100)
+                    local low = key:lower()
+                    if not (low:find("token",1,true) or low:find("secret",1,true)
+                        or low:find("auth",1,true) or low:find("password",1,true)
+                        or low:find("userid",1,true)) then
+                        local v = obj.Value
+                        if type(v) == "boolean" or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
+                            state[key] = v
+                            count = count + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return state
+end
 local function compareFeatureSnapshots(current)
     local delta = {basis="successive-scan-feature-candidate-counts", causalVerification=false, features={}}
     if not previousFeatureSnapshot then
@@ -94,10 +137,15 @@ local function buildReadiness(evidence, observedCount)
         local discovered = item.status == "candidate-needs-verification"
         result[feature] = {
             discovered = discovered,
-            observed = false,
+            observed = featureInteractions[feature] ~= nil and featureInteractions[feature].count > 0,
+            observedStateChange = featureInteractions[feature] ~= nil and featureInteractions[feature].stateChanges > 0,
+            interactionEvidence = featureInteractions[feature],
             implemented = false,
             tested = false,
-            readiness = discovered and "needs-observed-interaction" or "not-discovered",
+            readiness = not discovered and "not-discovered"
+                or (featureInteractions[feature] and featureInteractions[feature].stateChanges > 0 and "state-change-candidate-needs-validation")
+                or (featureInteractions[feature] and featureInteractions[feature].count > 0 and "interaction-observed-needs-state-verification")
+                or "needs-observed-interaction",
             controllerCandidates = item.counts.controllers,
             remoteCandidates = item.counts.remotes,
             guiCandidates = item.counts.gui,
@@ -1041,14 +1089,44 @@ local function observeInteractionObject(obj, root, label)
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
+        local feature, matchCount = featureForName(obj.Name)
+        local before = safeInteractionState()
+        if feature then
+            local item = featureInteractions[feature] or {count=0,stateChanges=0}
+            item.count = item.count + 1
+            featureInteractions[feature] = item
+        end
         observationSequence = observationSequence + 1
         changeCount = changeCount + 1
         changeQueue[#changeQueue + 1] = {
             path = path:sub(1,400), class = obj.ClassName,
+            featureCandidate = feature, featureMatchCount = matchCount,
+            attribution = feature and "unique-control-name-token" or "unattributed",
             category = "user-interaction", controlType = controlType,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
+        local interactionSequence = observationSequence
+        task.delay(0.5, function()
+            if not alive then return end
+            local after = safeInteractionState()
+            local changes = {}
+            for key, value in pairs(before) do
+                if after[key] ~= nil and after[key] ~= value and #changes < 12 then
+                    changes[#changes+1] = {key=key,before=value,after=after[key]}
+                end
+            end
+            if #changes > 0 then
+                if feature then featureInteractions[feature].stateChanges = featureInteractions[feature].stateChanges + 1 end
+                changeCount = changeCount + 1
+                changeQueue[#changeQueue+1] = {
+                    path=path:sub(1,400), class=obj.ClassName, category="interaction-state-delta",
+                    featureCandidate=feature, sequence=interactionSequence, changes=changes,
+                    observationWindowSeconds=0.5, causalVerification=false,
+                    evidence="temporal-correlation-only", sessionId=sessionId, snapshotId=snapshotId
+                }
+            end
+        end)
     end)
     table.insert(watchConnections, connection)
 end
@@ -1087,6 +1165,7 @@ local function flushWatch()
             objects = batch, counts = {}, groups = {},
             sessionId = sessionId, parentSnapshotId = snapshotId,
             featureEvidence = buildFeatureEvidence(batch),
+            featureReadiness = buildReadiness(buildFeatureEvidence(batch), interactionEventCount),
             scanStats = {
                 mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
@@ -1097,7 +1176,7 @@ local function flushWatch()
         if not ok then
             local retryChanges = {}
             for _, entry in ipairs(batch) do
-                if entry.category == "state-change" then
+                if entry.category == "state-change" or entry.category == "user-interaction" or entry.category == "interaction-state-delta" then
                     -- Restore failed events in their original order.
                     retryChanges[#retryChanges + 1] = entry
                 elseif not watchQueue[entry.path] then
