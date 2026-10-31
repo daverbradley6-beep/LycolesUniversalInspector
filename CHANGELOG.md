@@ -1,3 +1,8 @@
+## 4.7.1
+- Explicitly attach listeners to existing PlayerGui buttons when INTERACT is enabled.
+- Export observer diagnostics in the manifest and first multipart scan part: listener count, callback count, state-delta count, binding errors, sweep status, and pending events.
+- Read-only observation retained. Runtime verification and receiver indexing remain pending.
+
 ## 4.7.0
 - Add conservative control-name feature attribution for manually activated controls.
 - Capture bounded local numeric/Boolean state before and 0.5 seconds after manual interactions, without reading text fields.
