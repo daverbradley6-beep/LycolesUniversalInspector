@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.1.1
+-- Lycoles Universal Inspector v5.2.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.1.1"
+local VERSION = "5.2.0"
 
 local endpoint = ""
 local autoSend = true
@@ -55,8 +55,9 @@ local MAX_INTERACTION_HISTORY = 180
 local MAX_PENDING_ACTIONS = 24
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
 local MAX_STATE_CHANGES = 24
+local MAX_GUI_CHANGES = 16
 local pendingActions = {}
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0}
+local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
@@ -163,6 +164,7 @@ local function compareNearbyGuiState(before, after)
             changes[#changes+1]={path=key,transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
         end
     end
+    table.sort(changes,function(a,b) return a.path < b.path end)
     return changes
 end
 local function safeInteractionState()
@@ -200,6 +202,37 @@ local function safeInteractionState()
         end
     end
     return state
+end
+local function safeInventorySummary()
+    local result={sources={},count=0,limit=240}
+    local candidates={}
+    for _,name in ipairs({"Data","leaderstats","Pets","Inventory","PetInventory","Items"}) do
+        local root=player:FindFirstChild(name)
+        if root then candidates[#candidates+1]=root end
+    end
+    local seen={}
+    for _,root in ipairs(candidates) do
+        if not seen[root] then
+            seen[root]=true
+            local summary={root=root.Name,values=0,petRelated=0,equippedRelated=0}
+            for _,obj in ipairs(root:GetDescendants()) do
+                if result.count>=result.limit then break end
+                local n=obj.Name:lower()
+                if n:find("pet",1,true) or n:find("equip",1,true)
+                    or n:find("inventory",1,true) or n:find("item",1,true)
+                    or n:find("quantity",1,true) then
+                    if obj:IsA("ValueBase") then
+                        summary.values=summary.values+1
+                        if n:find("pet",1,true) then summary.petRelated=summary.petRelated+1 end
+                        if n:find("equip",1,true) then summary.equippedRelated=summary.equippedRelated+1 end
+                        result.count=result.count+1
+                    end
+                end
+            end
+            result.sources[#result.sources+1]=summary
+        end
+    end
+    return result
 end
 local function compareFeatureSnapshots(current)
     local delta = {basis="successive-scan-feature-candidate-counts", causalVerification=false, features={}}
@@ -1379,6 +1412,9 @@ local function linkWorkflow(obj, feature, sequence)
         return {phase=isNo and "unlinked-cancel" or "unlinked-confirm",
             dialog=menuName,confidence="no-matching-initiator",verified=false}
     end
+    if isYes and feature=="travel" then
+        return {phase="travel-confirmed",action="travel",confidence="menu-context-heuristic",verified=false}
+    end
     local kind=actionKind(obj.Name)
     if kind then
         local context=workflowContext(obj,feature)
@@ -1475,6 +1511,7 @@ local function observeInteractionObject(obj, root, label)
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
         local before = safeInteractionState()
         local beforeGui = safeNearbyGuiState(obj)
+        local inventorySummaryBefore=safeInventorySummary()
         local beforePosition = nil
         local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if rootPart then beforePosition=rootPart.Position end
@@ -1494,6 +1531,8 @@ local function observeInteractionObject(obj, root, label)
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
         local interactionSequence = observationSequence
+        local seenStateKeys={}
+        local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
             task.delay(delaySeconds, function()
                 if not alive then return end
@@ -1523,21 +1562,55 @@ local function observeInteractionObject(obj, root, label)
                         distance=math.floor(distance*10+0.5)/10
                     end
                     local evidence=relevantActionEvidence(feature,workflow,changes)
-                    local window={seconds=delaySeconds,stateChanges=changes,
-                        stateChangeCount=#changes,guiChanges=guiChanges,
-                        guiChangeCount=#guiChanges,travelDistanceStuds=distance,
+                    local freshState={}
+                    for _,change in ipairs(changes) do
+                        local identity=change.key.."|"..tostring(change.before).."|"..tostring(change.after).."|"..tostring(change.transition)
+                        if not seenStateKeys[identity] then
+                            seenStateKeys[identity]=true
+                            freshState[#freshState+1]=change
+                        end
+                    end
+                    local freshGui={}
+                    for _,change in ipairs(guiChanges) do
+                        local identity=change.path.."|"..tostring(change.beforeVisible).."|"..tostring(change.afterVisible).."|"..tostring(change.transition)
+                        if not seenGuiKeys[identity] then
+                            seenGuiKeys[identity]=true
+                            freshGui[#freshGui+1]=change
+                        end
+                    end
+                    workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#freshState
+                    workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                    if feature=="travel" and distance and distance>100 and not historyItem.travelCandidate then
+                        historyItem.travelCandidate=true
+                        workflowStats.travelCandidates=workflowStats.travelCandidates+1
+                    end
+                    if feature=="rewards" and not historyItem.rewardClaimGuiCandidate then
+                        for _,g in ipairs(guiChanges) do
+                            if g.path:lower():find("claimed",1,true) and g.afterVisible==true then
+                                historyItem.rewardClaimGuiCandidate=true
+                                workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
+                                break
+                            end
+                        end
+                    end
+                    local window={seconds=delaySeconds,stateChanges=freshState,
+                        stateChangeCount=#freshState,guiChanges=freshGui,
+                        guiChangeCount=#freshGui,travelDistanceStuds=distance,
                         actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
-                    historyItem.guiStateChanges=guiChanges
-                    historyItem.guiStateChangeCount=#guiChanges
+                    if delaySeconds==3 then historyItem.inventoryObservationScope=inventorySummaryBefore end
+                    historyItem.guiStateChanges=historyItem.guiStateChanges or {}
+                    for _,g in ipairs(freshGui) do historyItem.guiStateChanges[#historyItem.guiStateChanges+1]=g end
+                    historyItem.guiStateChangeCount=#historyItem.guiStateChanges
                     historyItem.guiEvidenceStatus=#guiChanges>0 and "temporal-gui-transition-observed" or "none-observed"
-                    workflowStats.guiTransitions=workflowStats.guiTransitions+#guiChanges
+                    workflowStats.guiTransitions=workflowStats.guiTransitions+#freshGui
                     workflowStats.multiWindowSamples=workflowStats.multiWindowSamples+1
-                    if #changes>0 then
+                    if #freshState>0 then
                         historyItem.evidenceLevel="temporal-state-change-observed"
-                        historyItem.stateChangeCount=#changes
-                        historyItem.stateChanges=changes
+                        historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#freshState
+                        historyItem.stateChanges=historyItem.stateChanges or {}
+                        for _,change in ipairs(freshState) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
                         historyItem.featureStateEvidence=relevantStateEvidence(feature,changes)
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
@@ -1549,13 +1622,13 @@ local function observeInteractionObject(obj, root, label)
                         historyItem.clientStateCorroborated=true
                         workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
                     end
-                    if #changes>0 or #guiChanges>0 or (distance and distance>10 and feature=="travel") then
+                    if #freshState>0 or #freshGui>0 or (distance and distance>100 and feature=="travel") then
                         changeCount=changeCount+1
                         changeQueue[#changeQueue+1]={
                             path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
                             featureCandidate=feature,sequence=historyItem.sequence,
-                            observationWindowSeconds=delaySeconds,changes=changes,
-                            guiChanges=guiChanges,travelDistanceStuds=distance,
+                            observationWindowSeconds=delaySeconds,changes=freshState,
+                            guiChanges=freshGui,travelDistanceStuds=distance,
                             actionEvidence=evidence,causalVerification=false,
                             sessionId=sessionId,snapshotId=snapshotId}
                     end
