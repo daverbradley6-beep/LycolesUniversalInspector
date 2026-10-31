@@ -150,3 +150,8 @@ Release builds now include `manual-verification-plan.json`. When observed workfl
 ## v22 — Runtime feedback ingestion
 
 The offline release builder accepts an optional `--feedback path/to/report.json` flag. `tools/evaluate_runtime_feedback.py` validates a schema v22 report against the generated `manual-verification-plan.json`, checks Place ID and feature/transaction identity, rejects duplicate checks and unexpected state keys, and classifies each submission as `client-change-observed`, `no-client-change` or `incomplete-observation`. The resulting `runtime-feedback.json` is packaged with the release. This feedback never automatically approves gameplay automation or establishes server authority. Reports are supplied manually; the inspector does not automatically upload verification results.
+
+
+## v23 — Export verification observations as JSON
+
+Generated `LycolesManualVerification.lua` now provides `capture_all_before()` and `export_report()`. The first captures replicated leaderstats. After the tester performs a game action manually, the second returns a schema v22 JSON report accepted by the existing `--feedback` ingestion stage. Export requires explicit baseline capture. Save the returned JSON as a report file for the offline builder. Report transfer and gameplay action execution remain manual.
