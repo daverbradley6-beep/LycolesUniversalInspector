@@ -56,6 +56,8 @@ def compile_scan(directory):
         history.extend(p.get("interactionHistoryChunk") or [])
     if not history:
         history=(metadata.get("interactionDiagnostics") or {}).get("recentInteractions") or []
+    if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
+    if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
     feature_evidence=metadata.get("featureEvidence") or {}
     readiness=metadata.get("featureReadiness") or {}
     # Evidence is descriptive, never an authorization to invoke arbitrary remotes.
@@ -104,7 +106,7 @@ def compile_scan(directory):
               "scanMode":metadata["scanStats"].get("mode"),
               "snapshotId":metadata.get("snapshotId")},
           "interactionDiagnostics":metadata.get("interactionDiagnostics") or {},
-          "observedInteractionHistory":history[:2000],
+          "observedInteractionHistory":history,
           "releaseGate":{"gameplayAutomationApproved":False,
                          "reason":"Passive inspection cannot establish replayable server-authoritative actions",
                          "nextStep":"Review feature contracts and validate supported operations in a permitted environment"}}
