@@ -32,7 +32,9 @@ def compile_sequences(plan):
         key=(feature,str(tid) if type(tid) in (int,str) and len(str(tid))<=80 else "event-"+str(len(groups)))
         steps=groups.setdefault(key,[])
         changes=[]
-        for delta in (item.get("stateChanges") or [])[:MAX_CHANGES]:
+        raw_changes=item.get("stateChanges")
+        if not isinstance(raw_changes,list):raw_changes=[]
+        for delta in raw_changes[:MAX_CHANGES]:
             if not isinstance(delta,dict) or not _safe(delta.get("key")):continue
             before,after=delta.get("before"),delta.get("after")
             if type(before) not in (int,float,str,bool) or type(after) not in (int,float,str,bool):continue
