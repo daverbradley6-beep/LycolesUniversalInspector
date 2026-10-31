@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v12.0.0
+-- Lycoles Universal Inspector v13.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "12.0.0"
+local VERSION = "13.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -2466,8 +2466,8 @@ end
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
 local autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
-autoEvidenceToggle.Size = UDim2.fromOffset(116, 26)
-autoEvidenceToggle.Position = UDim2.fromOffset(384, 164)
+autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
+autoEvidenceToggle.Position = UDim2.fromOffset(380, 164)
 autoEvidenceToggle.Text = "EVIDENCE: ON"
 autoEvidenceToggle.TextSize = 10
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
