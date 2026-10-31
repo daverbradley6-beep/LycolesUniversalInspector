@@ -1,3 +1,12 @@
+## v8.0.0 — Automated Scan Compilation (experimental)
+
+- Add stdlib-only offline multipart compiler: `tools/compile_scan.py`.
+- Validate all parts, identities, duplicate objects, scan completeness and recorded object totals.
+- Generate a full feature candidate inventory and machine-readable implementation release gate in one run.
+- Add regression tests for complete scans, missing parts, conflicting identities and duplicates.
+- Update universal prompt to require compilation before implementation.
+- Limits: source is committed but not tested in Roblox; receiver deployment remains separate; capability planning is not automatic gameplay code generation.
+
 ## v7.0.0 — Multipart Integrity & Automation Foundation (experimental)
 
 - Rework reference Cloudflare Worker to accept inspector multipart scan uploads with matching acknowledgements.
