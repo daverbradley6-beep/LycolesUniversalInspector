@@ -1,4 +1,4 @@
-# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v7.0+)
+# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v8.0+)
 
 ## Mission
 Create a **complete, functional, game-specific Luau script with a polished GUI** using evidence collected by **Lycoles Universal Inspector**. This prompt is UNIVERSAL: never assume the target is Muscle Legends or that a fixed set of gameplay systems exists. Determine the target game from the latest inspection's placeId, gameId, gameName and user instructions. The user may execute via Potassium without Roblox Studio. Do not deliver a menu full of placeholder buttons or fabricate functionality.
@@ -80,3 +80,8 @@ Produce a game-specific capability matrix in one batch from all available eviden
 Review the Lua source for syntax, API usage, lifecycle cleanup, and dependency failures before GitHub upload. GitHub verification proves deployment, not gameplay functionality. State explicitly when a runtime test is unavailable. Use one representative user gameplay session with automatic passive recording rather than asking for dozens of individual feature tests.
 
 The reference receiver must be deployed separately to Cloudflare. Updating its GitHub source alone does not update the running Worker or the connected Inspector plugin backend. Never claim live indexing is repaired until the deployed service reports integrity success.
+
+
+## v8.0 — Automated Scan Compiler Gate
+
+When scan parts are available as JSON files, run `python3 tools/compile_scan.py PARTS_DIR --output build`. Require a successful exit before using evidence for implementation. Read `build/capability-plan.json` and `build/capability-plan.md` to inventory all feature candidates in one batch. The compiler rejects missing or conflicting multipart uploads, inconsistent object counts, duplicate identities and incomplete source scans. It does not claim that observed controls can be replayed or that arbitrary server actions are implemented. Never generate empty buttons or invent remote calls to fill feature gaps. If the compiler blocks, report the single concrete data defect and fix ingestion before generating code.
