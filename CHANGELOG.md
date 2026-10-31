@@ -1,3 +1,11 @@
+## 5.3.0 — Inventory discovery and transaction evidence
+- Discover client-visible inventory slot and equipped indicator counts in PlayerGui, in addition to ValueBase roots.
+- Preserve before/after inventory coverage summaries for interactions.
+- Deduplicate repeated state transitions across linked initiation/confirmation events using transaction identifiers and bounded signatures.
+- Distinguish unlinked travel confirmations from generic unlinked confirmation actions.
+- Recognize the Items navigation control.
+- Keep server verification and causality explicitly unproven; in-game runtime and receiver testing required.
+
 ## 5.2.0 — Large evidence quality batch
 - Deduplicate repeated state and GUI changes across the 0.35/1.25/3 second observation windows.
 - Count unique changes rather than repeatedly attributing the same state transition.
