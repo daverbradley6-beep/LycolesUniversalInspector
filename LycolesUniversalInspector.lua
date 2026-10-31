@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.7.3
+-- Lycoles Universal Inspector v4.1.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.7.3"
+local VERSION = "4.1.0"
 
 local endpoint = ""
 local autoSend = true
@@ -42,6 +42,11 @@ local changeCount = 0
 local observed = setmetatable({}, {__mode = "k"})
 local changeUploaded = 0
 local WATCH_BATCH = 1500
+local interactionObserveEnabled = false
+local interactionObserved = setmetatable({}, {__mode = "k"})
+local interactionObservedCount = 0
+local interactionEventCount = 0
+local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
 
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -196,10 +201,17 @@ local watchToggle = create("TextButton", {
     TextColor3 = Color3.new(1, 1, 1), TextSize = 12
 }, panel)
 
+local interactionToggle = create("TextButton", {
+    Text = "INTERACT: OFF", Size = UDim2.fromOffset(116, 26),
+    Position = UDim2.fromOffset(384, 136),
+    BackgroundColor3 = Color3.fromRGB(85, 85, 105),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11
+}, panel)
+
 local status = create("TextLabel", {
     Text = "Ready",
-    Size = UDim2.fromOffset(365, 40),
-    Position = UDim2.fromOffset(12, 105),
+    Size = UDim2.fromOffset(365, 54),
+    Position = UDim2.fromOffset(12, 101),
     BackgroundTransparency = 1,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 14,
@@ -225,8 +237,8 @@ end
 
 local output = create("TextBox", {
     Text = "",
-    Size = UDim2.fromOffset(484, 178),
-    Position = UDim2.fromOffset(12, 150),
+    Size = UDim2.fromOffset(484, 164),
+    Position = UDim2.fromOffset(12, 164),
     BackgroundColor3 = Color3.fromRGB(35, 35, 35),
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 13,
@@ -516,7 +528,7 @@ local function isCharacterDescendant(obj)
 end
 
 
--- v3.7: bounded, read-only metadata. Never inspect script source or private player text.
+-- v4.0: bounded, read-only metadata. Never inspect script source or private player text.
 local function enrichEntry(entry, obj)
     local function privateKey(k)
         k = string.lower(tostring(k))
@@ -561,6 +573,43 @@ local function enrichEntry(entry, obj)
         local success, value = pcall(function() return obj.Value end)
         if success then entry.value = scalar(value) end
     end
+    -- GUI metadata is limited to control labels and structural properties.
+    -- TextLabel contents are deliberately excluded because they may contain private/player text.
+    if obj:IsA("GuiObject") then
+        entry.gui = {
+            visible = obj.Visible,
+            active = obj.Active,
+            selectable = obj.Selectable,
+            size = {xScale=obj.Size.X.Scale, xOffset=obj.Size.X.Offset,
+                yScale=obj.Size.Y.Scale, yOffset=obj.Size.Y.Offset},
+            position = {xScale=obj.Position.X.Scale, xOffset=obj.Position.X.Offset,
+                yScale=obj.Position.Y.Scale, yOffset=obj.Position.Y.Offset},
+            zIndex = obj.ZIndex,
+            layoutOrder = obj.LayoutOrder
+        }
+    end
+    if obj:IsA("GuiButton") then
+        local buttonText = ""
+        pcall(function() buttonText = obj.Text end)
+        local interactable = nil
+        pcall(function() interactable = obj.Interactable end)
+        entry.guiControl = {
+            text = tostring(buttonText):sub(1,100):gsub("[%c]", " "),
+            autoButtonColor = obj.AutoButtonColor,
+            enabled = interactable
+        }
+    elseif obj:IsA("TextBox") then
+        entry.guiControl = {placeholder = tostring(obj.PlaceholderText):sub(1,100)}
+    end
+    if obj:IsA("ModuleScript") then
+        entry.moduleMetadata = {name=obj.Name, class="ModuleScript", sourceAccessible=false,
+            note="Module source is not read; dependencies are not inferred from names alone"}
+    elseif obj:IsA("LocalScript") or obj:IsA("Script") then
+        local enabled = nil
+        pcall(function() enabled = obj.Enabled end)
+        entry.scriptMetadata = {name=obj.Name, class=obj.ClassName, enabled=enabled,
+            sourceAccessible=false, note="Script source is not read"}
+    end
     if obj:IsA("Humanoid") then
         entry.health, entry.maxHealth, entry.walkSpeed = obj.Health, obj.MaxHealth, obj.WalkSpeed
     elseif obj:IsA("Tool") then
@@ -571,23 +620,157 @@ local function enrichEntry(entry, obj)
     elseif obj:IsA("ClickDetector") then
         entry.interaction = {maxActivationDistance=obj.MaxActivationDistance}
     end
+    -- Multi-label, evidence-labelled system classification.
+    local parent = obj.Parent
+    local parentName = parent and string.lower(parent.Name) or ""
+    local objectName = string.lower(obj.Name)
     local lower = string.lower(entry.path)
+    local haystack = lower .. " " .. objectName .. " " .. parentName
     local groups = {
-        weapon={"weapon","gun","rifle","pistol","shotgun","ammo","reload"},
-        boss={"boss","raid","elite"},enemy={"enemy","npc","monster","zombie"},
-        quest={"quest","mission","objective"},upgrade={"perk","upgrade","skill","ability"},
-        shop={"shop","store","vendor"},inventory={"inventory","backpack","loot","chest"},
-        progression={"level","xp","experience","coins","currency"},
+        training={"train","training","gym","strength","agility","durability","rep","machine"},
+        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement"},
+        quests={"quest","mission","objective","daily","weekly","task"},
+        pets={"pet","companion","egg","hatch","enchant","evolve"},
+        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase"},
+        rewards={"reward","claim","chest","crate","gift","spin","drop"},
+        bosses={"boss","raid","elite","arena"},
+        travel={"teleport","portal","spawn","vehicle","mount","area"},
+        combat={"weapon","damage","attack","fight","combat","brawl","health"},
+        inventory={"inventory","backpack","item","equipment","tool"},
+        crafting={"craft","recipe","forge","upgrade"},
+        clans={"clan","guild","competition"},
+        social={"chat","friend","trade","trading","party"},
+        passes={"gamepass","pass","product","developerproduct"},
+        interface={"gui","menu","button","frame","screen"}
     }
+    local tags = {}
     for category, names in pairs(groups) do
-        for _,name in ipairs(names) do
-            if lower:find(name,1,true) then
-                entry.inferredCategory = category
-                entry.evidence = "name-inference"
-                return
+        for _, name in ipairs(names) do
+            if haystack:find(name, 1, true) then
+                tags[#tags + 1] = category
+                break
             end
         end
     end
+    table.sort(tags)
+    if #tags > 0 then
+        entry.inferredCategories = tags
+        entry.evidence = "multi-label-name-path-parent-inference"
+    end
+
+    -- Parent/ancestor context gives the analysis service hierarchy evidence.
+    if parent then
+        local parentPath = entry.path:match("^(.*)%.[^%.]+$")
+        entry.parentContext = {
+            name = tostring(parent.Name):sub(1,100),
+            class = parent.ClassName,
+            path = parentPath
+        }
+        local ancestors, current = {}, parent
+        for depth = 1, 4 do
+            if not current then break end
+            local fullName = nil
+            pcall(function() fullName = current:GetFullName() end)
+            ancestors[#ancestors + 1] = {
+                name = tostring(current.Name):sub(1,100),
+                class = current.ClassName,
+                path = fullName
+            }
+            current = current.Parent
+        end
+        if #ancestors > 0 then entry.ancestorContext = ancestors end
+    end
+
+    -- Bounded sibling ValueBase context supports cross-system relationship mapping.
+    if obj:IsA("ValueBase") and parent then
+        local related, total = {}, 0
+        for _, sibling in ipairs(parent:GetChildren()) do
+            if sibling ~= obj and sibling:IsA("ValueBase") and not privateKey(sibling.Name) then
+                total = total + 1
+                if #related < 20 then
+                    local okValue, siblingValue = pcall(function() return sibling.Value end)
+                    if okValue then
+                        local safeValue = scalar(siblingValue)
+                        if safeValue ~= nil then
+                            related[#related + 1] = {
+                                name = tostring(sibling.Name):sub(1,100),
+                                class = sibling.ClassName,
+                                value = safeValue
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        entry.valueContext = {
+            parentPath = entry.parentContext and entry.parentContext.path,
+            siblingValueCount = total,
+            siblingsTruncated = total > #related,
+            siblingValues = related
+        }
+        local key = objectName
+        local roles = {
+            requirement={"requirement","required","needed","unlock"},
+            reward={"reward","gain","bonus","drop"},
+            economy={"price","cost","currency","cash","gold","gem"},
+            multiplier={"multiplier","percent","boost","rate"},
+            timing={"time","duration","cooldown","interval"},
+            quantity={"amount","count","capacity","slots","limit"},
+            stat={"strength","durability","agility","damage","health","level","experience","rebirth"}
+        }
+        local valueRoles = {}
+        for role, words in pairs(roles) do
+            for _, word in ipairs(words) do
+                if key:find(word,1,true) then
+                    valueRoles[#valueRoles + 1] = role
+                    break
+                end
+            end
+        end
+        table.sort(valueRoles)
+        if #valueRoles > 0 then entry.valueRoles = valueRoles end
+    end
+
+    -- Controller/service candidates are explicitly heuristic; source is never read.
+    if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
+        local n = objectName
+        local role = n:find("controller",1,true) and "controller"
+            or (n:find("manager",1,true) and "manager"
+            or (n:find("service",1,true) and "service"
+            or (n:find("handler",1,true) and "handler"
+            or (n:find("component",1,true) and "component" or nil))))
+        if role then
+            entry.controllerCandidate = true
+            entry.controllerEvidence = "name-based-candidate-only"
+            entry.controllerRole = role
+        end
+    end
+
+    -- Capture UI control structure only. Never collect text entered into TextBoxes.
+    if obj:IsA("GuiButton") then
+        local buttonText = ""
+        pcall(function() buttonText = obj.Text end) -- ImageButton has no Text property.
+        entry.controlMetadata = {
+            controlType = obj.ClassName,
+            text = tostring(buttonText or ""):sub(1,100):gsub("[%c]"," "),
+            visible = obj.Visible,
+            active = obj.Active,
+            selectable = obj.Selectable
+        }
+        local okInteractable, interactable = pcall(function() return obj.Interactable end)
+        if okInteractable then entry.controlMetadata.interactable = interactable end
+    elseif obj:IsA("TextBox") then
+        entry.controlMetadata = {
+            controlType = "TextBox",
+            placeholder = tostring(obj.PlaceholderText or ""):sub(1,100):gsub("[%c]"," "),
+            clearTextOnFocus = obj.ClearTextOnFocus,
+            multiLine = obj.MultiLine,
+            textEditable = obj.TextEditable,
+            visible = obj.Visible,
+            active = obj.Active
+        }
+    end
+
 end
 
 local function watchEntry(obj, root, label)
@@ -653,6 +836,37 @@ local function observeObject(obj, root, label)
         changeQueue[#changeQueue + 1] = {
             path = currentPath:sub(1, 400), class = obj.ClassName,
             category = "state-change", property = property, value = value
+        }
+    end)
+    table.insert(watchConnections, connection)
+end
+
+-- Passive observation only: records controls the user activates normally while enabled.
+-- It never fires controls, invokes remotes, blocks input, or reads private text.
+local function observeInteractionObject(obj, root, label)
+    if interactionObserved[obj] then return end
+    local path = watchPath(obj, root, label)
+    if not path or path:find("LycolesUniversalInspector", 1, true) then return end
+    local signal, controlType
+    if obj:IsA("GuiButton") then
+        signal, controlType = obj.Activated, "GuiButton.Activated"
+    elseif obj:IsA("ProximityPrompt") then
+        signal, controlType = obj.Triggered, "ProximityPrompt.Triggered"
+    elseif obj:IsA("ClickDetector") then
+        signal, controlType = obj.MouseClick, "ClickDetector.MouseClick"
+    end
+    if not signal then return end
+    interactionObserved[obj] = true
+    interactionObservedCount = interactionObservedCount + 1
+    local connection = signal:Connect(function()
+        if not alive or not interactionObserveEnabled then return end
+        interactionEventCount = interactionEventCount + 1
+        changeCount = changeCount + 1
+        changeQueue[#changeQueue + 1] = {
+            path = path:sub(1,400), class = obj.ClassName,
+            category = "user-interaction", controlType = controlType,
+            action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            evidence = "manual-user-interaction"
         }
     end)
     table.insert(watchConnections, connection)
@@ -759,8 +973,13 @@ end
 local function startWatching()
     local roots = {
         {root = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
+        {root = game:GetService("ReplicatedFirst"), label = "ReplicatedFirst"},
         {root = workspace, label = "Workspace"},
-        {root = player:FindFirstChild("PlayerGui"), label = "PlayerGui"}
+        {root = player, label = "LocalPlayer"},
+        {root = player.Character, label = "Character"},
+        {root = game:GetService("Lighting"), label = "Lighting"},
+        {root = game:GetService("Teams"), label = "Teams"},
+        {root = game:GetService("SoundService"), label = "SoundService"}
     }
     for _, spec in ipairs(roots) do
         if spec.root then
@@ -773,6 +992,7 @@ local function startWatching()
                         return
                     end
                     observeObject(obj, spec.root, spec.label)
+                    observeInteractionObject(obj, spec.root, spec.label)
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -788,11 +1008,45 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, spec.root, spec.label)
+                    observeInteractionObject(obj, spec.root, spec.label)
                     if i % 500 == 0 then task.wait() end
                 end
             end)
         end
     end
+    -- Rebind the local-character observer after respawns without rescanning other players.
+    table.insert(watchConnections, player.CharacterAdded:Connect(function(character)
+        if not alive then return end
+        local label = "Character"
+        task.defer(function()
+            if not alive then return end
+            local ok, descendants = pcall(function() return character:GetDescendants() end)
+            if ok then
+                for i, obj in ipairs(descendants) do
+                    if not alive then return end
+                    observeObject(obj, character, label)
+                    observeInteractionObject(obj, character, label)
+                    if i % 300 == 0 then task.wait() end
+                end
+            end
+            local connection = character.DescendantAdded:Connect(function(obj)
+                if not alive or not watchEnabled then return end
+                task.defer(function()
+                    if not alive or not watchEnabled then return end
+                    observeObject(obj, character, label)
+                    observeInteractionObject(obj, character, label)
+                    local good, entry = pcall(watchEntry, obj, character, label)
+                    if good and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
+                        watchSeen[entry.path] = true
+                        watchQueue[entry.path] = entry
+                        watchCount = watchCount + 1
+                    end
+                end)
+            end)
+            table.insert(watchConnections, connection)
+        end)
+    end))
+
     task.spawn(function()
         while alive do
             task.wait(WATCH_INTERVAL)
@@ -808,6 +1062,16 @@ watchToggle.MouseButton1Click:Connect(function()
     watchEnabled = not watchEnabled
     watchToggle.Text = watchEnabled and "WATCH: ON" or "WATCH: OFF"
     status.Text = watchEnabled and "Dynamic discovery enabled" or "Dynamic discovery paused"
+end)
+
+interactionToggle.MouseButton1Click:Connect(function()
+    interactionObserveEnabled = not interactionObserveEnabled
+    interactionToggle.Text = interactionObserveEnabled and "INTERACT: ON" or "INTERACT: OFF"
+    interactionToggle.BackgroundColor3 = interactionObserveEnabled
+        and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
+    status.Text = interactionObserveEnabled
+        and "Manual interaction observation enabled; use game controls normally"
+        or "Manual interaction observation paused"
 end)
 
 local function inspect()
@@ -855,12 +1119,24 @@ local function inspect()
             -- Never collect chat text, player identifiers, script source, or remote payloads.
             local roots = {
                 {instance = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
+                {instance = game:GetService("ReplicatedFirst"), label = "ReplicatedFirst"},
                 {instance = workspace, label = "Workspace"},
-                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"}
+                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"},
+                {instance = player, label = "LocalPlayer"},
+                {instance = player.Character, label = "Character"},
+                {instance = game:GetService("Lighting"), label = "Lighting"},
+                {instance = game:GetService("Teams"), label = "Teams"},
+                {instance = game:GetService("SoundService"), label = "SoundService"}
             }
             report.scanStats = {
                 scanned = 0, eligible = 0, recorded = 0, omitted = 0,
-                mode = "universal-snapshot", byCategory = {}
+                mode = "universal-snapshot-v4.1", byCategory = {}, byRoot = {},
+                rootCoverage = {}, byClass = {},
+                valueBase = {scanned = 0, recorded = 0, byClass = {}},
+                guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
+                scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
+                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
+                limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
             }
             local function categoryOf(obj)
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
@@ -891,17 +1167,55 @@ local function inspect()
                     y = math.floor(v.Y * 100) / 100,
                     z = math.floor(v.Z * 100) / 100}
             end
+            report.scanStats.rootAvailability = {}
+            local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
+            local scanAborted = false
             for _, spec in ipairs(roots) do
                 local root = spec.instance
+                local coverage = {
+                    available = root ~= nil, required = requiredRoots[spec.label] == true,
+                    success = false, scanned = 0, recorded = 0, omitted = 0
+                }
+                report.scanStats.rootCoverage[spec.label] = coverage
+                report.scanStats.rootAvailability[spec.label] = root ~= nil
                 if root then
-                    local descendants = root:GetDescendants()
-                    for i, obj in ipairs(descendants) do
+                    local okDescendants, descendants = pcall(function() return root:GetDescendants() end)
+                    if okDescendants and type(descendants) == "table" then
+                        coverage.success = true
+                        for i, obj in ipairs(descendants) do
                         if not alive then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
-                        report.counts[obj.ClassName] =
-                            (report.counts[obj.ClassName] or 0) + 1
+                        coverage.scanned = coverage.scanned + 1
+                        report.scanStats.byRoot[spec.label] = (report.scanStats.byRoot[spec.label] or 0) + 1
+                        report.counts[obj.ClassName] = (report.counts[obj.ClassName] or 0) + 1
+                        report.scanStats.byClass[obj.ClassName] = (report.scanStats.byClass[obj.ClassName] or 0) + 1
+                        if obj:IsA("ValueBase") then
+                            report.scanStats.valueBase.scanned = report.scanStats.valueBase.scanned + 1
+                            report.scanStats.valueBase.byClass[obj.ClassName] =
+                                (report.scanStats.valueBase.byClass[obj.ClassName] or 0) + 1
+                        end
+                        if obj:IsA("GuiButton") then report.scanStats.guiControls.buttons = report.scanStats.guiControls.buttons + 1 end
+                        if obj:IsA("TextBox") then report.scanStats.guiControls.textBoxes = report.scanStats.guiControls.textBoxes + 1 end
+                        if obj:IsA("ProximityPrompt") then report.scanStats.guiControls.prompts = report.scanStats.guiControls.prompts + 1 end
+                        if obj:IsA("ClickDetector") then report.scanStats.guiControls.clickDetectors = report.scanStats.guiControls.clickDetectors + 1 end
+                        if obj:IsA("ModuleScript") then report.scanStats.scriptCandidates.modules = report.scanStats.scriptCandidates.modules + 1 end
+                        if obj:IsA("LocalScript") then report.scanStats.scriptCandidates.localScripts = report.scanStats.scriptCandidates.localScripts + 1 end
+                        if obj:IsA("Script") then report.scanStats.scriptCandidates.scripts = report.scanStats.scriptCandidates.scripts + 1 end
                         local path = stablePath(obj, root, spec.label)
-                        if path and not string.find(path, "LycolesUniversalInspector", 1, true) then
+                        if spec.label == "LocalPlayer" and path and
+                            (path:find("^LocalPlayer%.PlayerGui") or path:find("^LocalPlayer%.Character")) then
+                            path = nil -- Dedicated roots prevent duplicate PlayerGui/Character captures.
+                            report.scanStats.omissions.overlappingRoots = report.scanStats.omissions.overlappingRoots + 1
+                        end
+                        if spec.label == "Workspace" and isCharacterDescendant(obj) then
+                            path = nil
+                            report.scanStats.omissions.overlappingRoots = report.scanStats.omissions.overlappingRoots + 1
+                        end
+                        if path and string.find(path, "LycolesUniversalInspector", 1, true) then
+                            path = nil
+                            report.scanStats.omissions.inspectorSelf = report.scanStats.omissions.inspectorSelf + 1
+                        end
+                        if path then
                             local category = categoryOf(obj)
                             local entry = {
                                 path = string.sub(path, 1, 400),
@@ -934,8 +1248,33 @@ local function inspect()
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
                             enrichEntry(entry, obj)
+                            if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
+                                local n = string.lower(obj.Name)
+                                if n:find("controller",1,true) or n:find("manager",1,true)
+                                    or n:find("service",1,true) or n:find("handler",1,true) then
+                                    entry.controllerCandidate = true
+                                    entry.controllerEvidence = "name-based-candidate-only"
+                                end
+                            end
+                            local tagOk, tags = pcall(function()
+                                return game:GetService("CollectionService"):GetTags(obj)
+                            end)
+                            if tagOk and type(tags) == "table" and #tags > 0 then
+                                entry.tags = {}
+                                for ti = 1, math.min(#tags, 20) do
+                                    entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                                end
+                            end
                             table.insert(report.objects, entry)
                             report.scanStats.eligible = report.scanStats.eligible + 1
+                            coverage.recorded = coverage.recorded + 1
+                            if obj:IsA("ValueBase") and entry.value ~= nil then
+                                report.scanStats.valueBase.recorded = report.scanStats.valueBase.recorded + 1
+                            end
+                            if entry.controllerCandidate then
+                                report.scanStats.scriptCandidates.controllers =
+                                    report.scanStats.scriptCandidates.controllers + 1
+                            end
                             local cat = report.scanStats.byCategory[category]
                             if not cat then
                                 cat = {eligible = 0, recorded = 0, omitted = 0}
@@ -943,16 +1282,74 @@ local function inspect()
                             end
                             cat.eligible = cat.eligible + 1
                             cat.recorded = cat.recorded + 1
+                        else
+                            report.scanStats.omitted = report.scanStats.omitted + 1
+                            coverage.omitted = coverage.omitted + 1
+                            if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
                         if i % 500 == 0 then
                             status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
                             task.wait()
                         end
+                        end
+                    else
+                        coverage.error = tostring(descendants)
+                        scanAborted = true
                     end
+                else
+                    coverage.error = "root unavailable"
                 end
+                if coverage.required and not coverage.success then scanAborted = true end
             end
             report.scanStats.recorded = #report.objects
-            report.scanStats.omitted = 0
+            local rootAccountingValid = true
+            for _, coverage in pairs(report.scanStats.rootCoverage) do
+                if coverage.scanned ~= coverage.recorded + coverage.omitted then
+                    rootAccountingValid = false
+                end
+            end
+            local requiredRootsPresent = true
+            for rootName, required in pairs(requiredRoots) do
+                if required and (not report.scanStats.rootCoverage[rootName]
+                    or not report.scanStats.rootCoverage[rootName].success) then
+                    requiredRootsPresent = false
+                end
+            end
+            local scanComplete = not scanAborted and requiredRootsPresent
+                and rootAccountingValid
+                and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
+            report.scanStats.complete = scanComplete
+            report.diagnostics = {
+                complete = scanComplete,
+                completenessBasis = "required-root-success-and-object-accounting",
+                requiredRootsPresent = requiredRootsPresent,
+                rootAccountingValid = rootAccountingValid,
+                scannedObjects = report.scanStats.scanned,
+                recordedObjects = report.scanStats.recorded,
+                omittedObjects = report.scanStats.omitted,
+                completeButLimitedToClientVisibleRoots = true,
+                scanMode = "client-visible-read-only",
+                rootsScanned = report.scanStats.byRoot,
+                rootAvailability = report.scanStats.rootAvailability,
+                classCounts = report.counts,
+                evidenceRules = {
+                    controllerCandidates = "Name-based candidates only; no source inspection",
+                    guiControls = "Visible client-side GUI hierarchy and button labels",
+                    interactions = "Manual interaction observer must be enabled separately",
+                    configuration = "Replicated ValueBase objects and safe attributes only",
+                    serverLogic = "Not observable from this client scan"
+                },
+                knownLimitations = {
+                    "No server-side state or implementation access",
+                    "No script source or module source collection",
+                    "No remote payload capture or invocation",
+                    "No guarantee that client-visible values are authoritative",
+                    "Only supported client-visible roots are scanned",
+                    "Root completeness does not imply full server or game completeness",
+                    "System tags and controller roles are name/path-based candidates",
+                    "Sibling value context is hierarchy evidence, not a verified gameplay formula"
+                }
+            }
 
             return report
         end)
@@ -973,7 +1370,9 @@ local function inspect()
                 version = VERSION, gameName = result.gameName,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
-                note = "Full inspection is uploaded in numbered parts"
+                expectedParts = #parts, uploadedParts = 0,
+                scanStats = result.scanStats, diagnostics = result.diagnostics,
+                note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
             })
             return {json = manifest, parts = parts}
         end)
@@ -981,8 +1380,8 @@ local function inspect()
             last = resultData.json
             pendingParts = resultData.parts
             pendingAcknowledged = {}
-            status.Text = "Scan complete - " .. #result.objects
-                .. " entries in " .. #pendingParts .. " part(s)"
+            status.Text = (result.diagnostics.complete and "Scan complete - " or "PARTIAL SCAN - ")
+                .. #result.objects .. " entries in " .. #pendingParts .. " part(s)"
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
@@ -991,6 +1390,8 @@ local function inspect()
                 .. tostring(result.counts.RemoteEvent or 0) .. " events, "
                 .. tostring(result.counts.RemoteFunction or 0) .. " functions"
                 .. "\\nParts: " .. #pendingParts
+                .. "\\nRoots: " .. tostring(result.scanStats and result.scanStats.byRoot and #ROOT_LABELS or 0)
+                .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
