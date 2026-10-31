@@ -895,7 +895,7 @@ local function watchEntry(obj, root, label)
     elseif obj:IsA("GuiBase2d") or obj:IsA("GuiObject") then
         category = "interface"
     end
-    local entry = {path = path:sub(1, 400), class = obj.ClassName, category = category}
+    local entry = {path = path:sub(1, 400), class = obj.ClassName, category = category, scanOrdinal = nextInstanceId}
     if obj:IsA("BasePart") then
         entry.position, entry.size = watchVec(obj.Position), watchVec(obj.Size)
     elseif obj:IsA("Model") then
@@ -1289,7 +1289,6 @@ local function inspect()
             local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
             local scanAborted = false
             local pathOccurrences = {}
-            local scanInstanceIds = setmetatable({}, {__mode="k"})
             local nextInstanceId = 0
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
@@ -1349,7 +1348,6 @@ local function inspect()
                                     (report.scanStats.pathCollisionsResolved or 0) + 1
                             end
                             nextInstanceId = nextInstanceId + 1
-                            scanInstanceIds[obj] = nextInstanceId
                             local category = categoryOf(obj)
                             local entry = {
                                 path = string.sub(path, 1, 400),
