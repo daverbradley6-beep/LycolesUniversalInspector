@@ -36,12 +36,15 @@ def render_harness(checks):
     keys=sorted({k for c in checks["checks"] for k in c["leaderstatsKeys"]})
     if not keys: return None
     quoted=",".join(json.dumps(k) for k in keys)
+    check_entries=",".join("{feature="+json.dumps(c["feature"])+",transaction="+json.dumps(c["transaction"])+",keys={"+",".join(json.dumps(k) for k in c["leaderstatsKeys"])+"}}" for c in checks["checks"])
     return '''-- Lycoles manual verification harness (read-only)
 assert(game.PlaceId == %d, "Incorrect Roblox place")
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 assert(player, "LocalPlayer unavailable")
 local keys = {%s}
+local checkDefinitions = {%s}
 local function snapshot()
     local root = player:FindFirstChild("leaderstats")
     local data = {}
@@ -57,6 +60,7 @@ local function snapshot()
     return data
 end
 local before = snapshot()
+local recordedBefore = {}
 local api = {}
 function api.capture_before()
     before = snapshot()
@@ -73,8 +77,27 @@ function api.compare_after()
     return {before = before, after = after, changes = differences,
         note = "Client observation only; perform any action manually."}
 end
+function api.capture_all_before()
+    recordedBefore = snapshot()
+    return recordedBefore
+end
+function api.export_report()
+    local after = snapshot()
+    local results = {}
+    for _, check in ipairs(checkDefinitions) do
+        local b, a = {}, {}
+        for _, key in ipairs(check.keys) do
+            if recordedBefore[key] ~= nil then b[key] = recordedBefore[key] end
+            if after[key] ~= nil then a[key] = after[key] end
+        end
+        table.insert(results, {feature = check.feature, transaction = check.transaction,
+            before = b, after = a})
+    end
+    return HttpService:JSONEncode({schemaVersion = "22.0", placeId = game.PlaceId,
+        results = results})
+end
 return api
-''' % (place,quoted)
+''' % (place,quoted,check_entries)
 
 def compile_verification(sequences):
     checks=build_checks(sequences)
