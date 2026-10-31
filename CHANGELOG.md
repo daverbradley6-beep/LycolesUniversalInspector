@@ -1,3 +1,12 @@
+## 5.2.0 — Large evidence quality batch
+- Deduplicate repeated state and GUI changes across the 0.35/1.25/3 second observation windows.
+- Count unique changes rather than repeatedly attributing the same state transition.
+- Record travel displacement candidates and reward-claimed GUI candidates separately from verified outcomes.
+- Recognize travel confirmation as an unlinked contextual workflow when no initiator is observed.
+- Add bounded inventory/pet/equipment value coverage diagnostics to interaction records.
+- Preserve read-only client-only evidence and server-verification disclaimers.
+- Runtime and multipart receiver compatibility still require testing.
+
 ## 5.1.1 — Oversized JSON export hotfix
 - Separate scan summary and large interaction history into dedicated bounded upload parts.
 - Split oversized history and object parts recursively rather than failing the entire scan.
