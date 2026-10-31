@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.6
+-- Lycoles Universal Inspector v3.7
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.6"
+local VERSION = "3.7"
 
 local endpoint = ""
 local autoSend = true
@@ -450,6 +450,68 @@ local function isCharacterDescendant(obj)
     return false
 end
 
+
+-- v3.7: bounded, read-only metadata. Never inspect script source or private player text.
+local function enrichEntry(entry, obj)
+    local function privateKey(k)
+        k = string.lower(tostring(k))
+        return k:find("password",1,true) or k:find("token",1,true)
+            or k:find("secret",1,true) or k:find("auth",1,true)
+            or k:find("webhook",1,true) or k:find("userid",1,true)
+            or k:find("chat",1,true) or k:find("message",1,true)
+    end
+    local function scalar(v)
+        local t = typeof(v)
+        if t == "boolean" then return v end
+        if t == "number" and v == v and math.abs(v) <= 1e12 then return v end
+        if t == "string" then return v:sub(1,100):gsub("[%c]"," ") end
+        return nil
+    end
+    local ok, attrs = pcall(function() return obj:GetAttributes() end)
+    if ok and type(attrs) == "table" then
+        local safe, n = {}, 0
+        for k,v in pairs(attrs) do
+            if n >= 24 then break end
+            if not privateKey(k) then
+                local value = scalar(v)
+                if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+            end
+        end
+        if n > 0 then entry.attributes = safe end
+    end
+    if obj:IsA("ValueBase") and not privateKey(obj.Name) then
+        local success, value = pcall(function() return obj.Value end)
+        if success then entry.value = scalar(value) end
+    end
+    if obj:IsA("Humanoid") then
+        entry.health, entry.maxHealth, entry.walkSpeed = obj.Health, obj.MaxHealth, obj.WalkSpeed
+    elseif obj:IsA("Tool") then
+        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,tooltip=obj.ToolTip:sub(1,120)}
+    elseif obj:IsA("ProximityPrompt") then
+        entry.interaction = {actionText=obj.ActionText:sub(1,120),objectText=obj.ObjectText:sub(1,120),
+            enabled=obj.Enabled,holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance}
+    elseif obj:IsA("ClickDetector") then
+        entry.interaction = {maxActivationDistance=obj.MaxActivationDistance}
+    end
+    local lower = string.lower(entry.path)
+    local groups = {
+        weapon={"weapon","gun","rifle","pistol","shotgun","ammo","reload"},
+        boss={"boss","raid","elite"},enemy={"enemy","npc","monster","zombie"},
+        quest={"quest","mission","objective"},upgrade={"perk","upgrade","skill","ability"},
+        shop={"shop","store","vendor"},inventory={"inventory","backpack","loot","chest"},
+        progression={"level","xp","experience","coins","currency"},
+    }
+    for category, names in pairs(groups) do
+        for _,name in ipairs(names) do
+            if lower:find(name,1,true) then
+                entry.inferredCategory = category
+                entry.evidence = "name-inference"
+                return
+            end
+        end
+    end
+end
+
 local function watchEntry(obj, root, label)
     local path = watchPath(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return nil end
@@ -479,6 +541,7 @@ local function watchEntry(obj, root, label)
     elseif obj:IsA("GuiObject") then
         entry.visible = obj.Visible
     end
+    enrichEntry(entry, obj)
     return entry
 end
 
@@ -792,6 +855,7 @@ local function inspect()
                                     "ReplicatedStorage%.([%w_]+)") or "other"
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
+                            enrichEntry(entry, obj)
                             table.insert(report.objects, entry)
                             report.scanStats.eligible = report.scanStats.eligible + 1
                             local cat = report.scanStats.byCategory[category]
