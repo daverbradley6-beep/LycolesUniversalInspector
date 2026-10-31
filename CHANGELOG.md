@@ -1,3 +1,14 @@
+## v30.0.0 — Provenance-aware evidence and per-feature verification
+
+- Require matching scan IDs when both reviewed contracts and runtime audit carry scan provenance; retain compatibility with legacy v28 audit exports without scan IDs.
+- Reject NaN and infinite action durations, and duplicate reviewed feature/action contracts.
+- Preserve per-action success/failure counts and observed duration bounds.
+- Fix feature coverage so only actions actually reviewed for each feature appear in that feature's execution evidence.
+- Classify features by discovery, observed workflows, untested actions, client-action errors, or executed client actions.
+- Produce actionable per-feature missing-evidence guidance and release-level readiness totals.
+- Keep gameplay verification explicitly false; no client action audit can prove server-side effects.
+- Update the inspector's version header and metadata to v30.0.0.
+
 ## v29.0.0 — Action audit evaluation and feature coverage
 
 - Add a bounded, schema-checked evaluator for v28 reviewed-actions GUI execution audit JSON.
