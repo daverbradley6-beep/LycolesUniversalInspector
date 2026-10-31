@@ -50,7 +50,7 @@ def compile_specs(manifest):
                 "sourceSha256":item.get("sha256"),
                 "kind":kind,"status":"hypothesis-needs-review",
                 "evidence":{k:signals[k] for k in requirements},
-                "intent":CAPABILITY[k],
+                "intent":CAPABILITY[kind],
                 "preconditions":["matching live game inspection","authorised client-visible interface"],
                 "plan":[
                     {"step":"discover","expected":"observable objects and controls recorded"},
