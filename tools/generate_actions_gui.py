@@ -38,7 +38,10 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Text = "Lycoles | Reviewed client actions"
 title.Parent = frame
-local output = Instance.new("TextLabel")
+local output = Instance.new("TextBox")
+output.MultiLine = true
+output.TextEditable = false
+output.ClearTextOnFocus = false
 output.Position = UDim2.fromOffset(12, 54)
 output.Size = UDim2.new(1, -24, 0, 218)
 output.BackgroundColor3 = Color3.fromRGB(34, 39, 48)
@@ -60,6 +63,13 @@ layout.Padding = UDim.new(0, 6)
 layout.Parent = bar
 local connections = {}
 local alive = true
+local HttpService = game:GetService("HttpService")
+local audit = {}
+local function record(name, success, err, duration)
+    table.insert(audit, {action = name, success = success, error = err,
+        durationSeconds = duration, timestamp = os.time()})
+    if #audit > 100 then table.remove(audit, 1) end
+end
 local function display(name, result, err)
     if not alive then return end
     if err then output.Text = name .. ": " .. tostring(err); return end
@@ -90,11 +100,25 @@ for _, name in ipairs(ACTION_NAMES) do
     button.TextColor3 = Color3.new(1, 1, 1)
     button.Parent = bar
     table.insert(connections, button.MouseButton1Click:Connect(function()
+        local start = os.clock()
         local ok, result, err = pcall(actions[name])
+        record(name, ok and err == nil, ok and err or (not ok and tostring(result) or nil), os.clock() - start)
         if ok then display(name, result, err) else display(name, nil, result) end
     end))
 end
 bar.CanvasSize = UDim2.fromOffset(#ACTION_NAMES * 151, 0)
+local export = Instance.new("TextButton")
+export.Text = "Export audit JSON"
+export.Size = UDim2.fromOffset(150, 28)
+export.Position = UDim2.new(1, -198, 0, 8)
+export.Parent = frame
+table.insert(connections, export.MouseButton1Click:Connect(function()
+    local ok, json = pcall(function()
+        return HttpService:JSONEncode({schemaVersion = "28.0", placeId = game.PlaceId,
+            source = "reviewed-client-actions", runtimeVerified = false, results = audit})
+    end)
+    output.Text = ok and json or ("Export failed: " .. tostring(json))
+end))
 local close = Instance.new("TextButton")
 close.Text = "X"
 close.Size = UDim2.fromOffset(34, 28)
