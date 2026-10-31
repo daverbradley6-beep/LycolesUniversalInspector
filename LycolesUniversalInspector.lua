@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.5.1
+-- Lycoles Universal Inspector v4.6.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.5.1"
+local VERSION = "4.6.0"
 
 local endpoint = ""
 local autoSend = true
@@ -61,6 +61,33 @@ local FEATURE_TERMS = {
  combat={"combat","attack","damage"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
 }
+-- Readiness is evidence-based: discovery never implies a working feature.
+local function buildReadiness(evidence, observedCount)
+    local result = {}
+    for feature, item in pairs(evidence) do
+        local discovered = item.status == "candidate-needs-verification"
+        result[feature] = {
+            discovered = discovered,
+            observed = false,
+            implemented = false,
+            tested = false,
+            readiness = discovered and "needs-observed-interaction" or "not-discovered",
+            controllerCandidates = item.counts.controllers,
+            remoteCandidates = item.counts.remotes,
+            guiCandidates = item.counts.gui,
+            verificationRequired = {
+                "Associate a normal interaction with this feature",
+                "Confirm a relevant before/after state change",
+                "Implement the feature in the game-specific script",
+                "Execute and verify the implementation"
+            },
+            note = "Unattributed interaction count is not feature verification",
+            unattributedInteractionEvents = observedCount or 0
+        }
+    end
+    return result
+end
+
 local function buildFeatureEvidence(objects)
     local features = {}
     for name in pairs(FEATURE_TERMS) do
@@ -568,6 +595,7 @@ local function prepareParts(report)
             sessionId = report.sessionId, snapshotId = report.snapshotId,
             parentSnapshotId = report.parentSnapshotId,
             featureEvidence = index == 1 and report.featureEvidence or nil,
+            featureReadiness = index == 1 and report.featureReadiness or nil,
             objects = items
         }
     end
@@ -1472,6 +1500,7 @@ local function inspect()
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
             report.scanStats.complete = scanComplete
             report.featureEvidence = buildFeatureEvidence(report.objects)
+            report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
             report.diagnostics = {
                 complete = scanComplete,
                 completenessBasis = "required-root-success-and-object-accounting",
@@ -1524,6 +1553,7 @@ local function inspect()
                 version = VERSION, gameName = result.gameName,
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
+                featureReadiness = result.featureReadiness,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
