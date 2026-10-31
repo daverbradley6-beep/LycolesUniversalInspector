@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.7.2
+-- Lycoles Universal Inspector v3.7.3
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.7.2"
+local VERSION = "3.7.3"
 
 local endpoint = ""
 local autoSend = true
@@ -435,13 +435,37 @@ local function prepareParts(report)
     -- becomes prohibitively slow for universal scans.
     local chunkBytes = 0
     for _, entry in ipairs(objects) do
-        local entryBytes = #encodeStage('object ' .. tostring(entry.path), entry) + 2
+        local okEntry, encodedEntry = pcall(function()
+            return encodeStage('object ' .. tostring(entry.path), entry)
+        end)
+        local cleanEntry = entry
+        if not okEntry then
+            -- Preserve the object's identity even when its optional metadata
+            -- cannot be serialized. Never abort a whole scan for one object.
+            cleanEntry = {
+                path = tostring(entry.path or "unknown"):sub(1,400),
+                class = tostring(entry.class or "Instance"),
+                category = tostring(entry.category or "other"),
+                serializationFallback = true
+            }
+            local okFallback, fallbackJson = pcall(function()
+                return encodeStage('fallback-object', cleanEntry)
+            end)
+            if okFallback then
+                encodedEntry = fallbackJson
+            else
+                cleanEntry = {path = "unserializable-object", class = "Unknown",
+                    category = "other", serializationFallback = true}
+                encodedEntry = '{"path":"unserializable-object","class":"Unknown","category":"other","serializationFallback":true}'
+            end
+        end
+        local entryBytes = #encodedEntry + 2
         if chunkBytes + entryBytes > 85000 and #chunk > 0 then
             table.insert(chunks, chunk)
             chunk = {}
             chunkBytes = 0
         end
-        table.insert(chunk, entry)
+        table.insert(chunk, cleanEntry)
         chunkBytes = chunkBytes + entryBytes
     end
     if #chunk > 0 or #chunks == 0 then table.insert(chunks, chunk) end
