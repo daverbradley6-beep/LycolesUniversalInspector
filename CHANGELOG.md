@@ -1,3 +1,8 @@
+## v4.7.2
+- Track observer activation/deactivation, timestamps, callback activity, sweep start/completion and errors.
+- Show observer callback and sweep status in the scan output; explicitly instruct users to scan again after gameplay.
+- Diagnostic changes do not prove that game actions were captured or verified.
+
 ## 4.7.1
 - Explicitly attach listeners to existing PlayerGui buttons when INTERACT is enabled.
 - Export observer diagnostics in the manifest and first multipart scan part: listener count, callback count, state-delta count, binding errors, sweep status, and pending events.
