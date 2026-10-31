@@ -46,7 +46,7 @@ class ReleaseBuilderTests(unittest.TestCase):
                 builder.build(parts,base/"out")
     def test_disallowed_operations_rejected(self):
         with self.assertRaisesRegex(ValueError,"Forbidden"):
-            builder.validate_lua('assert(game.PlaceId == 1)\nFireServer(1)',1)
+            builder.validate_lua(builder.load_module('generate_script.py','test_generator').render({'integrity':{'placeId':1,'scanComplete':True},'features':[]})+'\nFireServer(1)',1)
     def test_place_guard_required(self):
         with self.assertRaisesRegex(ValueError,"place guard"):
             builder.validate_lua("local x=1",123)
