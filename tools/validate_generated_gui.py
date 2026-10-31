@@ -7,7 +7,8 @@ def validate(source, actions):
         raise ValueError("Invalid generated GUI")
     required=("local ACTION_NAMES = {","for _, name in ipairs(ACTION_NAMES) do",
               "MouseButton1Click:Connect","pcall(actions[name])",
-              "LycolesActionsClose","gui:Destroy()")
+              "LycolesActionsClose","gui:Destroy()",
+              "HttpService:JSONEncode","Export audit JSON","record(name,")
     missing=[token for token in required if token not in source]
     if missing:raise ValueError("Missing GUI wiring: "+", ".join(missing))
     if "ACTION_LIST" in source or "ACTION_NAMES = ACTION_NAMES" in source:
