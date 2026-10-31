@@ -507,9 +507,9 @@ local function observeObject(obj, root, label)
         if type(value) == "number" and (value ~= value or math.abs(value) > 1e12) then return end
         local currentPath = watchPath(obj, root, label)
         if not currentPath then return end
-        local key = currentPath .. ":" .. property
-        if not changeQueue[key] then changeCount = changeCount + 1 end
-        changeQueue[key] = {
+        -- Preserve every transition instead of overwriting earlier values.
+        changeCount = changeCount + 1
+        changeQueue[#changeQueue + 1] = {
             path = currentPath:sub(1, 400), class = obj.ClassName,
             category = "state-change", property = property, value = value
         }
@@ -525,13 +525,18 @@ local function flushWatch()
     watchBusy = true
     local batch = {}
     local changesInBatch = 0
-    for key, entry in pairs(changeQueue) do
-        batch[#batch + 1] = entry
-        changeQueue[key] = nil
-        changeCount = changeCount - 1
-        changesInBatch = changesInBatch + 1
-        if #batch >= WATCH_BATCH then break end
+    local take = math.min(changeCount, WATCH_BATCH)
+    for i = 1, take do
+        batch[#batch + 1] = changeQueue[i]
     end
+    for i = take + 1, changeCount do
+        changeQueue[i - take] = changeQueue[i]
+    end
+    for i = changeCount - take + 1, changeCount do
+        changeQueue[i] = nil
+    end
+    changeCount = changeCount - take
+    changesInBatch = take
     if #batch < WATCH_BATCH then for path, entry in pairs(watchQueue) do
         batch[#batch + 1] = entry
         watchQueue[path] = nil
@@ -552,13 +557,22 @@ local function flushWatch()
         }
         local ok, parts = pcall(prepareParts, report)
         if not ok then
+            local retryChanges = {}
             for _, entry in ipairs(batch) do
                 if entry.category == "state-change" then
-                    local key = entry.path .. ":" .. entry.property
-                    if not changeQueue[key] then changeQueue[key] = entry; changeCount = changeCount + 1 end
+                    -- Restore failed events in their original order.
+                    retryChanges[#retryChanges + 1] = entry
                 elseif not watchQueue[entry.path] then
                     watchQueue[entry.path] = entry; watchCount = watchCount + 1
                 end
+            end
+            if #retryChanges > 0 then
+                local queued = changeQueue
+                changeQueue = retryChanges
+                for _, entry in ipairs(queued) do
+                    changeQueue[#changeQueue + 1] = entry
+                end
+                changeCount = #changeQueue
             end
             watchBusy = false
             return
@@ -573,13 +587,22 @@ local function flushWatch()
             task.wait(0.15)
         end
         if not success then
+            local retryChanges = {}
             for _, entry in ipairs(batch) do
                 if entry.category == "state-change" then
-                    local key = entry.path .. ":" .. entry.property
-                    if not changeQueue[key] then changeQueue[key] = entry; changeCount = changeCount + 1 end
+                    -- Restore failed events in their original order.
+                    retryChanges[#retryChanges + 1] = entry
                 elseif not watchQueue[entry.path] then
                     watchQueue[entry.path] = entry; watchCount = watchCount + 1
                 end
+            end
+            if #retryChanges > 0 then
+                local queued = changeQueue
+                changeQueue = retryChanges
+                for _, entry in ipairs(queued) do
+                    changeQueue[#changeQueue + 1] = entry
+                end
+                changeCount = #changeQueue
             end
             status.Text = "Dynamic upload failed; queued for retry"
         elseif alive then
