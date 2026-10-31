@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.7.1
+-- Lycoles Universal Inspector v3.7.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.7.1"
+local VERSION = "3.7.2"
 
 local endpoint = ""
 local autoSend = true
@@ -929,9 +929,16 @@ local function inspect()
         end
 
         local encoded, resultData = pcall(function()
-            local json = encodeStage('full-report', result)
+            -- Large universal scans must never be encoded as one JSON document.
+            -- The receiver accepts bounded parts; keep only a small clipboard manifest.
             local parts = prepareParts(result)
-            return {json = json, parts = parts}
+            local manifest = encodeStage('scan-manifest', {
+                version = VERSION, gameName = result.gameName,
+                placeId = result.placeId, inspectedAt = result.inspectedAt,
+                objectCount = #result.objects, partCount = #parts,
+                note = "Full inspection is uploaded in numbered parts"
+            })
+            return {json = manifest, parts = parts}
         end)
         if encoded then
             last = resultData.json
