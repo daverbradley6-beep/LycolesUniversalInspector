@@ -9,7 +9,8 @@ import pathlib
 import re
 import sys
 
-ACTIONS={"read_leaderstats","list_player_gui","list_proximity_prompts"}
+ACTIONS={"read_leaderstats","list_player_gui","list_proximity_prompts",
+         "list_visible_gui_buttons","read_local_player_attributes","inspect_local_character"}
 IDENTIFIER=re.compile(r"^[A-Za-z][A-Za-z0-9_ -]{0,79}$")
 def validate_contracts(plan,document):
     integrity=plan.get("integrity") or {}
