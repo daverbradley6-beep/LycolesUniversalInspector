@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.3.0
+-- Lycoles Universal Inspector v4.4.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.4.0"
+local VERSION = "4.4.1"
 
 local endpoint = ""
 local autoSend = true
@@ -538,19 +538,53 @@ local function prepareParts(report)
         chunkBytes = chunkBytes + entryBytes
     end
     if #chunk > 0 or #chunks == 0 then table.insert(chunks, chunk) end
-    local parts = {}
-    for i, items in ipairs(chunks) do
-        local part = {
+    -- Exact-size multipart packing. Shared evidence is sent once (part 1),
+    -- rather than copied into every chunk. Never truncate or drop an object.
+    local function makePart(items, index, total)
+        return {
             version = report.version, placeId = report.placeId,
             gameId = report.gameId, placeVersion = report.placeVersion,
             inspectedAt = report.inspectedAt, gameName = report.gameName,
-            scanId = scanId, partIndex = i, partCount = #chunks,
-            counts = report.counts, groups = report.groups,
-            scanStats = report.scanStats, sessionId = report.sessionId, snapshotId = report.snapshotId, parentSnapshotId = report.parentSnapshotId, featureEvidence = report.featureEvidence, objects = items
+            scanId = scanId, partIndex = index, partCount = total,
+            counts = index == 1 and report.counts or nil,
+            groups = index == 1 and report.groups or nil,
+            scanStats = index == 1 and report.scanStats or nil,
+            sessionId = report.sessionId, snapshotId = report.snapshotId,
+            parentSnapshotId = report.parentSnapshotId,
+            featureEvidence = index == 1 and report.featureEvidence or nil,
+            objects = items
         }
-        local body = encodeStage('part ' .. tostring(i), part)
-        if #body > 145000 then error("Part exceeds receiver limit") end
-        table.insert(parts, body)
+    end
+    local limit = math.min(MAX_PART_BYTES, 140000)
+    local changed = true
+    while changed do
+        changed = false
+        local total = #chunks
+        for i = 1, total do
+            local body = encodeStage('size-check-' .. i, makePart(chunks[i], i, total))
+            if #body > limit then
+                if #chunks[i] <= 1 then
+                    error("Single object or shared scan metadata exceeds receiver payload limit")
+                end
+                local source = chunks[i]
+                local half = math.floor(#source / 2)
+                local left, right = {}, {}
+                for j, entry in ipairs(source) do
+                    if j <= half then left[#left + 1] = entry
+                    else right[#right + 1] = entry end
+                end
+                chunks[i] = left
+                table.insert(chunks, i + 1, right)
+                changed = true
+                break
+            end
+        end
+    end
+    local parts = {}
+    for i, items in ipairs(chunks) do
+        local body = encodeStage('part-' .. i, makePart(items, i, #chunks))
+        if #body > limit then error("Unexpected oversized part") end
+        parts[#parts + 1] = body
     end
     report.localPerformance = report.localPerformance or {}
     report.localPerformance.serializationSeconds = math.floor((os.clock()-prepareStarted)*1000+0.5)/1000
@@ -1255,6 +1289,8 @@ local function inspect()
             local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
             local scanAborted = false
             local pathOccurrences = {}
+            local scanInstanceIds = setmetatable({}, {__mode="k"})
+            local nextInstanceId = 0
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
                 local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
@@ -1312,6 +1348,8 @@ local function inspect()
                                 report.scanStats.pathCollisionsResolved =
                                     (report.scanStats.pathCollisionsResolved or 0) + 1
                             end
+                            nextInstanceId = nextInstanceId + 1
+                            scanInstanceIds[obj] = nextInstanceId
                             local category = categoryOf(obj)
                             local entry = {
                                 path = string.sub(path, 1, 400),
