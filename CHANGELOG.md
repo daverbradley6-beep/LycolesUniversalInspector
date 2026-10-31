@@ -1,3 +1,11 @@
+## 5.4.0 — Per-indicator inventory and pet evidence
+- Record bounded client-visible GUI slot and equipped-indicator samples with relative paths and visibility.
+- Compare before/after individual GUI indicator and slot samples, not just aggregate counts.
+- Distinguish unequip-all and unequip from equip in action classification and state evidence.
+- Explicitly flag overlapping interactions and distinguish GUI candidates from verified inventory outcomes.
+- Preserve read-only operation, bounded sample sizes and client-only verification limits.
+- In-game execution and export still require testing.
+
 ## 5.3.0 — Inventory discovery and transaction evidence
 - Discover client-visible inventory slot and equipped indicator counts in PlayerGui, in addition to ValueBase roots.
 - Preserve before/after inventory coverage summaries for interactions.
