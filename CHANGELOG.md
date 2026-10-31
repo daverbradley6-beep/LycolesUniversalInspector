@@ -1,3 +1,11 @@
+## v25.0.0 — Evidence-backed implementation backlog
+
+- Compile per-workflow implementation candidates from validated scan and observed interactions.
+- Correlate optional client observation feedback without claiming executable gameplay support.
+- Include implementation-backlog.json in the offline release ZIP and candidate count in its manifest.
+- Fix duplicated trailing source in interaction sequence compiler.
+- Add regression tests for provenance and fail-closed validation.
+
 ## v23.0.0 — Runtime report export
 
 - Generated read-only verification harness exports schema-compatible JSON from before/after client snapshots.
