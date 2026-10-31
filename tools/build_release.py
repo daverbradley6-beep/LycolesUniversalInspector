@@ -107,7 +107,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
     files={
-      "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\\n").encode(),
+      "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
