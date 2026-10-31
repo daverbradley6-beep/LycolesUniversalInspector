@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.6.0
+-- Lycoles Universal Inspector v5.7.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.6.0"
+local VERSION = "5.7.0"
 
 local endpoint = ""
 local autoSend = true
@@ -840,7 +840,7 @@ local function prepareParts(report)
             end
         end
         local entryBytes = #encodedEntry + 2
-        if chunkBytes + entryBytes > 85000 and #chunk > 0 then
+        if chunkBytes + entryBytes > 96500 and #chunk > 0 then
             table.insert(chunks, chunk)
             chunk = {}
             chunkBytes = 0
@@ -883,36 +883,23 @@ local function prepareParts(report)
             objects=items
         }
     end
+    -- Incremental history sizing: avoid repeatedly encoding a growing batch.
+    -- Exact-size validation below still splits any unexpectedly large part.
     local historyBatches={}
     local currentHistory={}
     local currentStart=1
+    local historyBytes=0
     for i,item in ipairs(history) do
-        currentHistory[#currentHistory+1]=item
-        if #encodeStage("history-sizing",makePart({},99999,99999,false,currentHistory,currentStart))>limit then
-            table.remove(currentHistory)
-            if #currentHistory==0 then
-                -- A single interaction can itself contain several observation windows.
-                -- Preserve a compact event summary in this exceptional case.
-                local compact={}
-                for k,v in pairs(item) do
-                    if k~="observationWindows" and k~="guiStateChanges" and k~="stateChanges" then
-                        compact[k]=v
-                    end
-                end
-                compact.largeEventEvidenceOmitted=true
-                currentHistory={compact}
-                if #encodeStage("large-event-check",makePart({},99999,99999,false,currentHistory,i))>limit then
-                    error("Single interaction event exceeds receiver limit after compacting")
-                end
-                historyBatches[#historyBatches+1]={items=currentHistory,start=i}
-                currentHistory={}
-                currentStart=i+1
-            else
-                historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
-                currentHistory={item}
-                currentStart=i
-            end
+        local encoded=encodeStage("history-item-"..i,item)
+        local estimate=#encoded+2
+        if historyBytes+estimate>limit-1500 and #currentHistory>0 then
+            historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
+            currentHistory={}
+            currentStart=i
+            historyBytes=0
         end
+        currentHistory[#currentHistory+1]=item
+        historyBytes=historyBytes+estimate
     end
     if #currentHistory>0 then
         historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
@@ -1593,10 +1580,14 @@ local function observeInteractionObject(obj, root, label)
         local inventoryAction=workflow and workflow.action or nil
         if not inventoryAction then
             local controlName=obj.Name:lower()
+            local parentName=obj.Parent and obj.Parent.Name:lower() or ""
             if controlName:find("nextbutton",1,true) or controlName:find("previousbutton",1,true)
-                or controlName:find("pagebutton",1,true) then
+                or controlName:find("pagebutton",1,true)
+                or parentName:find("nextbutton",1,true)
+                or parentName:find("previousbutton",1,true)
+                or parentName:find("pagebutton",1,true) then
                 inventoryAction="pagination"
-            elseif controlName:match("^slot%d+") then
+            elseif controlName:match("^slot%d+") or parentName:match("^slot%d+") then
                 inventoryAction="selection"
             end
         end
@@ -1723,15 +1714,16 @@ local function observeInteractionObject(obj, root, label)
                             truncated=inventorySummaryBefore.truncated or inventoryAfter.truncated
                         }
                         historyItem.inventoryGuiCandidate=
-                            #guiEvidence.indicatorChanges>0 or
-                            (#guiEvidence.slotChanges>0 and inventoryAction~="pagination")
+                            inventoryAction~="pagination" and
+                            (#guiEvidence.indicatorChanges>0 or #guiEvidence.slotChanges>0)
                         historyItem.inventoryPageChangeCandidate=
                             inventoryAction=="pagination" and #guiEvidence.slotChanges>0
                         historyItem.inventoryEvidenceKind=
-                            #guiEvidence.indicatorChanges>0 and "equipped-indicator-ui-change"
-                            or (#guiEvidence.slotChanges>0 and
-                                (inventoryAction=="pagination" and "page-visibility-ui-change"
-                                or "slot-ui-change"))
+                            (inventoryAction=="pagination" and
+                                (#guiEvidence.slotChanges>0 or #guiEvidence.indicatorChanges>0))
+                                and "page-visibility-ui-change"
+                            or (#guiEvidence.indicatorChanges>0 and "equipped-indicator-ui-change")
+                            or (#guiEvidence.slotChanges>0 and "slot-ui-change")
                             or "no-inventory-ui-change"
                         historyItem.inventoryOutcomeVerified=false
                     end
@@ -2305,7 +2297,7 @@ local function inspect(requestType)
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
-                inventoryDiscovery="candidate-first-gui-sampling-and-action-aware-diffs",
+                inventoryDiscovery="candidate-first-gui-sampling-parent-aware-pagination",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
                 stateChangeLimit=MAX_STATE_CHANGES,
