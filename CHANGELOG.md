@@ -1,3 +1,10 @@
+## 4.6.0
+- Add per-feature implementation readiness records (discovered, observed, implemented, tested), with conservative default false for unverified stages.
+- Add successive-scan feature-candidate count deltas. These are not causal before/after gameplay verification.
+- Include readiness and deltas in saved manifest and first multipart upload part.
+- Preserve v4.5.1 token matching and upload byte diagnostics.
+- Not implemented in this release: guided interaction labeling, feature-specific state-change verification, GUI/controller behavioral mapping, verified formulas, or executable regression tests. Runtime test required.
+
 ## 4.5.1
 - Token-aware feature detection splits PascalCase and camelCase object names and avoids matching `quest` inside `Request`.
 - Include `localPerformance.uploadBytes`, `uploadParts`, and `serializationSeconds` in the saved JSON manifest for measurable multipart size comparisons.
