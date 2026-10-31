@@ -6,6 +6,7 @@ authority. A missing action remains untested, never silently passed.
 """
 import argparse
 import json
+import math
 from pathlib import Path
 
 def evaluate(contracts, report):
@@ -16,14 +17,26 @@ def evaluate(contracts, report):
     entries=contracts.get("contracts")
     if not isinstance(entries,list) or len(entries)>100:raise ValueError("Invalid contracts")
     allowed=set()
+    pairs=set()
     for entry in entries:
         if not isinstance(entry,dict) or entry.get("reviewed") is not True or entry.get("scope")!="client-read-only":
             raise ValueError("Unreviewed or invalid contract")
         action=entry.get("action")
         if not isinstance(action,str):raise ValueError("Invalid action")
+        if action in allowed:
+            # A single reviewed action may serve multiple features.
+            pass
+        pair=(entry.get("feature"),action)
+        if pair in pairs:raise ValueError("Duplicate reviewed feature/action")
+        pairs.add(pair)
         allowed.add(action)
     if not isinstance(report,dict) or report.get("schemaVersion")!="28.0" or report.get("placeId")!=place or report.get("source")!="reviewed-client-actions":
         raise ValueError("Audit identity or schema mismatch")
+    scan_id=contracts.get("scanId")
+    if scan_id is not None and (not isinstance(scan_id,str) or not scan_id):
+        raise ValueError("Invalid contract scan identity")
+    if scan_id is not None and report.get("scanId")!=scan_id:
+        raise ValueError("Audit scan identity mismatch")
     records=report.get("results")
     if not isinstance(records,list) or len(records)>100:raise ValueError("Invalid bounded audit")
     statuses={name:[] for name in sorted(allowed)}
@@ -33,7 +46,7 @@ def evaluate(contracts, report):
         if action not in statuses:raise ValueError("Unknown action in audit")
         success=item.get("success")
         duration=item.get("durationSeconds")
-        if type(success) is not bool or type(duration) not in (int,float) or not 0<=duration<=3600:
+        if type(success) is not bool or type(duration) not in (int,float) or not math.isfinite(duration) or not 0<=duration<=3600:
             raise ValueError("Invalid audit result")
         err=item.get("error")
         if err is not None and (not isinstance(err,str) or len(err)>5000):
@@ -47,8 +60,11 @@ def evaluate(contracts, report):
                "client-function-error")
         results.append({"action":action,"status":state,"attempts":len(items),
                         "successfulCalls":sum(x["success"] for x in items),
+                        "failedCalls":sum(not x["success"] for x in items),
+                        "minDurationSeconds":min((x["durationSeconds"] for x in items),default=None),
+                        "maxDurationSeconds":max((x["durationSeconds"] for x in items),default=None),
                         "errors":[x["error"] for x in items if not x["success"]][:10]})
-    return {"schemaVersion":"29.0","placeId":place,"results":results,
+    return {"schemaVersion":"30.0","placeId":place,"scanId":scan_id,"results":results,
             "observedActions":sum(bool(x["attempts"]) for x in results),
             "runtimeGameplayVerified":False,"serverAuthorityVerified":False,
             "note":"Client function call outcomes do not establish gameplay effects."}
