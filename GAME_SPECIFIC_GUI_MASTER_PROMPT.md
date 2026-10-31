@@ -140,3 +140,8 @@ For each explicitly reviewed client action, the generated actions GUI must wire 
 ## v19 evidence-to-contract process
 
 Generate action proposals from the validated class inventory; never infer that an observed GUI, controller or remote can be safely invoked. Review and explicitly approve a supported read-only action contract before generating its Lua function and wired GUI control. Keep gameplay automation candidates distinct from working features.
+
+
+## v20 workflow evidence requirement
+
+Use `observed-workflows.json` to distinguish actual observed GUI steps, transaction links and state deltas from name-based candidates. Require a reviewed permitted action interface and runtime testing before producing gameplay automation. Never invent remote arguments or mark a correlated client transition as server-verified.
