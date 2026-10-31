@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.4.1
+-- Lycoles Universal Inspector v4.5.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.4.1"
+local VERSION = "4.5.0"
 
 local endpoint = ""
 local autoSend = true
@@ -51,43 +51,52 @@ local interactionEventCount = 0
 local sessionId = HttpService:GenerateGUID(false)
 local snapshotId = nil
 local observationSequence = 0
+-- Feature candidates are based on the final object name, not arbitrary ancestor
+-- paths. This prevents 'LiveRequest' being classified as a quest.
 local FEATURE_TERMS = {
- training={"training","gym","strength","agility"},
+ training={"training","gym","strength","agility","treadmill"},
  rebirth={"rebirth"}, pets={"pet","hatch","egg"},
- shops={"shop","purchase"}, travel={"teleport","portal"},
+ shops={"shop","purchase","store"}, travel={"teleport","portal"},
  bosses={"boss","arena"}, quests={"quest","mission"},
- combat={"combat","attack"}, inventory={"inventory","equip"},
+ combat={"combat","attack","damage"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
 }
 local function buildFeatureEvidence(objects)
- local features = {}
- for name in pairs(FEATURE_TERMS) do
-  features[name]={counts={controllers=0,remotes=0,gui=0,values=0,world=0},examples={},
-   status="not-discovered",confidence="path-name-only",serverVerified=false,
-   missingEvidence={"Observed normal interaction","Before/after state verification","Authorised implementation test"}}
- end
- for _,obj in ipairs(objects) do
-  local path=tostring(obj.path or "")
-  local lower=string.lower(path)
-  local class=tostring(obj.class or "")
-  local kind="world"
-  if class=="ModuleScript" or class=="LocalScript" then kind="controllers"
-  elseif class=="RemoteEvent" or class=="RemoteFunction" or class=="UnreliableRemoteEvent" then kind="remotes"
-  elseif class=="TextButton" or class=="ImageButton" or class=="ProximityPrompt" or class=="ClickDetector" then kind="gui"
-  elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
-  for name,terms in pairs(FEATURE_TERMS) do
-   for _,term in ipairs(terms) do
-    if string.find(lower,term,1,true) then
-     local item=features[name]
-     item.counts[kind]=item.counts[kind]+1
-     item.status="candidate-needs-verification"
-     if #item.examples<12 then item.examples[#item.examples+1]={path=path:sub(1,300),class=class,kind=kind} end
-     break
+    local features = {}
+    for name in pairs(FEATURE_TERMS) do
+        features[name] = {
+            counts={controllers=0,remotes=0,gui=0,values=0,world=0},
+            examples={}, status="not-discovered",
+            confidence="object-name-candidate-only", serverVerified=false,
+            missingEvidence={"Observed normal interaction","Before/after state verification","Authorised implementation test"}
+        }
     end
-   end
-  end
- end
- return features
+    for _,obj in ipairs(objects) do
+        local path = tostring(obj.path or "")
+        local leaf = path:match("([^%.]+)$") or path
+        leaf = leaf:gsub("%[occurrence:%d+%]$", "")
+        local lower = string.lower(leaf)
+        local class = tostring(obj.class or "")
+        local kind = "world"
+        if class=="ModuleScript" or class=="LocalScript" then kind="controllers"
+        elseif class=="RemoteEvent" or class=="RemoteFunction" or class=="UnreliableRemoteEvent" then kind="remotes"
+        elseif class=="TextButton" or class=="ImageButton" or class=="ProximityPrompt" or class=="ClickDetector" then kind="gui"
+        elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
+        for name,terms in pairs(FEATURE_TERMS) do
+            for _,term in ipairs(terms) do
+                if string.find(lower,term,1,true) then
+                    local item=features[name]
+                    item.counts[kind]=item.counts[kind]+1
+                    item.status="candidate-needs-verification"
+                    if #item.examples < 6 then
+                        item.examples[#item.examples+1]={path=path:sub(1,220),class=class,kind=kind}
+                    end
+                    break
+                end
+            end
+        end
+    end
+    return features
 end
 local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
 
