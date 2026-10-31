@@ -1,3 +1,13 @@
+## 5.0.0 — Major evidence and workflow update
+- Link generic confirmation and cancellation interactions to recent candidate actions within a bounded 12-second window.
+- Track workflow initiations, inferred confirmations, cancellations and expired pending actions.
+- Expand read-only numeric/boolean player-state sampling from 300 to 1000 values.
+- Record nearby GUI elements appearing and disappearing, in addition to visibility and Active changes.
+- Expand recent interaction history to 180 and expose workflow diagnostics.
+- Correct scan invocation accounting to count only accepted scan requests.
+- All workflow links remain heuristics; no server-side verification or remote invocation.
+- In-game runtime validation remains required.
+
 ## 4.7.7
 - Add bounded nearby GUI state snapshots for observed interactions.
 - Record visibility and Active transitions without collecting text or input contents.
