@@ -69,6 +69,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         feedback=feedback_evaluator.evaluate(verification_plan,feedback_document)
     backlog_compiler=load_module("compile_implementation_backlog.py","lycoles_backlog")
     backlog=backlog_compiler.compile_backlog(plan,sequences,feedback)
+    contract_drafter=load_module("draft_client_contracts.py","lycoles_contract_draft")
+    contract_draft=contract_drafter.draft(plan)
     validated_contracts=None
     if contracts_path is not None:
         validator=load_module('validate_contracts.py','lycoles_contracts')
@@ -91,9 +93,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"26.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"27.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "implementationBacklogCandidates":backlog["candidateCount"],
+        "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
         "manualVerificationChecks":len(verification_plan["checks"]),
@@ -112,6 +115,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
     files={
+      "contract-draft.json":(json.dumps(contract_draft,indent=2,sort_keys=True)+"\n").encode(),
       "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
