@@ -1,3 +1,9 @@
+## 4.7.7
+- Add bounded nearby GUI state snapshots for observed interactions.
+- Record visibility and Active transitions without collecting text or input contents.
+- Export GUI transition evidence separately from numeric state changes and verified outcomes.
+- Preserve passive read-only inspection and existing feature evidence checks.
+
 ## 4.7.6
 - Add menu-context hints for generic buttons in known gameplay menus.
 - Add feature-specific client-state corroboration for rebirth and training.
