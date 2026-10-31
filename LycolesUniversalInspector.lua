@@ -544,7 +544,20 @@ local function enrichEntry(entry, obj)
         end
         if n > 0 then entry.attributes = safe end
     end
-    if obj:IsA("ValueBase") and not privateKey(obj.Name) then
+    local isQuestCurrency =
+        obj.Name == "Tokens"
+        and obj:IsA("NumberValue")
+        and obj.Parent ~= nil
+        and (obj.Parent.Name == "rewards" or obj.Parent.Name == "requirements")
+        and obj.Parent.Parent ~= nil
+        and obj.Parent.Parent.Parent ~= nil
+        and obj.Parent.Parent.Parent.Name == "Quests"
+        and obj.Parent.Parent.Parent.Parent ~= nil
+        and obj.Parent.Parent.Parent.Parent.Name == "Battle Legends"
+        and obj.Parent.Parent.Parent.Parent.Parent ~= nil
+        and obj.Parent.Parent.Parent.Parent.Parent.Name == "Story Quests"
+
+    if obj:IsA("ValueBase") and (isQuestCurrency or not privateKey(obj.Name)) then
         local success, value = pcall(function() return obj.Value end)
         if success then entry.value = scalar(value) end
     end
