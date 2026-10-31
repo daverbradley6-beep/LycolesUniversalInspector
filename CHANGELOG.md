@@ -1,3 +1,11 @@
+## v13.0.0 — Universal Workflow Evidence Compiler
+
+- Added `tools/compile_workflows.py` to turn validated inspection capability plans into structured per-feature workflow evidence specifications.
+- Distinguishes discovery, observed interaction, temporal state transition, client corroboration and observed client outcome.
+- Integrates `workflow-specs.json` into one-command release ZIPs, including evidence summary in the release manifest.
+- Adds regression tests and aligns the inspector version.
+- Gameplay execution remains unimplemented without validated action contracts; Roblox runtime remains unverified.
+
 ## v12.0.0 — Inspector UI and Upload Reliability
 
 - Fixed AUTO EVIDENCE button overlapping the title/minimise button by moving it into a dedicated sidebar.
