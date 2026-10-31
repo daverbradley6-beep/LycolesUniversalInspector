@@ -1,3 +1,11 @@
+## v19.0.0 — Evidence-driven proposal stage
+
+- Every offline release now includes `action-proposals.json` with evidence-based read-only client action suggestions.
+- Class inventory gates suggestions for leaderstats, PlayerGui and proximity prompt discovery.
+- No suggestion is approved or executable without separate contract review.
+- Added negative and positive regression tests for proposal integrity.
+- Automatic server-side gameplay script creation remains unsupported.
+
 ## v18.0.0 — Reviewed action GUI generation
 
 - Added `tools/generate_actions_gui.py` to create an executable ScreenGui with buttons directly connected to generated reviewed client functions.
