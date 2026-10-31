@@ -1,3 +1,13 @@
+## v28.0.0 — Expanded client implementation pipeline
+
+- Implement three additional real, bounded client inspection functions: visible GUI button inventory, local player primitive attributes, and local character humanoid state.
+- Expand the reviewed action catalog from three to six supported operations, including evidence-based action proposals and draft contracts.
+- Add a review-contracts-template.json to generated releases. Templates are always unapproved until explicitly reviewed.
+- Require matching scan and Place IDs when converting proposals into review templates.
+- Validate the six-function end-to-end flow from scan evidence through review, Lua generation and generated GUI wiring.
+- Add dedicated integration and negative-path regression tests.
+- No server-authoritative gameplay automation, anti-cheat bypass, or live Roblox verification is implied.
+
 ## v27.0.0 — Evidence-driven contract drafting
 
 - Generate review-required, read-only client action candidates from validated class inventories.
