@@ -135,3 +135,8 @@ The offline release builder now generates `LycolesReviewedActionsGUI.lua` when `
 ## v19 — Evidence-driven client action proposals
 
 The offline release pipeline now writes `action-proposals.json` for every complete scan. `tools/propose_actions.py` derives bounded, generic read-only action candidates from observed class counts (replicated values, UI elements, proximity prompts). Each proposal includes evidence classes and review instructions, and is always `reviewed: false`. To generate executable Lua, independently create a reviewed contract document with the supported v15 schema and run the builder with `--contracts`. Feature associations are provisional, not gameplay implementation evidence. The inspector itself still uploads scans; this change does not make the receiver automatically build scripts.
+
+
+## v20 — Interaction sequence reconstruction
+
+The offline pipeline now retains up to 2,000 observed client interaction records in the capability plan and writes `observed-workflows.json` in every release. `tools/compile_interaction_sequences.py` groups events only when they share an observed transaction identifier, retains bounded before/after state evidence, records step order and keeps unlinked events separate. This can represent multi-step interactions such as opening a rebirth menu and confirming it. No remote calls are inferred or executed. All generated workflow specifications remain non-executable pending review and live verification. This release does not change receiver indexing or add automatic upload-to-build execution.
