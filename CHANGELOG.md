@@ -1,3 +1,11 @@
+## 5.7.0 — Faster lossless report preparation and pagination attribution
+- Replace repeated growing-history JSON serialization with linear incremental size estimates; retain exact-size final validation and splitting.
+- Increase object chunk packing target from 85 KB to 96.5 KB within existing 105 KB part limit, retaining all recorded objects.
+- Detect pagination from parent PreviousButton/NextButton/PageButton controls as well as direct control names.
+- Keep pagination visibility changes distinct from inventory mutation candidates.
+- Preserve full read-only scan and multipart export; no lossy object compression or evidence removal.
+- Runtime timing and export compatibility need in-game verification; scan traversal itself is not materially changed.
+
 ## 5.6.0 — Faster GUI candidate sampling and action-aware inventory evidence
 - Avoid expensive GUI ancestry/path construction for non-inventory candidates.
 - Distinguish pagination and selection from equipment actions when interpreting inventory GUI changes.
