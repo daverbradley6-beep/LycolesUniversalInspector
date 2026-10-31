@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.4.0
+-- Lycoles Universal Inspector v5.5.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.4.0"
+local VERSION = "5.5.0"
 
 local endpoint = ""
 local autoSend = true
@@ -206,108 +206,85 @@ local function safeInteractionState()
     end
     return state
 end
+-- v5.5: stable, unique relative paths and change-only inventory evidence.
+local function inventoryGuiPath(obj,gui)
+    local parts={}
+    local current=obj
+    while current and current~=gui and #parts<18 do
+        local parent=current.Parent
+        local occurrence=1
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name then occurrence=occurrence+1 end
+            end
+        end
+        table.insert(parts,1,current.Name.."#"..occurrence)
+        current=parent
+    end
+    return table.concat(parts,"/"):sub(1,260)
+end
 local function safeInventorySummary()
-    -- Discover likely inventory representation without reading scripts or private values.
-    -- GUI-backed games may expose inventory only as UI slots, not ValueBase objects.
-    local result={sources={},count=0,limit=240,guiSlots=0,guiEquippedIndicators=0,
-        guiIndicatorSamples={},guiSlotSamples={},guiScanLimit=25000,
-        sourceCoverage="client-visible-value-and-gui-candidates",authoritative=false}
-    local candidates={}
-    for _,name in ipairs({"Data","leaderstats","Pets","Inventory","PetInventory","Items"}) do
-        local root=player:FindFirstChild(name)
-        if root then candidates[#candidates+1]=root end
-    end
-    local seen={}
-    for _,root in ipairs(candidates) do
-        if not seen[root] then
-            seen[root]=true
-            local summary={root=root.Name,values=0,petRelated=0,equippedRelated=0}
-            for _,obj in ipairs(root:GetDescendants()) do
-                if result.count>=result.limit then break end
-                local n=obj.Name:lower()
-                if n:find("pet",1,true) or n:find("equip",1,true)
-                    or n:find("inventory",1,true) or n:find("item",1,true)
-                    or n:find("quantity",1,true) then
-                    if obj:IsA("ValueBase") then
-                        summary.values=summary.values+1
-                        if n:find("pet",1,true) then summary.petRelated=summary.petRelated+1 end
-                        if n:find("equip",1,true) then summary.equippedRelated=summary.equippedRelated+1 end
-                        result.count=result.count+1
-                    end
-                end
-            end
-            result.sources[#result.sources+1]=summary
-        end
-    end
+    local result={guiSlots=0,guiEquippedIndicators=0,guiIndicatorSamples={},
+        guiSlotSamples={},sourceCoverage="client-visible-inventory-gui",
+        authoritative=false,truncated=false}
     local gui=player:FindFirstChildOfClass("PlayerGui")
-    if gui then
-        local slots,indicators=0,0
-        local sampleLimit=80
-        local sampled=0
-        for _,obj in ipairs(gui:GetDescendants()) do
-            sampled=sampled+1
-            if sampled>25000 then break end
-            if obj:IsA("GuiObject") then
-                local n=obj.Name:lower()
-                if n:match("^slot%d+") or n:find("petslot",1,true) then
-                    slots=slots+1
-                    if #result.guiSlotSamples<sampleLimit then
-                        local p=obj.Parent
-                        local parentName=p and p.Name or ""
+    if not gui then return result end
+    local count=0
+    for _,obj in ipairs(gui:GetDescendants()) do
+        count=count+1
+        if count>25000 then result.truncated=true break end
+        if obj:IsA("GuiObject") then
+            local name=obj.Name:lower()
+            local path=inventoryGuiPath(obj,gui)
+            local lower=path:lower()
+            local inInventory=lower:find("itemsbg",1,true) or
+                lower:find("inventory",1,true) or lower:find("petsrightbase",1,true)
+            if inInventory then
+                if name:match("^slot%d+") or name:find("petslot",1,true) then
+                    result.guiSlots=result.guiSlots+1
+                    if #result.guiSlotSamples<100 then
                         result.guiSlotSamples[#result.guiSlotSamples+1]={
-                            key=(parentName.."/"..obj.Name):sub(1,120),
-                            visible=obj.Visible,class=obj.ClassName}
+                            key=path,visible=obj.Visible,class=obj.ClassName}
                     end
-                elseif n:find("equipped",1,true) or n:find("tickimage",1,true) then
-                    indicators=indicators+1
-                    if #result.guiIndicatorSamples<sampleLimit then
-                        local names={}
-                        local node=obj
-                        for j=1,5 do
-                            if not node or node==gui then break end
-                            table.insert(names,1,node.Name)
-                            node=node.Parent
-                        end
+                elseif name:find("equipped",1,true) or name:find("tickimage",1,true) then
+                    result.guiEquippedIndicators=result.guiEquippedIndicators+1
+                    if #result.guiIndicatorSamples<100 then
                         result.guiIndicatorSamples[#result.guiIndicatorSamples+1]={
-                            key=table.concat(names,"/"):sub(1,160),
-                            visible=obj.Visible,class=obj.ClassName}
+                            key=path,visible=obj.Visible,class=obj.ClassName}
                     end
                 end
             end
         end
-        result.guiSlots=slots
-        result.guiEquippedIndicators=indicators
     end
     return result
 end
 local function compareInventoryGuiSamples(before,after)
-    local result={indicatorChanges={},slotChanges={},sampledIndicators=0,
-        sampledSlots=0,authoritative=false}
-    local function compare(field,target,limit)
+    local result={indicatorChanges={},slotChanges={},
+        sampledIndicators=#(after.guiIndicatorSamples or {}),
+        sampledSlots=#(after.guiSlotSamples or {}),authoritative=false}
+    local function compare(field,target)
         local old={}
         for _,entry in ipairs(before[field] or {}) do old[entry.key]=entry end
         for _,entry in ipairs(after[field] or {}) do
             local prior=old[entry.key]
-            if prior and prior.visible~=entry.visible and #target<limit then
+            if prior and prior.visible~=entry.visible and #target<24 then
                 target[#target+1]={key=entry.key,beforeVisible=prior.visible,
                     afterVisible=entry.visible}
-            elseif not prior and #target<limit then
-                target[#target+1]={key=entry.key,transition="sample-appeared",
+            elseif not prior and #target<24 then
+                target[#target+1]={key=entry.key,transition="appeared",
                     afterVisible=entry.visible}
             end
             old[entry.key]=nil
         end
         for _,entry in pairs(old) do
-            if #target<limit then target[#target+1]={
-                key=entry.key,transition="sample-disappeared",
-                beforeVisible=entry.visible} end
+            if #target<24 then target[#target+1]={
+                key=entry.key,transition="disappeared",beforeVisible=entry.visible} end
         end
-        table.sort(target,function(a,b) return a.key<b.key end)
+        table.sort(target,function(x,y) return x.key<y.key end)
     end
-    compare("guiIndicatorSamples",result.indicatorChanges,24)
-    compare("guiSlotSamples",result.slotChanges,24)
-    result.sampledIndicators=#(after.guiIndicatorSamples or {})
-    result.sampledSlots=#(after.guiSlotSamples or {})
+    compare("guiIndicatorSamples",result.indicatorChanges)
+    compare("guiSlotSamples",result.slotChanges)
     return result
 end
 local function compareFeatureSnapshots(current)
@@ -1596,8 +1573,10 @@ local function observeInteractionObject(obj, root, label)
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
         local before = safeInteractionState()
         local beforeGui = safeNearbyGuiState(obj)
-        local inventorySummaryBefore=safeInventorySummary()
-        local lastInventorySummary=inventorySummaryBefore
+        local inventoryRelevant=feature=="inventory" or feature=="pets" or
+            (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
+            workflow.action=="unequip-all" or workflow.action=="sell"))
+        local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
         local beforePosition = nil
         local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if rootPart then beforePosition=rootPart.Position end
@@ -1704,15 +1683,19 @@ local function observeInteractionObject(obj, root, label)
                         actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
-                    if delaySeconds==3 then
+                    if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
                         local inventoryAfter=safeInventorySummary()
                         local guiEvidence=compareInventoryGuiSamples(
                             inventorySummaryBefore,inventoryAfter)
                         historyItem.inventoryObservationScope={
-                            before=inventorySummaryBefore,after=inventoryAfter,
                             guiEvidence=guiEvidence,
+                            beforeCounts={slots=inventorySummaryBefore.guiSlots,
+                                indicators=inventorySummaryBefore.guiEquippedIndicators},
+                            afterCounts={slots=inventoryAfter.guiSlots,
+                                indicators=inventoryAfter.guiEquippedIndicators},
                             sourceIsAuthoritative=false,
-                            overlappingInteractionsPossible=true
+                            overlappingInteractionsPossible=true,
+                            truncated=inventorySummaryBefore.truncated or inventoryAfter.truncated
                         }
                         historyItem.inventoryGuiCandidate=
                             #guiEvidence.indicatorChanges>0 or #guiEvidence.slotChanges>0
@@ -2288,7 +2271,7 @@ local function inspect(requestType)
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
-                inventoryDiscovery="bounded-per-indicator-and-slot-gui-diffs",
+                inventoryDiscovery="unique-relative-path-inventory-only-change-diffs",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
                 stateChangeLimit=MAX_STATE_CHANGES,
