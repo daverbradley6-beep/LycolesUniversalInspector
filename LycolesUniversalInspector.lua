@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.2.0
+-- Lycoles Universal Inspector v5.3.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.2.0"
+local VERSION = "5.3.0"
 
 local endpoint = ""
 local autoSend = true
@@ -56,6 +56,9 @@ local MAX_PENDING_ACTIONS = 24
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
 local MAX_STATE_CHANGES = 24
 local MAX_GUI_CHANGES = 16
+local transactionEvidenceSeen = {}
+local transactionEvidenceCount = 0
+local MAX_TRANSACTION_SIGNATURES = 2000
 local pendingActions = {}
 local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
 local scanInvocationCount = 0
@@ -204,7 +207,10 @@ local function safeInteractionState()
     return state
 end
 local function safeInventorySummary()
-    local result={sources={},count=0,limit=240}
+    -- Discover likely inventory representation without reading scripts or private values.
+    -- GUI-backed games may expose inventory only as UI slots, not ValueBase objects.
+    local result={sources={},count=0,limit=240,guiSlots=0,guiEquippedIndicators=0,
+        sourceCoverage="client-visible-value-and-gui-candidates",authoritative=false}
     local candidates={}
     for _,name in ipairs({"Data","leaderstats","Pets","Inventory","PetInventory","Items"}) do
         local root=player:FindFirstChild(name)
@@ -231,6 +237,25 @@ local function safeInventorySummary()
             end
             result.sources[#result.sources+1]=summary
         end
+    end
+    local gui=player:FindFirstChildOfClass("PlayerGui")
+    if gui then
+        local slots,indicators=0,0
+        local sampled=0
+        for _,obj in ipairs(gui:GetDescendants()) do
+            sampled=sampled+1
+            if sampled>25000 then break end
+            if obj:IsA("GuiObject") then
+                local n=obj.Name:lower()
+                if n:match("^slot%d+") or n:find("petslot",1,true) then
+                    slots=slots+1
+                elseif n:find("equipped",1,true) or n:find("tickimage",1,true) then
+                    indicators=indicators+1
+                end
+            end
+        end
+        result.guiSlots=slots
+        result.guiEquippedIndicators=indicators
     end
     return result
 end
@@ -1360,6 +1385,9 @@ local function classifyInteraction(obj)
         node=node.Parent
         depth=depth+1
     end
+    local lower=obj.Name:lower()
+    if lower=="items" then return "inventory",1,"known-navigation-control" end
+    if lower=="claim" then return "rewards",1,"known-navigation-control" end
     return nil,0,"unattributed"
 end
 local function linkWorkflow(obj, feature, sequence)
@@ -1408,6 +1436,10 @@ local function linkWorkflow(obj, feature, sequence)
             return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
                 inferredFeature=previous.feature,action=previous.kind,context=previous.context,
                 dialog=menuName,confidence="context-and-time-heuristic",verified=false}
+        end
+        if contextFeature=="travel" and isYes then
+            return {phase="travel-confirmed-unlinked",action="travel",
+                dialog=menuName,confidence="menu-context-heuristic",verified=false}
         end
         return {phase=isNo and "unlinked-cancel" or "unlinked-confirm",
             dialog=menuName,confidence="no-matching-initiator",verified=false}
@@ -1531,6 +1563,8 @@ local function observeInteractionObject(obj, root, label)
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
         local interactionSequence = observationSequence
+        local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
+        historyItem.transactionId=transactionId
         local seenStateKeys={}
         local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
@@ -1578,7 +1612,24 @@ local function observeInteractionObject(obj, root, label)
                             freshGui[#freshGui+1]=change
                         end
                     end
-                    workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#freshState
+                    -- Deduplicate across related initiation/confirmation interactions.
+                    -- Retain per-interaction evidence, but count a shared transition once.
+                    local transactionFresh={}
+                    for _,change in ipairs(freshState) do
+                        local identity=tostring(transactionId).."|"..change.key.."|"..
+                            tostring(change.before).."|"..tostring(change.after).."|"..
+                            tostring(change.transition)
+                        if not transactionEvidenceSeen[identity] then
+                            transactionEvidenceSeen[identity]=true
+                            transactionEvidenceCount=transactionEvidenceCount+1
+                            transactionFresh[#transactionFresh+1]=change
+                        end
+                    end
+                    if transactionEvidenceCount>MAX_TRANSACTION_SIGNATURES then
+                        transactionEvidenceSeen={}
+                        transactionEvidenceCount=0
+                    end
+                    workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
                     workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
                     if feature=="travel" and distance and distance>100 and not historyItem.travelCandidate then
                         historyItem.travelCandidate=true
@@ -1599,19 +1650,24 @@ local function observeInteractionObject(obj, root, label)
                         actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
-                    if delaySeconds==3 then historyItem.inventoryObservationScope=inventorySummaryBefore end
+                    if delaySeconds==3 then
+                        historyItem.inventoryObservationScope={
+                            before=inventorySummaryBefore,after=safeInventorySummary(),
+                            sourceIsAuthoritative=false
+                        }
+                    end
                     historyItem.guiStateChanges=historyItem.guiStateChanges or {}
                     for _,g in ipairs(freshGui) do historyItem.guiStateChanges[#historyItem.guiStateChanges+1]=g end
                     historyItem.guiStateChangeCount=#historyItem.guiStateChanges
                     historyItem.guiEvidenceStatus=#guiChanges>0 and "temporal-gui-transition-observed" or "none-observed"
                     workflowStats.guiTransitions=workflowStats.guiTransitions+#freshGui
                     workflowStats.multiWindowSamples=workflowStats.multiWindowSamples+1
-                    if #freshState>0 then
+                    if #transactionFresh>0 then
                         historyItem.evidenceLevel="temporal-state-change-observed"
-                        historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#freshState
+                        historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
                         historyItem.stateChanges=historyItem.stateChanges or {}
-                        for _,change in ipairs(freshState) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
-                        historyItem.featureStateEvidence=relevantStateEvidence(feature,changes)
+                        for _,change in ipairs(transactionFresh) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
+                        historyItem.featureStateEvidence=relevantStateEvidence(feature,transactionFresh)
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
                             local item=featureInteractions[feature]
@@ -1622,12 +1678,12 @@ local function observeInteractionObject(obj, root, label)
                         historyItem.clientStateCorroborated=true
                         workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
                     end
-                    if #freshState>0 or #freshGui>0 or (distance and distance>100 and feature=="travel") then
+                    if #transactionFresh>0 or #freshGui>0 or (distance and distance>100 and feature=="travel") then
                         changeCount=changeCount+1
                         changeQueue[#changeQueue+1]={
                             path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
                             featureCandidate=feature,sequence=historyItem.sequence,
-                            observationWindowSeconds=delaySeconds,changes=freshState,
+                            observationWindowSeconds=delaySeconds,changes=transactionFresh,
                             guiChanges=freshGui,travelDistanceStuds=distance,
                             actionEvidence=evidence,causalVerification=false,
                             sessionId=sessionId,snapshotId=snapshotId}
@@ -2169,6 +2225,8 @@ local function inspect(requestType)
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
+                transactionDeduplication="linked-workflow-sequence",
+                inventoryDiscovery="client-visible-value-and-gui-candidates",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
                 stateChangeLimit=MAX_STATE_CHANGES,
