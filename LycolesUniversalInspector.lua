@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.5
+-- Lycoles Universal Inspector v4.7.6
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.5"
+local VERSION = "4.7.6"
 
 local endpoint = ""
 local autoSend = true
@@ -189,7 +189,7 @@ local function buildReadiness(evidence, observedCount)
                 "Execute and verify the implementation"
             },
             note = "Unattributed interaction count is not feature verification",
-            unattributedInteractionEvents = observedCount or 0
+            unattributedInteractionEvents = unattributedInteractionCount or 0
         }
     end
     return result
@@ -1105,6 +1105,42 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
+local MENU_FEATURE_HINTS = {
+    itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
+    rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
+    freegiftsgui="rewards", freegiftsnewmenu="rewards",
+    shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel"
+}
+local function relevantStateEvidence(feature, changes)
+    if not feature then return nil end
+    if feature == "rebirth" then
+        local rebirthIncreased, strengthReset = false, false
+        for _, change in ipairs(changes) do
+            local key = change.key:lower()
+            if key:find("rebirth",1,true) and type(change.before)=="number"
+                and type(change.after)=="number" and change.after > change.before then
+                rebirthIncreased = true
+            end
+            if key:find("strength",1,true) and type(change.before)=="number"
+                and type(change.after)=="number" and change.after < change.before then
+                strengthReset = true
+            end
+        end
+        if rebirthIncreased then
+            return {rule="rebirth-counter-increased", corroboratingStrengthReset=strengthReset,
+                status="client-state-consistent", serverVerified=false}
+        end
+    elseif feature == "training" then
+        for _, change in ipairs(changes) do
+            if change.key:lower():find("strength",1,true)
+                and type(change.before)=="number" and type(change.after)=="number"
+                and change.after > change.before then
+                return {rule="strength-increased", status="client-state-consistent", serverVerified=false}
+            end
+        end
+    end
+    return nil
+end
 local function classifyInteraction(obj)
     local feature, count = featureForName(obj.Name)
     if feature then return feature, count, "control-name" end
@@ -1115,6 +1151,13 @@ local function classifyInteraction(obj)
         if candidate then return candidate, matches, "ancestor-name" end
         ancestor = ancestor.Parent
         depth = depth + 1
+    end
+    ancestor = obj.Parent
+    while ancestor do
+        local hint = MENU_FEATURE_HINTS[ancestor.Name:lower()]
+        if hint then return hint, 1, "menu-context-hint" end
+        if ancestor:IsA("ScreenGui") then break end
+        ancestor = ancestor.Parent
     end
     return nil, 0, "unattributed"
 end
@@ -1186,6 +1229,7 @@ local function observeInteractionObject(obj, root, label)
                 historyItem.evidenceLevel = "temporal-state-change-observed"
                 historyItem.stateChangeCount = #changes
                 historyItem.stateChanges = changes
+                historyItem.featureStateEvidence = relevantStateEvidence(feature, changes)
                 observerStats.stateDeltaEvents = observerStats.stateDeltaEvents + 1
                 if feature then featureInteractions[feature].stateChanges = featureInteractions[feature].stateChanges + 1 end
                 changeCount = changeCount + 1
@@ -1730,6 +1774,8 @@ local function inspect(requestType)
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=300,
+                featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
+                contextualAttributionIsHeuristic=true,
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
                 lastDisabledReason=observerStats.lastDisabledReason, lastCallbackAt=observerStats.lastCallbackAt,
