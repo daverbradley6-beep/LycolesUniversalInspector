@@ -62,19 +62,24 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
         data=json.loads(pathlib.Path(contracts_path).read_text(encoding='utf-8'))
         validated_contracts=validator.validate_contracts(plan,data)
     client_actions_lua=None
+    actions_gui_lua=None
     if validated_contracts is not None:
         action_generator=load_module("generate_client_actions.py","lycoles_client_actions")
         client_actions_lua=action_generator.render(validated_contracts)
+        if validated_contracts["contracts"]:
+            gui_generator=load_module("generate_actions_gui.py","lycoles_actions_gui")
+            actions_gui_lua=gui_generator.render(validated_contracts)
     lua=generator.render(plan)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"17.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"18.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
+        "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
         "implementedGameplayAutomation":[],
@@ -95,6 +100,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if actions_gui_lua is not None:
+        files['LycolesReviewedActionsGUI.lua']=actions_gui_lua.encode('utf-8')
     if client_actions_lua is not None:
         files['LycolesClientActions.lua']=client_actions_lua.encode('utf-8')
     if validated_contracts is not None:
