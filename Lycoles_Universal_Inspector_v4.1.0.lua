@@ -748,9 +748,11 @@ local function enrichEntry(entry, obj)
 
     -- Capture UI control structure only. Never collect text entered into TextBoxes.
     if obj:IsA("GuiButton") then
+        local buttonText = ""
+        pcall(function() buttonText = obj.Text end) -- ImageButton has no Text property.
         entry.controlMetadata = {
             controlType = obj.ClassName,
-            text = tostring(obj.Text or ""):sub(1,100):gsub("[%c]"," "),
+            text = tostring(buttonText or ""):sub(1,100):gsub("[%c]"," "),
             visible = obj.Visible,
             active = obj.Active,
             selectable = obj.Selectable
