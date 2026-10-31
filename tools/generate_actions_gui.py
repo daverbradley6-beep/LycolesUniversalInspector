@@ -73,7 +73,7 @@ local function display(name, result, err)
     else
         lines[1] = tostring(result)
     end
-    output.Text = name .. "\n" .. (#lines > 0 and table.concat(lines, "\n") or "No entries found.")
+    output.Text = name .. "\\n" .. (#lines > 0 and table.concat(lines, "\\n") or "No entries found.")
 end
 local actions = {
 ''']
