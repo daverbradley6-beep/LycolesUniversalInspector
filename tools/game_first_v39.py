@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOTS={"Workspace","ReplicatedStorage","ReplicatedFirst","Players","Lighting","StarterGui","StarterPack","StarterPlayer","SoundService","Teams"}
-SIGNALS={"training":("train","weight","barbell","muscle","strength","treadmill","lift","gym"),
+SIGNALS={"training":("train","training","weight","weights","barbell","barbells","muscle","strength","treadmill","lift","gym"),
          "pets":("pet","egg","hatch","companion"),
          "trading":("trade","offer","session"),
          "economy":("coin","cash","currency","gem","money","shop","purchase"),
