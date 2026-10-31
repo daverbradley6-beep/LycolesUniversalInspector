@@ -60,6 +60,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     sequences=sequence_compiler.compile_sequences(plan)
     proposer=load_module("propose_actions.py","lycoles_proposals")
     proposals=proposer.propose(plan)
+    verification_generator=load_module("generate_verification_harness.py","lycoles_verification")
+    verification_plan,verification_lua=verification_generator.compile_verification(sequences)
     validated_contracts=None
     if contracts_path is not None:
         validator=load_module('validate_contracts.py','lycoles_contracts')
@@ -78,10 +80,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"20.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"21.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
+        "manualVerificationChecks":len(verification_plan["checks"]),
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
@@ -95,6 +98,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
     files={
+      "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
@@ -108,6 +112,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if verification_lua is not None:
+        files["LycolesManualVerification.lua"]=verification_lua.encode("utf-8")
     if actions_gui_lua is not None:
         files['LycolesReviewedActionsGUI.lua']=actions_gui_lua.encode('utf-8')
     if client_actions_lua is not None:
