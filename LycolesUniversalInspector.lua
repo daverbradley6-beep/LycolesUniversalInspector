@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v11.0.0
+-- Lycoles Universal Inspector v12.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "11.0.0"
+local VERSION = "12.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -600,14 +600,14 @@ end
 
 local output = create("TextBox", {
     Text = "",
-    Size = UDim2.fromOffset(484, 164),
+    Size = UDim2.fromOffset(360, 164),
     Position = UDim2.fromOffset(12, 164),
     BackgroundColor3 = Color3.fromRGB(35, 35, 35),
     TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 13,
+    TextSize = 12,
     Font = Enum.Font.Code,
     MultiLine = true,
-    TextWrapped = true,
+    TextWrapped = false,
     TextEditable = false,
     TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
@@ -714,7 +714,11 @@ local function transmit()
     saveEndpoint()
     local receiver = endpoint
     local parts = pendingParts
-    local first = HttpService:JSONDecode(parts[1])
+    local firstOk, first = pcall(function() return HttpService:JSONDecode(parts[1]) end)
+    if not firstOk or type(first)~="table" then
+        status.Text = "Upload blocked: malformed first part"
+        return
+    end
     local scanId = first.scanId
     local partCount = #parts
     -- Reject mismatched parts before any upload; the receiver requires
@@ -753,7 +757,7 @@ local function transmit()
                         end
                         pendingAcknowledged[i] = message
                         succeeded = succeeded + 1
-                        status.Text = "Verified " .. succeeded .. "/" .. partCount .. " parts"
+                        status.Text = "Receiver ACK " .. succeeded .. "/" .. partCount .. " parts"
                     end
                 end
                 active = active - 1
@@ -764,7 +768,7 @@ local function transmit()
         if not alive or generation ~= uploadGeneration then return end
         local elapsed = math.floor((os.clock()-started)*100)/100
         if failed then
-            status.Text = failed .. "; SEND JSON to retry"
+            status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
         elseif succeeded == partCount then
             status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
                 .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
@@ -2462,16 +2466,16 @@ end
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
 local autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
-autoEvidenceToggle.Size = UDim2.fromOffset(144, 26)
-autoEvidenceToggle.Position = UDim2.new(1, -150, 0, 4)
-autoEvidenceToggle.Text = "AUTO EVIDENCE: ON"
-autoEvidenceToggle.TextSize = 11
+autoEvidenceToggle.Size = UDim2.fromOffset(116, 26)
+autoEvidenceToggle.Position = UDim2.fromOffset(384, 164)
+autoEvidenceToggle.Text = "EVIDENCE: ON"
+autoEvidenceToggle.TextSize = 10
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
 autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
-autoEvidenceToggle.Parent = interactionToggle.Parent
+autoEvidenceToggle.Parent = panel
 autoEvidenceToggle.MouseButton1Click:Connect(function()
     AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
-    autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "AUTO EVIDENCE: ON" or "AUTO EVIDENCE: OFF"
+    autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
     autoEvidenceToggle.BackgroundColor3 = AUTO_EVIDENCE_ENABLED
         and Color3.fromRGB(50,105,85) or Color3.fromRGB(85,85,105)
     status.Text = AUTO_EVIDENCE_ENABLED and "Automatic evidence enabled" or "Automatic evidence paused"
