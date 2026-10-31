@@ -66,3 +66,15 @@ python3 -m unittest discover -s tests -v
 ```
 
 The compiler writes `capability-plan.json` and `capability-plan.md`. It fails closed on missing parts, mixed scans, duplicate identities, incorrect object totals, or incomplete scans. It inventories candidate features automatically, but intentionally does **not** generate arbitrary server-dependent Roblox actions from passive evidence. The Cloudflare receiver in this repository must be deployed separately; the connected inspector backend may not be the same service.
+
+
+## v9 deterministic Lua generation
+
+After producing a complete `build/capability-plan.json` using the v8 compiler, run:
+
+```sh
+python3 tools/generate_script.py build/capability-plan.json --output build/generated
+python3 -m unittest discover -s tests -v
+```
+
+Outputs: `LycolesGeneratedUtility.lua` and `release-manifest.json`. The generated Lua contains only safe client-side diagnostics and lists gameplay systems as unimplemented candidates. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
