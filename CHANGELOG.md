@@ -1,3 +1,13 @@
+## v29.0.0 — Action audit evaluation and feature coverage
+
+- Add a bounded, schema-checked evaluator for v28 reviewed-actions GUI execution audit JSON.
+- Report successful client function returns, client errors, and untested operations separately.
+- Reject unknown actions, invalid durations, mismatched Place IDs, and unreviewed contracts.
+- Generate feature-coverage.json with workflow counts, reviewed client action associations and explicit missing implementation evidence.
+- Integrate both into deterministic offline release ZIPs; accept optional --audit with --contracts.
+- Add regression tests for success, failure, absent evidence, provenance and archive contents.
+- Client function return success does not establish gameplay effects or server-side authority.
+
 ## v28.0.0 — Expanded client implementation pipeline
 
 - Implement three additional real, bounded client inspection functions: visible GUI button inventory, local player primitive attributes, and local character humanoid state.
