@@ -1,4 +1,4 @@
-# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v6.0+)
+# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v7.0+)
 
 ## Mission
 Create a **complete, functional, game-specific Luau script with a polished GUI** using evidence collected by **Lycoles Universal Inspector**. This prompt is UNIVERSAL: never assume the target is Muscle Legends or that a fixed set of gameplay systems exists. Determine the target game from the latest inspection's placeId, gameId, gameName and user instructions. The user may execute via Potassium without Roblox Studio. Do not deliver a menu full of placeholder buttons or fabricate functionality.
@@ -69,3 +69,14 @@ F. Performance/stability considerations, known risks and next targeted observati
 - Prefer a substantial implementation batch to incremental GUI mockups. No placeholder gameplay buttons; unavailable features should be described in the release report rather than masquerading as working controls.
 - A client-only read-only inspector cannot guarantee reproduction of server-authoritative mechanics, and should not inspect inaccessible scripts, bypass protections, intercept private data, or forge network operations.
 - If the user's aim is minimal manual effort, request a single representative normal gameplay session covering multiple systems, not repeated one-feature-at-a-time debugging. Automatic evidence capture should run throughout that session.
+
+
+## v7.0 — Receiver Integrity and Automated Release Gating
+
+Before generating game-specific Lua, obtain the scan ID from the inspection report and verify multipart receiver integrity. A scan is not implementation-ready merely because uploads were acknowledged. Verify expected versus received parts, expected versus indexed objects, duplicate keys, and whether interaction history was retained. The reference Cloudflare Worker exposes GET /reports/READ_KEY/SCAN_ID/integrity and /manifest after deployment.
+
+Produce a game-specific capability matrix in one batch from all available evidence. Separate observed gameplay outcomes from repeatable client-side implementations. Do not fabricate network calls, GUI activation methods, or protected/server behaviour. Prioritize a complete, coherent release over piecemeal GUI mockups. Generate executable modules only for supported and permitted operations; unimplementable features belong in the report, not decorative buttons.
+
+Review the Lua source for syntax, API usage, lifecycle cleanup, and dependency failures before GitHub upload. GitHub verification proves deployment, not gameplay functionality. State explicitly when a runtime test is unavailable. Use one representative user gameplay session with automatic passive recording rather than asking for dozens of individual feature tests.
+
+The reference receiver must be deployed separately to Cloudflare. Updating its GitHub source alone does not update the running Worker or the connected Inspector plugin backend. Never claim live indexing is repaired until the deployed service reports integrity success.
