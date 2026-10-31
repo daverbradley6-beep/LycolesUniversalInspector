@@ -83,28 +83,3 @@ def main():
     target=pathlib.Path(a.output);target.parent.mkdir(parents=True,exist_ok=True)
     target.write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
 if __name__=="__main__":main()
-        steps.append({"path":item["path"],"controlType":item.get("controlType") if _safe(item.get("controlType")) else None,
-          "sequence":item.get("sequence") if type(item.get("sequence")) is int else None,
-          "stateChanges":changes,"clientStateCorroborated":item.get("clientStateCorroborated") is True,
-          "outcomeVerified":item.get("outcomeVerified") is True})
-    workflows=[]
-    for (feature,tid),steps in sorted(groups.items()):
-        steps.sort(key=lambda s:(s["sequence"] is None,s["sequence"] or 0))
-        workflows.append({"feature":feature,"transaction":tid,"steps":steps,
-          "observedStateChanges":sum(len(s["stateChanges"]) for s in steps),
-          "clientCorroborated":any(s["clientStateCorroborated"] for s in steps),
-          "serverVerified":False,"automaticallyExecutable":False,
-          "requiredNextStep":"Review actual supported action interface and test a permitted implementation"})
-    return {"schemaVersion":"20.0","placeId":integrity["placeId"],"scanId":integrity.get("scanId"),
-      "workflowCount":len(workflows),"rejectedEvents":rejected,"workflows":workflows,
-      "notice":"Temporal correlation is not proof of causality or permission to invoke game remotes."}
-
-def main():
-    import argparse,pathlib
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("plan");p.add_argument("--output",default="build/observed-workflows.json")
-    a=p.parse_args()
-    result=compile_sequences(json.loads(pathlib.Path(a.plan).read_text(encoding="utf-8")))
-    target=pathlib.Path(a.output);target.parent.mkdir(parents=True,exist_ok=True)
-    target.write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
-if __name__=="__main__":main()
