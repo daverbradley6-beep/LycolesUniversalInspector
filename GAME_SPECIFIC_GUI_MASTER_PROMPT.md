@@ -57,3 +57,15 @@ E. Test checklist with each function explicitly marked **untested**, **passed**,
 F. Performance/stability considerations, known risks and next targeted observation requests.
 
 **Priority:** working functionality > evidence accuracy > stability > UI polish > feature count. A universal Inspector enables discovery across games; it cannot automatically guarantee a working implementation for every game or bypass server-enforced behavior.
+
+
+## v6.0 — Automatic Evidence and Release Gate
+
+- Use the newest matching inspection and compare baseline with automatic post-interaction reports. The inspector enables passive observation automatically and schedules bounded scans after gameplay interactions settle.
+- A complete multipart upload is **not** proof of a complete searchable index. Verify indexed unique objects, duplicates, scan part counts, and missing roots independently. If indexing coverage is insufficient, block feature claims and report the precise receiver defect.
+- Distinguish client-visible UI state from the game's own controller callbacks. Never invent instance APIs or claim that changing a GUI's Visible property invokes gameplay logic. GuiButton.Activated is an event, not an invocable method.
+- Inventory every feature before implementation. For each, record the observed operation, dependencies, permitted client implementation, expected observable result, and confidence. Implement only where evidence supports a working approach.
+- A successful static check or GitHub upload is not a live Roblox test. Report these stages separately: discovered, observed, implemented, static-checked, live-tested, confirmed.
+- Prefer a substantial implementation batch to incremental GUI mockups. No placeholder gameplay buttons; unavailable features should be described in the release report rather than masquerading as working controls.
+- A client-only read-only inspector cannot guarantee reproduction of server-authoritative mechanics, and should not inspect inaccessible scripts, bypass protections, intercept private data, or forge network operations.
+- If the user's aim is minimal manual effort, request a single representative normal gameplay session covering multiple systems, not repeated one-feature-at-a-time debugging. Automatic evidence capture should run throughout that session.
