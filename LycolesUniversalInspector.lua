@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v13.0.0
+-- Lycoles Universal Inspector v14.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "13.0.0"
+local VERSION = "14.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -465,8 +465,10 @@ local panel = create("Frame", {
 
 create("TextLabel", {
     Text = "Lycoles Universal Inspector v" .. VERSION,
-    Size = UDim2.new(1, 0, 0, 48),
+    Size = UDim2.new(1, -50, 0, 48),
     BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
     Font = Enum.Font.GothamBold
@@ -2467,16 +2469,18 @@ end
 local autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
 autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
-autoEvidenceToggle.Position = UDim2.fromOffset(380, 164)
+autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)
 autoEvidenceToggle.Text = "EVIDENCE: ON"
 autoEvidenceToggle.TextSize = 10
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
 autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
 autoEvidenceToggle.Parent = panel
+-- Keep evidence control below INTERACT and outside the report viewport.
+autoEvidenceToggle.ZIndex = 4
 local evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
     Text = "After interaction: up to 4 full rescans",
-    Position = UDim2.fromOffset(379, 196),
+    Position = UDim2.fromOffset(379, 201),
     Size = UDim2.fromOffset(121, 55),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
@@ -2487,7 +2491,7 @@ local evidenceHint = create("TextLabel", {
 local uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
-    Position = UDim2.fromOffset(379, 258),
+    Position = UDim2.fromOffset(379, 263),
     Size = UDim2.fromOffset(121, 65),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
