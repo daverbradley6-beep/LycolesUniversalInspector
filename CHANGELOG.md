@@ -1,3 +1,11 @@
+## v9.0.0 — Deterministic Client Utility Generation (experimental)
+
+- Add `tools/generate_script.py` to convert validated v8 capability plans into place-specific Roblox Lua utilities.
+- Generate functional client diagnostics (numeric stats, UI catalog, proximity prompts, discovered-feature inventory), with cleanup and place guard.
+- Add SHA-256 release manifest with explicit untested/client-only status.
+- Add generator regression tests including malformed input and injection-resistant feature strings.
+- Scope limit: no automatic implementation of server-authoritative gameplay; no live Roblox test yet. Source is committed to GitHub but not deployed to a game.
+
 ## v8.0.0 — Automated Scan Compilation (experimental)
 
 - Add stdlib-only offline multipart compiler: `tools/compile_scan.py`.
