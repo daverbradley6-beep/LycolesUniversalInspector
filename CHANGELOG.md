@@ -1,3 +1,10 @@
+## v15.0.0 — Reviewed client action contracts
+
+- Added `tools/validate_contracts.py` to validate explicitly reviewed, place-bound, read-only client action contracts against features discovered in a complete scan.
+- Added optional `--contracts` to the release builder; validated contracts are packaged with a count in the release manifest.
+- Added tests for approval, unreviewed contracts, unsupported actions and mismatched places.
+- This is a conservative implementation-contract stage. It does not infer or execute server gameplay actions and does not bypass anti-cheat.
+
 ## v14.0.0 — Evidence-ranked implementation review and UI clearance
 
 - Add `implementation-review.md` to each generated release bundle, ranking candidate game features by observed evidence.
