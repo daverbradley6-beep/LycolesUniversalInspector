@@ -36,6 +36,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             with zipfile.ZipFile(z) as archive:
                 self.assertIn("LycolesGeneratedUtility.lua",archive.namelist())
                 self.assertIn("release-manifest.json",archive.namelist())
+                self.assertIn("feature-coverage.json",archive.namelist())
+                self.assertIn("review-contracts-template.json",archive.namelist())
             builder.build(parts,base/"out")
             self.assertEqual(original,z.read_bytes())
     def test_incomplete_scan_fails_closed(self):
