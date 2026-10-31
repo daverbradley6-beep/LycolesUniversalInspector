@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.3
+-- Lycoles Universal Inspector v4.7.4
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.3"
+local VERSION = "4.7.4"
 
 local endpoint = ""
 local autoSend = true
@@ -48,6 +48,10 @@ local interactionObserveEnabled = false
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
+local attributedInteractionCount = 0
+local unattributedInteractionCount = 0
+local interactionHistory = {}
+local MAX_INTERACTION_HISTORY = 60
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
@@ -1079,6 +1083,20 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
+local function classifyInteraction(obj)
+    local feature, count = featureForName(obj.Name)
+    if feature then return feature, count, "control-name" end
+    local ancestor = obj.Parent
+    local depth = 0
+    while ancestor and depth < 6 do
+        local candidate, matches = featureForName(ancestor.Name)
+        if candidate then return candidate, matches, "ancestor-name" end
+        ancestor = ancestor.Parent
+        depth = depth + 1
+    end
+    return nil, 0, "unattributed"
+end
+
 local function observeInteractionObject(obj, root, label)
     if interactionObserved[obj] then return end
     local path = watchPath(obj, root, label)
@@ -1101,7 +1119,20 @@ local function observeInteractionObject(obj, root, label)
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
-        local feature, matchCount = featureForName(obj.Name)
+        local feature, matchCount, attributionSource = classifyInteraction(obj)
+        if feature then
+            attributedInteractionCount = attributedInteractionCount + 1
+        else
+            unattributedInteractionCount = unattributedInteractionCount + 1
+        end
+        local historyItem = {
+            path=path:sub(1,400), featureCandidate=feature,
+            attribution=attributionSource, controlType=controlType,
+            observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
+            stateChangeCount=0
+        }
+        interactionHistory[#interactionHistory+1] = historyItem
+        if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
         local before = safeInteractionState()
         if feature then
             local item = featureInteractions[feature] or {count=0,stateChanges=0}
@@ -1113,7 +1144,7 @@ local function observeInteractionObject(obj, root, label)
         changeQueue[#changeQueue + 1] = {
             path = path:sub(1,400), class = obj.ClassName,
             featureCandidate = feature, featureMatchCount = matchCount,
-            attribution = feature and "unique-control-name-token" or "unattributed",
+            attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
@@ -1129,6 +1160,8 @@ local function observeInteractionObject(obj, root, label)
                 end
             end
             if #changes > 0 then
+                historyItem.stateChangeCount = #changes
+                historyItem.stateChanges = changes
                 observerStats.stateDeltaEvents = observerStats.stateDeltaEvents + 1
                 if feature then featureInteractions[feature].stateChanges = featureInteractions[feature].stateChanges + 1 end
                 changeCount = changeCount + 1
@@ -1668,7 +1701,9 @@ local function inspect(requestType)
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=changeCount, unattributedEvents=interactionEventCount,
+                pendingObservationEvents=changeCount, totalInteractionEvents=interactionEventCount,
+                attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
+                recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
                 lastDisabledReason=observerStats.lastDisabledReason, lastCallbackAt=observerStats.lastCallbackAt,
