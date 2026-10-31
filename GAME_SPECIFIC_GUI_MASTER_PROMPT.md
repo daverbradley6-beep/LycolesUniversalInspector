@@ -115,3 +115,8 @@ Compile evidence-backed per-feature workflow specifications from the validated p
 ## v14 release quality requirements
 
 Include `implementation-review.md` in each generated release. Rank evidence-backed features by corroboration and interaction strength, document missing implementation contracts, and never confuse a discovered gameplay system with a working function. Keep the title within a header region reserved for the minimise button. Keep AUTO EVIDENCE below INTERACT with a non-overlapping sidebar. Require offline regression checks and separate Roblox runtime validation.
+
+
+## v15 implementation-contract gate
+
+Use `tools/validate_contracts.py` for optional reviewed, place-bound client action contracts. Only known read-only client actions are allowed. Require explicit review and scan evidence; never infer arbitrary server remote arguments, bypasses, or unverified gameplay implementations. Include validated contracts in release manifests without claiming they were runtime tested.
