@@ -56,6 +56,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
         plan=merger.merge_evidence(plan,observations)
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
+    sequence_compiler=load_module("compile_interaction_sequences.py","lycoles_sequences")
+    sequences=sequence_compiler.compile_sequences(plan)
     proposer=load_module("propose_actions.py","lycoles_proposals")
     proposals=proposer.propose(plan)
     validated_contracts=None
@@ -76,9 +78,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"19.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"20.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "readOnlyActionProposals":len(proposals["proposals"]),
+        "observedWorkflowSequences":sequences["workflowCount"],
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
@@ -92,6 +95,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
     files={
+      "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
