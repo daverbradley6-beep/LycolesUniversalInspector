@@ -1,3 +1,10 @@
+## v23.0.0 — Runtime report export
+
+- Generated read-only verification harness exports schema-compatible JSON from before/after client snapshots.
+- Require baseline capture before report export.
+- Expand regression tests for report generation.
+- Report transfer and gameplay execution remain manual.
+
 ## v22.0.0 — Runtime feedback evaluation
 
 - Add optional runtime feedback report ingestion to offline releases.
