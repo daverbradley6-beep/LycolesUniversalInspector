@@ -1326,9 +1326,11 @@ local function inspect()
                             coverage.omitted = coverage.omitted + 1
                             if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
-                        if i % 500 == 0 then
+                        if os.clock() >= yieldDeadline then
                             status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
+                            yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
                         end
                         end
                     else
