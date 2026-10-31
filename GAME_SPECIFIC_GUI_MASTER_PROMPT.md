@@ -110,3 +110,8 @@ Do not place controls over the inspector title, minimise button, status, log or 
 ## v13 universal workflow evidence stage
 
 Compile evidence-backed per-feature workflow specifications from the validated plan, preserving observed interaction counts, temporal transitions, client corroboration, and client outcomes. Include `workflow-specs.json` in the release artifact. Treat observed workflows as non-executable until a reproducible permitted action contract and in-game outcome verification exist. Never fabricate remotes, parameters, or functionality.
+
+
+## v14 release quality requirements
+
+Include `implementation-review.md` in each generated release. Rank evidence-backed features by corroboration and interaction strength, document missing implementation contracts, and never confuse a discovered gameplay system with a working function. Keep the title within a header region reserved for the minimise button. Keep AUTO EVIDENCE below INTERACT with a non-overlapping sidebar. Require offline regression checks and separate Roblox runtime validation.
