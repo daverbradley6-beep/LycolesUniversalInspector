@@ -1,3 +1,10 @@
+## v22.0.0 — Runtime feedback evaluation
+
+- Add optional runtime feedback report ingestion to offline releases.
+- Validate report Place ID, check identities, expected leaderstats keys and duplicate submissions.
+- Produce structured before/after comparison statuses without automatically approving gameplay automation.
+- Add regression tests for valid and invalid reports.
+
 ## v21.0.0
 
 - Generate manual read-only before/after verification plans from observed leaderstats transitions.
