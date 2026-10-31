@@ -16,8 +16,12 @@ def compile_scan(directory):
         raw=file.read_bytes()
         if len(raw)>3_000_000: fail(f"Part too large: {file.name}")
         data=json.loads(raw)
-        if not isinstance(data,dict) or not isinstance(data.get("objects"),list): fail(f"Invalid part: {file.name}")
+        if not isinstance(data,dict) or not isinstance(data.get("objects"),list):
+            if isinstance(data,dict) and "partIndex" not in data and ("objectCount" in data or "metadata" in data):
+                continue
+            fail(f"Invalid part: {file.name}")
         parts.append(data)
+    if not parts: fail("No multipart payloads found")
     first=parts[0]
     scan_id=first.get("scanId"); place_id=first.get("placeId")
     count=first.get("partCount")
@@ -37,10 +41,14 @@ def compile_scan(directory):
     missing=[i for i in range(1,count+1) if i not in by_index]
     if missing: fail(f"Missing parts: {missing[:30]} (total {len(missing)})")
     ordered=[by_index[i][1] for i in range(1,count+1)]
-    objects=[o for p in ordered for o in p["objects"] if isinstance(o,dict)]
+    if any(not isinstance(o,dict) for p in ordered for o in p["objects"]):
+        fail("Malformed object record")
+    objects=[o for p in ordered for o in p["objects"]]
+    if len(objects)>2_000_000: fail("Object count exceeds safety limit")
     metadata=next((p for p in ordered if isinstance(p.get("scanStats"),dict)),None)
     if metadata is None: fail("Missing scan metadata")
     expected=metadata["scanStats"].get("recorded")
+    if expected is None: expected=metadata["scanStats"].get("recordedObjects")
     if expected is not None and expected!=len(objects):
         fail(f"Object count mismatch: expected {expected}, received {len(objects)}")
     history=[]
@@ -59,6 +67,7 @@ def compile_scan(directory):
             feature_names.add(str(item["featureCandidate"]))
     counts=collections.Counter(str(o.get("class","Unknown")) for o in objects)
     paths=collections.Counter((str(o.get("path","")),str(o.get("scanOrdinal",""))) for o in objects)
+    if any(not o.get("path") for o in objects): fail("Object missing path")
     duplicate_count=sum(v-1 for v in paths.values())
     if duplicate_count:
         fail(f"Duplicate object identities: {duplicate_count}")
@@ -66,21 +75,35 @@ def compile_scan(directory):
     for name in sorted(feature_names):
         events=[e for e in history if isinstance(e,dict) and e.get("featureCandidate")==name]
         observed=sum(1 for e in events if e.get("evidenceLevel"))
+        corroborated=sum(1 for e in events if e.get("clientStateCorroborated") is True
+            or (isinstance(e.get("featureStateEvidence"),dict)
+                and e["featureStateEvidence"].get("status")=="client-state-consistent"))
+        transitions=sum(1 for e in events if e.get("stateChanges") or e.get("guiStateChanges"))
         outcomes=sum(1 for e in events if e.get("outcomeVerified") is True)
         features.append({
             "feature":name,"interactionEvents":len(events),
             "observedEvents":observed,"verifiedClientOutcomes":outcomes,
+            "clientCorroboratedEvents":corroborated,"temporalTransitionEvents":transitions,
             "status":"client-outcome-observed" if outcomes else ("interaction-observed" if observed else "discovered"),
             "implementationReady":False,
             "reason":"No verified, permitted reproducible implementation contract in passive scan",
             "evidence":feature_evidence.get(name) if isinstance(feature_evidence,dict) else None,
+            "readiness":readiness.get(name) if isinstance(readiness,dict) else None,
         })
+    source_diagnostics=metadata.get("diagnostics") or {}
+    if source_diagnostics and source_diagnostics.get("complete") is False:
+        fail("Source diagnostics indicate incomplete scan")
     integrity={"scanId":scan_id,"placeId":place_id,"parts":count,"objects":len(objects),
                "uniqueObjectIdentities":len(paths),"interactionEvents":len(history),
                "scanComplete":bool(metadata["scanStats"].get("complete"))}
     if not integrity["scanComplete"]: fail("Source scan reports incomplete root coverage")
-    plan={"schemaVersion":"8.0","integrity":integrity,"featureCount":len(features),
+    plan={"schemaVersion":"11.0","integrity":integrity,"featureCount":len(features),
           "features":features,"classCounts":dict(counts),
+          "sourceDiagnostics":{"omittedObjects":metadata["scanStats"].get("omitted"),
+              "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),
+              "scanMode":metadata["scanStats"].get("mode"),
+              "snapshotId":metadata.get("snapshotId")},
+          "interactionDiagnostics":metadata.get("interactionDiagnostics") or {},
           "releaseGate":{"gameplayAutomationApproved":False,
                          "reason":"Passive inspection cannot establish replayable server-authoritative actions",
                          "nextStep":"Review feature contracts and validate supported operations in a permitted environment"}}
