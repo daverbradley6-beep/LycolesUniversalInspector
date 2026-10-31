@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.7
+-- Lycoles Universal Inspector v5.0.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.7"
+local VERSION = "5.0.0"
 
 local endpoint = ""
 local autoSend = true
@@ -51,7 +51,10 @@ local interactionEventCount = 0
 local attributedInteractionCount = 0
 local unattributedInteractionCount = 0
 local interactionHistory = {}
-local MAX_INTERACTION_HISTORY = 60
+local MAX_INTERACTION_HISTORY = 180
+local MAX_PENDING_ACTIONS = 24
+local pendingActions = {}
+local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0}
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
@@ -148,6 +151,16 @@ local function compareNearbyGuiState(before, after)
             if #changes >= 16 then break end
         end
     end
+    for key, value in pairs(after) do
+        if not before[key] and #changes < 16 then
+            changes[#changes+1]={path=key,transition="appeared",afterVisible=value.visible,afterActive=value.active}
+        end
+    end
+    for key, value in pairs(before) do
+        if not after[key] and #changes < 16 then
+            changes[#changes+1]={path=key,transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
+        end
+    end
     return changes
 end
 local function safeInteractionState()
@@ -161,7 +174,7 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= 300 then break end
+                if count >= 1000 then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
                     local segments = {}
                     local parent = obj
@@ -1187,6 +1200,66 @@ local function relevantStateEvidence(feature, changes)
     end
     return nil
 end
+local function actionKind(name)
+    local n=name:lower()
+    if n:find("sell",1,true) then return "sell" end
+    if n:find("equip",1,true) then return "equip" end
+    if n:find("craft",1,true) or n:find("fuse",1,true) then return "craft" end
+    if n:find("claim",1,true) then return "claim" end
+    if n:find("buy",1,true) or n:find("purchase",1,true) then return "purchase" end
+    if n:find("rebirth",1,true) then return "rebirth" end
+    if n:find("travel",1,true) or n:find("teleport",1,true) then return "travel" end
+    return nil
+end
+local function workflowContext(obj, feature)
+    local names, node={},obj
+    for i=1,9 do
+        if not node then break end
+        names[#names+1]=node.Name:sub(1,60)
+        node=node.Parent
+    end
+    return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
+        kind=actionKind(obj.Name), clientOnly=true}
+end
+local function linkWorkflow(obj, feature, sequence)
+    local name=obj.Name:lower()
+    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confirm"
+    local isNo=name=="nobutton" or name=="cancelbutton" or name=="cancel"
+    local now=os.clock()
+    for i=#pendingActions,1,-1 do
+        if now-pendingActions[i].clock > 12 then
+            table.remove(pendingActions,i)
+            workflowStats.expired=workflowStats.expired+1
+        end
+    end
+    local parent=obj.Parent
+    local confirmation=false
+    for i=1,5 do
+        if not parent then break end
+        local n=parent.Name:lower()
+        if n:find("confirm",1,true) or n:find("choice",1,true) then confirmation=true end
+        parent=parent.Parent
+    end
+    if (isYes or isNo) and confirmation then
+        local previous=pendingActions[#pendingActions]
+        if previous then
+            table.remove(pendingActions)
+            if isNo then workflowStats.cancelled=workflowStats.cancelled+1
+            else workflowStats.linkedConfirmations=workflowStats.linkedConfirmations+1 end
+            return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
+                inferredFeature=previous.feature,action=previous.kind,context=previous.context,
+                confidence="temporal-context-heuristic",verified=false}
+        end
+    end
+    local kind=actionKind(obj.Name)
+    if kind and kind~="travel" then
+        local context=workflowContext(obj,feature)
+        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
+        if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
+        return {phase="initiated",action=kind,confidence="control-name-heuristic",verified=false}
+    end
+    return nil
+end
 local function classifyInteraction(obj)
     local feature, count = featureForName(obj.Name)
     if feature then return feature, count, "control-name" end
@@ -1236,11 +1309,18 @@ local function observeInteractionObject(obj, root, label)
         else
             unattributedInteractionCount = unattributedInteractionCount + 1
         end
+        local workflow = linkWorkflow(obj, feature, observationSequence + 1)
+        if workflow and workflow.inferredFeature and not feature then
+            feature=workflow.inferredFeature
+            attributionSource="linked-confirmation-heuristic"
+            unattributedInteractionCount=unattributedInteractionCount-1
+            attributedInteractionCount=attributedInteractionCount+1
+        end
         local historyItem = {
             path=path:sub(1,400), featureCandidate=feature,
             attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
-            stateChangeCount=0, guiContext=interactionGuiContext(obj),
+            stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
@@ -1269,6 +1349,7 @@ local function observeInteractionObject(obj, root, label)
             local guiChanges = compareNearbyGuiState(beforeGui, safeNearbyGuiState(obj))
             historyItem.guiStateChanges = guiChanges
             historyItem.guiStateChangeCount = #guiChanges
+            workflowStats.guiTransitions=workflowStats.guiTransitions+#guiChanges
             historyItem.guiEvidenceStatus = #guiChanges > 0 and "temporal-gui-transition-observed" or "none-observed"
             local changes = {}
             for key, value in pairs(before) do
@@ -1541,8 +1622,6 @@ interactionToggle.MouseButton1Click:Connect(function()
 end)
 
 local function inspect(requestType)
-    scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or "manual"
     if running or uploading then
         status.Text = "Wait for current scan/upload to finish"
         return
@@ -1556,6 +1635,8 @@ local function inspect(requestType)
         end
     end
 
+    scanInvocationCount = scanInvocationCount + 1
+    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or "manual"
     running = true
     siblingContextCache = setmetatable({}, {__mode="k"})
     status.Text = "Scanning..."
@@ -1823,8 +1904,10 @@ local function inspect(requestType)
                 pendingObservationEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
+                workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
+                verificationPolicy="read-only-client-corroboration-not-server-proof",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
-                gameplayOutcomesVerified=0, stateSnapshotMaxValues=300,
+                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000,
                 featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
