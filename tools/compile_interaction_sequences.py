@@ -90,7 +90,7 @@ def main():
     result=compile_sequences(json.loads(pathlib.Path(a.plan).read_text(encoding="utf-8")))
     target=pathlib.Path(a.output);target.parent.mkdir(parents=True,exist_ok=True)
     target.write_text(json.dumps(result,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
-if __name__=="__main__":main()        changes=_state_changes(item)
+if __name__=="__main__":main()
         steps.append({"path":item["path"],"controlType":item.get("controlType") if _safe(item.get("controlType")) else None,
           "sequence":item.get("sequence") if type(item.get("sequence")) is int else None,
           "stateChanges":changes,"clientStateCorroborated":item.get("clientStateCorroborated") is True,
