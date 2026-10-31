@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.4
+-- Lycoles Universal Inspector v4.7.5
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.4"
+local VERSION = "4.7.5"
 
 local endpoint = ""
 local autoSend = true
@@ -88,6 +88,22 @@ local function featureForName(name)
     return #matches == 1 and matches[1] or nil, #matches
 end
 -- Local-only bounded snapshots. No player IDs, chat, text fields or server claims.
+local function interactionGuiContext(obj)
+    local context = {ancestors={}, visibleMenus={}}
+    local node = obj.Parent
+    for i=1,8 do
+        if not node then break end
+        context.ancestors[#context.ancestors+1] = node.Name:sub(1,80)
+        if node:IsA("ScreenGui") then
+            context.screenGui = node.Name
+            context.screenEnabled = node.Enabled
+        elseif node:IsA("GuiObject") and node.Visible and #context.visibleMenus < 4 then
+            context.visibleMenus[#context.visibleMenus+1] = node.Name:sub(1,80)
+        end
+        node = node.Parent
+    end
+    return context
+end
 local function safeInteractionState()
     local state, count = {}, 0
     local roots = {}
@@ -99,9 +115,15 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= 100 then break end
+                if count >= 300 then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
-                    local key = (root.Name.."."..obj.Name):sub(1,100)
+                    local segments = {}
+                    local parent = obj
+                    while parent and parent ~= root and #segments < 6 do
+                        table.insert(segments, 1, parent.Name)
+                        parent = parent.Parent
+                    end
+                    local key = (root.Name.."."..table.concat(segments,".")):sub(1,180)
                     local low = key:lower()
                     if not (low:find("token",1,true) or low:find("secret",1,true)
                         or low:find("auth",1,true) or low:find("password",1,true)
@@ -1129,7 +1151,8 @@ local function observeInteractionObject(obj, root, label)
             path=path:sub(1,400), featureCandidate=feature,
             attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
-            stateChangeCount=0
+            stateChangeCount=0, guiContext=interactionGuiContext(obj),
+            evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
@@ -1160,6 +1183,7 @@ local function observeInteractionObject(obj, root, label)
                 end
             end
             if #changes > 0 then
+                historyItem.evidenceLevel = "temporal-state-change-observed"
                 historyItem.stateChangeCount = #changes
                 historyItem.stateChanges = changes
                 observerStats.stateDeltaEvents = observerStats.stateDeltaEvents + 1
@@ -1704,6 +1728,8 @@ local function inspect(requestType)
                 pendingObservationEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
+                evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
+                gameplayOutcomesVerified=0, stateSnapshotMaxValues=300,
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
                 lastDisabledReason=observerStats.lastDisabledReason, lastCallbackAt=observerStats.lastCallbackAt,
