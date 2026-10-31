@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v3.7
+-- Lycoles Universal Inspector v3.7.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "3.7"
+local VERSION = "3.7.1"
 
 local endpoint = ""
 local autoSend = true
@@ -375,13 +375,54 @@ local function transmit()
     end)
 end
 
+-- Convert inspection data to JSON-safe primitives without circular references.
+local function jsonSafe(value, active, depth)
+    local kind = typeof(value)
+    if kind == "nil" then return nil end
+    if kind == "string" then return value end
+    if kind == "boolean" then return value end
+    if kind == "number" then
+        if value ~= value or value == math.huge or value == -math.huge then return nil end
+        return value
+    end
+    if kind == "Vector3" then return {x=value.X,y=value.Y,z=value.Z} end
+    if kind == "Vector2" then return {x=value.X,y=value.Y} end
+    if kind == "Color3" then return {r=value.R,g=value.G,b=value.B} end
+    if kind == "UDim" then return {scale=value.Scale,offset=value.Offset} end
+    if kind == "UDim2" then return {x=jsonSafe(value.X,active,depth+1),y=jsonSafe(value.Y,active,depth+1)} end
+    if kind == "EnumItem" then return tostring(value) end
+    if kind == "Instance" then return value.ClassName end
+    if kind ~= "table" then return tostring(value) end
+    if depth >= 24 then return "[max-depth]" end
+    if active[value] then return "[circular-reference]" end
+    active[value] = true
+    local output = {}
+    for key, child in pairs(value) do
+        local keyKind = typeof(key)
+        if keyKind == "string" or keyKind == "number" then
+            local safeChild = jsonSafe(child, active, depth+1)
+            if safeChild ~= nil then output[key] = safeChild end
+        end
+    end
+    active[value] = nil
+    return output
+end
+
+local function encodeStage(stage, value)
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(jsonSafe(value, {}, 0))
+    end)
+    if not ok then error(stage .. ": " .. tostring(encoded), 2) end
+    return encoded
+end
+
 local function prepareParts(report)
     local scanId = HttpService:GenerateGUID(false)
     local objects = report.objects
     local chunks = {}
     local chunk = {}
     local function encodedSize(items)
-        return #HttpService:JSONEncode({
+        return #encodeStage('part-size', {
             version = report.version, placeId = report.placeId,
             gameId = report.gameId, placeVersion = report.placeVersion,
             inspectedAt = report.inspectedAt, gameName = report.gameName,
@@ -394,7 +435,7 @@ local function prepareParts(report)
     -- becomes prohibitively slow for universal scans.
     local chunkBytes = 0
     for _, entry in ipairs(objects) do
-        local entryBytes = #HttpService:JSONEncode(entry) + 2
+        local entryBytes = #encodeStage('object ' .. tostring(entry.path), entry) + 2
         if chunkBytes + entryBytes > 85000 and #chunk > 0 then
             table.insert(chunks, chunk)
             chunk = {}
@@ -414,7 +455,7 @@ local function prepareParts(report)
             counts = report.counts, groups = report.groups,
             scanStats = report.scanStats, objects = items
         }
-        local body = HttpService:JSONEncode(part)
+        local body = encodeStage('part ' .. tostring(i), part)
         if #body > 145000 then error("Part exceeds receiver limit") end
         table.insert(parts, body)
     end
@@ -888,7 +929,7 @@ local function inspect()
         end
 
         local encoded, resultData = pcall(function()
-            local json = HttpService:JSONEncode(result)
+            local json = encodeStage('full-report', result)
             local parts = prepareParts(result)
             return {json = json, parts = parts}
         end)
