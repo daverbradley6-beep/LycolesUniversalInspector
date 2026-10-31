@@ -1,3 +1,11 @@
+## 5.5.0 — Unique inventory GUI identities and compact evidence
+- Use full relative GUI ancestry and sibling occurrence indices for unique inventory slot/indicator identities.
+- Restrict inventory sampling to inventory/pet GUI contexts and inventory-related interactions.
+- Fix false sample-appeared transitions caused by duplicate keys.
+- Export compact before/after counts and only actual per-object changes, rather than repeating entire snapshots.
+- Preserve read-only client-side evidence and scan truncation diagnostics.
+- In-game runtime and multipart export still require testing.
+
 ## 5.4.0 — Per-indicator inventory and pet evidence
 - Record bounded client-visible GUI slot and equipped-indicator samples with relative paths and visibility.
 - Compare before/after individual GUI indicator and slot samples, not just aggregate counts.
