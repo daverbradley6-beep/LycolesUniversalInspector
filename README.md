@@ -140,3 +140,8 @@ The offline release pipeline now writes `action-proposals.json` for every comple
 ## v20 — Interaction sequence reconstruction
 
 The offline pipeline now retains up to 2,000 observed client interaction records in the capability plan and writes `observed-workflows.json` in every release. `tools/compile_interaction_sequences.py` groups events only when they share an observed transaction identifier, retains bounded before/after state evidence, records step order and keeps unlinked events separate. This can represent multi-step interactions such as opening a rebirth menu and confirming it. No remote calls are inferred or executed. All generated workflow specifications remain non-executable pending review and live verification. This release does not change receiver indexing or add automatic upload-to-build execution.
+
+
+## v21 — Manual runtime verification
+
+Release builds now include `manual-verification-plan.json`. When observed workflows include valid `leaderstats.<name>` state changes, builds also include `LycolesManualVerification.lua`, exposing `capture_before()` and `compare_after()` for manual, read-only client state comparisons. The harness does not trigger game actions, and state changes do not prove server-side causality. This is an offline release-builder feature, not a new inspector UI feature.
