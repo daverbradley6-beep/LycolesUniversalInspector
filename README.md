@@ -78,3 +78,15 @@ python3 -m unittest discover -s tests -v
 ```
 
 Outputs: `LycolesGeneratedUtility.lua` and `release-manifest.json`. The generated Lua contains only safe client-side diagnostics and lists gameplay systems as unimplemented candidates. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
+
+
+## v10 one-command release build
+
+Place all JSON parts for **one** scan in a directory and run:
+
+```sh
+python3 tools/build_release.py ./scan-parts --output ./build
+python3 -m unittest discover -s tests -v
+```
+
+The build validates multipart integrity, compiles a capability plan, generates a place-bound Lua diagnostic utility, checks its expected structure, and writes a deterministic release ZIP plus manifest. The GitHub Actions workflow `offline-pipeline.yml` runs the tests and builds an example artifact on relevant pushes. The generator does **not** implement arbitrary gameplay automation, deploy to Roblox, or prove in-game behaviour. Do not upload sensitive scan reports to a public repository.
