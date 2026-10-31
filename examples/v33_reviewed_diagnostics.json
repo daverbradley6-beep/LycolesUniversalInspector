@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "33.0",
+  "placeId": 3623096087,
+  "features": [
+    {
+      "name": "PlayerInfo",
+      "reviewed": true,
+      "action": "read_local_player",
+      "paths": []
+    },
+    {
+      "name": "CharacterInfo",
+      "reviewed": true,
+      "action": "read_character",
+      "paths": []
+    },
+    {
+      "name": "GuiInventory",
+      "reviewed": true,
+      "action": "read_player_gui",
+      "paths": []
+    },
+    {
+      "name": "WorkspacePresence",
+      "reviewed": true,
+      "action": "read_object_presence",
+      "paths": [
+        "workspace"
+      ]
+    }
+  ]
+}
