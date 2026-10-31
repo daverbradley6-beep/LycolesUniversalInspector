@@ -1,3 +1,12 @@
+## v12.0.0 — Inspector UI and Upload Reliability
+
+- Fixed AUTO EVIDENCE button overlapping the title/minimise button by moving it into a dedicated sidebar.
+- Resized report output to avoid overlapping sidebar controls; added clear evidence-rescan and receiver-ack hints.
+- Clarified that upload part ACKs do not independently verify the receiver's final multipart integrity.
+- Guarded first-part JSON decoding against malformed data; improved partial-upload retry progress messaging.
+- Added automated UI/layout/source regression tests.
+- Still not implemented: unlimited lightweight interaction delta capture, deployed receiver validation, or automatically functional server gameplay scripts.
+
 ## v11.0.0 — Real-Scan Compatibility and Receiver Integrity Hardening
 
 - Compiler now accepts actual inspector multipart format: dedicated metadata, separate interaction history, object parts, optional manifest.
