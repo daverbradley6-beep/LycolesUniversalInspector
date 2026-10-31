@@ -1,3 +1,12 @@
+## v11.0.0 — Real-Scan Compatibility and Receiver Integrity Hardening
+
+- Compiler now accepts actual inspector multipart format: dedicated metadata, separate interaction history, object parts, optional manifest.
+- Preserve client-corroborated interaction evidence, temporal transitions and feature readiness in capability plans.
+- Reject malformed objects, incomplete source diagnostics and inconsistent object counts.
+- Receiver now rejects conflicting duplicate uploads and inconsistent scan metadata, handles byte-size checks, and verifies strict multipart object accounting.
+- Add Python real-schema regression tests and Node receiver integration tests to GitHub Actions.
+- Scope: inspector's live observation and four-full-rescan cap remain unchanged; receiver must be deployed separately; gameplay automation is not automatically inferred or runtime verified.
+
 ## v10.0.0 — One-command Release Build and CI (experimental)
 
 - Add `tools/build_release.py` for a single scan-parts-to-Lua release build.
