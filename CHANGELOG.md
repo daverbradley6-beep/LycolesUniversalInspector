@@ -1,3 +1,10 @@
+## 4.5.0
+- Restrict feature evidence to object names instead of full ancestor paths to reduce false-positive classifications.
+- Limit feature examples to six per category and shorten example paths to reduce repeated upload metadata.
+- Preserve v4.4.1 multipart byte validation and first-part-only summary metadata.
+- Add GAME_SPECIFIC_GUI_MASTER_PROMPT.md integrating the new evidence rules and game-specific GUI workflow.
+- Requires live Potassium test; receiver deployment unchanged.
+
 ## 4.4.1
 - Validate every multipart payload against the actual encoded byte size and split oversized object chunks.
 - Send scan-wide counts, diagnostics and feature evidence only in the first part to avoid repeated metadata.
