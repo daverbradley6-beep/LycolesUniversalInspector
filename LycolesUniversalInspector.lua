@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.1
+-- Lycoles Universal Inspector v4.7.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.1"
+local VERSION = "4.7.2"
 
 local endpoint = ""
 local autoSend = true
@@ -48,7 +48,7 @@ local interactionObserveEnabled = false
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil}
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
 local sessionId = HttpService:GenerateGUID(false)
 local snapshotId = nil
 local observationSequence = 0
@@ -1097,6 +1097,7 @@ local function observeInteractionObject(obj, root, label)
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
         observerStats.callbacksFired = observerStats.callbacksFired + 1
+        observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
         local feature, matchCount = featureForName(obj.Name)
         local before = safeInteractionState()
@@ -1142,10 +1143,14 @@ local function observeInteractionObject(obj, root, label)
 end
 
 local function sweepInteractionControls()
+    observerStats.sweepCompleted = false
+    observerStats.sweepStartedAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    observerStats.lastSweepError = nil
+    observerStats.sweepScanned = 0
     local gui = player:FindFirstChildOfClass("PlayerGui")
-    if not gui then return end
+    if not gui then observerStats.lastSweepError = "PlayerGui unavailable"; return end
     local ok, descendants = pcall(function() return gui:GetDescendants() end)
-    if not ok then observerStats.bindingErrors = observerStats.bindingErrors + 1; return end
+    if not ok then observerStats.bindingErrors = observerStats.bindingErrors + 1; observerStats.lastSweepError = "GetDescendants failed"; return end
     for i, obj in ipairs(descendants) do
         if not alive then return end
         if obj:IsA("GuiButton") then
@@ -1156,6 +1161,7 @@ local function sweepInteractionControls()
         if i % 400 == 0 then task.wait() end
     end
     observerStats.sweepCompleted = true
+    observerStats.sweepFinishedAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
 end
 
 local function flushWatch()
@@ -1356,14 +1362,25 @@ end)
 interactionToggle.MouseButton1Click:Connect(function()
     interactionObserveEnabled = not interactionObserveEnabled
     if interactionObserveEnabled then
-        observerStats.sweepCompleted = false
-        task.spawn(sweepInteractionControls)
+        observerStats.activationCount = observerStats.activationCount + 1
+        observerStats.lastEnabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        task.spawn(function()
+            local ok, err = pcall(sweepInteractionControls)
+            if not ok then
+                observerStats.bindingErrors = observerStats.bindingErrors + 1
+                observerStats.lastSweepError = tostring(err):sub(1,250)
+            end
+        end)
+    else
+        observerStats.deactivationCount = observerStats.deactivationCount + 1
+        observerStats.lastDisabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        observerStats.lastDisabledReason = "manual-toggle"
     end
     interactionToggle.Text = interactionObserveEnabled and "INTERACT: ON" or "INTERACT: OFF"
     interactionToggle.BackgroundColor3 = interactionObserveEnabled
         and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
     status.Text = interactionObserveEnabled
-        and "Manual interaction observation enabled; use game controls normally"
+        and "Observer ON; perform gameplay actions, then press SCAN for fresh evidence"
         or "Manual interaction observation paused"
 end)
 
@@ -1643,7 +1660,12 @@ local function inspect()
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=changeCount, unattributedEvents=interactionEventCount
+                pendingObservationEvents=changeCount, unattributedEvents=interactionEventCount,
+                activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
+                lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
+                lastDisabledReason=observerStats.lastDisabledReason, lastCallbackAt=observerStats.lastCallbackAt,
+                sweepStartedAt=observerStats.sweepStartedAt, sweepFinishedAt=observerStats.sweepFinishedAt,
+                lastSweepError=observerStats.lastSweepError
             }
             report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
             report.diagnostics = {
@@ -1727,6 +1749,9 @@ local function inspect()
                 .. "\\nParts: " .. #pendingParts
                 .. "\\nRoots: " .. tostring(result.scanStats and result.scanStats.byRoot and #ROOT_LABELS or 0)
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
+                .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
+                .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
+                .. "\\nObserver activations: " .. tostring(observerStats.activationCount)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
@@ -1823,4 +1848,5 @@ else
 end
 
 startWatching()
+-- Startup scan is discovery-only; after enabling interaction recording, run SCAN again.
 inspect()
