@@ -62,6 +62,32 @@ local FEATURE_TERMS = {
  rewards={"reward","claim"}
 }
 -- Readiness is evidence-based: discovery never implies a working feature.
+-- Compare successive client-visible snapshots without treating changes as proof of cause.
+local previousFeatureSnapshot = nil
+local function compareFeatureSnapshots(current)
+    local delta = {basis="successive-scan-feature-candidate-counts", causalVerification=false, features={}}
+    if not previousFeatureSnapshot then
+        delta.status="baseline-created"
+    else
+        delta.status="compared"
+        for name, item in pairs(current) do
+            local before=previousFeatureSnapshot[name]
+            local counts={}
+            for kind, count in pairs(item.counts) do
+                counts[kind]=count-((before and before[kind]) or 0)
+            end
+            delta.features[name]=counts
+        end
+    end
+    local nextSnapshot={}
+    for name,item in pairs(current) do
+        nextSnapshot[name]={}
+        for kind,count in pairs(item.counts) do nextSnapshot[name][kind]=count end
+    end
+    previousFeatureSnapshot=nextSnapshot
+    return delta
+end
+
 local function buildReadiness(evidence, observedCount)
     local result = {}
     for feature, item in pairs(evidence) do
@@ -596,6 +622,7 @@ local function prepareParts(report)
             parentSnapshotId = report.parentSnapshotId,
             featureEvidence = index == 1 and report.featureEvidence or nil,
             featureReadiness = index == 1 and report.featureReadiness or nil,
+            featureSnapshotDelta = index == 1 and report.featureSnapshotDelta or nil,
             objects = items
         }
     end
@@ -1501,6 +1528,7 @@ local function inspect()
             report.scanStats.complete = scanComplete
             report.featureEvidence = buildFeatureEvidence(report.objects)
             report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
+            report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
             report.diagnostics = {
                 complete = scanComplete,
                 completenessBasis = "required-root-success-and-object-accounting",
@@ -1554,6 +1582,7 @@ local function inspect()
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
+                featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
