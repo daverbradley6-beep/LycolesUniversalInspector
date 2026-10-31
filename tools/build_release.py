@@ -45,11 +45,15 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
-def build(parts_dir,output,contracts_path=None):
+def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
+    if observation_dirs:
+        merger=load_module('merge_observations.py','lycoles_merge')
+        observations=[compiler.compile_scan(folder) for folder in observation_dirs]
+        plan=merger.merge_evidence(plan,observations)
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
     validated_contracts=None
@@ -62,8 +66,9 @@ def build(parts_dir,output,contracts_path=None):
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"15.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"16.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
+        "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
@@ -103,8 +108,9 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("parts_dir");parser.add_argument("--output",default="build")
     parser.add_argument("--contracts",default=None)
+    parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output,args.contracts);return 0
+    try: build(args.parts_dir,args.output,args.contracts,args.observation);return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 
