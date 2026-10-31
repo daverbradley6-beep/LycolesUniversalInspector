@@ -3,7 +3,7 @@ import pathlib,re,unittest
 SRC=(pathlib.Path(__file__).resolve().parents[1]/"LycolesUniversalInspector.lua").read_text()
 class InspectorUITests(unittest.TestCase):
     def test_version(self):
-        self.assertIn('local VERSION = "15.0.0"',SRC)
+        self.assertIn('local VERSION = "16.0.0"',SRC)
     def test_evidence_not_in_header(self):
         self.assertIn("autoEvidenceToggle.Parent = panel",SRC)
         self.assertIn("autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)",SRC)
