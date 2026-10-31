@@ -1,3 +1,9 @@
+## v21.0.0
+
+- Generate manual read-only before/after verification plans from observed leaderstats transitions.
+- Package an optional place-guarded Lua verification module.
+- Add source-level tests; no live runtime validation or gameplay automation claimed.
+
 ## v20.0.0 — Observed interaction workflow compiler
 
 - Preserve bounded client interaction history in compiled scan plans.
