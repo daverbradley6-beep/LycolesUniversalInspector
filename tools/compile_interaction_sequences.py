@@ -57,15 +57,7 @@ def compile_sequences(plan):
         # Never merge unlinked events simply because their feature names match.
         key=(feature,str(tid) if type(tid) in (int,str) and len(str(tid))<=80 else "event-"+str(len(groups)))
         steps=groups.setdefault(key,[])
-        changes=[]
-        raw_changes=item.get("stateChanges")
-        if not isinstance(raw_changes,list):raw_changes=[]
-        for delta in raw_changes[:MAX_CHANGES]:
-            if not isinstance(delta,dict) or not _safe(delta.get("key")):continue
-            before,after=delta.get("before"),delta.get("after")
-            if type(before) not in (int,float,str,bool) or type(after) not in (int,float,str,bool):continue
-            if len(str(before))>80 or len(str(after))>80:continue
-            changes.append({"key":delta["key"],"before":before,"after":after})
+        changes=_state_changes(item)
         steps.append({"path":_event_path(item),"controlType":item.get("controlType") if _safe(item.get("controlType")) else None,
           "sequence":item.get("sequence") if type(item.get("sequence")) is int else (item.get("eventIndex") if type(item.get("eventIndex")) is int else None),
           "stateChanges":changes,"clientStateCorroborated":item.get("clientStateCorroborated") is True,
