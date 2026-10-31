@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.0
+-- Lycoles Universal Inspector v4.7.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.0"
+local VERSION = "4.7.1"
 
 local endpoint = ""
 local autoSend = true
@@ -48,6 +48,7 @@ local interactionObserveEnabled = false
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil}
 local sessionId = HttpService:GenerateGUID(false)
 local snapshotId = nil
 local observationSequence = 0
@@ -674,6 +675,7 @@ local function prepareParts(report)
             parentSnapshotId = report.parentSnapshotId,
             featureEvidence = index == 1 and report.featureEvidence or nil,
             featureReadiness = index == 1 and report.featureReadiness or nil,
+            interactionDiagnostics = index == 1 and report.interactionDiagnostics or nil,
             featureSnapshotDelta = index == 1 and report.featureSnapshotDelta or nil,
             objects = items
         }
@@ -1090,9 +1092,12 @@ local function observeInteractionObject(obj, root, label)
     if not signal then return end
     interactionObserved[obj] = true
     interactionObservedCount = interactionObservedCount + 1
+    observerStats.listenersAttached = observerStats.listenersAttached + 1
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
+        observerStats.callbacksFired = observerStats.callbacksFired + 1
+        observerStats.lastEventPath = path:sub(1,180)
         local feature, matchCount = featureForName(obj.Name)
         local before = safeInteractionState()
         if feature then
@@ -1121,6 +1126,7 @@ local function observeInteractionObject(obj, root, label)
                 end
             end
             if #changes > 0 then
+                observerStats.stateDeltaEvents = observerStats.stateDeltaEvents + 1
                 if feature then featureInteractions[feature].stateChanges = featureInteractions[feature].stateChanges + 1 end
                 changeCount = changeCount + 1
                 changeQueue[#changeQueue+1] = {
@@ -1133,6 +1139,23 @@ local function observeInteractionObject(obj, root, label)
         end)
     end)
     table.insert(watchConnections, connection)
+end
+
+local function sweepInteractionControls()
+    local gui = player:FindFirstChildOfClass("PlayerGui")
+    if not gui then return end
+    local ok, descendants = pcall(function() return gui:GetDescendants() end)
+    if not ok then observerStats.bindingErrors = observerStats.bindingErrors + 1; return end
+    for i, obj in ipairs(descendants) do
+        if not alive then return end
+        if obj:IsA("GuiButton") then
+            local success = pcall(observeInteractionObject, obj, gui, "PlayerGui")
+            if not success then observerStats.bindingErrors = observerStats.bindingErrors + 1 end
+        end
+        observerStats.sweepScanned = i
+        if i % 400 == 0 then task.wait() end
+    end
+    observerStats.sweepCompleted = true
 end
 
 local function flushWatch()
@@ -1332,6 +1355,10 @@ end)
 
 interactionToggle.MouseButton1Click:Connect(function()
     interactionObserveEnabled = not interactionObserveEnabled
+    if interactionObserveEnabled then
+        observerStats.sweepCompleted = false
+        task.spawn(sweepInteractionControls)
+    end
     interactionToggle.Text = interactionObserveEnabled and "INTERACT: ON" or "INTERACT: OFF"
     interactionToggle.BackgroundColor3 = interactionObserveEnabled
         and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
@@ -1611,6 +1638,13 @@ local function inspect()
             report.scanStats.complete = scanComplete
             report.featureEvidence = buildFeatureEvidence(report.objects)
             report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
+            report.interactionDiagnostics = {
+                enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
+                callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
+                bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
+                sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
+                pendingObservationEvents=changeCount, unattributedEvents=interactionEventCount
+            }
             report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
             report.diagnostics = {
                 complete = scanComplete,
@@ -1665,6 +1699,7 @@ local function inspect()
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
+                interactionDiagnostics = result.interactionDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
