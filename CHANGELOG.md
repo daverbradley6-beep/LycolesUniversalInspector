@@ -1,3 +1,10 @@
+## v17.0.0 — Generated read-only Lua implementations
+
+- New `tools/generate_client_actions.py` emits actual place-guarded Lua functions for three explicitly reviewed client action types.
+- Release builder includes `LycolesClientActions.lua` when reviewed contracts are supplied.
+- New regression tests verify generated functions and reject unreviewed, unsupported and wrong-scope actions.
+- Server gameplay actions, remote calls, anti-cheat bypasses and live verification are not supported.
+
 ## v16.0.0 — Verified dynamic evidence fusion
 
 - Added `tools/merge_observations.py` to combine full baseline capability plans with separately validated dynamic observation scans.
