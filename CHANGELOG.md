@@ -1,3 +1,11 @@
+## v18.0.0 — Reviewed action GUI generation
+
+- Added `tools/generate_actions_gui.py` to create an executable ScreenGui with buttons directly connected to generated reviewed client functions.
+- Includes error feedback, bounded result display, close/cleanup and Place ID protection.
+- Release builder packages `LycolesReviewedActionsGUI.lua` only when validated contracts exist.
+- Added tests for action wiring, empty contracts and unreviewed contracts.
+- Not a gameplay exploit generator; live Roblox runtime verification still required.
+
 ## v17.0.0 — Generated read-only Lua implementations
 
 - New `tools/generate_client_actions.py` emits actual place-guarded Lua functions for three explicitly reviewed client action types.
