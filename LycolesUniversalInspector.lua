@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.1.0
+-- Lycoles Universal Inspector v4.3.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.2.0"
+local VERSION = "4.3.0"
 
 local endpoint = ""
 local autoSend = true
@@ -712,7 +712,7 @@ local function enrichEntry(entry, obj)
             for _, sibling in ipairs(parent:GetChildren()) do
                 if sibling:IsA("ValueBase") and not privateKey(sibling.Name) then
                     total = total + 1
-                    if #related < 21 then
+                    if #related < 9 then
                         local okValue, siblingValue = pcall(function() return sibling.Value end)
                         if okValue then
                             local safeValue = scalar(siblingValue)
@@ -732,7 +732,7 @@ local function enrichEntry(entry, obj)
         end
         local siblings = {}
         for _, item in ipairs(cached.values) do
-            if item.name ~= tostring(obj.Name) and #siblings < 20 then
+            if item.name ~= tostring(obj.Name) and #siblings < 8 then
                 siblings[#siblings + 1] = item
             end
         end
@@ -1173,6 +1173,8 @@ local function inspect()
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
                 omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
+                pathCollisionsResolved = 0,
+                siblingContextLimit = 8,
                 limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
             }
             local function categoryOf(obj)
@@ -1207,6 +1209,7 @@ local function inspect()
             report.scanStats.rootAvailability = {}
             local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
             local scanAborted = false
+            local pathOccurrences = {}
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
                 local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
@@ -1255,6 +1258,15 @@ local function inspect()
                             report.scanStats.omissions.inspectorSelf = report.scanStats.omissions.inspectorSelf + 1
                         end
                         if path then
+                            -- Roblox permits identically named siblings. Preserve each object
+                            -- with an unambiguous scan-local occurrence suffix.
+                            local count = (pathOccurrences[path] or 0) + 1
+                            pathOccurrences[path] = count
+                            if count > 1 then
+                                path = path:sub(1, 380) .. "[occurrence:" .. tostring(count) .. "]"
+                                report.scanStats.pathCollisionsResolved =
+                                    (report.scanStats.pathCollisionsResolved or 0) + 1
+                            end
                             local category = categoryOf(obj)
                             local entry = {
                                 path = string.sub(path, 1, 400),
