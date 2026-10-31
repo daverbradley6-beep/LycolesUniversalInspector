@@ -45,7 +45,7 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
-def build(parts_dir,output,contracts_path=None,observation_dirs=None):
+def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None):
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
@@ -62,6 +62,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     proposals=proposer.propose(plan)
     verification_generator=load_module("generate_verification_harness.py","lycoles_verification")
     verification_plan,verification_lua=verification_generator.compile_verification(sequences)
+    feedback=None
+    if feedback_path is not None:
+        feedback_evaluator=load_module("evaluate_runtime_feedback.py","lycoles_feedback")
+        feedback_document=json.loads(pathlib.Path(feedback_path).read_text(encoding="utf-8"))
+        feedback=feedback_evaluator.evaluate(verification_plan,feedback_document)
     validated_contracts=None
     if contracts_path is not None:
         validator=load_module('validate_contracts.py','lycoles_contracts')
@@ -80,11 +85,12 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"21.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"22.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
         "manualVerificationChecks":len(verification_plan["checks"]),
+        "submittedRuntimeObservations":feedback["summary"]["submitted"] if feedback else 0,
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
@@ -112,6 +118,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None):
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if feedback is not None:
+        files["runtime-feedback.json"]=(json.dumps(feedback,indent=2,sort_keys=True)+"\n").encode()
     if verification_lua is not None:
         files["LycolesManualVerification.lua"]=verification_lua.encode("utf-8")
     if actions_gui_lua is not None:
@@ -137,8 +145,9 @@ def main():
     parser.add_argument("parts_dir");parser.add_argument("--output",default="build")
     parser.add_argument("--contracts",default=None)
     parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
+    parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output,args.contracts,args.observation);return 0
+    try: build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback);return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 
