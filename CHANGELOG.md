@@ -1,3 +1,10 @@
+## v27.0.0 — Evidence-driven contract drafting
+
+- Generate review-required, read-only client action candidates from validated class inventories.
+- Include contract-draft.json in offline releases and count candidates in the manifest.
+- Preserve explicit review and prohibit automatic promotion to gameplay automation.
+- Add regression tests for class evidence, missing evidence, and invalid scans.
+
 ## v25.0.0 — Evidence-backed implementation backlog
 
 - Compile per-workflow implementation candidates from validated scan and observed interactions.
