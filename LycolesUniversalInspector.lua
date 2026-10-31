@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.1.0
+-- Lycoles Universal Inspector v5.1.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.1.0"
+local VERSION = "5.1.1"
 
 local endpoint = ""
 local autoSend = true
@@ -751,54 +751,124 @@ local function prepareParts(report)
     if #chunk > 0 or #chunks == 0 then table.insert(chunks, chunk) end
     -- Exact-size multipart packing. Shared evidence is sent once (part 1),
     -- rather than copied into every chunk. Never truncate or drop an object.
-    local function makePart(items, index, total)
+    -- Metadata and interaction history may each exceed one receiver part.
+    -- Export diagnostics in bounded, independently sized parts; never
+    -- attach the complete history to the object-bearing first part.
+    local limit = math.min(MAX_PART_BYTES, 140000)
+    local diagnostics = report.interactionDiagnostics or {}
+    local history = diagnostics.recentInteractions or {}
+    local summary = {}
+    for k,v in pairs(diagnostics) do
+        if k~="recentInteractions" then summary[k]=v end
+    end
+    summary.recentInteractions={}
+    summary.historyExportMode="separate-bounded-parts"
+    summary.historyTotal=#history
+    local function makePart(items,index,total,meta,historyBatch,historyStart)
         return {
-            version = report.version, placeId = report.placeId,
-            gameId = report.gameId, placeVersion = report.placeVersion,
-            inspectedAt = report.inspectedAt, gameName = report.gameName,
-            scanId = scanId, partIndex = index, partCount = total,
-            counts = index == 1 and report.counts or nil,
-            groups = index == 1 and report.groups or nil,
-            scanStats = index == 1 and report.scanStats or nil,
-            sessionId = report.sessionId, snapshotId = report.snapshotId,
-            parentSnapshotId = report.parentSnapshotId,
-            featureEvidence = index == 1 and report.featureEvidence or nil,
-            featureReadiness = index == 1 and report.featureReadiness or nil,
-            interactionDiagnostics = index == 1 and report.interactionDiagnostics or nil,
-            featureSnapshotDelta = index == 1 and report.featureSnapshotDelta or nil,
-            objects = items
+            version=report.version,placeId=report.placeId,gameId=report.gameId,
+            placeVersion=report.placeVersion,inspectedAt=report.inspectedAt,
+            gameName=report.gameName,scanId=scanId,partIndex=index,partCount=total,
+            counts=meta and report.counts or nil,
+            groups=meta and report.groups or nil,
+            scanStats=meta and report.scanStats or nil,
+            sessionId=report.sessionId,snapshotId=report.snapshotId,
+            parentSnapshotId=report.parentSnapshotId,
+            featureEvidence=meta and report.featureEvidence or nil,
+            featureReadiness=meta and report.featureReadiness or nil,
+            interactionDiagnostics=meta and summary or nil,
+            featureSnapshotDelta=meta and report.featureSnapshotDelta or nil,
+            interactionHistoryChunk=historyBatch,
+            interactionHistoryStart=historyStart,
+            objects=items
         }
     end
-    local limit = math.min(MAX_PART_BYTES, 140000)
-    local changed = true
+    local historyBatches={}
+    local currentHistory={}
+    local currentStart=1
+    for i,item in ipairs(history) do
+        currentHistory[#currentHistory+1]=item
+        if #encodeStage("history-sizing",makePart({},99999,99999,false,currentHistory,currentStart))>limit then
+            table.remove(currentHistory)
+            if #currentHistory==0 then
+                -- A single interaction can itself contain several observation windows.
+                -- Preserve a compact event summary in this exceptional case.
+                local compact={}
+                for k,v in pairs(item) do
+                    if k~="observationWindows" and k~="guiStateChanges" and k~="stateChanges" then
+                        compact[k]=v
+                    end
+                end
+                compact.largeEventEvidenceOmitted=true
+                currentHistory={compact}
+                if #encodeStage("large-event-check",makePart({},99999,99999,false,currentHistory,i))>limit then
+                    error("Single interaction event exceeds receiver limit after compacting")
+                end
+                historyBatches[#historyBatches+1]={items=currentHistory,start=i}
+                currentHistory={}
+                currentStart=i+1
+            else
+                historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
+                currentHistory={item}
+                currentStart=i
+            end
+        end
+    end
+    if #currentHistory>0 then
+        historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
+    end
+    -- Reserve a dedicated metadata part, so object payloads cannot force
+    -- large shared diagnostics into an oversized first object part.
+    local payloads={{items={},meta=true}}
+    for _,batch in ipairs(historyBatches) do
+        payloads[#payloads+1]={items={},history=batch.items,start=batch.start}
+    end
+    for _,items in ipairs(chunks) do payloads[#payloads+1]={items=items} end
+    local changed=true
     while changed do
-        changed = false
-        local total = #chunks
-        for i = 1, total do
-            local body = encodeStage('size-check-' .. i, makePart(chunks[i], i, total))
-            if #body > limit then
-                if #chunks[i] <= 1 then
-                    error("Single object or shared scan metadata exceeds receiver payload limit")
+        changed=false
+        local total=#payloads
+        for i=1,total do
+            local entry=payloads[i]
+            local body=encodeStage("size-check-"..i,
+                makePart(entry.items,i,total,entry.meta,entry.history,entry.start))
+            if #body>limit then
+                if entry.meta then
+                    error("Shared scan summary exceeds receiver limit without interaction history")
+                elseif entry.history then
+                    if #entry.history<=1 then
+                        error("Single history event exceeds receiver limit")
+                    end
+                    local midpoint=math.floor(#entry.history/2)
+                    local left,right={},{}
+                    for j,v in ipairs(entry.history) do
+                        if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
+                    end
+                    payloads[i]={items={},history=left,start=entry.start}
+                    table.insert(payloads,i+1,{items={},history=right,start=entry.start+midpoint})
+                else
+                    if #entry.items<=1 then
+                        error("Single object exceeds receiver limit")
+                    end
+                    local midpoint=math.floor(#entry.items/2)
+                    local left,right={},{}
+                    for j,v in ipairs(entry.items) do
+                        if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
+                    end
+                    payloads[i]={items=left}
+                    table.insert(payloads,i+1,{items=right})
                 end
-                local source = chunks[i]
-                local half = math.floor(#source / 2)
-                local left, right = {}, {}
-                for j, entry in ipairs(source) do
-                    if j <= half then left[#left + 1] = entry
-                    else right[#right + 1] = entry end
-                end
-                chunks[i] = left
-                table.insert(chunks, i + 1, right)
-                changed = true
+                changed=true
                 break
             end
         end
     end
-    local parts = {}
-    for i, items in ipairs(chunks) do
-        local body = encodeStage('part-' .. i, makePart(items, i, #chunks))
-        if #body > limit then error("Unexpected oversized part") end
-        parts[#parts + 1] = body
+    local parts={}
+    for i,entry in ipairs(payloads) do
+        local body=encodeStage("part-"..i,
+            makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.start))
+        if #body>limit then error("Unexpected oversized part "..i) end
+        parts[#parts+1]=body
     end
     report.localPerformance = report.localPerformance or {}
     report.localPerformance.serializationSeconds = math.floor((os.clock()-prepareStarted)*1000+0.5)/1000
