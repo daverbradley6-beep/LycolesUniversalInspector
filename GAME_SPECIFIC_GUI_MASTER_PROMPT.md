@@ -120,3 +120,8 @@ Include `implementation-review.md` in each generated release. Rank evidence-back
 ## v15 implementation-contract gate
 
 Use `tools/validate_contracts.py` for optional reviewed, place-bound client action contracts. Only known read-only client actions are allowed. Require explicit review and scan evidence; never infer arbitrary server remote arguments, bypasses, or unverified gameplay implementations. Include validated contracts in release manifests without claiming they were runtime tested.
+
+
+## v16 baseline and incremental scan policy
+
+Treat a complete full scan as the immutable object-inventory baseline. Validate each dynamic scan independently, ensure all Place IDs match, and merge its feature evidence without pretending it contains the full game tree. Reject duplicate scan IDs, incomplete parts, and mixed games. Never upgrade client-side evidence to a verified gameplay implementation without separately reviewed action contracts and runtime tests.
