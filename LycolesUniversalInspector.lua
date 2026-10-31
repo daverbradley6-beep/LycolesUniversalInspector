@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.6
+-- Lycoles Universal Inspector v4.7.7
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.6"
+local VERSION = "4.7.7"
 
 local endpoint = ""
 local autoSend = true
@@ -103,6 +103,52 @@ local function interactionGuiContext(obj)
         node = node.Parent
     end
     return context
+end
+-- Capture nearby GUI state without collecting text, input contents or private data.
+local function safeNearbyGuiState(obj)
+    local result, count = {}, 0
+    if not obj:IsA("GuiObject") then return result end
+    local menu = obj.Parent
+    while menu and not menu:IsA("ScreenGui") do
+        if menu:IsA("GuiObject") and (menu.Name:lower():find("menu",1,true)
+            or menu.Name:lower():find("base",1,true)) then break end
+        menu = menu.Parent
+    end
+    if not menu or menu:IsA("ScreenGui") then menu = obj.Parent end
+    if not menu then return result end
+    local ok, descendants = pcall(function() return menu:GetDescendants() end)
+    if not ok then return result end
+    for _, node in ipairs(descendants) do
+        if count >= 160 then break end
+        if node:IsA("GuiObject") then
+            local segments, parent = {}, node
+            while parent and parent ~= menu and #segments < 7 do
+                table.insert(segments,1,parent.Name)
+                parent=parent.Parent
+            end
+            local key=table.concat(segments,"/"):sub(1,180)
+            if key ~= "" and not key:lower():find("password",1,true) then
+                result[key] = {visible=node.Visible}
+                if node:IsA("GuiButton") then
+                    result[key].active=node.Active
+                end
+                count=count+1
+            end
+        end
+    end
+    return result
+end
+local function compareNearbyGuiState(before, after)
+    local changes={}
+    for key, value in pairs(before) do
+        local nextValue=after[key]
+        if nextValue and (value.visible ~= nextValue.visible or value.active ~= nextValue.active) then
+            changes[#changes+1]={path=key,beforeVisible=value.visible,afterVisible=nextValue.visible,
+                beforeActive=value.active,afterActive=nextValue.active}
+            if #changes >= 16 then break end
+        end
+    end
+    return changes
 end
 local function safeInteractionState()
     local state, count = {}, 0
@@ -1200,6 +1246,7 @@ local function observeInteractionObject(obj, root, label)
         interactionHistory[#interactionHistory+1] = historyItem
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
         local before = safeInteractionState()
+        local beforeGui = safeNearbyGuiState(obj)
         if feature then
             local item = featureInteractions[feature] or {count=0,stateChanges=0}
             item.count = item.count + 1
@@ -1219,6 +1266,10 @@ local function observeInteractionObject(obj, root, label)
         task.delay(0.5, function()
             if not alive then return end
             local after = safeInteractionState()
+            local guiChanges = compareNearbyGuiState(beforeGui, safeNearbyGuiState(obj))
+            historyItem.guiStateChanges = guiChanges
+            historyItem.guiStateChangeCount = #guiChanges
+            historyItem.guiEvidenceStatus = #guiChanges > 0 and "temporal-gui-transition-observed" or "none-observed"
             local changes = {}
             for key, value in pairs(before) do
                 if after[key] ~= nil and after[key] ~= value and #changes < 12 then
@@ -1775,7 +1826,7 @@ local function inspect(requestType)
                 evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
                 gameplayOutcomesVerified=0, stateSnapshotMaxValues=300,
                 featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
-                contextualAttributionIsHeuristic=true,
+                contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
                 lastDisabledReason=observerStats.lastDisabledReason, lastCallbackAt=observerStats.lastCallbackAt,
