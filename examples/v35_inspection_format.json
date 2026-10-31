@@ -1,0 +1,16 @@
+{
+  "placeId": 3623096087,
+  "scanId": "example-only-not-live",
+  "objects": [
+    {
+      "path": "workspace",
+      "name": "Workspace",
+      "className": "Workspace"
+    },
+    {
+      "path": "workspace.ExampleFolder",
+      "name": "ExampleFolder",
+      "className": "Folder"
+    }
+  ]
+}
