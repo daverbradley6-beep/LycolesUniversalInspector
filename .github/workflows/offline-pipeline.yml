@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'tools/**'
+      - 'LycolesUniversalInspector.lua'
       - 'tests/**'
       - 'receiver/**'
       - 'receiver/**'
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - 'tools/**'
+      - 'LycolesUniversalInspector.lua'
       - 'tests/**'
       - '.github/workflows/offline-pipeline.yml'
   workflow_dispatch:
@@ -51,6 +53,6 @@ jobs:
       - name: Upload sample build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lycoles-v11-example-release
+          name: lycoles-v12-example-release
           path: build/
           retention-days: 7
