@@ -97,13 +97,14 @@ def compile_scan(directory):
                "uniqueObjectIdentities":len(paths),"interactionEvents":len(history),
                "scanComplete":bool(metadata["scanStats"].get("complete"))}
     if not integrity["scanComplete"]: fail("Source scan reports incomplete root coverage")
-    plan={"schemaVersion":"11.0","integrity":integrity,"featureCount":len(features),
+    plan={"schemaVersion":"20.0","integrity":integrity,"featureCount":len(features),
           "features":features,"classCounts":dict(counts),
           "sourceDiagnostics":{"omittedObjects":metadata["scanStats"].get("omitted"),
               "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),
               "scanMode":metadata["scanStats"].get("mode"),
               "snapshotId":metadata.get("snapshotId")},
           "interactionDiagnostics":metadata.get("interactionDiagnostics") or {},
+          "observedInteractionHistory":history[:2000],
           "releaseGate":{"gameplayAutomationApproved":False,
                          "reason":"Passive inspection cannot establish replayable server-authoritative actions",
                          "nextStep":"Review feature contracts and validate supported operations in a permitted environment"}}
