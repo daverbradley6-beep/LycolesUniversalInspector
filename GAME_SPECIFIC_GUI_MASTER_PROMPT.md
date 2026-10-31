@@ -1,4 +1,4 @@
-# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v5.8+)
+# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v6.0+)
 
 ## Mission
 Create a **complete, functional, game-specific Luau script with a polished GUI** using evidence collected by **Lycoles Universal Inspector**. This prompt is UNIVERSAL: never assume the target is Muscle Legends or that a fixed set of gameplay systems exists. Determine the target game from the latest inspection's placeId, gameId, gameName and user instructions. The user may execute via Potassium without Roblox Studio. Do not deliver a menu full of placeholder buttons or fabricate functionality.
