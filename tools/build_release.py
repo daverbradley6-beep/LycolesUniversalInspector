@@ -82,12 +82,16 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         if validated_contracts["contracts"]:
             gui_generator=load_module("generate_actions_gui.py","lycoles_actions_gui")
             actions_gui_lua=gui_generator.render(validated_contracts)
+    gui_validation=None
+    if actions_gui_lua is not None:
+        gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
+        gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
     lua=generator.render(plan)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"25.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"26.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "implementationBacklogCandidates":backlog["candidateCount"],
         "readOnlyActionProposals":len(proposals["proposals"]),
@@ -98,6 +102,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
+        "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
         "implementedGameplayAutomation":[],
