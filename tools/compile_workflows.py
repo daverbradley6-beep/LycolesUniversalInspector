@@ -88,7 +88,7 @@ def render_review(workflows):
     lines.extend(["## Release decision", "",
        "Client diagnostic utilities may be generated; gameplay automation is not approved.",
        "A passive scan cannot prove server-authoritative operations or anti-cheat safety.", ""])
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 def main():
     import argparse
