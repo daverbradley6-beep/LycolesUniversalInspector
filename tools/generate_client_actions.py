@@ -47,6 +47,53 @@ end''',
     end
     table.sort(result)
     return result, nil
+end''',
+ "list_visible_gui_buttons":'''local function list_visible_gui_buttons()
+    local player = Players.LocalPlayer
+    if not player then return nil, "LocalPlayer unavailable" end
+    local root = player:FindFirstChildOfClass("PlayerGui")
+    if not root then return {}, nil end
+    local result = {}
+    for _, child in ipairs(root:GetDescendants()) do
+        if child:IsA("GuiButton") and child.Visible then
+            local visible = true
+            local ancestor = child.Parent
+            while ancestor and ancestor ~= root do
+                if ancestor:IsA("GuiObject") and not ancestor.Visible then visible = false; break end
+                if ancestor:IsA("LayerCollector") and not ancestor.Enabled then visible = false; break end
+                ancestor = ancestor.Parent
+            end
+            if visible then
+                table.insert(result, {path = child:GetFullName(), text = child:IsA("TextButton") and child.Text or "", class = child.ClassName})
+                if #result >= 250 then break end
+            end
+        end
+    end
+    return result, nil
+end''',
+ "read_local_player_attributes":'''local function read_local_player_attributes()
+    local player = Players.LocalPlayer
+    if not player then return nil, "LocalPlayer unavailable" end
+    local result = {}
+    for key, value in pairs(player:GetAttributes()) do
+        if type(value) == "number" or type(value) == "boolean" or type(value) == "string" then
+            result[key] = value
+        end
+    end
+    return result, nil
+end''',
+ "inspect_local_character":'''local function inspect_local_character()
+    local player = Players.LocalPlayer
+    if not player then return nil, "LocalPlayer unavailable" end
+    local character = player.Character
+    if not character then return nil, "Character unavailable" end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return {character = character.Name, hasHumanoid = humanoid ~= nil,
+        health = humanoid and humanoid.Health or nil,
+        maxHealth = humanoid and humanoid.MaxHealth or nil,
+        walkSpeed = humanoid and humanoid.WalkSpeed or nil,
+        hasRootPart = root ~= nil}, nil
 end'''
 }
 
