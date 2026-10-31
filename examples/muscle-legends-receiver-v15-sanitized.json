@@ -1,0 +1,1525 @@
+{
+  "scanId": "046C17A5-9673-4559-9EAD-E4D7432755CE",
+  "placeId": 3623096087,
+  "expectedParts": 12,
+  "parts": [
+    {
+      "partIndex": 1,
+      "scanStats": {
+        "scanned": 1500,
+        "byCategory": [],
+        "eligible": 1500,
+        "omitted": 0,
+        "recorded": 1500,
+        "mode": "dynamic-observations"
+      },
+      "objects": []
+    },
+    {
+      "partIndex": 2,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.spot.PetEnchant.petEnchantPrompt",
+          "class": "ProximityPrompt"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.spot.PetEnchant.petEnchantPrompt",
+          "class": "ProximityPrompt"
+        },
+        {
+          "path": "Workspace.spot.PetEnchant.petEnchantPrompt",
+          "class": "ProximityPrompt"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.spot.PetEnchant.petEnchantPrompt",
+          "class": "ProximityPrompt"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.serverTime",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightAnkleRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.guiDamagePart",
+          "class": "Part"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.guiDamagePart.damageGui.damageLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistCenterAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightKneeRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftFootAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.FaceCenterAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.evolved",
+          "class": "BoolValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightShoulderAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.level",
+          "class": "IntValue"
+        }
+      ]
+    },
+    {
+      "partIndex": 3,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftAnkleRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.agility",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.damage",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.Rare Aura.sparkle",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.perksFolder",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftUpperArm",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.BodyBackAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.chosenName",
+          "class": "StringValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftKneeRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightKneeRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.UpperTorso",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.perksFolder.strength",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.Pumpkin Aura.swirls",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.HairAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.itemReference",
+          "class": "ObjectValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightAnkle",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm",
+          "class": "MeshPart"
+        }
+      ]
+    },
+    {
+      "partIndex": 4,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.seatValue",
+          "class": "ObjectValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistFrontAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.StrongbloxianGym.Lobby.RaceLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.nameLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.RightCollarAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.smashPart.smashImage",
+          "class": "Decal"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftAnkleRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftGripAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.smashPart.rockEmitter",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "Workspace.strengthLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry",
+          "class": "Frame"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftWristRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftLowerArm",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Humanoid.HumanoidDescription.BodyPartDescription",
+          "class": "BodyPartDescription"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder.strength",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightWristRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.killsLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.nameLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "Workspace.machinesFolder.Boulder Throw.interactSeat.MachineStandWeld",
+          "class": "Weld"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.NeckAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistBackAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftKneeRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.FaceFrontAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftAnkle",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftShoulderAttachment",
+          "class": "Attachment"
+        }
+      ]
+    },
+    {
+      "partIndex": 5,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.barType",
+          "class": "StringValue"
+        },
+        {
+          "path": "Workspace.StrongbloxianGym.Lobby.RaceLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.amountLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.NeckRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftWristRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso",
+          "class": "MeshPart"
+        },
+        {
+          "path": "Workspace.machineSkinClonesFolder.Hallowed Treadmill_HalloweenTreadmill",
+          "class": "Model"
+        },
+        {
+          "path": "Workspace.strengthLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.amountLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.HatAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftKneeRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.Root",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.NeckRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.chosenName",
+          "class": "StringValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightHand",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftElbowRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.level",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.RightShoulderRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftFoot",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightLowerArm",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightShoulderAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.cloudHolder.Cloud",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.HairAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.LeftShoulderRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.Pumpkin Aura.perksFolder",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftKnee",
+          "class": "Motor6D"
+        }
+      ]
+    },
+    {
+      "partIndex": 6,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftUpperLeg",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistFrontAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftElbow",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistCenterAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.smashPart.powerExplosionSound",
+          "class": "Sound"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.perksFolder.durability",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.level",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.perksFolder.agility",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftHipRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightKneeRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightGripAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.FaceControls",
+          "class": "FaceControls"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.NeckRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.evolved",
+          "class": "BoolValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightGripAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder.durability",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.koHoop",
+          "class": "MeshPart"
+        }
+      ]
+    },
+    {
+      "partIndex": 7,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.perksFolder.damage",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightWrist",
+          "class": "Motor6D"
+        },
+        {
+          "path": "Workspace.guiDamagePart.damageGui",
+          "class": "BillboardGui"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightHip",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftKneeRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightElbow",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.LowerTorso",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftFootAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.Head",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightKnee",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.requiredRebirths",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.StrongbloxianGym.Lobby.RaceLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry",
+          "class": "Frame"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.RightCollarAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.RightHipRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.strength",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.perksFolder.durability",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder.agility",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.Pumpkin Aura.shockwave",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "Workspace.killsLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.rankLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.LeftShoulderRigAttachment",
+          "class": "Attachment"
+        }
+      ]
+    },
+    {
+      "partIndex": 8,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.bossDamagePercent",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.itemReference",
+          "class": "ObjectValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightWristRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.FaceFrontAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.machineSkinClonesFolder.Hallowed Treadmill_HalloweenTreadmill.1.002.SurfaceAppearance",
+          "class": "SurfaceAppearance"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightElbowRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.perksFolder.agility",
+          "class": "IntValue"
+        },
+        {
+          "path": "Workspace.killsLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry",
+          "class": "Frame"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet",
+          "class": "StringValue"
+        },
+        {
+          "path": "Workspace.strengthLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.nameLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "Workspace.StrongbloxianGym.Lobby.RaceLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.rankLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.RootRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftWrist",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightShoulder",
+          "class": "Motor6D"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightShoulderRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.WaistRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        }
+      ]
+    },
+    {
+      "partIndex": 9,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftWristRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftElbowRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.BodyFrontAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightHipRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightElbowRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.LeftCollarAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.Waist",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftShoulder",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.NeckAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.repTimeBoostPercent",
+          "class": "NumberValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block.exp",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Humanoid.HumanoidDescription",
+          "class": "HumanoidDescription"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.HatAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Bone Block",
+          "class": "StringValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.exp",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftHip",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.RootRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftAnkleRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightHipRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.exp",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerArm.RightElbowRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        }
+      ]
+    },
+    {
+      "partIndex": 10,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightUpperArm",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.exp",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightShoulderRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.level",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.LeftAnkleRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.machinesFolder.Legends Pullup.interactSeat.SeatWeld",
+          "class": "Weld"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerLeg.LeftLowerLeg",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftWristRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.LeftHipRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftGripAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.lightning1",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder.repTimeBoostPercent",
+          "class": "NumberValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightUpperLeg",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.FaceCenterAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.BodyFrontAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightAnkleRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftShoulderRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.killsLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.amountLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftElbowRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.Rare Aura",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightLowerLeg",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.Pumpkin Aura",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftFoot.OriginalSize",
+          "class": "Vector3Value"
+        }
+      ]
+    },
+    {
+      "partIndex": 11,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "Workspace.Cloud",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.perksFolder.durability",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.evolved",
+          "class": "BoolValue"
+        },
+        {
+          "path": "Workspace.machineSkinClonesFolder.Hallowed Treadmill_HalloweenTreadmill.1.002",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.strengthLeaderboard.leaderboardPart.leaderboardGui.playerList.innerFrame.playerEntry.rankLabel",
+          "class": "TextLabel"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm",
+          "class": "MeshPart"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperLeg.LeftHipRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Rainbow Boss Pet.perksFolder.strengthGainPercent",
+          "class": "NumberValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.BodyBackAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightFootAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember.itemReference",
+          "class": "ObjectValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperArm.RightElbowRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "Workspace.smashPart",
+          "class": "Part"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightLowerLeg.RightAnkleRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot",
+          "class": "MeshPart"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.RightShoulderRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.mistParticle",
+          "class": "ParticleEmitter"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightUpperLeg.RightKneeRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        }
+      ]
+    },
+    {
+      "partIndex": 12,
+      "scanStats": null,
+      "objects": [
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightFootAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightFoot",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.shared.runtime.tradeSessions.tradeSession.REDACTED_USER.Hades Ember",
+          "class": "StringValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.OriginalSize",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightWristRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightHand.RightWristRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.UpperTorso.WaistRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftHand.LeftHand",
+          "class": "WrapTarget"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.Neck",
+          "class": "Motor6D"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.LeftHipRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.WaistBackAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso",
+          "class": "MeshPart"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.perksFolder",
+          "class": "Folder"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftLowerArm.LeftElbowRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.Head.NeckRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "Workspace.machineBarbellsFolder.Boulder.Entropic Blast.perksFolder.strength",
+          "class": "IntValue"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftShoulderAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.RightFoot.RightAnkleRigAttachment",
+          "class": "Attachment"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LowerTorso.RightHipRigAttachment.OriginalPosition",
+          "class": "Vector3Value"
+        },
+        {
+          "path": "ReplicatedStorage.client.Cutscenes.HalloweenCutscene.Cutscene.Part1.PlayerRig.LeftUpperArm.LeftShoulderRigAttachment",
+          "class": "Attachment"
+        }
+      ]
+    }
+  ]
+}
