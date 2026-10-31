@@ -1,3 +1,12 @@
+## 5.6.0 — Faster GUI candidate sampling and action-aware inventory evidence
+- Avoid expensive GUI ancestry/path construction for non-inventory candidates.
+- Distinguish pagination and selection from equipment actions when interpreting inventory GUI changes.
+- Report inventoryPageChangeCandidate and inventoryEvidenceKind separately from inventoryGuiCandidate.
+- Correct misleading pendingObservationEvents label; preserve cumulativeChangeEvents diagnostic.
+- Preserve full read-only object scanning and complete multipart export; no object-data omission introduced.
+- Full export size is not yet reduced; performance improvement is primarily inventory observation CPU time.
+- In-game runtime validation pending.
+
 ## 5.5.0 — Unique inventory GUI identities and compact evidence
 - Use full relative GUI ancestry and sibling occurrence indices for unique inventory slot/indicator identities.
 - Restrict inventory sampling to inventory/pet GUI contexts and inventory-related interactions.
