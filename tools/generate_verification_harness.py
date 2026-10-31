@@ -61,6 +61,7 @@ local function snapshot()
 end
 local before = snapshot()
 local recordedBefore = {}
+local captureReady = false
 local api = {}
 function api.capture_before()
     before = snapshot()
@@ -79,9 +80,11 @@ function api.compare_after()
 end
 function api.capture_all_before()
     recordedBefore = snapshot()
+    captureReady = true
     return recordedBefore
 end
 function api.export_report()
+    if not captureReady then return nil, "Capture before state first" end
     local after = snapshot()
     local results = {}
     for _, check in ipairs(checkDefinitions) do
