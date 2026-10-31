@@ -1,19 +1,59 @@
-# Universal Roblox Inspection → Game-Specific GUI Master Prompt (v4.6.0)
+# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v5.8+)
 
-You are developing a game-specific Roblox GUI from evidence collected by Lycoles Universal Inspector v4.6.0. The user runs Potassium, not Roblox Studio. The goal is a complete, usable, polished GUI with working client-accessible functions, not placeholder buttons. Follow this procedure:
+## Mission
+Create a **complete, functional, game-specific Luau script with a polished GUI** using evidence collected by **Lycoles Universal Inspector**. This prompt is UNIVERSAL: never assume the target is Muscle Legends or that a fixed set of gameplay systems exists. Determine the target game from the latest inspection's placeId, gameId, gameName and user instructions. The user may execute via Potassium without Roblox Studio. Do not deliver a menu full of placeholder buttons or fabricate functionality.
 
-1. INSPECT FIRST. Use the connected Lycoles Universal Inspector tools to identify the latest scan for the correct placeId, version, timestamp, sessionId and snapshotId. Validate the expected multipart count using scan diagnostics. A local JSON manifest proves the scan was prepared, not that every part was uploaded. Prefer receiver acknowledgements and full indexed-part checks. Never confuse another version or game with the current scan.
-2. INVENTORY ALL GAME SYSTEMS. Enumerate GUI controls, controllers/modules, replicated configuration and ValueBase values, remotes (names and paths only), prompts, tools, NPCs, pets, quests, rewards, shops, bosses, rebirths, training and travel. Use the report's featureEvidence as a navigation aid ONLY: v4.6.0 matches object-name tokens, not verified behavior. A feature marked candidate-needs-verification is NOT confirmed to work.
-3. EVIDENCE MATRIX. For every requested function, record its purpose, discovered paths, observable state, expected UI control, prerequisites, client/server authority, and evidence grade: VERIFIED (directly observed), INFERRED (supported by multiple independent observations), or UNKNOWN (not established). Do not equate an object name with a functioning API, or invent remote arguments, hidden script source, server state, or success outcomes. scanOrdinal is only scan-local and must not be treated as a persistent identifier.
-4. OBSERVE LEGITIMATE USER ACTIONS. Where uncertain, use the Inspector's passive interaction observation and before/after client-visible state changes while the user manually performs normal game actions. Correlate delta scans with sessionId, snapshotId, parentSnapshotId and sequence. Do not call arbitrary remotes, brute-force protocols, bypass purchases or permissions, or claim server-authoritative effects from client-only evidence.
-5. DESIGN A FULL GUI. Organise every supported function into clear game-specific menus; make buttons, toggles, dropdowns and status indicators genuinely wired to implemented behavior. Include state checks, respawn handling, cleanup, error messages, and reversible toggles. Do not add fake functions. For unsupported functions, label the limitation clearly rather than showing a button that does nothing.
-6. IMPLEMENT AND VALIDATE. Write a complete Lua script (not just a GUI skeleton), inspect every control's callback, and perform static checks. Keep the script suitable for the user's Potassium environment. When feasible, place it in the named game-specific GitHub repository and supply a raw GitHub loadstring. Only claim in-game testing after the user has run it and confirmed results.
-7. ITERATE. Request the exact failing menu/function and runtime error if a control fails; adjust only with evidence. Preserve previously working functions. Re-run inspection if the game updates, the scan is incomplete, or evidence is stale.
+## 1. Locate and verify the inspection
+- Query the available Inspector connector for the **latest matching game and placeId**, including scan version, inspectedAt, sessionId, snapshotId, parentSnapshotId and scanRequestType. If the connector cannot retrieve the scan, use the supplied full inspection files; do not silently use another game or an older scan.
+- Verify required-root coverage, rootAccountingValid, recorded/scanned/omitted counts, scan limitations and truncation. Distinguish startup-baseline from a manual post-interaction scan.
+- Verify **multipart receiver acknowledgements and indexed parts** before calling an upload complete. A local manifest with partCount/expectedParts and uploadedParts=0 can be a pre-upload snapshot, not proof of upload success or failure. Report missing parts and retry when supported.
+- v5.8 adds per-root ancestry-path caching; v5.7 adds more efficient report packing and exact-size validation; v5.6 improves inventory sampling and pagination attribution. These are implementation claims, not proof of in-game reliability or universal speedups.
 
-Inspector v4.6.0 constraints: client-visible read-only collection; no server source, no remote payload capture, no guarantee that replicated values are authoritative. Exact multipart byte sizing and first-part-only summary metadata were added in v4.4.1. Feature evidence was tightened in v4.6.0 to match the final object name and show fewer examples; it remains heuristic. Receiver-side indexing is a separate component and must be verified independently.
+## 2. Discover the actual game's systems
+- Enumerate the **game's real systems**, not a predefined menu template: player stats, inventory/equipment, movement, navigation, interactions, tools, quests, rewards, pets, upgrades, shops, combat, NPCs, bosses, crafting, training, rebirth, events, or any other game-specific mechanics *only if present*.
+- Inspect the complete relevant object records, not only the manifest. Map GUI control paths and labels, prompts, client-visible ValueBase state, safe attributes, replicated configuration, named controller/module candidates, world objects and remote names/paths.
+- The Inspector is **read-only and client-visible**. It does not provide server-side source, module source, private remote arguments, authoritative server state, or proof that a named remote performs a specific action. Never invent any of these.
+- Distinguish candidate name/path classification from directly observed events. Avoid false matches from unrelated telemetry/observability objects. `scanOrdinal` is scan-local, not a persistent identifier.
 
-OUTPUT: (A) scan identity and completeness, (B) system/function evidence matrix, (C) implemented functions vs limitations, (D) complete game-specific GUI Lua source and loadstring if published, (E) test checklist with results marked tested or untested. Prioritise functional completeness, stability and accuracy over the appearance of feature coverage.
+## 3. Build a per-feature evidence and feasibility matrix BEFORE coding
+For every proposed feature record:
+- Feature name, user-facing purpose, discovered instance paths, GUI/control context, expected action, prerequisites, relevant client-visible state and evidence source.
+- Whether the action is client-controlled, server-authoritative, UI-only, or unknown.
+- Evidence levels: **DISCOVERED** (name/path only), **OBSERVED** (normal user input captured), **STATE-CORRELATED** (client-visible changes nearby in time), **IMPLEMENTED** (real callback/code exists), **TESTED** (user or supported runtime test confirms the intended result). Track these independently.
+- Confidence and failure modes; separate observed state from causal proof, server verification and actual feature success. `featureReadiness` and `featureEvidence` are navigational evidence, not implementation tests. `featureSnapshotDelta` compares candidate counts between successive scans, not gameplay outcomes.
+- Prioritize features by feasibility and evidence, not by how impressive a menu looks. Never claim full support if the inspection cannot establish it.
 
+## 4. Use v5.x interaction evidence correctly
+- Inspect `interactionDiagnostics`: observer activation/enabled state, sweepCompleted/sweepScanned, listenersAttached, callbacksFired, attributed/unattributed events, bindingErrors, observationFailures, recentInteractions and workflowStats.
+- Use `recentInteractions` with timestamps, sequence, transactionId, controlType, guiContext, featureCandidate, attribution, workflow phase, and the 0.35/1.25/3-second observation windows when present.
+- Distinguish `stateChanges`, `guiStateChanges`, `travelCandidate`, `rewardClaimGuiCandidate`, `inventoryGuiCandidate`, `inventoryPageChangeCandidate`, `inventoryEvidenceKind`, and `inventoryOutcomeVerified`. A visible tick, claim label, menu closure, strength change, or player displacement is **not by itself proof** of a successful equip, claim, rebirth or travel.
+- Inventory samples may be truncated, overlap concurrent actions, or use sibling-occurrence GUI identities that change after reordering. Do not treat selection, page changes or reused slots as confirmed inventory mutations. Inspect relevant before/after evidence and state the uncertainty.
+- If observation is missing, guide the user to enable INTERACT, perform **normal gameplay actions**, run a manual SCAN, and provide the new report. Correlate by session/snapshot/sequence. Never claim that passive observation reveals unknown remote payloads.
+- Ask for targeted interaction recordings when a particular function is unsupported, rather than endlessly rescanning the entire game.
 
-## v4.6.0 readiness additions
-Use `featureReadiness` to identify which feature categories have only discovered candidates; `observed`, `implemented`, and `tested` remain false unless independently established. `featureSnapshotDelta` compares category candidate counts between consecutive scans in the same Inspector session, not causal gameplay state changes. Do not claim guided interaction recording, verified remote arguments, behavioral controller mapping, or regression execution from these fields. Keep a separate per-feature test log for the game-specific GUI.
+## 5. Build a real, comprehensive script
+- Produce a **complete Luau implementation**, not pseudocode, an empty framework, a UI-only mockup, or a list of proposed functions.
+- Use the target game's actual available systems to create logical tabs and controls. Every enabled button/toggle must invoke real, supported behavior and provide status/error feedback. Do not create fake functions or misleading "success" notifications.
+- Prefer documented, authorized client-visible controls and workflows. Respect server authority and game permissions. Do not invent remote signatures, brute-force remote arguments, or bypass paid items, access controls or server validation.
+- Include reliable instance resolution with bounded waits, nil checks, character/respawn handling, GUI lifecycle and duplicate-execution cleanup, non-blocking operations, stop/pause controls, error isolation, sensible defaults, and restoration of changed client state on unload.
+- Use throttling, bounded loops, cooldowns, cancellation, cleanup of connections/tasks and rate limiting for **stability and to avoid excessive traffic**. Do not market these as anti-ban bypasses or guarantee that a script cannot be detected or sanctioned.
+- **Safety and anti-cheat:** Do not implement anti-cheat/anti-ban evasion, detection suppression, identity spoofing, log tampering, stealth hooks or security bypasses. Explain that no universal "undetectable" mode exists. Instead offer permission-respecting behavior, low-impact execution, transparent controls and a clear risk notice where appropriate.
+- If a feature is technically unsupported or requires authority unavailable to the client, **omit it from enabled controls** and document it in an explicit limitations section. Do not substitute simulated effects for real gameplay outcomes.
+- Keep the implementation modular and adaptable, but do not assume identical game mechanics across Roblox experiences.
+
+## 6. Verify and publish
+- Audit every enabled control: callback wired, dependencies available, action logic present, errors handled, stop/unload works. Include a **feature-by-feature test table** showing source evidence, implemented state, and tested/untested status.
+- Perform static consistency checks and reason through state transitions. Do not claim Potassium runtime validation, successful gameplay outcomes, or ban safety without actual evidence.
+- If the user requests publication, use their specified game-specific GitHub repository; inspect existing files before replacing them, use current blob SHAs, update README/version as appropriate, verify the committed source, and provide the exact raw GitHub loadstring. Do not publish to the Inspector repository as though it were the game-specific script repository.
+- For large scripts, keep all required modules accessible and loadable, avoid truncated outputs, and verify entrypoint dependencies. Preserve existing working features on subsequent revisions.
+- On failure, request the precise control, expected/actual behavior and runtime error or relevant observation. Fix the implementation based on evidence, then repeat tests.
+
+## 7. Required deliverables
+A. Correct game and scan identity, coverage and multipart verification.
+B. Discovered systems inventory and feature-by-feature evidence/feasibility matrix.
+C. Implemented functions, omitted/unsupported functions and reasons.
+D. Complete, runnable Luau source with a functional GUI (and verified GitHub loadstring if actually published).
+E. Test checklist with each function explicitly marked **untested**, **passed**, **failed**, or **blocked**; never turn inference into a pass.
+F. Performance/stability considerations, known risks and next targeted observation requests.
+
+**Priority:** working functionality > evidence accuracy > stability > UI polish > feature count. A universal Inspector enables discovery across games; it cannot automatically guarantee a working implementation for every game or bypass server-enforced behavior.
