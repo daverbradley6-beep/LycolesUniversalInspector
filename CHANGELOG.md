@@ -1,3 +1,11 @@
+## v14.0.0 — Evidence-ranked implementation review and UI clearance
+
+- Add `implementation-review.md` to each generated release bundle, ranking candidate game features by observed evidence.
+- Include concrete validation requirements for each discovered feature instead of treating candidates as implemented.
+- Reserve inspector header space for the minimise button, align title left and move AUTO EVIDENCE further below INTERACT.
+- Update workflow and UI regression tests and release manifest version.
+- Limitations: client-only gameplay evidence; no guaranteed arbitrary-game automation; in-game visual check pending.
+
 ## v13.0.0 — Universal Workflow Evidence Compiler
 
 - Added `tools/compile_workflows.py` to turn validated inspection capability plans into structured per-feature workflow evidence specifications.
