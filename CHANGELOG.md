@@ -1,3 +1,9 @@
+## 5.1.1 — Oversized JSON export hotfix
+- Separate scan summary and large interaction history into dedicated bounded upload parts.
+- Split oversized history and object parts recursively rather than failing the entire scan.
+- Preserve full interaction event evidence where it fits; exceptionally oversized individual events use compact summaries.
+- Multipart receiver compatibility and in-game export require testing.
+
 ## 5.1.0 — Major interaction evidence batch
 - Fix rebirth ConfimButton matching and improve feature-matched confirmation/cancellation linking.
 - Prefer pet-specific and travel menu context over generic control names.
