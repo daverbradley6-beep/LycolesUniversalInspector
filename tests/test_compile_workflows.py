@@ -15,6 +15,10 @@ class WorkflowTests(unittest.TestCase):
         output=module.compile_workflows(plan)
         self.assertEqual(output["summary"]["clientCorroborated"],1)
         self.assertFalse(output["workflows"][0]["automaticallyExecutable"])
+        review=module.render_review(output)
+        self.assertIn("rebirth",review)
+        self.assertIn("client-state-corroborated",review)
+        self.assertIn("\n## Release decision",review)
     def test_incomplete(self):
         with self.assertRaises(ValueError):
             module.compile_workflows({"integrity":{"scanComplete":False},"features":[]})
