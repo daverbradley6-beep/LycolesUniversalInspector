@@ -5,6 +5,8 @@ on:
     paths:
       - 'tools/**'
       - 'tests/**'
+      - 'receiver/**'
+      - 'receiver/**'
       - '.github/workflows/offline-pipeline.yml'
   pull_request:
     paths:
@@ -27,6 +29,8 @@ jobs:
         run: python -m compileall -q tools tests
       - name: Run offline regression tests
         run: python -m unittest discover -s tests -v
+      - name: Validate Cloudflare receiver
+        run: node tests/test_receiver.mjs
       - name: Generate example release bundle
         shell: bash
         run: |
@@ -47,6 +51,6 @@ jobs:
       - name: Upload sample build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lycoles-v10-example-release
+          name: lycoles-v11-example-release
           path: build/
           retention-days: 7
