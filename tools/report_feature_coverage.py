@@ -18,14 +18,16 @@ def report(plan, backlog, contracts=None, action_audit=None):
         raise ValueError("Audit place mismatch")
     workflows=backlog.get("candidates")
     if not isinstance(workflows,list):raise ValueError("Invalid backlog")
-    approved=set()
+    approved={}
     if contracts is not None:
         for c in contracts.get("contracts",[]):
             if c.get("reviewed") is True and c.get("scope")=="client-read-only":
-                approved.add(c.get("feature"))
+                approved.setdefault(c.get("feature"),set()).add(c.get("action"))
     tested={}
     if action_audit is not None:
-        tested={a.get("action"):a.get("status") for a in action_audit.get("results",[])}
+        tested={a.get("action"):a for a in action_audit.get("results",[])}
+        if action_audit.get("scanId") is not None and action_audit["scanId"]!=scan:
+            raise ValueError("Audit scan provenance mismatch")
     grouped={}
     for item in workflows:
         if not isinstance(item,dict) or not isinstance(item.get("feature"),str):
@@ -33,18 +35,36 @@ def report(plan, backlog, contracts=None, action_audit=None):
         grouped.setdefault(item["feature"],[]).append(item)
     features=[]
     for f in plan.get("features",[]):
+        if not isinstance(f,dict):continue
         name=f.get("feature")
         if not isinstance(name,str):continue
         observed=grouped.get(name,[])
-        reviewed=name in approved
+        actions=sorted(approved.get(name,set()))
+        evidence={a:tested[a]["status"] for a in actions if a in tested}
+        passed=[a for a in actions if evidence.get(a)=="client-function-returned"]
+        failed=[a for a in actions if evidence.get(a)=="client-function-error"]
+        untested=[a for a in actions if evidence.get(a) in (None,"not-tested")]
+        missing=[]
+        if not observed:missing.append("observed workflow")
+        if not actions:missing.append("reviewed supported client action")
+        if untested:missing.append("execute reviewed client actions: "+", ".join(untested))
+        if failed:missing.append("diagnose failed client actions: "+", ".join(failed))
+        missing.append("verified gameplay effect and permitted implementation contract")
+        readiness=("client-action-error" if failed else
+                   "client-actions-executed" if actions and not untested else
+                   "client-actions-untested" if actions else
+                   "workflow-observed" if observed else "discovery-only")
         features.append({"feature":name,"observedWorkflows":len(observed),
-            "reviewedClientActionAssociated":reviewed,
-            "clientExecutionEvidence":tested if reviewed else {},
+            "reviewedClientActionAssociated":bool(actions),
+            "reviewedActions":actions,
+            "clientExecutionEvidence":evidence,
+            "clientActionsReturned":passed,
+            "clientActionsFailed":failed,
+            "clientActionsUntested":untested,
+            "readiness":readiness,
             "gameplayImplemented":False,
-            "missingEvidence":(["observed workflow"] if not observed else [])+
-              (["reviewed supported client action"] if not reviewed else [])+
-              ["verified gameplay effect and permitted implementation contract"]})
-    return {"schemaVersion":"29.0","placeId":place,"scanId":scan,
+            "missingEvidence":missing})
+    return {"schemaVersion":"30.0","placeId":place,"scanId":scan,
             "features":features,"featureCount":len(features),
             "gameplayFunctionsVerified":0,"note":"Coverage report is not an implementation claim."}
 
