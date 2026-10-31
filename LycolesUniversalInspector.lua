@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v5.7.0
+-- Lycoles Universal Inspector v5.8.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "5.7.0"
+local VERSION = "5.8.0"
 
 local endpoint = ""
 local autoSend = true
@@ -2097,15 +2097,34 @@ local function inspect(requestType)
                     return "other"
                 end
             end
+            local stablePathCache = {}
             local function stablePath(obj, root, label)
-                local names = {}
+                local cached = stablePathCache[obj]
+                if cached then return cached end
+                local pending = {}
                 local current = obj
                 while current and current ~= root do
-                    table.insert(names, 1, current.Name)
+                    local known = stablePathCache[current]
+                    if known then
+                        local path = known
+                        for i = #pending, 1, -1 do
+                            local node = pending[i]
+                            path = path .. "." .. node.Name
+                            stablePathCache[node] = path
+                        end
+                        return stablePathCache[obj]
+                    end
+                    pending[#pending + 1] = current
                     current = current.Parent
                 end
                 if current ~= root then return nil end
-                return label .. "." .. table.concat(names, ".")
+                local path = label
+                for i = #pending, 1, -1 do
+                    local node = pending[i]
+                    path = path .. "." .. node.Name
+                    stablePathCache[node] = path
+                end
+                return stablePathCache[obj]
             end
             local function vec3(v)
                 return {x = math.floor(v.X * 100) / 100,
@@ -2121,6 +2140,7 @@ local function inspect(requestType)
                 local rootStarted = os.clock()
                 local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
                 local root = spec.instance
+                stablePathCache = {}
                 local coverage = {
                     available = root ~= nil, required = requiredRoots[spec.label] == true,
                     success = false, scanned = 0, recorded = 0, omitted = 0
