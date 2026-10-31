@@ -36,11 +36,10 @@ def validate_lua(lua,place_id):
     for token in required:
         if token not in lua: raise ValueError("Missing generated component: "+token)
     # These must not appear in a diagnostic-only build, including comments.
-    banned=(r"\\bFireServer\\s*\\(",r"\\bInvokeServer\\s*\\(",
-            r"\\bgetrawmetatable\\s*\\(",r"\\bhookmetamethod\\s*\\(",
-            r"\\bloadstring\\s*\\(",r"\\bsetclipboard\\s*\\(")
+    banned=("FireServer(", "InvokeServer(", "getrawmetatable(",
+            "hookmetamethod(", "loadstring(", "setclipboard(")
     for pattern in banned:
-        if re.search(pattern,lua,re.I): raise ValueError("Forbidden generated operation: "+pattern)
+        if pattern.lower() in lua.lower(): raise ValueError("Forbidden generated operation: "+pattern)
     if lua.count('button("')!=4:
         raise ValueError("Unexpected number of generated controls")
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
