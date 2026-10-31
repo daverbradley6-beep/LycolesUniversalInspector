@@ -57,7 +57,7 @@ def build(parts_dir,output):
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"13.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"14.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "workflowEvidenceSummary":workflows["summary"],
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
@@ -70,6 +70,7 @@ def build(parts_dir,output):
     files={
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
+      "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
       "LycolesGeneratedUtility.lua":lua.encode(),
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
