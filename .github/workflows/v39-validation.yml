@@ -21,6 +21,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v40*.py'
       - name: Run v41 specification regression suite
         run: python -m unittest discover -s tests -p 'test_v41*.py'
+      - name: Run v42 manifest regression suite
+        run: python -m unittest discover -s tests -p 'test_v42*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
@@ -29,6 +31,8 @@ jobs:
         run: python tools/diagnostic_generator_v40.py build/game-discovery-v39.json --output build/diagnostic-v40.luau
       - name: Generate v41 evidence-gated feature specifications
         run: python tools/feature_spec_v41.py build/game-discovery-v39.json --spec build/feature-spec-v41.json --luau build/feature-inspector-v41.luau
+      - name: Compile v42 provenance manifest
+        run: python tools/generation_manifest_v42.py build/feature-spec-v41.json build/game-discovery-v39.json --output build/generation-manifest-v42.json
       - name: Assert game-first results
         run: |
           python - <<'PY'
