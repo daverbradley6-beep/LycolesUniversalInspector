@@ -130,3 +130,8 @@ A release built with `--contracts reviewed-contracts.json` now also contains `Ly
 ## v18 — Working GUI wiring for reviewed actions
 
 The offline release builder now generates `LycolesReviewedActionsGUI.lua` when `--contracts` contains at least one reviewed read-only action. Each button calls a real generated Lua function and displays its result or error; there are no placeholder controls. The existing diagnostic utility remains separate. Run `python3 tools/build_release.py ./baseline-parts --contracts ./reviewed-contracts.json --output ./build`. Only reviewed client diagnostics are supported; no game-specific server automation is generated or live-verified.
+
+
+## v19 — Evidence-driven client action proposals
+
+The offline release pipeline now writes `action-proposals.json` for every complete scan. `tools/propose_actions.py` derives bounded, generic read-only action candidates from observed class counts (replicated values, UI elements, proximity prompts). Each proposal includes evidence classes and review instructions, and is always `reviewed: false`. To generate executable Lua, independently create a reviewed contract document with the supported v15 schema and run the builder with `--contracts`. Feature associations are provisional, not gameplay implementation evidence. The inspector itself still uploads scans; this change does not make the receiver automatically build scripts.
