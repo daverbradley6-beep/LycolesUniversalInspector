@@ -73,12 +73,13 @@ local function display(name, result, err)
     else
         lines[1] = tostring(result)
     end
-    output.Text = name .. "\\n" .. (#lines > 0 and table.concat(lines, "\\n") or "No entries found.")
+    output.Text = name .. "\n" .. (#lines > 0 and table.concat(lines, "\n") or "No entries found.")
 end
 local actions = {
 ''']
     for name in names:lines.append("    ["+json.dumps(name)+"] = "+name+",")
     lines.append('''}
+local ACTION_NAMES = ACTION_LIST
 for _, name in ipairs(ACTION_NAMES) do
     local button = Instance.new("TextButton")
     button.Size = UDim2.fromOffset(145, 45)
@@ -107,5 +108,5 @@ _G.LycolesActionsClose = function()
     _G.LycolesActionsClose = nil
 end
 table.insert(connections, close.MouseButton1Click:Connect(_G.LycolesActionsClose))
-'''.replace("ACTION_NAMES","{"+",".join(json.dumps(n) for n in names)+"}"))
+'''.replace("ACTION_LIST","{"+",".join(json.dumps(n) for n in names)+"}"))
     return "\n".join(lines)+"\n"
