@@ -103,12 +103,15 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"29.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"30.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),
         "coverageFeatures":coverage["featureCount"],
+        "clientActionsReturned":sum(len(f["clientActionsReturned"]) for f in coverage["features"]),
+        "clientActionsFailed":sum(len(f["clientActionsFailed"]) for f in coverage["features"]),
+        "featuresByReadiness":{state:sum(f["readiness"]==state for f in coverage["features"]) for state in sorted({f["readiness"] for f in coverage["features"]})},
         "actionAuditObservedActions":audit_evaluation["observedActions"] if audit_evaluation else 0,
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
