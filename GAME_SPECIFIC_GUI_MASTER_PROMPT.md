@@ -105,3 +105,8 @@ Treat a snapshot manifest as a summary, not proof of uploaded parts. Use receive
 ## v12 Interface and delivery requirements
 
 Do not place controls over the inspector title, minimise button, status, log or receiver settings. Require a separate right-hand controls column with an explicit auto-rescan budget. Upload ACK counts indicate acknowledged parts only; do not claim receiver-side integrity until the receiver's integrity endpoint confirms it. Include `tests/test_inspector_ui.py` in CI. Do not claim a static layout test proves the UI has been tested inside Roblox.
+
+
+## v13 universal workflow evidence stage
+
+Compile evidence-backed per-feature workflow specifications from the validated plan, preserving observed interaction counts, temporal transitions, client corroboration, and client outcomes. Include `workflow-specs.json` in the release artifact. Treat observed workflows as non-executable until a reproducible permitted action contract and in-game outcome verification exist. Never fabricate remotes, parameters, or functionality.
