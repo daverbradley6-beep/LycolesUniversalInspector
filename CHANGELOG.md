@@ -1,3 +1,11 @@
+## v6.0.0 — Automatic Evidence Collection (experimental)
+
+- Enable passive interaction observation at startup.
+- Add auto-evidence toggle, activity-settling timer, cooldown and four-scan cap.
+- Include automatic evidence diagnostics in scan manifest and report.
+- Add strict script-development evidence gates to master prompt.
+- Known limitations: not runtime-tested in Roblox; receiver indexing coverage must be validated independently; client observations cannot prove server behaviour.
+
 ## 5.8.0 — Faster full hierarchy traversal
 - Cache computed ancestry paths within each scan root to avoid repeatedly traversing common parent chains.
 - Reset cache between roots to retain root-specific path labels and duplicate-root handling.
