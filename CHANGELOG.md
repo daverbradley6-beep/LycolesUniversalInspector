@@ -1,3 +1,13 @@
+## v7.0.0 — Multipart Integrity & Automation Foundation (experimental)
+
+- Rework reference Cloudflare Worker to accept inspector multipart scan uploads with matching acknowledgements.
+- Persist parts idempotently by scan ID and part index; expose scan metadata, individual parts, and integrity reports.
+- Validate part identity in Lua before upload and include full diagnostics in metadata parts.
+- Clarify upload acknowledgement versus receiver indexing verification.
+- Strengthen universal master prompt with an integrity gate and batch-first development policy.
+- Deployment note: Worker source must be deployed to Cloudflare separately. Connected inspector backend and Roblox runtime have **not** been updated/tested by this commit.
+- Limitation: client-visible inspection cannot guarantee full automation of arbitrary server-controlled game mechanics.
+
 ## v6.0.0 — Automatic Evidence Collection (experimental)
 
 - Enable passive interaction observation at startup.
