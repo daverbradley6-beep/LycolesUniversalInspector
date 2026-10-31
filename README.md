@@ -1,3 +1,12 @@
+## v4.3.0 — Scan identity and payload tuning
+
+- Distinguish objects sharing the same hierarchy path using scan-local occurrence suffixes; retain all objects instead of discarding path collisions.
+- Count resolved path collisions in scan statistics.
+- Reduce bounded sibling ValueBase snapshots from 20 to 8 related entries, reducing repeated JSON metadata without removing inspected objects.
+- Preserve existing multipart JSON schema, acknowledgement and retry behavior.
+
+**Receiver indexing limitation:** The deployed Cloudflare Worker/MCP index is a separate service. This client update does not change its indexing behavior or retroactively repair previous scan metadata. Detailed diagnostics already verified all 844 parts of the prior scan. No in-game benchmark has been performed for this release.
+
 ## v4.2.0 — Performance update
 
 - Bounded concurrent upload workers (3 simultaneous requests) with per-part acknowledgement and retry.
