@@ -1,3 +1,8 @@
+## 4.5.1
+- Token-aware feature detection splits PascalCase and camelCase object names and avoids matching `quest` inside `Request`.
+- Include `localPerformance.uploadBytes`, `uploadParts`, and `serializationSeconds` in the saved JSON manifest for measurable multipart size comparisons.
+- Preserve read-only scanning and existing multipart upload behavior; Potassium runtime test pending.
+
 ## 4.5.0
 - Restrict feature evidence to object names instead of full ancestor paths to reduce false-positive classifications.
 - Limit feature examples to six per category and shorten example paths to reduce repeated upload metadata.
