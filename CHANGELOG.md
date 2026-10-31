@@ -1,3 +1,11 @@
+## v20.0.0 — Observed interaction workflow compiler
+
+- Preserve bounded client interaction history in compiled scan plans.
+- Generate `observed-workflows.json` with transaction-linked steps and state transitions.
+- Keep unlinked events separate and preserve explicit non-executable status.
+- Add tests for event linking, state evidence and malformed/incomplete input.
+- No automatic remote replay, gameplay automation or anti-cheat guarantees.
+
 ## v19.0.0 — Evidence-driven proposal stage
 
 - Every offline release now includes `action-proposals.json` with evidence-based read-only client action suggestions.
