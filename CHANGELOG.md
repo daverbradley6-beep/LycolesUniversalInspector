@@ -1,3 +1,9 @@
+## 4.7.5
+- Capture ancestor names, ScreenGui enabled state, and visible GUI ancestors at interaction time.
+- Increase bounded client-state snapshot to 300 values with hierarchical paths to reduce key collisions.
+- Mark event evidence levels separately from unverified gameplay outcomes.
+- Retain read-only observation and no remote invocation.
+
 ## 4.7.4
 - Classify observed controls by their own names or up to six ancestor names.
 - Correct attributed and unattributed interaction counters.
