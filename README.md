@@ -54,3 +54,15 @@ This release strengthens read-only inspection metadata and scan diagnostics:
 ## Interpretation limits
 
 This tool inspects privacy-filtered, client-visible instances. It cannot inspect server-only state or implementation, prove server validation, establish remote argument contracts, or guarantee that client-visible values are authoritative. System tags, controller candidates and hierarchy-based relationships are evidence for further analysis, not confirmed gameplay rules.
+
+
+## v8 offline capability compiler
+
+Export all JSON parts of **one** scan into a folder, then run:
+
+```sh
+python3 tools/compile_scan.py ./scan-parts --output ./build
+python3 -m unittest discover -s tests -v
+```
+
+The compiler writes `capability-plan.json` and `capability-plan.md`. It fails closed on missing parts, mixed scans, duplicate identities, incorrect object totals, or incomplete scans. It inventories candidate features automatically, but intentionally does **not** generate arbitrary server-dependent Roblox actions from passive evidence. The Cloudflare receiver in this repository must be deployed separately; the connected inspector backend may not be the same service.
