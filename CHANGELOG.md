@@ -6,6 +6,7 @@
 - Require matching scan and Place IDs when converting proposals into review templates.
 - Validate the six-function end-to-end flow from scan evidence through review, Lua generation and generated GUI wiring.
 - Add dedicated integration and negative-path regression tests.
+- Add a bounded local action audit with execution duration, success/error reporting and selectable JSON export in the reviewed-actions GUI.
 - No server-authoritative gameplay automation, anti-cheat bypass, or live Roblox verification is implied.
 
 ## v27.0.0 — Evidence-driven contract drafting
