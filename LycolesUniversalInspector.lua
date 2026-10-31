@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.5.0
+-- Lycoles Universal Inspector v4.5.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.5.0"
+local VERSION = "4.5.1"
 
 local endpoint = ""
 local autoSend = true
@@ -75,7 +75,13 @@ local function buildFeatureEvidence(objects)
         local path = tostring(obj.path or "")
         local leaf = path:match("([^%.]+)$") or path
         leaf = leaf:gsub("%[occurrence:%d+%]$", "")
-        local lower = string.lower(leaf)
+        -- Split camelCase/PascalCase and punctuation into tokens. In particular,
+        -- LiveRequest must NOT match the "quest" feature.
+        local separated = leaf:gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")
+        local tokens = {}
+        for token in string.lower(separated):gmatch("[%a%d]+") do
+            tokens[token] = true
+        end
         local class = tostring(obj.class or "")
         local kind = "world"
         if class=="ModuleScript" or class=="LocalScript" then kind="controllers"
@@ -84,7 +90,8 @@ local function buildFeatureEvidence(objects)
         elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
         for name,terms in pairs(FEATURE_TERMS) do
             for _,term in ipairs(terms) do
-                if string.find(lower,term,1,true) then
+                if tokens[term] or tokens[term.."s"] or
+                   (term=="rebirth" and tokens.rebirthing) then
                     local item=features[name]
                     item.counts[kind]=item.counts[kind]+1
                     item.status="candidate-needs-verification"
@@ -1520,6 +1527,7 @@ local function inspect()
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
+                localPerformance = result.localPerformance,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
                 note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
             })
