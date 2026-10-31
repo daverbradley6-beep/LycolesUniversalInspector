@@ -1,3 +1,9 @@
+## 4.7.6
+- Add menu-context hints for generic buttons in known gameplay menus.
+- Add feature-specific client-state corroboration for rebirth and training.
+- Keep corroboration separate from independent server verification.
+- Fix feature readiness unattributed interaction count to reflect actual unattributed events.
+
 ## 4.7.5
 - Capture ancestor names, ScreenGui enabled state, and visible GUI ancestors at interaction time.
 - Increase bounded client-state snapshot to 300 values with hierarchical paths to reduce key collisions.
