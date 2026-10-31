@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.1.0"
+local VERSION = "4.2.0"
 
 local endpoint = ""
 local autoSend = true
@@ -25,6 +25,8 @@ local uploading = false
 local uploadGeneration = 0
 local pendingAcknowledged = {}
 local MAX_UPLOAD_ATTEMPTS = 3
+local MAX_CONCURRENT_UPLOADS = 3
+local SCAN_YIELD_BUDGET_SECONDS = 0.012
 local UPLOAD_RETRY_DELAYS = {1, 3, 6}
 local alive = true
 local watchEnabled = true
@@ -33,7 +35,7 @@ local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
 local lastGameName = nil
-local WATCH_INTERVAL = 20
+local WATCH_INTERVAL = 30
 local watchSeen = {}
 local watchSkippedCharacters = 0
 local watchUploaded = 0
@@ -358,31 +360,44 @@ local function transmit()
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
     task.spawn(function()
-        local succeeded = 0
-        for i, body in ipairs(parts) do
-            if not alive or generation ~= uploadGeneration then
-                uploading = false
-                return
-            end
-            if pendingAcknowledged[i] then
-                succeeded = succeeded + 1
-            else
-                status.Text = "Uploading " .. i .. "/" .. partCount
-                local ok, message = uploadPart(requestFn, receiver, body, scanId, i, partCount)
-                if not ok then
-                    status.Text = "Part " .. i .. "/" .. partCount .. " failed (" .. message .. "); SEND JSON to retry"
-                    uploading = false
-                    return
-                end
-                pendingAcknowledged[i] = message
-                succeeded = succeeded + 1
-            end
-            status.Text = "Verified " .. succeeded .. "/" .. partCount .. " parts"
-            task.wait(0.15)
+        local started = os.clock()
+        local succeeded, failed, nextIndex, active = 0, nil, 1, 0
+        for i = 1, partCount do
+            if pendingAcknowledged[i] then succeeded = succeeded + 1 end
         end
+        local workers = math.min(MAX_CONCURRENT_UPLOADS, partCount)
+        for _ = 1, workers do
+            active = active + 1
+            task.spawn(function()
+                while alive and generation == uploadGeneration and not failed do
+                    local i = nextIndex
+                    nextIndex = nextIndex + 1
+                    if i > partCount then break end
+                    if not pendingAcknowledged[i] then
+                        local ok, message = uploadPart(requestFn, receiver, parts[i], scanId, i, partCount)
+                        if not ok then
+                            failed = "Part " .. i .. "/" .. partCount .. " failed (" .. tostring(message) .. ")"
+                            break
+                        end
+                        pendingAcknowledged[i] = message
+                        succeeded = succeeded + 1
+                        status.Text = "Verified " .. succeeded .. "/" .. partCount .. " parts"
+                    end
+                end
+                active = active - 1
+            end)
+        end
+        while active > 0 and alive and generation == uploadGeneration do task.wait(0.1) end
         uploading = false
-        if alive then
-            status.Text = "Upload complete: " .. succeeded .. "/" .. partCount .. " acknowledged"
+        if not alive or generation ~= uploadGeneration then return end
+        local elapsed = math.floor((os.clock()-started)*100)/100
+        if failed then
+            status.Text = failed .. "; SEND JSON to retry"
+        elseif succeeded == partCount then
+            status.Text = "Upload complete: " .. succeeded .. "/" .. partCount
+                .. " acknowledged in " .. tostring(elapsed) .. "s"
+        else
+            status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
         end
     end)
 end
@@ -429,6 +444,7 @@ local function encodeStage(stage, value)
 end
 
 local function prepareParts(report)
+    local prepareStarted = os.clock()
     local scanId = HttpService:GenerateGUID(false)
     local objects = report.objects
     local chunks = {}
@@ -495,6 +511,12 @@ local function prepareParts(report)
         if #body > 145000 then error("Part exceeds receiver limit") end
         table.insert(parts, body)
     end
+    report.localPerformance = report.localPerformance or {}
+    report.localPerformance.serializationSeconds = math.floor((os.clock()-prepareStarted)*1000+0.5)/1000
+    report.localPerformance.uploadParts = #parts
+    local bytes = 0
+    for _, body in ipairs(parts) do bytes = bytes + #body end
+    report.localPerformance.uploadBytes = bytes
     return parts
 end
 
@@ -529,6 +551,7 @@ end
 
 
 -- v4.0: bounded, read-only metadata. Never inspect script source or private player text.
+local siblingContextCache = nil
 local function enrichEntry(entry, obj)
     local function privateKey(k)
         k = string.lower(tostring(k))
@@ -683,30 +706,41 @@ local function enrichEntry(entry, obj)
 
     -- Bounded sibling ValueBase context supports cross-system relationship mapping.
     if obj:IsA("ValueBase") and parent then
-        local related, total = {}, 0
-        for _, sibling in ipairs(parent:GetChildren()) do
-            if sibling ~= obj and sibling:IsA("ValueBase") and not privateKey(sibling.Name) then
-                total = total + 1
-                if #related < 20 then
-                    local okValue, siblingValue = pcall(function() return sibling.Value end)
-                    if okValue then
-                        local safeValue = scalar(siblingValue)
-                        if safeValue ~= nil then
-                            related[#related + 1] = {
-                                name = tostring(sibling.Name):sub(1,100),
-                                class = sibling.ClassName,
-                                value = safeValue
-                            }
+        local cached = siblingContextCache and siblingContextCache[parent]
+        if not cached then
+            local related, total = {}, 0
+            for _, sibling in ipairs(parent:GetChildren()) do
+                if sibling:IsA("ValueBase") and not privateKey(sibling.Name) then
+                    total = total + 1
+                    if #related < 21 then
+                        local okValue, siblingValue = pcall(function() return sibling.Value end)
+                        if okValue then
+                            local safeValue = scalar(siblingValue)
+                            if safeValue ~= nil then
+                                related[#related + 1] = {
+                                    name = tostring(sibling.Name):sub(1,100),
+                                    class = sibling.ClassName,
+                                    value = safeValue
+                                }
+                            end
                         end
                     end
                 end
             end
+            cached = {total = total, values = related}
+            if siblingContextCache then siblingContextCache[parent] = cached end
+        end
+        local siblings = {}
+        for _, item in ipairs(cached.values) do
+            if item.name ~= tostring(obj.Name) and #siblings < 20 then
+                siblings[#siblings + 1] = item
+            end
         end
         entry.valueContext = {
             parentPath = entry.parentContext and entry.parentContext.path,
-            siblingValueCount = total,
-            siblingsTruncated = total > #related,
-            siblingValues = related
+            siblingValueCount = math.max(0,cached.total - 1),
+            siblingsTruncated = cached.total - 1 > #siblings,
+            siblingValues = siblings
         }
         local key = objectName
         local roles = {
@@ -1089,9 +1123,11 @@ local function inspect()
     end
 
     running = true
+    siblingContextCache = setmetatable({}, {__mode="k"})
     status.Text = "Scanning..."
 
     task.spawn(function()
+        local scanStarted = os.clock()
         local ok, result = pcall(function()
             local report = {
                 version = VERSION,
@@ -1136,6 +1172,7 @@ local function inspect()
                 guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
                 omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
+                performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
                 limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
             }
             local function categoryOf(obj)
@@ -1171,6 +1208,8 @@ local function inspect()
             local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
             local scanAborted = false
             for _, spec in ipairs(roots) do
+                local rootStarted = os.clock()
+                local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
                 local root = spec.instance
                 local coverage = {
                     available = root ~= nil, required = requiredRoots[spec.label] == true,
@@ -1287,9 +1326,11 @@ local function inspect()
                             coverage.omitted = coverage.omitted + 1
                             if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
-                        if i % 500 == 0 then
+                        if os.clock() >= yieldDeadline then
                             status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
+                            yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
                         end
                         end
                     else
@@ -1300,7 +1341,9 @@ local function inspect()
                     coverage.error = "root unavailable"
                 end
                 if coverage.required and not coverage.success then scanAborted = true end
+                report.scanStats.performance.rootSeconds[spec.label] = math.floor((os.clock()-rootStarted)*1000+0.5)/1000
             end
+            report.scanStats.performance.scanSeconds = math.floor((os.clock()-scanStarted)*1000+0.5)/1000
             report.scanStats.recorded = #report.objects
             local rootAccountingValid = true
             for _, coverage in pairs(report.scanStats.rootCoverage) do
@@ -1358,7 +1401,8 @@ local function inspect()
 
         if not ok then
             status.Text = "Scan error: " .. tostring(result)
-            running = false
+            siblingContextCache = nil
+        running = false
             return
         end
 
