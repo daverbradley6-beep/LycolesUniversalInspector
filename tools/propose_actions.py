@@ -15,6 +15,12 @@ ACTIONS=(
   "Enumerate local PlayerGui interfaces without activating controls"),
  ("list_proximity_prompts",("ProximityPrompt",),
   "Enumerate visible world prompts without triggering them"),
+ ("list_visible_gui_buttons",("TextButton","ImageButton"),
+  "List visible local GUI buttons without activating them"),
+ ("read_local_player_attributes",("Player",),
+  "Read primitive attributes of the local player"),
+ ("inspect_local_character",("Humanoid","HumanoidRootPart"),
+  "Inspect local character humanoid properties without modification"),
 )
 SAFE_NAME=re.compile(r"^[A-Za-z][A-Za-z0-9_ -]{0,79}$")
 
