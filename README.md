@@ -115,3 +115,8 @@ The one-command build now produces `implementation-review.md` in the release arc
 ## v15 reviewed action contracts
 
 The build pipeline now optionally accepts a reviewed contract file: `python3 tools/build_release.py scan-parts --output build --contracts reviewed-contracts.json`. The contract schema requires `schemaVersion: "15.0"`, a matching `placeId`, and an array of `contracts` with discovered feature names, `reviewed: true`, and a supported read-only client action (`read_leaderstats`, `list_player_gui`, `list_proximity_prompts`). Contracts are validated and bundled, not executed. Unsupported operations are rejected. This is an incremental step toward reliable implementations, not automatic arbitrary gameplay scripting.
+
+
+## v16 — Baseline plus dynamic observation fusion
+
+The release builder can now combine a verified complete baseline scan with up to 64 complete dynamic-observation scans for the same Roblox Place ID. Example: `python3 tools/build_release.py ./baseline-parts --observation ./delta1-parts --observation ./delta2-parts --output ./build`. The new `tools/merge_observations.py` validates scan identity, rejects duplicate scans and mismatched places, merges per-feature evidence counters and records overlay provenance in the capability plan. Dynamic observations never replace the baseline object inventory or establish executable gameplay contracts. Supply each scan's complete multipart JSON files in its own folder.
