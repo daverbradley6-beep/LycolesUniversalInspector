@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v4.7.2
+-- Lycoles Universal Inspector v4.7.3
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.7.2"
+local VERSION = "4.7.3"
 
 local endpoint = ""
 local autoSend = true
@@ -48,6 +48,8 @@ local interactionObserveEnabled = false
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
+local scanInvocationCount = 0
+local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
 local sessionId = HttpService:GenerateGUID(false)
 local snapshotId = nil
@@ -1376,7 +1378,9 @@ interactionToggle.MouseButton1Click:Connect(function()
         observerStats.lastDisabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastDisabledReason = "manual-toggle"
     end
-    interactionToggle.Text = interactionObserveEnabled and "INTERACT: ON" or "INTERACT: OFF"
+    interactionToggle.Text = interactionObserveEnabled
+        and ("INTERACT: ON (" .. observerStats.activationCount .. ")")
+        or ("INTERACT: OFF (" .. observerStats.activationCount .. ")")
     interactionToggle.BackgroundColor3 = interactionObserveEnabled
         and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
     status.Text = interactionObserveEnabled
@@ -1384,7 +1388,9 @@ interactionToggle.MouseButton1Click:Connect(function()
         or "Manual interaction observation paused"
 end)
 
-local function inspect()
+local function inspect(requestType)
+    scanInvocationCount = scanInvocationCount + 1
+    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or "manual"
     if running or uploading then
         status.Text = "Wait for current scan/upload to finish"
         return
@@ -1656,6 +1662,8 @@ local function inspect()
             report.featureEvidence = buildFeatureEvidence(report.objects)
             report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
             report.interactionDiagnostics = {
+                scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
+                observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
@@ -1752,6 +1760,8 @@ local function inspect()
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
                 .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
                 .. "\\nObserver activations: " .. tostring(observerStats.activationCount)
+                .. "\\nScan type: " .. scanRequestType
+                .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
@@ -1761,7 +1771,7 @@ local function inspect()
     end)
 end
 
-scan.MouseButton1Click:Connect(inspect)
+scan.MouseButton1Click:Connect(function() inspect("manual") end)
 
 copy.MouseButton1Click:Connect(function()
     if not last then
@@ -1849,4 +1859,4 @@ end
 
 startWatching()
 -- Startup scan is discovery-only; after enabling interaction recording, run SCAN again.
-inspect()
+inspect("startup-baseline")
