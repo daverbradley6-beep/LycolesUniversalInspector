@@ -1,3 +1,11 @@
+## 5.1.0 — Major interaction evidence batch
+- Fix rebirth ConfimButton matching and improve feature-matched confirmation/cancellation linking.
+- Prefer pet-specific and travel menu context over generic control names.
+- Add three observation windows (0.35, 1.25, 3 seconds), tracking numeric state, GUI transitions and character displacement.
+- Detect added and removed sampled values and export bounded action-specific evidence.
+- Expand diagnostics for state corroboration, observation windows and errors.
+- All evidence remains read-only, heuristic and client-visible; in-game verification required.
+
 ## 5.0.0 — Major evidence and workflow update
 - Link generic confirmation and cancellation interactions to recent candidate actions within a bounded 12-second window.
 - Track workflow initiations, inferred confirmations, cancellations and expired pending actions.
