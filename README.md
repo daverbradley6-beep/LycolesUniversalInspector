@@ -145,3 +145,8 @@ The offline pipeline now retains up to 2,000 observed client interaction records
 ## v21 — Manual runtime verification
 
 Release builds now include `manual-verification-plan.json`. When observed workflows include valid `leaderstats.<name>` state changes, builds also include `LycolesManualVerification.lua`, exposing `capture_before()` and `compare_after()` for manual, read-only client state comparisons. The harness does not trigger game actions, and state changes do not prove server-side causality. This is an offline release-builder feature, not a new inspector UI feature.
+
+
+## v22 — Runtime feedback ingestion
+
+The offline release builder accepts an optional `--feedback path/to/report.json` flag. `tools/evaluate_runtime_feedback.py` validates a schema v22 report against the generated `manual-verification-plan.json`, checks Place ID and feature/transaction identity, rejects duplicate checks and unexpected state keys, and classifies each submission as `client-change-observed`, `no-client-change` or `incomplete-observation`. The resulting `runtime-feedback.json` is packaged with the release. This feedback never automatically approves gameplay automation or establishes server authority. Reports are supplied manually; the inspector does not automatically upload verification results.
