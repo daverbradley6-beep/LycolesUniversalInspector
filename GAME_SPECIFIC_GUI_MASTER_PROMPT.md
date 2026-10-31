@@ -1,4 +1,4 @@
-# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v9.0+)
+# Universal Roblox Inspector → Game-Specific Script Master Prompt (Inspector v10.0+)
 
 ## Mission
 Create a **complete, functional, game-specific Luau script with a polished GUI** using evidence collected by **Lycoles Universal Inspector**. This prompt is UNIVERSAL: never assume the target is Muscle Legends or that a fixed set of gameplay systems exists. Determine the target game from the latest inspection's placeId, gameId, gameName and user instructions. The user may execute via Potassium without Roblox Studio. Do not deliver a menu full of placeholder buttons or fabricate functionality.
@@ -90,3 +90,8 @@ When scan parts are available as JSON files, run `python3 tools/compile_scan.py 
 ## v9.0 — Deterministic Script Generation
 
 Run `python3 tools/compile_scan.py PARTS_DIR --output build`, then `python3 tools/generate_script.py build/capability-plan.json --output build/generated`. The second stage creates an executable, place-bound client diagnostic Lua utility and a machine-readable release manifest with source and output hashes. The generated UI implements only verified safe client-side diagnostics (replicated numeric stats, menu catalog, world prompt catalog, discovered-feature inventory). Feature candidates must not be represented as functional game automation. No speculative remotes or invalid API calls. Require static tests and an in-game runtime check before claiming a script is working. GitHub upload is a separate release step, not evidence of live functionality.
+
+
+## v10.0 — Automated Release Build and CI Gate
+
+Prefer the single-command build `python3 tools/build_release.py PARTS_DIR --output build`, which validates the scan, compiles feature evidence, generates the client utility, checks the expected structure and prohibited operations, and packages a deterministic ZIP with a release manifest. GitHub Actions `.github/workflows/offline-pipeline.yml` runs the offline test suite on relevant commits and uploads a sample artifact. Do not claim tests have passed until a CI run is observed. Never claim a static-checked artifact is live-tested. This build does not generate or authorize arbitrary gameplay automation, nor deploy into a game. Do not create nonfunctional gameplay controls merely to appear complete.
