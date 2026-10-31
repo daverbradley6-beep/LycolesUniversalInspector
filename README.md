@@ -175,3 +175,21 @@ python3 -m unittest discover -s tests -v
 ```
 
 The reviewed build includes `LycolesClientActions.lua` and `LycolesReviewedActionsGUI.lua`, with structurally validated button wiring. Generated output is not live-tested in Roblox; source inspection and class counts do not prove server-side gameplay behaviour. The GitHub repository and loadstring do not automatically generate scripts in-game.
+
+
+## v29 — Per-action audit evaluation and feature coverage
+
+Generated reviewed-actions GUIs can export bounded client execution audit JSON. The offline builder can now evaluate that audit against explicitly reviewed contracts:
+
+```sh
+python3 tools/build_release.py ./scan-parts --contracts ./reviewed-contracts.json --audit ./client-action-audit.json --output ./build
+```
+
+The release includes `action-audit-evaluation.json` when an audit is provided, and `feature-coverage.json` for every complete scan. The evaluator distinguishes client function returns, client errors, and untested operations; it rejects unknown actions and mismatched Place IDs. No reported client result establishes gameplay automation or server authority. For standalone use:
+
+```sh
+python3 tools/evaluate_action_audit.py reviewed-validated-contracts.json client-action-audit.json --output build/action-audit-evaluation.json
+python3 tools/report_feature_coverage.py build/capability-plan.json build/implementation-backlog.json --output build/feature-coverage.json
+```
+
+The standalone audit evaluator expects the **validated** v15 contract document, not the unapproved review template.
