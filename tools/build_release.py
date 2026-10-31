@@ -45,7 +45,7 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
-def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None):
+def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,audit_path=None):
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
@@ -86,6 +86,14 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         if validated_contracts["contracts"]:
             gui_generator=load_module("generate_actions_gui.py","lycoles_actions_gui")
             actions_gui_lua=gui_generator.render(validated_contracts)
+    audit_evaluation=None
+    if audit_path is not None:
+        if validated_contracts is None:raise ValueError("Audit requires reviewed contracts")
+        audit_evaluator=load_module("evaluate_action_audit.py","lycoles_action_audit")
+        audit_data=json.loads(pathlib.Path(audit_path).read_text(encoding="utf-8"))
+        audit_evaluation=audit_evaluator.evaluate(validated_contracts,audit_data)
+    coverage_reporter=load_module("report_feature_coverage.py","lycoles_coverage")
+    coverage=coverage_reporter.report(plan,backlog,validated_contracts,audit_evaluation)
     gui_validation=None
     if actions_gui_lua is not None:
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
@@ -95,11 +103,13 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"28.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"29.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),
+        "coverageFeatures":coverage["featureCount"],
+        "actionAuditObservedActions":audit_evaluation["observedActions"] if audit_evaluation else 0,
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
         "manualVerificationChecks":len(verification_plan["checks"]),
@@ -118,6 +128,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
     files={
+      "feature-coverage.json":(json.dumps(coverage,indent=2,sort_keys=True)+"\n").encode(),
       "review-contracts-template.json":(json.dumps(review_template,indent=2,sort_keys=True)+"\n").encode(),
       "contract-draft.json":(json.dumps(contract_draft,indent=2,sort_keys=True)+"\n").encode(),
       "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
@@ -135,6 +146,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if audit_evaluation is not None:
+        files["action-audit-evaluation.json"]=(json.dumps(audit_evaluation,indent=2,sort_keys=True)+"\n").encode()
     if feedback is not None:
         files["runtime-feedback.json"]=(json.dumps(feedback,indent=2,sort_keys=True)+"\n").encode()
     if verification_lua is not None:
@@ -163,8 +176,9 @@ def main():
     parser.add_argument("--contracts",default=None)
     parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
+    parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback);return 0
+    try: build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,args.audit);return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 
