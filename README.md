@@ -155,3 +155,23 @@ The offline release builder accepts an optional `--feedback path/to/report.json`
 ## v23 — Export verification observations as JSON
 
 Generated `LycolesManualVerification.lua` now provides `capture_all_before()` and `export_report()`. The first captures replicated leaderstats. After the tester performs a game action manually, the second returns a schema v22 JSON report accepted by the existing `--feedback` ingestion stage. Export requires explicit baseline capture. Save the returned JSON as a report file for the offline builder. Report transfer and gameplay action execution remain manual.
+
+
+## v28 — Six reviewed client operations and review-to-code workflow
+
+The offline build now proposes six bounded read-only client operations from complete inspection evidence. The supported operations are `read_leaderstats`, `list_player_gui`, `list_proximity_prompts`, `list_visible_gui_buttons`, `read_local_player_attributes`, and `inspect_local_character`. These functions are not game-specific gameplay automation and are not generated until a corresponding reviewed contract is supplied.
+
+Build a release and inspect the unapproved `review-contracts-template.json`:
+
+```sh
+python3 tools/build_release.py ./scan-parts --output ./build
+```
+
+The template uses the v15 reviewed-contract schema. Remove irrelevant entries, confirm each feature association and explicitly set `reviewed: true` for actions you have reviewed. Then build:
+
+```sh
+python3 tools/build_release.py ./scan-parts --contracts ./reviewed-contracts.json --output ./build
+python3 -m unittest discover -s tests -v
+```
+
+The reviewed build includes `LycolesClientActions.lua` and `LycolesReviewedActionsGUI.lua`, with structurally validated button wiring. Generated output is not live-tested in Roblox; source inspection and class counts do not prove server-side gameplay behaviour. The GitHub repository and loadstring do not automatically generate scripts in-game.
