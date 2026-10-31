@@ -1,3 +1,10 @@
+## 4.7.4
+- Classify observed controls by their own names or up to six ancestor names.
+- Correct attributed and unattributed interaction counters.
+- Retain a bounded 60-event interaction history with paths, timestamps and candidate features.
+- Attach observed client-state deltas to their corresponding history records.
+- Export recent interaction evidence in the scan manifest; no causal verification implied.
+
 ## 4.7.3
 - Label startup baseline and manual scans in interaction diagnostics.
 - Add scan invocation count and observerReady status to exported manifest.
