@@ -85,7 +85,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
     manifest={
-        "schemaVersion":"22.0","placeId":place,"scanId":plan["integrity"]["scanId"],
+        "schemaVersion":"23.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "readOnlyActionProposals":len(proposals["proposals"]),
         "observedWorkflowSequences":sequences["workflowCount"],
