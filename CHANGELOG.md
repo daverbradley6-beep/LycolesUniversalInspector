@@ -1,3 +1,9 @@
+## 4.7.3
+- Label startup baseline and manual scans in interaction diagnostics.
+- Add scan invocation count and observerReady status to exported manifest.
+- Display observer activation count in INTERACT toggle and scan type/readiness in scan status.
+- Interaction capture remains subject to live validation.
+
 ## v4.7.2
 - Track observer activation/deactivation, timestamps, callback activity, sweep start/completion and errors.
 - Show observer callback and sweep status in the scan output; explicitly instruct users to scan again after gameplay.
