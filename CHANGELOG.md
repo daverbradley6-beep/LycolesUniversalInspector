@@ -1,3 +1,9 @@
+## 5.8.0 — Faster full hierarchy traversal
+- Cache computed ancestry paths within each scan root to avoid repeatedly traversing common parent chains.
+- Reset cache between roots to retain root-specific path labels and duplicate-root handling.
+- Preserve existing object records, metadata, occurrence disambiguation, interaction observation, and multipart export schema.
+- Runtime performance gains are pending in-game measurement.
+
 ## 5.7.0 — Faster lossless report preparation and pagination attribution
 - Replace repeated growing-history JSON serialization with linear incremental size estimates; retain exact-size final validation and splitting.
 - Increase object chunk packing target from 85 KB to 96.5 KB within existing 105 KB part limit, retaining all recorded objects.
