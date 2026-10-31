@@ -21,6 +21,9 @@ class ReviewedGUIWiringTests(unittest.TestCase):
         self.assertFalse(report["runtimeVerified"])
         self.assertIn('local ACTION_NAMES = {"list_player_gui","read_leaderstats"}',source)
         self.assertIn('pcall(actions[name])',source)
+        self.assertIn('HttpService:JSONEncode',source)
+        self.assertIn('Export audit JSON',source)
+        self.assertIn('local output = Instance.new("TextBox")',source)
         self.assertIn('\\n',source)
     def test_reject_missing_dispatch(self):
         source=gui.render(self.document()).replace("pcall(actions[name])","pcall(function() end)")
