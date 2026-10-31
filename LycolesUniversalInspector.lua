@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "4.3.0"
+local VERSION = "4.4.0"
 
 local endpoint = ""
 local autoSend = true
@@ -48,6 +48,47 @@ local interactionObserveEnabled = false
 local interactionObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
+local sessionId = HttpService:GenerateGUID(false)
+local snapshotId = nil
+local observationSequence = 0
+local FEATURE_TERMS = {
+ training={"training","gym","strength","agility"},
+ rebirth={"rebirth"}, pets={"pet","hatch","egg"},
+ shops={"shop","purchase"}, travel={"teleport","portal"},
+ bosses={"boss","arena"}, quests={"quest","mission"},
+ combat={"combat","attack"}, inventory={"inventory","equip"},
+ rewards={"reward","claim"}
+}
+local function buildFeatureEvidence(objects)
+ local features = {}
+ for name in pairs(FEATURE_TERMS) do
+  features[name]={counts={controllers=0,remotes=0,gui=0,values=0,world=0},examples={},
+   status="not-discovered",confidence="path-name-only",serverVerified=false,
+   missingEvidence={"Observed normal interaction","Before/after state verification","Authorised implementation test"}}
+ end
+ for _,obj in ipairs(objects) do
+  local path=tostring(obj.path or "")
+  local lower=string.lower(path)
+  local class=tostring(obj.class or "")
+  local kind="world"
+  if class=="ModuleScript" or class=="LocalScript" then kind="controllers"
+  elseif class=="RemoteEvent" or class=="RemoteFunction" or class=="UnreliableRemoteEvent" then kind="remotes"
+  elseif class=="TextButton" or class=="ImageButton" or class=="ProximityPrompt" or class=="ClickDetector" then kind="gui"
+  elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
+  for name,terms in pairs(FEATURE_TERMS) do
+   for _,term in ipairs(terms) do
+    if string.find(lower,term,1,true) then
+     local item=features[name]
+     item.counts[kind]=item.counts[kind]+1
+     item.status="candidate-needs-verification"
+     if #item.examples<12 then item.examples[#item.examples+1]={path=path:sub(1,300),class=class,kind=kind} end
+     break
+    end
+   end
+  end
+ end
+ return features
+end
 local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
 
 local function trim(value)
@@ -456,7 +497,7 @@ local function prepareParts(report)
             inspectedAt = report.inspectedAt, gameName = report.gameName,
             scanId = scanId, partIndex = 99999, partCount = 99999,
             counts = report.counts, groups = report.groups,
-            scanStats = report.scanStats, objects = items
+            scanStats = report.scanStats, sessionId = report.sessionId, snapshotId = report.snapshotId, parentSnapshotId = report.parentSnapshotId, featureEvidence = report.featureEvidence, objects = items
         })
     end
     -- Linear-time batching; repeated JSON-encoding of growing chunks
@@ -505,7 +546,7 @@ local function prepareParts(report)
             inspectedAt = report.inspectedAt, gameName = report.gameName,
             scanId = scanId, partIndex = i, partCount = #chunks,
             counts = report.counts, groups = report.groups,
-            scanStats = report.scanStats, objects = items
+            scanStats = report.scanStats, sessionId = report.sessionId, snapshotId = report.snapshotId, parentSnapshotId = report.parentSnapshotId, featureEvidence = report.featureEvidence, objects = items
         }
         local body = encodeStage('part ' .. tostring(i), part)
         if #body > 145000 then error("Part exceeds receiver limit") end
@@ -895,12 +936,13 @@ local function observeInteractionObject(obj, root, label)
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
+        observationSequence = observationSequence + 1
         changeCount = changeCount + 1
         changeQueue[#changeQueue + 1] = {
             path = path:sub(1,400), class = obj.ClassName,
             category = "user-interaction", controlType = controlType,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            evidence = "manual-user-interaction"
+            evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
     end)
     table.insert(watchConnections, connection)
@@ -938,6 +980,8 @@ local function flushWatch()
             placeVersion = game.PlaceVersion, gameName = lastGameName,
             inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             objects = batch, counts = {}, groups = {},
+            sessionId = sessionId, parentSnapshotId = snapshotId,
+            featureEvidence = buildFeatureEvidence(batch),
             scanStats = {
                 mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
@@ -1131,6 +1175,7 @@ local function inspect()
         local ok, result = pcall(function()
             local report = {
                 version = VERSION,
+                sessionId = sessionId, snapshotId = HttpService:GenerateGUID(false),
                 placeId = game.PlaceId,
                 gameId = game.GameId,
                 placeVersion = game.PlaceVersion,
@@ -1374,6 +1419,7 @@ local function inspect()
                 and rootAccountingValid
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
             report.scanStats.complete = scanComplete
+            report.featureEvidence = buildFeatureEvidence(report.objects)
             report.diagnostics = {
                 complete = scanComplete,
                 completenessBasis = "required-root-success-and-object-accounting",
@@ -1424,6 +1470,8 @@ local function inspect()
             local parts = prepareParts(result)
             local manifest = encodeStage('scan-manifest', {
                 version = VERSION, gameName = result.gameName,
+                sessionId = result.sessionId, snapshotId = result.snapshotId,
+                featureEvidence = result.featureEvidence,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
@@ -1433,6 +1481,7 @@ local function inspect()
             return {json = manifest, parts = parts}
         end)
         if encoded then
+            snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
             pendingAcknowledged = {}
