@@ -1,3 +1,11 @@
+## v16.0.0 — Verified dynamic evidence fusion
+
+- Added `tools/merge_observations.py` to combine full baseline capability plans with separately validated dynamic observation scans.
+- Added repeatable `--observation` folders to release builder and provenance counts to manifest.
+- Reject duplicate scan IDs, incomplete scans, cross-game observations and dynamic-only baselines.
+- Added evidence fusion regression tests.
+- The feature evidence overlay is additive; overlapping repeated observations may double-count events. Runtime and gameplay functionality remain unverified.
+
 ## v15.0.0 — Reviewed client action contracts
 
 - Added `tools/validate_contracts.py` to validate explicitly reviewed, place-bound, read-only client action contracts against features discovered in a complete scan.
