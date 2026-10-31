@@ -95,3 +95,8 @@ Run `python3 tools/compile_scan.py PARTS_DIR --output build`, then `python3 tool
 ## v10.0 — Automated Release Build and CI Gate
 
 Prefer the single-command build `python3 tools/build_release.py PARTS_DIR --output build`, which validates the scan, compiles feature evidence, generates the client utility, checks the expected structure and prohibited operations, and packages a deterministic ZIP with a release manifest. GitHub Actions `.github/workflows/offline-pipeline.yml` runs the offline test suite on relevant commits and uploads a sample artifact. Do not claim tests have passed until a CI run is observed. Never claim a static-checked artifact is live-tested. This build does not generate or authorize arbitrary gameplay automation, nor deploy into a game. Do not create nonfunctional gameplay controls merely to appear complete.
+
+
+## v11 — Receiver Integrity and Real Inspector Evidence Compatibility
+
+Treat a snapshot manifest as a summary, not proof of uploaded parts. Use receiver `GET /reports/READ_KEY/SCAN_ID/integrity` and require `complete=true`, `duplicateObjectKeys=0`, and `receivedParts=partCount` before generating. The offline compiler now accepts actual inspector metadata/history/object multipart schema, including a separate JSON manifest. It preserves temporal GUI and replicated-state corroboration as **observed evidence**, never server verification. Build with `python3 tools/build_release.py PARTS_DIR --output build`. CI tests the receiver and real-schema fixtures. No manual per-feature scripting claims; do not represent discovery as implementation. Receiver code changes require deploying the Cloudflare Worker separately; committing is not deployment.
