@@ -17,10 +17,14 @@ jobs:
           python-version: '3.13'
       - name: Run v3x regression suite
         run: python -m unittest discover -s tests -p 'test_v3*.py'
+      - name: Run v40 generator regression suite
+        run: python -m unittest discover -s tests -p 'test_v40*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
         run: python tools/game_first_v39.py examples/muscle-legends-receiver-v15-sanitized.json --report build/game-discovery-v39.json --luau build/diagnostic-v39.luau
+      - name: Generate v40 Luau diagnostic
+        run: python tools/diagnostic_generator_v40.py build/game-discovery-v39.json --output build/diagnostic-v40.luau
       - name: Assert game-first results
         run: |
           python - <<'PY'
