@@ -2473,6 +2473,29 @@ autoEvidenceToggle.TextSize = 10
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
 autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
 autoEvidenceToggle.Parent = panel
+local evidenceHint = create("TextLabel", {
+    Name = "EvidenceHint",
+    Text = "After interaction: up to 4 full rescans",
+    Position = UDim2.fromOffset(379, 196),
+    Size = UDim2.fromOffset(121, 55),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 10,
+    TextWrapped = true,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, panel)
+local uploadHint = create("TextLabel", {
+    Name = "UploadHint",
+    Text = "Receiver ACK is not full integrity proof.",
+    Position = UDim2.fromOffset(379, 258),
+    Size = UDim2.fromOffset(121, 65),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 10,
+    TextWrapped = true,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, panel)
+
 autoEvidenceToggle.MouseButton1Click:Connect(function()
     AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
     autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
@@ -2503,6 +2526,7 @@ task.spawn(function()
                 autoEvidenceLastSequence=interactionEventCount
                 autoEvidenceLastScan=os.clock()
                 autoEvidenceRescans=autoEvidenceRescans+1
+                evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
                 inspect("auto-evidence")
             else
                 autoEvidenceLastFailure="Previous scan parts not acknowledged"
