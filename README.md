@@ -95,3 +95,8 @@ The build validates multipart integrity, compiles a capability plan, generates a
 ## v11 real inspection data compatibility
 
 The compiler accepts numbered JSON parts from the actual inspector, including metadata-only and interaction-history-only parts, plus an optional local manifest JSON. Run `python3 tools/build_release.py scan-parts --output build`. Inspect the receiver's `/reports/READ_KEY/SCAN_ID/integrity` response and require all parts acknowledged, no duplicate object keys and exact recorded-object accounting. Receiver changes are source-only until the Cloudflare Worker is deployed. The manifest's `uploadedParts: 0` is a snapshot-time placeholder, not proof of failure or success. Client-side state corroboration is not server-side verification.
+
+
+## v12 Inspector UI fix
+
+AUTO EVIDENCE is now in a dedicated right-hand sidebar, away from the title and minimise button. The output pane is narrower so it does not cover the new controls. The sidebar shows the automatic full-rescan budget and clarifies that multipart ACKs are not the same as receiver-side integrity verification. Static UI tests run with the existing CI suite. Roblox runtime layout has not yet been visually verified.
