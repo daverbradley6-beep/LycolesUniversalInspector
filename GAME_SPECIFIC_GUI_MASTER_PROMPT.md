@@ -100,3 +100,8 @@ Prefer the single-command build `python3 tools/build_release.py PARTS_DIR --outp
 ## v11 — Receiver Integrity and Real Inspector Evidence Compatibility
 
 Treat a snapshot manifest as a summary, not proof of uploaded parts. Use receiver `GET /reports/READ_KEY/SCAN_ID/integrity` and require `complete=true`, `duplicateObjectKeys=0`, and `receivedParts=partCount` before generating. The offline compiler now accepts actual inspector metadata/history/object multipart schema, including a separate JSON manifest. It preserves temporal GUI and replicated-state corroboration as **observed evidence**, never server verification. Build with `python3 tools/build_release.py PARTS_DIR --output build`. CI tests the receiver and real-schema fixtures. No manual per-feature scripting claims; do not represent discovery as implementation. Receiver code changes require deploying the Cloudflare Worker separately; committing is not deployment.
+
+
+## v12 Interface and delivery requirements
+
+Do not place controls over the inspector title, minimise button, status, log or receiver settings. Require a separate right-hand controls column with an explicit auto-rescan budget. Upload ACK counts indicate acknowledged parts only; do not claim receiver-side integrity until the receiver's integrity endpoint confirms it. Include `tests/test_inspector_ui.py` in CI. Do not claim a static layout test proves the UI has been tested inside Roblox.
