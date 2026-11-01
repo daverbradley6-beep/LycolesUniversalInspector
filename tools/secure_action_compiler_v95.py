@@ -105,11 +105,13 @@ def audit(output):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--spec",type=Path,required=True)
+    p.add_argument("--spec",type=Path)
     p.add_argument("--output",type=Path,default=Path("build/release-v95"))
     p.add_argument("--audit-only",action="store_true")
     a=p.parse_args()
     if not a.audit_only:
+        if a.spec is None:
+            p.error("--spec is required unless --audit-only is used")
         spec=json.loads(a.spec.read_text(encoding="utf-8-sig"))
         print(json.dumps(generate(spec,a.output)))
     result=audit(a.output)
