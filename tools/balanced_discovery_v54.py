@@ -80,6 +80,7 @@ local function orderedChildren(obj)
  end
  return result
 end
+local tracked={}
 local state={}
 for _,root in ipairs(roots) do
  state[root[1]]={queue={{root[2],root[1],0}},cursor=1,visited=0}
@@ -106,7 +107,10 @@ local function capture()
     local item={path=path,className=obj.ClassName,root=name}
     local value=readValue(obj)
     if value~=nil then item.value=value end
-    if interested(obj) then item.priority=true end
+    if interested(obj) then
+     item.priority=true
+     tracked[path]={object=obj,root=name,className=obj.ClassName}
+    end
     table.insert(items,item)
     seen[path]=true
     if depth<12 then
@@ -119,6 +123,24 @@ local function capture()
    end
   end
   perRoot[name]={visited=s.visited,pending=math.max(0,#s.queue-s.cursor+1),sampled=used}
+ end
+ -- Resample high-signal objects so changes are measurable despite incremental traversal.
+ local revisited=0
+ local keys={}
+ for path,_ in pairs(tracked) do table.insert(keys,path) end
+ table.sort(keys)
+ for _,path in ipairs(keys) do
+  if revisited>=300 then break end
+  local info=tracked[path]
+  if info.object.Parent and not seen[path] then
+   local v=readValue(info.object)
+   local item={path=path,className=info.className,root=info.root,priority=true,resampled=true}
+   if v~=nil then item.value=v end
+   table.insert(items,item)
+   revisited+=1
+  elseif not info.object.Parent then
+   tracked[path]=nil
+  end
  end
  return items,perRoot
 end
