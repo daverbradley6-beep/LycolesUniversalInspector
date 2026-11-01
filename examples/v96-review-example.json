@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "91.review",
+  "placeId": 123456,
+  "verifiedInGame": false,
+  "candidates": [
+    {
+      "id": "candidate1",
+      "status": "review_candidate",
+      "input": "keyboard:E:processed=False",
+      "outcome": {
+        "stat": "Coins",
+        "operator": "increase"
+      }
+    }
+  ]
+}
