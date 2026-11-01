@@ -32,6 +32,8 @@ local function walk(node, path, depth)
                     path = nextPath,
                     property = "Name",
                     label = string.sub(child.ClassName .. ": " .. name, 1, 100),
+                    className = child.ClassName,
+                    name = name,
                 })
             end
             walk(child, nextPath, depth + 1)
