@@ -55,6 +55,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v57*.py'
       - name: Run v58 gameplay workflow tests
         run: python -m unittest discover -s tests -p 'test_v58*.py'
+      - name: Run v59 gameplay planner tests
+        run: python -m unittest discover -s tests -p 'test_v59*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
