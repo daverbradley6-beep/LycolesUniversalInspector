@@ -39,6 +39,8 @@ def build(receipt,contract,out):
     result=plan(receipt,contract)
     out.mkdir(parents=True,exist_ok=True)
     (out/"gameplay-plan-v59.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
+    evidence_script=render_evidence(compile_features(analyze(receipt)))
+    (out/"evidence-explorer-v59.luau").write_text(evidence_script,encoding="utf-8")
     if contract is not None and result["authorizedActions"]:
         allowed={a["id"] for a in result["authorizedActions"]}
         subset={**contract,"actions":[a for a in contract["actions"] if a["id"] in allowed]}
