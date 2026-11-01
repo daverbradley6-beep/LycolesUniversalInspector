@@ -24,8 +24,11 @@ def compile_evidence(discovery_text, telemetry_text, place_id):
     if type(place_id) is not int or place_id <= 0:
         raise ValueError("place_id must be a positive integer")
     discovery = import_console(discovery_text)
-    if discovery["placeId"] != place_id:
-        raise ValueError("discovery place ID mismatch or missing")
+    if discovery["placeId"] is not None and discovery["placeId"] != place_id:
+        raise ValueError("discovery place ID mismatch")
+    place_id_unverified = discovery["placeId"] is None
+    if place_id_unverified and not discovery["samples"]:
+        raise ValueError("missing discovery place ID and no recoverable batches")
     telemetry = parse_log(telemetry_text, place_id)
     cat = catalog(discovery)
     indexed = defaultdict(list)
@@ -62,7 +65,8 @@ def compile_evidence(discovery_text, telemetry_text, place_id):
                        "causalityVerified": False})
     ranked.sort(key=lambda x: (-x["changeCount"], x["path"]))
     gates = {
-        "placeIdsMatch": True,
+        "placeIdsMatch": not place_id_unverified,
+        "discoveryPlaceIdUnverified": place_id_unverified,
         "discoveryComplete": cat["sourceComplete"],
         "telemetryComplete": telemetry["complete"],
         "hasCorrelatedObservations": bool(ranked),
@@ -71,6 +75,9 @@ def compile_evidence(discovery_text, telemetry_text, place_id):
     manifest = {
         "schemaVersion": "67.release",
         "placeId": place_id,
+        "discoveryPlaceIdSource": "cli_unverified" if place_id_unverified else "stream_header",
+        "discoveryRecoveredPartialBatches": discovery.get("recoveredPartialBatches", 0),
+        "discoveryMissing": discovery["missing"],
         "sourceHashes": {
             "discoverySha256": hashlib.sha256(discovery_text.encode("utf-8")).hexdigest(),
             "telemetrySha256": hashlib.sha256(telemetry_text.encode("utf-8")).hexdigest()},
@@ -106,6 +113,7 @@ def main():
     p.add_argument("--output",type=Path,default=Path("build/release-v67"))
     a=p.parse_args()
     for path in (a.discovery,a.telemetry):
+        if not path.is_file(): p.error(f"input file not found: {path}")
         if path.stat().st_size > MAX_INPUT: p.error("input exceeds 50 MB")
     result=build(a.discovery.read_text(encoding="utf-8-sig",errors="replace"),
                  a.telemetry.read_text(encoding="utf-8-sig",errors="replace"),
