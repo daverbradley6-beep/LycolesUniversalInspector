@@ -36,6 +36,8 @@ def classify(document,place_id,max_items=150):
         rows=next((document[k] for k in ("objects","instances","entries","observations")
                    if isinstance(document.get(k),list)),None)
     if rows is None:raise ValueError("missing object collection")
+    if type(max_items)!=int or not 1<=max_items<=150:
+        raise ValueError("max_items must be 1-150")
     prepared=[]
     catalog=[]
     rejected=Counter()
@@ -44,7 +46,7 @@ def classify(document,place_id,max_items=150):
             rejected["invalid_row"]+=1
             continue
         class_name=row.get("className",row.get("class"))
-        if class_name not in RULES:
+        if not isinstance(class_name,str) or class_name not in RULES:
             rejected["unsupported_class"]+=1
             continue
         kind,prop=RULES[class_name]
