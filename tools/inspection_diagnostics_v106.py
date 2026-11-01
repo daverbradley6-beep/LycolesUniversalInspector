@@ -29,7 +29,7 @@ def analyze(report, plan):
     if len(expected) != len(features):
         raise ValueError('unsupported feature classification')
     for (index, obj), feature in zip(expected, features):
-        if not isinstance(feature, dict) or feature.get('id') != f'observe_{index:04d}' or feature.get('path') != obj['path'] or feature.get('property') != obj['property'] or feature.get('kind') != 'read_property':
+        if not isinstance(feature, dict) or feature.get('id') != f'observe_{index:04d}' or feature.get('path') != obj['path'] or feature.get('className') != obj['className'] or feature.get('property') != obj['property'] or feature.get('kind') != 'read_property':
             raise ValueError('feature mapping mismatch')
     if report.get('readOnly') is not True or report.get('verifiedInGame') is not False or plan.get('runtimeVerified') is not False:
         raise ValueError('unsupported runtime claim')

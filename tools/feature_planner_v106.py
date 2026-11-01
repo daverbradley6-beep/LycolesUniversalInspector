@@ -27,6 +27,7 @@ class Feature:
     label: str
     kind: str
     path: tuple[str, ...]
+    class_name: str
     property: str
     status: str
 
@@ -34,6 +35,7 @@ class Feature:
         return {
             "id": self.identifier, "label": self.label,
             "kind": self.kind, "path": list(self.path),
+            "className": self.class_name,
             "property": self.property, "status": self.status,
         }
 
@@ -57,7 +59,7 @@ def plan(report: dict[str, Any]) -> dict[str, Any]:
             features.append(Feature(
                 identifier=f"observe_{index:04d}",
                 label=f"Observe {path[-1]}", kind="read_property",
-                path=tuple(path), property=prop,
+                path=tuple(path), class_name=cls, property=prop,
                 status="implemented_not_runtime_verified",
             ).as_dict())
         else:

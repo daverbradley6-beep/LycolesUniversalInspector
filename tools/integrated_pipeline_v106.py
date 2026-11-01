@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from release_pipeline_v104 import build, canonical
-from feature_planner_v106 import plan
+from feature_planner_v106 import SUPPORTED, plan
 from luau_contract_v106 import validate_source
 from feature_quality_v106 import assess
 from inspection_diagnostics_v106 import analyze
@@ -33,12 +33,13 @@ def emit_luau(feature_plan):
         path = feature["path"]
         if not isinstance(path, list) or len(path) < 2 or len(path) > 12 or path[0] not in {'Workspace', 'PlayerGui', 'ReplicatedStorage', 'Players'} or any(not isinstance(p, str) or not p or len(p) > 80 for p in path):
             raise ValueError("invalid path")
-        if feature['property'] not in {'Text', 'Value', 'Visible', 'Enabled', 'Name'}:
-            raise ValueError('unsupported property')
-        entries.append("  {id=%s,label=%s,path=%s,property=%s}," % (
+        cls = feature.get('className')
+        if cls not in SUPPORTED or feature.get('property') != SUPPORTED[cls]:
+            raise ValueError('unsupported class/property contract')
+        entries.append("  {id=%s,label=%s,path=%s,className=%s,property=%s}," % (
             json.dumps(feature["id"]), json.dumps(feature["label"]),
             "{" + ",".join(json.dumps(p) for p in path) + "}",
-            json.dumps(feature["property"])))
+            json.dumps(cls), json.dumps(feature["property"])))
     header = [
         "-- Lycoles integrated functional client observer",
         "local Players = game:GetService('Players')",
@@ -84,11 +85,21 @@ def emit_luau(feature_plan):
         "local rows = {}",
         "local function readFeature(feature)",
         " local node = roots[feature.path[1]]",
-        " for i=2,#feature.path do",
+        " for i=2,#feature.path-1 do",
         "  if not node then return 'missing object' end",
         "  node = node:FindFirstChild(feature.path[i])",
         " end",
         " if not node then return 'missing object' end",
+        " local terminalName = feature.path[#feature.path]",
+        " local terminal = nil",
+        " for _, child in ipairs(node:GetChildren()) do",
+        "  if child.Name == terminalName and child.ClassName == feature.className then",
+        "   terminal = child",
+        "   break",
+        "  end",
+        " end",
+        " node = terminal",
+        " if not node then return 'missing object or class mismatch' end",
         " local ok,result = pcall(function() return node[feature.property] end)",
         " return ok and tostring(result) or 'property unavailable'",
         "end",

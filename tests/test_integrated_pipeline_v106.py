@@ -93,6 +93,27 @@ class IntegratedPipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             emit_luau(feature_plan)
 
+    def test_feature_plan_preserves_class_identity(self):
+        features = plan(build(fixture(), PLACE))["features"]
+        self.assertEqual([feature["className"] for feature in features],
+                         ["TextLabel", "IntValue", "ProximityPrompt"])
+
+    def test_generated_resolver_requires_terminal_class_match(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        self.assertIn("child.Name == terminalName and child.ClassName == feature.className", script)
+        self.assertIn("for _, child in ipairs(node:GetChildren()) do", script)
+
+    def test_invalid_generated_class_rejected(self):
+        feature_plan = plan(build(fixture(), PLACE))
+        feature_plan["features"][0]["className"] = "RemoteEvent"
+        with self.assertRaises(ValueError):
+            emit_luau(feature_plan)
+
+    def test_static_contract_detects_missing_class_match(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        broken = script.replace("child.ClassName == feature.className", "true")
+        self.assertFalse(validate_source(broken, 3)["ok"])
+
     def test_quality_accounting_and_coverage(self):
         report = build(fixture(), PLACE)
         result = assess(report, plan(report))
