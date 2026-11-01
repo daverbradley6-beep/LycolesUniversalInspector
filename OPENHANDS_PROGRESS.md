@@ -1,14 +1,14 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-01 — v107 controlled resolver model cycle_
+_Last updated: 2026-11-01 — v107 public Roblox API compatibility cycle_
 
 ## Repository State
 
 - Workspace: `/projects/LycolesUniversalInspector`
 - Branch: `openhands-development`
-- Latest implementation commit: `a6a931b` (`Add controlled v107 resolver model`)
+- Latest implementation commit: `9b3bfbd` (`Validate v107 against public Roblox API`)
 - Implementation head: local and `origin/openhands-development` matched at the identical full commit SHA
-- Implementation snapshot relative to `origin/main`: **8 commits ahead, 0 behind**
+- Implementation snapshot relative to `origin/main`: **11 commits ahead, 0 behind**
 - This report is published as a separate documentation commit, whose self-referential SHA is intentionally not embedded here
 - Remote policy: only the development branch is pushed; no merge and no pull request performed
 
@@ -55,6 +55,20 @@ _Last updated: 2026-11-01 — v107 controlled resolver model cycle_
    - Enforces depth, node, child, field, scalar, and canonical service-root bounds.
    - Labels results `modelVerified` while explicitly keeping Luau execution, Roblox runtime, and gameplay verification false.
    - Added 10 focused deterministic and fail-closed model tests.
+9. `3810947` — made v107 features explicitly evidence-backed:
+   - Added authoritative root `AGENTS.md` guidance for third-party, client-observable development without target-game Studio ownership.
+   - Introduced `107.feature-plan.2` with canonical observation-object digests, observed facts, bounded inferences, implementation strategy, runtime checks, success/failure conditions, and explicit unknowns.
+   - Preserved strict `107.feature-plan` validation and identical Luau emission, plus report-bound deterministic v1-to-v2 migration.
+   - Added evidence/status/contract/unknown coverage to quality and diagnostics artifacts.
+   - Updated current README and v107 documentation to remove ownership-dependent validation prerequisites.
+   - Added 10 focused provenance, tamper, diagnostics, and migration tests.
+10. `9b3bfbd` — added static compatibility against Roblox's public API definitions:
+   - Pinned official `QTStudio` dump version `version-d0e8cfcd943d4ae2` and its full source SHA-256 in a bounded 41-member canonical snapshot.
+   - Added reproducible hash-verified extraction, strict snapshot validation, inheritance-aware member ownership, member-kind checks, public access checks, and read-only write rejection.
+   - Covers every v107 runtime class member and all 12 supported feature class/property reads; globals outside API-dump class members remain explicit assumptions.
+   - Added fail-closed emitted-source token accounting so new or missing member references cannot silently outrun the contract.
+   - Integrated deterministic `api-compatibility.json` generation, manifest hashing, reconstruction, and tamper verification.
+   - Added 10 focused source, access, inheritance, snapshot, compatibility, and artifact tests.
 
 ## Tests and Results
 
@@ -100,6 +114,23 @@ v107 resolver model cycle from commit `a6a931b`:
 - Ordinal selection, class mismatch, missing ordinal/property, legacy ambiguity, place mismatch, root duplication, and determinism checks: **passed**.
 - `git diff --check` and local/remote commit comparison: **passed**.
 
+v107 evidence-contract cycle from commit `3810947`:
+
+- Focused provenance, identity, integration, semantics, and model suite: **60 passed**.
+- Complete Python suite: **1,227 passed** in 0.657s.
+- Receiver and Luau parser Node suite: **passed**, including representative generated v107 Luau.
+- Source-digest, observed/inferred distinction, outcomes, unknowns, v1 compatibility/migration, diagnostics, and tamper checks: **passed**.
+- `git diff --check` and local/remote implementation commit comparison: **passed**.
+
+v107 public API compatibility cycle from commit `9b3bfbd`:
+
+- Official API snapshot extraction and byte-for-byte regeneration: **passed**, 41 members.
+- Focused provenance, API, identity, integration, semantics, and model suite: **70 passed**.
+- Complete Python suite: **1,237 passed** in 0.868s.
+- Receiver and Luau parser Node suite: **passed**, including representative generated v107 Luau.
+- Missing/inaccessible members, inherited owners, malformed source hash, unaccounted source member, artifact tamper, and deterministic-order checks: **passed**.
+- `git diff --check` and local/remote implementation commit comparison: **passed**.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -122,6 +153,12 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Semantic parser review found that scanning only canonical entry prefixes could overlook a differently indented line inside the feature table. Parsing now isolates the exact table block and rejects every noncanonical line.
 - Initial model tests exposed that `ROOTS` is a set while canonical classes live in `ROOT_CLASSES`; fixture validation now uses the canonical mapping and all 10 model tests pass.
 - No Luau/Roblox analyzer or runtime is installed locally. Official Luau 0.745 publishes an Ubuntu analyzer, but it does not itself provide Roblox API definitions or a Roblox runtime, so an external binary was not added merely to imply broader validation.
+- The permanent requirements included anti-cheat bypass/security circumvention language that conflicts with permitted-interface inspection and project safety; it was not adopted, and `AGENTS.md` explicitly prohibits bypasses, exploit loaders, stealth, access-control evasion, and unauthorized remote invocation.
+- Adding evidence metadata directly to the existing schema would break strict consumers. The plan is versioned as `107.feature-plan.2`; v1 remains strictly accepted and can migrate only by exact comparison with its validated source report.
+- A test insertion briefly split the provenance tamper test body. Immediate source inspection restored separate tamper and diagnostics tests before the full suite ran.
+- The official API dump is over 4 MB and changes independently. Only the required 41-member subset is committed; source version, URL, byte count, and full-dump hash retain reproducibility without vendoring unrelated definitions.
+- Roblox API dumps describe class members but not all globals/data-type helpers. The compatibility artifact explicitly separates `Instance.new`, `RBXScriptSignal.Connect`, `UDim`, `UDim2`, `game`, `task`, and `workspace` as assumptions rather than overstating dump coverage.
+- An initial source-accounting insertion split the compatibility assessment loop. Immediate file inspection replaced the affected block before validation; 70 focused and 1,237 complete tests then passed.
 
 ## Remaining Technical Limitations
 
@@ -129,6 +166,9 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - The Luau grammar currently emits an npm deprecation warning for an unused transitive native Lua grammar; lifecycle scripts are disabled and `npm audit` reports no vulnerability.
 - Rich v107 resolution depends on class-qualified sibling ordering remaining stable after observation. Migrated legacy paths cannot recover missing class/ordinal evidence and therefore fail closed whenever a name match is ambiguous.
 - The controlled resolver harness evaluates a Python model over synthetic JSON; it does not execute emitted Luau or validate live Roblox object behavior.
+- Feature source digests prove deterministic linkage to a validated report object, not that the observation is current, causal, server-authoritative, or available at runtime.
+- API compatibility is pinned to one public Studio dump version; it does not establish compatibility with later releases until the source hash is reviewed and the bounded snapshot is deliberately regenerated.
+- Class-member checks do not define Roblox globals or data-type helpers, and capitalized member-token accounting intentionally supports only the canonical v107 emitter format.
 - No controlled Roblox runtime test is available; client-visible observations cannot establish server authority, causality, or gameplay success.
 - The semantic verifier intentionally parses the canonical v107 emitter format rather than arbitrary equivalent Luau; noncanonical source is rejected even if it might execute equivalently.
 - The Cloudflare receiver still requires separate deployment plus secret/KV configuration.
@@ -136,7 +176,8 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Add a versioned, trusted Roblox API definition source for Luau analysis or an authenticated, authorized Roblox Studio capture harness.
-2. Compare authorized Studio captures with resolver-model outcomes without upgrading model evidence to gameplay verification.
-3. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
-4. Keep complete Python, receiver, and Luau parser suites green after each future cycle.
+1. Add controlled Luau execution with bounded Roblox API stubs to exercise generated resolver and property-read paths without target-game Studio access.
+2. Define a strict schema for user-supplied observations and results from permitted client environments, then compare them with resolver-model outcomes without upgrading evidence to causality or gameplay verification.
+3. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
+4. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
+5. Keep complete Python, receiver, and Luau parser suites green after each future cycle.
