@@ -40,14 +40,29 @@ API_SNAPSHOT = (
 ARTIFACTS = (REPORT, PLAN, QUALITY, DIAGNOSTICS, API_COMPATIBILITY, SCRIPT)
 
 
+def _luau_string(value):
+    output = ['"']
+    for byte in value.encode("utf-8"):
+        if 32 <= byte <= 126 and byte not in (34, 92):
+            output.append(chr(byte))
+        elif byte == 34:
+            output.append('\\"')
+        elif byte == 92:
+            output.append("\\\\")
+        else:
+            output.append(f"\\{byte:03d}")
+    output.append('"')
+    return "".join(output)
+
+
 def _identity_luau(path_identity):
     if path_identity is None:
         return "nil"
     segments = []
     for segment in path_identity:
         segments.append("{name=%s,className=%s,ordinal=%d}" % (
-            json.dumps(segment["name"]),
-            json.dumps(segment["className"]),
+            _luau_string(segment["name"]),
+            _luau_string(segment["className"]),
             segment["ordinal"],
         ))
     return "{" + ",".join(segments) + "}"
@@ -58,16 +73,16 @@ def emit_luau(feature_plan):
     place_id = feature_plan["placeId"]
     entries = []
     for feature in feature_plan["features"]:
-        path = "{" + ",".join(json.dumps(part) for part in feature["path"]) + "}"
+        path = "{" + ",".join(_luau_string(part) for part in feature["path"]) + "}"
         entries.append(
             "  {id=%s,label=%s,path=%s,pathIdentity=%s,pathResolution=%s,className=%s,property=%s}," % (
-                json.dumps(feature["id"]),
-                json.dumps(feature["label"]),
+                _luau_string(feature["id"]),
+                _luau_string(feature["label"]),
                 path,
                 _identity_luau(feature["pathIdentity"]),
-                json.dumps(feature["pathResolution"]),
-                json.dumps(feature["className"]),
-                json.dumps(feature["property"]),
+                _luau_string(feature["pathResolution"]),
+                _luau_string(feature["className"]),
+                _luau_string(feature["property"]),
             )
         )
     lines = [
@@ -157,7 +172,8 @@ def emit_luau(feature_plan):
         " end",
         " if not node then return 'missing object or identity mismatch' end",
         " local ok,result = pcall(function() return node[feature.property] end)",
-        " return ok and tostring(result) or 'property unavailable'",
+        " if not ok or result == nil then return 'property unavailable' end",
+        " return tostring(result)",
         "end",
         "local function refresh(feature,row)",
         " row.Text = feature.label .. ': ' .. readFeature(feature)",

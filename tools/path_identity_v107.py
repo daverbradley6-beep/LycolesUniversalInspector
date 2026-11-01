@@ -14,13 +14,35 @@ ROOT_CLASSES = {
     "Players": "Players",
 }
 ROOTS = frozenset(ROOT_CLASSES)
-SEGMENT = re.compile(r"^[A-Za-z0-9_ .:-]{1,80}$")
 CLASS_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
 COLLECTION_KEYS = ("observations", "objects", "instances", "entries", "controls", "features")
 MAX_INPUTS = 50000
 MAX_OUTPUTS = 150
 MAX_DEPTH = 12
 MAX_ORDINAL = 100000
+NON_PRINTING_RANGES = (
+    (0x0000, 0x001F), (0x007F, 0x009F), (0x00AD, 0x00AD),
+    (0x0600, 0x0605), (0x061C, 0x061C), (0x06DD, 0x06DD),
+    (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2),
+    (0x180E, 0x180E), (0x200B, 0x200F), (0x2028, 0x202E),
+    (0x2060, 0x2064), (0x2066, 0x206F), (0xD800, 0xDFFF),
+    (0xFEFF, 0xFEFF), (0xFFF9, 0xFFFB), (0xFDD0, 0xFDEF),
+    (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F),
+    (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+    (0xE0001, 0xE0001), (0xE0020, 0xE007F),
+)
+
+
+def _valid_segment(value):
+    if not isinstance(value, str) or not 1 <= len(value) <= 80:
+        return False
+    for character in value:
+        codepoint = ord(character)
+        if codepoint & 0xFFFF in (0xFFFE, 0xFFFF):
+            return False
+        if any(start <= codepoint <= end for start, end in NON_PRINTING_RANGES):
+            return False
+    return True
 
 
 def _names(value):
@@ -32,7 +54,7 @@ def _names(value):
         return None
     if value[0] not in ROOTS:
         return None
-    if any(not isinstance(part, str) or not SEGMENT.fullmatch(part) for part in value):
+    if any(not _valid_segment(part) for part in value):
         return None
     return list(value)
 
@@ -43,7 +65,7 @@ def _segment(value):
     name = value.get("name")
     class_name = value.get("className")
     ordinal = value.get("ordinal")
-    if not isinstance(name, str) or not SEGMENT.fullmatch(name):
+    if not _valid_segment(name):
         return None
     if not isinstance(class_name, str) or not CLASS_NAME.fullmatch(class_name):
         return None

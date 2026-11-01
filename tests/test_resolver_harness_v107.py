@@ -109,6 +109,13 @@ class ResolverHarnessV107Tests(unittest.TestCase):
         result = evaluate(rich_plan(1), hierarchy, PLACE)
         self.assertEqual(result["features"][0]["status"], "property_unavailable")
 
+    def test_explicit_nil_property_is_not_resolved(self):
+        hierarchy = fixture(workspace_with_coins(
+            node("Coins", "IntValue", properties={"Value": None}),
+        ))
+        result = evaluate(rich_plan(1), hierarchy, PLACE)
+        self.assertEqual(result["features"][0]["status"], "property_unavailable")
+
     def test_place_mismatch_blocks_model_evaluation(self):
         hierarchy = fixture(workspace_with_coins(
             node("Coins", "IntValue", properties={"Value": 1}),
@@ -116,6 +123,13 @@ class ResolverHarnessV107Tests(unittest.TestCase):
         result = evaluate(rich_plan(1), hierarchy, PLACE + 1)
         self.assertEqual(result["features"][0]["status"], "place_mismatch")
         self.assertEqual(result["resolved"], 0)
+
+    def test_unsafe_integer_precision_is_rejected(self):
+        hierarchy = fixture(workspace_with_coins(
+            node("Coins", "IntValue", properties={"Value": 9007199254740992}),
+        ))
+        with self.assertRaises(ValueError):
+            evaluate(rich_plan(1), hierarchy, PLACE)
 
     def test_duplicate_service_roots_are_rejected(self):
         hierarchy = fixture(

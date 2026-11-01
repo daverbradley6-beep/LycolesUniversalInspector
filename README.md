@@ -15,16 +15,18 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
+- v108 controlled execution runs actual generated Luau against strict bounded Roblox stubs, drives generated UI controls, and compares results with the independent resolver model without claiming live Roblox verification.
 
 ## Validate locally
 
 ```sh
-python3 -B -m unittest discover -s tests -v
+python3 tools/install_luau_v108.py --output build/luau-0.745
+LUAU_BIN="$PWD/build/luau-0.745/luau" python3 -B -m unittest discover -s tests -v
 npm ci --ignore-scripts
 npm test
 ```
 
-The Python tools currently use only the standard library. The Node suite exercises the Cloudflare Worker receiver contract and parses checked-in plus representative generated Luau with a WebAssembly tree-sitter grammar. Lifecycle scripts stay disabled because native bindings are unnecessary for the WASM validator.
+The Python tools currently use only the standard library. The Node suite exercises the Cloudflare Worker receiver contract and parses checked-in plus representative generated Luau with a WebAssembly tree-sitter grammar. Lifecycle scripts stay disabled because native bindings are unnecessary for the WASM validator. The optional actual-Luau layer downloads only the pinned official release and verifies both its archive and executable hashes; see `docs/v108-controlled-luau.md` for simulation limits and verification claims.
 
 ## Build from inspector scan parts
 

@@ -18,11 +18,16 @@ MAX_NODES = 10000
 MAX_DEPTH = 16
 MAX_CHILDREN = 1000
 MAX_TEXT = 256
+MAX_SAFE_INTEGER = 9007199254740991
 
 
 def _valid_scalar(value):
-    if value is None or isinstance(value, (str, bool, int)):
-        return not isinstance(value, str) or len(value) <= 4096
+    if value is None or isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return len(value) <= 4096
+    if type(value) is int:
+        return abs(value) <= MAX_SAFE_INTEGER
     return isinstance(value, float) and math.isfinite(value)
 
 
@@ -135,7 +140,7 @@ def evaluate(feature_plan, hierarchy, runtime_place_id):
             target, reason = _resolve(feature, roots)
             if target is None:
                 result["status"] = reason
-            elif feature["property"] not in target["properties"]:
+            elif target["properties"].get(feature["property"]) is None:
                 result["status"] = "property_unavailable"
             else:
                 result["status"] = "resolved"

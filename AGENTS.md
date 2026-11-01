@@ -77,3 +77,9 @@ For every substantial cycle:
 8. Update `OPENHANDS_PROGRESS.md` and begin the next highest-impact improvement.
 
 Do not stop merely because one implementation commit is complete; finish its tests, documentation, progress record, push, and SHA verification.
+
+## Current controlled Luau validation
+
+- Install the hash-pinned official Luau `0.745` runtime with `python tools/install_luau_v108.py --output build/luau-0.745`.
+- Run all Python tests with `LUAU_BIN="$PWD/build/luau-0.745/luau" python -B -m unittest discover -s tests -v`, then run `npm test` and `git diff --check`.
+- Controlled Luau success is simulated, read-only evidence only; it never upgrades Roblox runtime, live-game, server-authority, causality, or gameplay verification claims.

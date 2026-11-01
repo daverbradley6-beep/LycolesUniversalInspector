@@ -1,0 +1,43 @@
+name: Lycoles v108 controlled Luau execution
+on:
+  push:
+    branches: [main, openhands-development]
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/v108-controlled-luau.yml'
+  pull_request:
+    paths:
+      - 'tools/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/v108-controlled-luau.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  controlled-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install hash-pinned official Luau runtime
+        run: python tools/install_luau_v108.py --output "$RUNNER_TEMP/luau-0.745"
+      - name: Compile Python sources
+        run: python -m compileall -q tools tests
+      - name: Run complete Python suite with actual Luau
+        run: python -m unittest discover -s tests -v
+      - name: Validate receiver and generated Luau syntax
+        run: |
+          npm ci --ignore-scripts
+          npm test

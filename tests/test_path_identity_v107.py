@@ -99,6 +99,41 @@ class PathIdentityV107Tests(unittest.TestCase):
         self.assertEqual(normalized["path"], ["Workspace", "Stats", "Coins"])
         self.assertEqual(normalized["pathIdentity"], identity())
 
+    def test_printable_unicode_identity_names_are_accepted(self):
+        row = rich_row()
+        row["path"][1] = "Stäts🚀"
+        row["pathIdentity"][1]["name"] = "Stäts🚀"
+        result = build([row], PLACE)
+        self.assertEqual(result["acceptedCount"], 1)
+
+    def test_unicode_added_after_older_python_databases_is_accepted(self):
+        row = rich_row()
+        row["path"][1] = "Stats\U0001fae8"
+        row["pathIdentity"][1]["name"] = "Stats\U0001fae8"
+        result = build([row], PLACE)
+        self.assertEqual(result["acceptedCount"], 1)
+
+    def test_control_characters_in_identity_names_are_rejected(self):
+        row = rich_row()
+        row["path"][1] = "Stats\nInjected"
+        row["pathIdentity"][1]["name"] = "Stats\nInjected"
+        result = build([row], PLACE)
+        self.assertEqual(result["rejections"], {"invalid_path": 1})
+
+    def test_format_characters_in_identity_names_are_rejected(self):
+        row = rich_row()
+        row["path"][1] = "Stats\u200bHidden"
+        row["pathIdentity"][1]["name"] = "Stats\u200bHidden"
+        result = build([row], PLACE)
+        self.assertEqual(result["rejections"], {"invalid_path": 1})
+
+    def test_noncharacters_in_identity_names_are_rejected(self):
+        row = rich_row()
+        row["path"][1] = "Stats\uffff"
+        row["pathIdentity"][1]["name"] = "Stats\uffff"
+        result = build([row], PLACE)
+        self.assertEqual(result["rejections"], {"invalid_path": 1})
+
     def test_terminal_class_mismatch_is_rejected(self):
         row = rich_row()
         row["className"] = "NumberValue"

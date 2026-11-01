@@ -17,6 +17,7 @@ REQUIRED = (
     "node = legacyChild(node,feature.path[i],nil)",
     "node = legacyChild(node,feature.path[#feature.path],feature.className)",
     "pcall(function() return node[feature.property] end)",
+    "if not ok or result == nil then return 'property unavailable' end",
     "search:GetPropertyChangedSignal('Text'):Connect(applyFilter)",
     "autoButton = button('Auto refresh: OFF'",
     "while gui.Parent do",
