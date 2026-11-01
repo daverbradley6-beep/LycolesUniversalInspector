@@ -61,6 +61,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v60*.py'
       - name: Run v60 synthetic release smoke test
         run: python tools/verification_replay_v60.py --receipt examples/v60-synthetic-receipt.json --contract examples/v60-synthetic-contract.json --trace examples/v60-synthetic-trace.json --output build/release-v60-smoke
+      - name: Run v61 live trace collector tests
+        run: python -m unittest discover -s tests -p 'test_v61*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
