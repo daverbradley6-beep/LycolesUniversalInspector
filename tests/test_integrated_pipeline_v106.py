@@ -10,6 +10,7 @@ from integrated_pipeline_v106 import generate, verify, emit_luau
 from release_pipeline_v104 import build
 from feature_planner_v106 import plan
 from luau_contract_v106 import validate_source
+from feature_quality_v106 import assess
 
 PLACE = 85896571713843
 
@@ -38,7 +39,7 @@ class IntegratedPipelineTests(unittest.TestCase):
             generate(fixture(), PLACE, a)
             generate(fixture(), PLACE, b)
             for name in ("inspection-report.json", "feature-plan.json",
-                         "LycolesFunctionalObserver.client.lua", "manifest.json"):
+                         "LycolesFunctionalObserver.client.lua", "quality-report.json", "manifest.json"):
                 self.assertEqual((Path(a) / name).read_bytes(), (Path(b) / name).read_bytes())
 
     def test_tampering_detected(self):
@@ -91,6 +92,29 @@ class IntegratedPipelineTests(unittest.TestCase):
         feature_plan["features"][0]["path"][0] = "ServerStorage"
         with self.assertRaises(ValueError):
             emit_luau(feature_plan)
+
+    def test_quality_accounting_and_coverage(self):
+        report = build(fixture(), PLACE)
+        result = assess(report, plan(report))
+        self.assertEqual(result["observations"], 3)
+        self.assertEqual(result["implementedObservationControls"], 2)
+        self.assertEqual(result["unsupportedObservations"], 1)
+        self.assertEqual(result["coverage"], 0.666667)
+
+    def test_quality_threshold(self):
+        report = build(fixture(), PLACE)
+        result = assess(report, plan(report), minimum_coverage=0.9)
+        self.assertFalse(result["ok"])
+        self.assertIn("insufficient_coverage", result["issues"])
+
+    def test_quality_artifact_tampering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generate(fixture(), PLACE, tmp)
+            path = Path(tmp) / "quality-report.json"
+            data = json.loads(path.read_text())
+            data["implementedObservationControls"] = 999
+            path.write_text(json.dumps(data))
+            self.assertFalse(verify(tmp)["ok"])
 
     def test_missing_artifact_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
