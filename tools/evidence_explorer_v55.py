@@ -23,12 +23,17 @@ def parse_path(path):
     if root not in SERVICE_ROOTS:return None
     if not sep:return [root]
     segments=[root]
-    for segment in tail.split("/"):
-        m=re.fullmatch(r'("(?:[^"\\]|\\.)*")#([1-9][0-9]*)@([A-Za-z][A-Za-z0-9]*)',segment)
+    pattern=re.compile(r'/("(?:[^"\\\\]|\\\\.)*")#([1-9][0-9]*)@([A-Za-z][A-Za-z0-9]*)')
+    remainder="/"+tail
+    pos=0
+    while pos<len(remainder):
+        m=pattern.match(remainder,pos)
         if not m:return None
-        name=json.loads(m.group(1))
+        try:name=json.loads(m.group(1))
+        except (ValueError,TypeError):return None
         if not isinstance(name,str) or len(name)>250:return None
         segments.append({"name":name,"ordinal":int(m.group(2)),"className":m.group(3)})
+        pos=m.end()
     return segments
 def compile_features(report):
     if report.get("schemaVersion")!="54.analysis":raise ValueError("Expected v54 analysis")
