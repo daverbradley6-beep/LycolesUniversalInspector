@@ -49,6 +49,18 @@ A complete identity is the deduplication key. Objects with the same names but di
 
 The migration never fabricates missing intermediate classes or ordinals. Existing v104 builders and artifacts remain unchanged and reproducible; v107 is a one-way opt-in schema for identity-aware consumers.
 
+## Evidence-backed feature plans
+
+New plans use schema `107.feature-plan.2`. Every generated feature links to its canonical `inspection-report.json` object index and SHA-256 digest, classifies the source as an observed client object, lists directly observed facts separately from bounded implementation inferences, and records:
+
+- the read-only implementation strategy;
+- resolution-specific runtime checks;
+- explicit success and failure conditions;
+- `implemented_not_runtime_verified` verification status; and
+- unknown server authority, gameplay causality, runtime value/availability, and game-specific action semantics.
+
+The quality and diagnostics artifacts count evidence classifications, verification statuses, explicit contracts, and unknown boundaries. Legacy `107.feature-plan` plans remain strictly valid for existing consumers and emit identical Luau. `migrate_feature_plan_v1()` upgrades a v1 plan only when it exactly matches a validated source report; it never invents evidence detached from that report.
+
 ## Integrated generation
 
 ```bash
@@ -77,7 +89,7 @@ python tools/resolver_harness_v107.py \
   --output build/v107/resolver-model.json
 ```
 
-The output always distinguishes `modelVerified` from `luauExecuted`, `robloxRuntimeVerified`, and `gameplayVerified`. The harness does not execute generated Luau, load Roblox API definitions, connect to Roblox, or replace an authorized Roblox Studio test.
+The output always distinguishes `modelVerified` from `luauExecuted`, `robloxRuntimeVerified`, and `gameplayVerified`. The harness does not execute generated Luau, load Roblox API definitions, connect to Roblox, or replace user-supplied observations from a permitted client environment. Target-game Studio ownership is not required or assumed.
 
 ## Limits
 

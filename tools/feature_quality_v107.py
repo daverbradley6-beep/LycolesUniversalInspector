@@ -1,7 +1,7 @@
 """Deterministic quality metrics for identity-aware v107 observations."""
 from collections import Counter
 
-from feature_planner_v107 import PLAN_SCHEMA_VERSION
+from feature_planner_v107 import CONTRACT_FIELDS, PLAN_SCHEMA_VERSION, validate_feature_plan
 from path_identity_v107 import REPORT_SCHEMA_VERSION
 
 
@@ -10,6 +10,7 @@ def assess(report, feature_plan, *, minimum_coverage=0.5, minimum_features=1):
         raise ValueError("invalid report")
     if report.get("schemaVersion") != REPORT_SCHEMA_VERSION or feature_plan.get("schemaVersion") != PLAN_SCHEMA_VERSION:
         raise ValueError("invalid schema")
+    validate_feature_plan(feature_plan)
     if report.get("placeId") != feature_plan.get("placeId"):
         raise ValueError("place mismatch")
     if type(minimum_features) is not int or minimum_features < 0:
@@ -39,6 +40,10 @@ def assess(report, feature_plan, *, minimum_coverage=0.5, minimum_features=1):
     classes = Counter(item["className"] for item in objects)
     resolutions = Counter(item["pathResolution"] for item in objects)
     reasons = Counter(item.get("reason", "unspecified") for item in unsupported)
+    evidence = Counter(feature["evidence"]["classification"] for feature in features)
+    statuses = Counter(feature["status"] for feature in features)
+    unknowns = Counter(value for feature in features for value in feature["unknowns"])
+    explicit_contracts = sum(CONTRACT_FIELDS <= set(feature) for feature in features)
     return {
         "schemaVersion": "107.quality",
         "ok": not issues,
@@ -51,6 +56,10 @@ def assess(report, feature_plan, *, minimum_coverage=0.5, minimum_features=1):
         "classes": dict(sorted(classes.items())),
         "resolutionModes": dict(sorted(resolutions.items())),
         "unsupportedReasons": dict(sorted(reasons.items())),
+        "evidenceClassifications": dict(sorted(evidence.items())),
+        "verificationStatuses": dict(sorted(statuses.items())),
+        "featuresWithExplicitContracts": explicit_contracts,
+        "unknownBoundaries": dict(sorted(unknowns.items())),
         "runtimeVerified": False,
         "gameplayVerified": False,
     }

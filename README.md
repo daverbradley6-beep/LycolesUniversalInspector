@@ -2,9 +2,9 @@
 
 Current inspector release: **v30.0.0**
 
-Current integrated offline pipeline: **v106**
+Current integrated offline pipeline: **v107**
 
-The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v106 tools are staged, independently tested inspection-to-client-observer components; v106 does not change the inspector's v30 wire version.
+The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v107 tools are staged, independently tested inspection-to-client-observer components; v107 does not change the inspector's v30 wire version.
 
 ## Current capabilities
 
@@ -12,7 +12,8 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, and a separately deployed Cloudflare Worker integrity endpoint.
 - Passive observation of normal user interactions and bounded before/after client-state evidence. Observation never proves causality or server authority.
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, and reproducible release archives.
-- v106 normalization, evidence-gated feature planning, generated read-only Luau observer controls, quality/diagnostic reports, SHA-256 manifests, and independent artifact verification.
+- v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
+- Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 
 ## Validate locally
 
@@ -32,14 +33,14 @@ python3 tools/build_release.py ./scan-parts --output ./build
 
 The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
 
-## Run the v106 integrated observer pipeline
+## Run the v107 integrated observer pipeline
 
 ```sh
-python3 tools/integrated_pipeline_v106.py --inspection inspection.json --place-id 85896571713843 --output build/v106
-python3 tools/integrated_pipeline_v106.py --output build/v106 --verify-only
+python3 tools/integrated_pipeline_v107.py --inspection inspection.json --place-id 85896571713843 --output build/v107
+python3 tools/integrated_pipeline_v107.py --output build/v107 --verify-only
 ```
 
-See `docs/v106-integrated-pipeline.md` for artifacts, guarantees, and limitations.
+See `docs/v107-path-identity.md` for identity, provenance, artifacts, guarantees, and limitations.
 
 ## Inspector installation
 
@@ -52,7 +53,7 @@ See `docs/v106-integrated-pipeline.md` for artifacts, guarantees, and limitation
 - The inspector does not read script source, private text input, chat, or arbitrary remote payloads.
 - Generated observer controls do not invoke remotes, bypass security, or claim server-authoritative gameplay behavior.
 - Client-visible names, values, paths, and temporal changes are evidence for review, not proof of mechanics, authorization, causality, or anti-cheat compatibility.
-- Generated Luau has source-level regression coverage but still requires controlled Roblox runtime validation.
+- Generated Luau has source-level regression coverage; controlled execution and user-supplied results from permitted client environments remain separately labeled runtime evidence and never require target-game Studio ownership.
 - The Cloudflare Worker must be configured and deployed separately; a repository commit does not deploy receiver changes.
 
 ## Earlier client milestones
