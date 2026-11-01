@@ -26,7 +26,7 @@ class IntegratedPipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = generate(fixture(), PLACE, tmp)
             self.assertTrue(result["ok"], result)
-            self.assertEqual(result["features"], 2)
+            self.assertEqual(result["features"], 3)
             self.assertTrue(verify(tmp)["ok"])
             script = (Path(tmp) / "LycolesFunctionalObserver.client.lua").read_text()
             self.assertIn("Activated:Connect", script)
@@ -52,8 +52,8 @@ class IntegratedPipelineTests(unittest.TestCase):
     def test_unsupported_is_not_misrepresented(self):
         report = build(fixture(), PLACE)
         features = plan(report)
-        self.assertEqual(len(features["features"]), 2)
-        self.assertEqual(len(features["unsupported"]), 1)
+        self.assertEqual(len(features["features"]), 3)
+        self.assertEqual(len(features["unsupported"]), 0)
         self.assertFalse(features["runtimeVerified"])
         self.assertFalse(features["gameplayVerified"])
 
@@ -79,13 +79,13 @@ class IntegratedPipelineTests(unittest.TestCase):
 
     def test_static_contract_detects_missing_refresh_wiring(self):
         script = emit_luau(plan(build(fixture(), PLACE)))
-        self.assertTrue(validate_source(script, 2)["ok"])
+        self.assertTrue(validate_source(script, 3)["ok"])
         broken = script.replace("status.Activated:Connect(refreshAll)", "-- disconnected")
-        self.assertFalse(validate_source(broken, 2)["ok"])
+        self.assertFalse(validate_source(broken, 3)["ok"])
 
     def test_static_contract_rejects_remote_invocation(self):
         script = emit_luau(plan(build(fixture(), PLACE)))
-        self.assertFalse(validate_source(script + "\\nremote:FireServer()\\n", 2)["ok"])
+        self.assertFalse(validate_source(script + "\\nremote:FireServer()\\n", 3)["ok"])
 
     def test_invalid_generated_path_rejected(self):
         feature_plan = plan(build(fixture(), PLACE))
@@ -97,15 +97,15 @@ class IntegratedPipelineTests(unittest.TestCase):
         report = build(fixture(), PLACE)
         result = assess(report, plan(report))
         self.assertEqual(result["observations"], 3)
-        self.assertEqual(result["implementedObservationControls"], 2)
-        self.assertEqual(result["unsupportedObservations"], 1)
-        self.assertEqual(result["coverage"], 0.666667)
+        self.assertEqual(result["implementedObservationControls"], 3)
+        self.assertEqual(result["unsupportedObservations"], 0)
+        self.assertEqual(result["coverage"], 1.0)
 
     def test_quality_threshold(self):
         report = build(fixture(), PLACE)
-        result = assess(report, plan(report), minimum_coverage=0.9)
+        result = assess(report, plan(report), minimum_features=4)
         self.assertFalse(result["ok"])
-        self.assertIn("insufficient_coverage", result["issues"])
+        self.assertIn("insufficient_features", result["issues"])
 
     def test_quality_artifact_tampering(self):
         with tempfile.TemporaryDirectory() as tmp:
