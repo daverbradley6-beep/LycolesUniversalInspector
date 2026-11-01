@@ -67,9 +67,10 @@ for i,c in ipairs(contracts) do
    busy=false return
   end
   local before=snapshot()
-  local ok,msg=pcall(function() target:Activate() end)
+  local ok=false
+  local msg="GuiButton has no public Activate() method; use the real game UI and capture the outcome"
   if not ok then
-   status.Text="Activation error: "..tostring(msg)
+   status.Text="Unsupported activation: "..tostring(msg)
    print("LYCOLES_V82_RESULT "..H:JSONEncode({schemaVersion="82.result",placeId=game.PlaceId,captureId=captureId,index=testIndex,id=c.id,requested=false,reason=tostring(msg),observedChanges={},verified=false}))
    busy=false return
   end
