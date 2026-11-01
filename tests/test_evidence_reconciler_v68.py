@@ -22,6 +22,8 @@ class TestV68(unittest.TestCase):
     def test_canonical(self):
         self.assertEqual(canonical(PATH),"players.geckoflicker.leaderstats.🟣 bubbles")
         self.assertEqual(canonical(PATH),canonical("Players.geckoflicker.leaderstats.🟣 Bubbles"))
+    def test_windows_console_mojibake(self):
+        self.assertEqual(canonical(PATH.replace("🟣", "ðŸŸ£")),canonical(PATH))
     def test_latest_complete_session(self):
         parsed,info=telemetry_sessions(session(3,[])+"\n"+session(19,[("437","456")]),PLACE)
         self.assertEqual(info["selectedSession"],2)
