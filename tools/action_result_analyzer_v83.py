@@ -13,6 +13,7 @@ MAX_LOG_BYTES = 30_000_000
 
 def parse_logs(paths, place_id):
     results = {}
+    seen_ids = {}
     warnings = []
     for source in paths:
         path = Path(source)
@@ -46,7 +47,21 @@ def parse_logs(paths, place_id):
                 if "before" not in change or "after" not in change:
                     continue
                 valid_changes.append({"stat": change["stat"], "before": change["before"], "after": change["after"]})
+            capture_id = item.get("captureId")
+            attempt_index = item.get("index")
+            if capture_id is not None and attempt_index is not None:
+                if not isinstance(capture_id, str) or not capture_id or type(attempt_index) is not int or attempt_index < 1:
+                    warnings.append(f"{path}:{line_number}: invalid capture identity")
+                    continue
+                identity = (capture_id, attempt_index)
+                fingerprint = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                if identity in seen_ids:
+                    if seen_ids[identity] != fingerprint:
+                        raise ValueError(f"Conflicting capture identity: {identity}")
+                    continue
+                seen_ids[identity] = fingerprint
             result = {
+                "captureId": capture_id,
                 "id": item["id"], "requested": item["requested"],
                 "observedChanges": valid_changes, "verified": False,
                 "source": str(path), "line": line_number
@@ -96,6 +111,7 @@ def analyze(results, expected=None):
             "attempts": len(items),
             "activationRequests": len(requested),
             "activationFailures": errors,
+            "independentCaptures": len({x["captureId"] for x in items if x.get("captureId")}),
             "observedSignals": [
                 {"stat": stat, "operator": op, "observations": count}
                 for (stat, op), count in sorted(observed.items())
