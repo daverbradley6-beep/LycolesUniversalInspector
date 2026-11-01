@@ -1,0 +1,12 @@
+name: v93 checks
+on: [push, workflow_dispatch]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -p test_release_auditor_v93.py -v
+      - run: python -m unittest discover -s tests -p test_diagnostic_builder_v92.py -v
