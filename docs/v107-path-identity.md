@@ -63,7 +63,7 @@ The pipeline accepts raw supported observations, canonical v107 reports, and val
 
 Full-identity features resolve each descendant by matching name and class, then selecting the observed one-based ordinal among matching siblings. Legacy migrated features are explicitly labeled `legacy_terminal_identity`: each name-only intermediate segment must have exactly one matching child, and the terminal name/class pair must also have exactly one match. Missing or ambiguous legacy evidence fails closed and is never implied to be exact.
 
-The verifier reconstructs every derived artifact, validates report and feature-plan schemas, checks identity-mode counts and safety claims, enforces the static Luau contract, and compares canonical bytes plus SHA-256 hashes.
+The verifier reconstructs every derived artifact, validates report and feature-plan schemas, checks identity-mode counts and safety claims, enforces the static Luau contract, and compares canonical bytes plus SHA-256 hashes. It also independently parses the generated Luau feature table and compares every runtime ID, label, path, identity segment, resolution mode, class, and property to the canonical feature plan. Verification rejects noncanonical table lines, duplicate runtime entries, place-guard drift, extra artifact files, extra manifest fields, malformed hashes, and noncanonical manifest bytes.
 
 ## Limits
 

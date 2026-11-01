@@ -3,8 +3,10 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
+from artifact_contract_v107 import validate_source_semantics
 from feature_planner_v107 import plan, validate_feature_plan
 from feature_quality_v107 import assess
 from inspection_diagnostics_v107 import analyze
@@ -256,18 +258,36 @@ def generate(source, place_id, output):
 def verify(output):
     root = Path(output)
     try:
-        paths = [root / name for name in (*ARTIFACTS, MANIFEST)]
+        expected_names = set((*ARTIFACTS, MANIFEST))
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError("invalid artifact directory")
+        if {entry.name for entry in root.iterdir()} != expected_names:
+            raise ValueError("unexpected artifact set")
+        paths = [root / name for name in expected_names]
         if any(path.is_symlink() or not path.is_file() for path in paths):
             raise ValueError("missing or symlinked file")
-        manifest = json.loads((root / MANIFEST).read_bytes())
+        manifest_bytes = (root / MANIFEST).read_bytes()
+        manifest = json.loads(manifest_bytes)
         report = json.loads((root / REPORT).read_bytes())
         feature_plan = json.loads((root / PLAN).read_bytes())
         quality = json.loads((root / QUALITY).read_bytes())
         diagnostics = json.loads((root / DIAGNOSTICS).read_bytes())
         validate_report(report)
         validate_feature_plan(feature_plan)
-        if manifest.get("schemaVersion") != "107.integrated-manifest" or set(manifest.get("files", {})) != set(ARTIFACTS):
+        manifest_fields = {
+            "schemaVersion", "pathIdentityVersion", "placeId", "readOnly",
+            "runtimeVerified", "gameplayVerified", "functionalControlsGenerated",
+            "fullIdentityFeatures", "legacyFeatures", "files",
+        }
+        files = manifest.get("files")
+        if set(manifest) != manifest_fields or manifest.get("schemaVersion") != "107.integrated-manifest":
             raise ValueError("invalid manifest")
+        if not isinstance(files, dict) or set(files) != set(ARTIFACTS):
+            raise ValueError("invalid manifest files")
+        if any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in files.values()):
+            raise ValueError("invalid manifest hash")
+        if manifest_bytes != canonical(manifest):
+            raise ValueError("non-canonical manifest")
         if manifest.get("pathIdentityVersion") != PATH_SCHEMA_VERSION:
             raise ValueError("invalid identity claim")
         if manifest.get("readOnly") is not True or manifest.get("runtimeVerified") is not False or manifest.get("gameplayVerified") is not False:
@@ -289,9 +309,13 @@ def verify(output):
             DIAGNOSTICS: canonical(diagnostics),
             SCRIPT: emit_luau(feature_plan).encode("utf-8"),
         }
-        contract = validate_source(expected[SCRIPT].decode("utf-8"), len(feature_plan["features"]))
+        actual_source = (root / SCRIPT).read_bytes().decode("utf-8")
+        contract = validate_source(actual_source, len(feature_plan["features"]))
         if not contract["ok"]:
             raise ValueError("Luau contract: " + ",".join(contract["issues"]))
+        semantics = validate_source_semantics(actual_source, feature_plan)
+        if not semantics["ok"]:
+            raise ValueError("Luau semantics: " + ",".join(semantics["issues"]))
         for name, payload in expected.items():
             if (root / name).read_bytes() != payload:
                 raise ValueError("artifact mismatch: " + name)
