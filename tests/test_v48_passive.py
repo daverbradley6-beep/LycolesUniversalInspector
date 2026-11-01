@@ -9,6 +9,11 @@ class V48(unittest.TestCase):
  def test_generate(self):
   s=generate(M)
   for x in ("LYCOLES_V48_BEGIN","task.spawn(function()","ValueBase","game.PlaceId","SAMPLE_COUNT"):self.assertTrue(x in s if x!="SAMPLE_COUNT" else x not in s)
+ def test_no_numeric_concat_lexing(self):
+  s=generate(M)
+  self.assertIn('tostring(16).." samples"',s)
+  self.assertNotIn('..16..',s)
+  self.assertIn('tostring(index).."/"..tostring(16)',s)
  def test_default_count(self):self.assertIn("for index=1, 16 do",generate(M))
  def test_custom_count(self):self.assertIn("for index=1, 4 do",generate(M,seconds=6,period=2))
  def test_invalid_interval(self):
