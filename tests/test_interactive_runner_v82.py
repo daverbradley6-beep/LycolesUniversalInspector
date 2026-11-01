@@ -21,7 +21,11 @@ class Tests(unittest.TestCase):
  def test_no_remote(self):self.assertNotIn(":FireServer(",generate(doc(c()),P)[0])
  def test_no_auto_run(self):self.assertIn("nothing auto-executed",generate(doc(c()),P)[0])
  def test_place_guard(self):self.assertIn("game.PlaceId~="+str(P),generate(doc(),P)[0])
- def test_activation(self):self.assertIn("target:Activate()",generate(doc(c()),P)[0])
+ def test_unsupported_activation_fails_closed(self):
+  script=generate(doc(c()),P)[0]
+  self.assertNotIn("target:Activate()",script)
+  self.assertIn("GuiButton has no public Activate() method",script)
+  self.assertIn("requested=false",script)
  def test_visible_ancestor(self):self.assertIn("not current.Visible",generate(doc(c()),P)[0])
  def test_enabled_ancestor(self):self.assertIn("not current.Enabled",generate(doc(c()),P)[0])
  def test_snapshot(self):self.assertIn("local before=snapshot()",generate(doc(c()),P)[0])

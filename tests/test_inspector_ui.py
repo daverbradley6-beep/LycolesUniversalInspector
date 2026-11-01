@@ -1,9 +1,13 @@
 """Static regression checks for inspector UI and upload semantics."""
 import pathlib,re,unittest
-SRC=(pathlib.Path(__file__).resolve().parents[1]/"LycolesUniversalInspector.lua").read_text()
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+SRC=(ROOT/"LycolesUniversalInspector.lua").read_text()
+VERSION=(ROOT/"version.txt").read_text().strip()
 class InspectorUITests(unittest.TestCase):
     def test_version(self):
-        self.assertIn('local VERSION = "29.0.0"',SRC)
+        self.assertRegex(VERSION,r"^\d+\.\d+\.\d+$")
+        self.assertIn(f'local VERSION = "{VERSION}"',SRC)
+        self.assertIn(f'-- Lycoles Universal Inspector v{VERSION}',SRC)
     def test_evidence_not_in_header(self):
         self.assertIn("autoEvidenceToggle.Parent = panel",SRC)
         self.assertIn("autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)",SRC)
