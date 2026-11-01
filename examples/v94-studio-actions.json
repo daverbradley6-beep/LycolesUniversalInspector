@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "94.actions",
+  "placeId": 85896571713843,
+  "actions": [
+    {
+      "id": "Collect",
+      "kind": "increment_stat",
+      "stat": "Coins",
+      "amount": 1,
+      "cooldownSeconds": 1
+    },
+    {
+      "id": "MarkReady",
+      "kind": "set_attribute",
+      "attribute": "Ready",
+      "value": true,
+      "cooldownSeconds": 2
+    },
+    {
+      "id": "ReturnToSpawn",
+      "kind": "teleport_to_part",
+      "part": "SpawnLocation",
+      "cooldownSeconds": 5
+    }
+  ]
+}
