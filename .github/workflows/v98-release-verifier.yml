@@ -1,0 +1,16 @@
+name: v98 release verifier
+on: [push, workflow_dispatch]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_release_verifier_v98.py -v
+      - run: python -m unittest discover -s tests -p test_universal_pipeline_v97.py -v
