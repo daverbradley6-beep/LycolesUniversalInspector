@@ -2,7 +2,9 @@
 param([string]$ReceiverBundle="examples/muscle-legends-receiver-v15-sanitized.json",[string]$Build="build",[string]$Receipt="",[string]$DiscoveryReceipt="")
 $ErrorActionPreference="Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
-& powershell -ExecutionPolicy Bypass -File .\tools\run_v52.ps1 -ReceiverBundle $ReceiverBundle -Build $Build -Receipt $Receipt
+$v52Args=@("-ExecutionPolicy","Bypass","-File",".\tools\run_v52.ps1","-ReceiverBundle",$ReceiverBundle,"-Build",$Build)
+if (-not [string]::IsNullOrWhiteSpace($Receipt)) { $v52Args+=@("-Receipt",$Receipt) }
+& powershell @v52Args
 if ($LASTEXITCODE -ne 0) { throw "v52 failed" }
 & py -m unittest discover -s tests -p test_v53_discovery.py
 if ($LASTEXITCODE -ne 0) { throw "v53 tests failed" }
