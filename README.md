@@ -1,59 +1,62 @@
-## v4.3.0 — Scan identity and payload tuning
-
-- Distinguish objects sharing the same hierarchy path using scan-local occurrence suffixes; retain all objects instead of discarding path collisions.
-- Count resolved path collisions in scan statistics.
-- Reduce bounded sibling ValueBase snapshots from 20 to 8 related entries, reducing repeated JSON metadata without removing inspected objects.
-- Preserve existing multipart JSON schema, acknowledgement and retry behavior.
-
-**Receiver indexing limitation:** The deployed Cloudflare Worker/MCP index is a separate service. This client update does not change its indexing behavior or retroactively repair previous scan metadata. Detailed diagnostics already verified all 844 parts of the prior scan. No in-game benchmark has been performed for this release.
-
-## v4.2.0 — Performance update
-
-- Bounded concurrent upload workers (3 simultaneous requests) with per-part acknowledgement and retry.
-- Per-scan cached sibling ValueBase context to avoid repeated parent enumeration.
-- Adaptive scan yielding with a 12 ms processing budget rather than fixed 500-object yields.
-- Slower background discovery polling (30 seconds) to reduce idle overhead.
-- Per-root scan timings, scan duration and yield count in scan statistics.
-- Upload completion reports elapsed upload time.
-- Preserves v4.1 report JSON format and the existing Cloudflare Worker interface.
-
-**Not included yet:** compressed report schema or true incremental full-snapshot reconstruction. Those require coordinated receiver changes. Client runtime performance has not been measured in Potassium; benchmark against v4.1 before treating this as a verified speedup.
-
 # Lycoles Universal Inspector
 
-Current release: **v4.1.0**  
-Previous release: v4.0.0
+Current inspector release: **v30.0.0**
 
-## Release v4.1.0
+Current integrated offline pipeline: **v106**
 
-This release strengthens read-only inspection metadata and scan diagnostics:
+The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v106 tools are staged, independently tested inspection-to-client-observer components; v106 does not change the inspector's v30 wire version.
 
-- Multi-label system classification. An object can be tagged for more than one system; tags are explicitly marked as name/path/parent inference.
-- Parent and ancestor hierarchy context for cross-system dependency analysis.
-- Bounded sibling ValueBase snapshots and semantic value roles (requirements, rewards, costs, multipliers, timing, quantities and stats).
-- Better controller/service candidate metadata, explicitly heuristic and without reading script source.
-- GUI control metadata for buttons and text boxes. Text entered into text boxes is never collected.
-- Per-root coverage, per-class counts, ValueBase coverage, GUI control counts and script-candidate counts.
-- Duplicate-root exclusion for LocalPlayer descendants already covered by dedicated PlayerGui and Character roots.
-- A real scan-completeness calculation based on required-root success and object accounting. A scan can be complete for required client-visible roots while remaining explicitly limited to client-visible data.
+## Current capabilities
 
-## Installation
+- Read-only inspection of bounded, client-visible Roblox instance metadata across replicated services, the local player, character, GUI, lighting, teams, sound, and workspace.
+- Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, and a separately deployed Cloudflare Worker integrity endpoint.
+- Passive observation of normal user interactions and bounded before/after client-state evidence. Observation never proves causality or server authority.
+- Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, and reproducible release archives.
+- v106 normalization, evidence-gated feature planning, generated read-only Luau observer controls, quality/diagnostic reports, SHA-256 manifests, and independent artifact verification.
 
-1. Run the script in the same supported client environment used for the existing Inspector.
+## Validate locally
+
+```sh
+python3 -B -m unittest discover -s tests -v
+node tests/test_receiver.mjs
+```
+
+The Python tools currently use only the standard library. The Node test exercises the Cloudflare Worker receiver contract without deploying it.
+
+## Build from inspector scan parts
+
+```sh
+python3 tools/build_release.py ./scan-parts --output ./build
+```
+
+The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
+
+## Run the v106 integrated observer pipeline
+
+```sh
+python3 tools/integrated_pipeline_v106.py --inspection inspection.json --place-id 85896571713843 --output build/v106
+python3 tools/integrated_pipeline_v106.py --output build/v106 --verify-only
+```
+
+See `docs/v106-integrated-pipeline.md` for artifacts, guarantees, and limitations.
+
+## Inspector installation
+
+1. Run `LycolesUniversalInspector.lua` in the supported client environment.
 2. Keep the receiver endpoint in the local `LycolesInspectorReceiver.txt` configuration file; never commit receiver secrets.
-3. Run a scan and verify the root coverage and diagnostics fields in the uploaded report.
+3. Run a scan, confirm required-root coverage and object accounting, then verify multipart integrity through the receiver before compiling the report.
 
-## Existing behaviour retained
+## Safety and interpretation limits
 
-- Multipart JSON uploads and verified acknowledgements.
-- Bounded upload parts, retries and retry delays.
-- Optional automatic uploads and dynamic discovery.
-- Passive, opt-in manual interaction observation.
-- Read-only inspection; no remote invocation, gameplay automation or script-source extraction.
+- The inspector does not read script source, private text input, chat, or arbitrary remote payloads.
+- Generated observer controls do not invoke remotes, bypass security, or claim server-authoritative gameplay behavior.
+- Client-visible names, values, paths, and temporal changes are evidence for review, not proof of mechanics, authorization, causality, or anti-cheat compatibility.
+- Generated Luau has source-level regression coverage but still requires controlled Roblox runtime validation.
+- The Cloudflare Worker must be configured and deployed separately; a repository commit does not deploy receiver changes.
 
-## Interpretation limits
+## Earlier client milestones
 
-This tool inspects privacy-filtered, client-visible instances. It cannot inspect server-only state or implementation, prove server validation, establish remote argument contracts, or guarantee that client-visible values are authoritative. System tags, controller candidates and hierarchy-based relationships are evidence for further analysis, not confirmed gameplay rules.
+v4.2 introduced bounded concurrent uploads, adaptive scan yielding, cached sibling context, and scan timing diagnostics. v4.3 added scan-local collision suffixes and reduced repeated sibling metadata. These behaviors are retained in the current inspector and are historical milestones, not the current release number.
 
 
 ## v8 offline capability compiler
