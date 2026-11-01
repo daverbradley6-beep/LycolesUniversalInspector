@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v49*.py'
       - name: Run v50 action contract tests
         run: python -m unittest discover -s tests -p 'test_v50*.py'
+      - name: Run v51 automatic code generation tests
+        run: python -m unittest discover -s tests -p 'test_v51*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
