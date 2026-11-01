@@ -22,7 +22,7 @@ def repair_encoding(value):
     if not any(c in value for c in ("ð","Ã","â")):
         return value
     try:
-        fixed=value.encode("latin-1").decode("utf-8")
+        fixed=value.encode("cp1252").decode("utf-8")
         return fixed if fixed else value
     except (UnicodeError,ValueError):
         return value
