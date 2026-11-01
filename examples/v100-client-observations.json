@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "100.client-observations",
+  "placeId": 85896571713843,
+  "observations": [
+    {
+      "id": "CoinsDisplay",
+      "path": [
+        "PlayerGui",
+        "HUD",
+        "Coins"
+      ],
+      "property": "Text",
+      "label": "Coin display"
+    },
+    {
+      "id": "EggName",
+      "path": [
+        "Workspace",
+        "Eggs",
+        "BasicEgg"
+      ],
+      "property": "Name",
+      "label": "Egg instance"
+    }
+  ]
+}
