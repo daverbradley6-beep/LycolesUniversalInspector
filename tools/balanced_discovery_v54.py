@@ -163,8 +163,27 @@ task.spawn(function()
   label.Text="Lycoles v54 | "..tostring(i).."/"..tostring(SAMPLES).." | "..tostring(#items).." new objects"
   if i<SAMPLES then task.wait(INTERVAL) end
  end
- emitChunks(HttpService:JSONEncode(receipt))
- label.Text="Lycoles v54 complete | Save all numbered console chunks"
+ -- Export each observation separately to avoid large single JSONEncode allocations.
+ -- The v54 parser accepts this v54.1 line protocol after reconstruction.
+ local count=#receipt.observations
+ print("LYCOLES_V54_STREAM_BEGIN "..tostring(PLACE_ID).." "..tostring(count))
+ for i,observation in ipairs(receipt.observations) do
+  local ok,encoded=pcall(function() return HttpService:JSONEncode(observation) end)
+  if not ok then
+   warn("Lycoles v54: observation "..i.." JSON failed: "..tostring(encoded))
+   label.Text="Lycoles v54 export failed at sample "..i
+   return
+  end
+  local chunkSize=6000
+  local total=math.ceil(#encoded/chunkSize)
+  print("LYCOLES_V54_SAMPLE_BEGIN "..i.." "..total)
+  for j=1,total do
+   print("LYCOLES_V54_SAMPLE_CHUNK "..i.."/"..j.."/"..total.." "..encoded:sub((j-1)*chunkSize+1,j*chunkSize))
+  end
+  print("LYCOLES_V54_SAMPLE_END "..i)
+ end
+ print("LYCOLES_V54_STREAM_END")
+ label.Text="Lycoles v54 complete | Save stream console lines"
 end)
 '''
     return t.replace("PLACE_ID",str(place_id)).replace("SAMPLES",str(samples)).replace("INTERVAL",str(interval)).replace("CAP",str(cap))
@@ -172,6 +191,36 @@ end)
 def parse_receipt(raw):
     if isinstance(raw,dict): return raw
     if not isinstance(raw,str): raise ValueError("Expected JSON or console transcript")
+    if "LYCOLES_V54_STREAM_BEGIN " in raw:
+        lines=raw.splitlines()
+        start=next((line.split("LYCOLES_V54_STREAM_BEGIN ",1)[1] for line in lines if "LYCOLES_V54_STREAM_BEGIN " in line),None)
+        if start is None or "LYCOLES_V54_STREAM_END" not in raw: raise ValueError("Incomplete v54 stream")
+        place,count=map(int,start.split())
+        if not 2<=count<=24: raise ValueError("Invalid sample count")
+        samples=[]
+        for index in range(1,count+1):
+            begin="LYCOLES_V54_SAMPLE_BEGIN "+str(index)+" "
+            header=next((line.split(begin,1)[1] for line in lines if begin in line),None)
+            if header is None: raise ValueError("Missing sample "+str(index))
+            total=int(header.strip())
+            if not 1<=total<=10000: raise ValueError("Invalid sample chunk count")
+            chunks={}
+            prefix="LYCOLES_V54_SAMPLE_CHUNK "
+            for line in lines:
+                if prefix not in line: continue
+                part=line.split(prefix,1)[1]
+                key,sep,payload=part.partition(" ")
+                if not sep: raise ValueError("Invalid sample chunk")
+                i,j,n=map(int,key.split("/"))
+                if i!=index: continue
+                if n!=total or not 1<=j<=total or j in chunks: raise ValueError("Duplicate or invalid chunk")
+                chunks[j]=payload.strip()
+            if len(chunks)!=total or not any("LYCOLES_V54_SAMPLE_END "+str(index) in line for line in lines):
+                raise ValueError("Incomplete sample "+str(index))
+            sample=json.loads("".join(chunks[j] for j in range(1,total+1)))
+            if sample.get("index")!=index: raise ValueError("Sample index mismatch")
+            samples.append(sample)
+        return {"schemaVersion":"54.0","placeId":place,"observations":samples}
     if "LYCOLES_V54_BEGIN" not in raw: return json.loads(raw)
     lines=raw.splitlines()
     begin=next((x for x in lines if "LYCOLES_V54_BEGIN " in x),None)
