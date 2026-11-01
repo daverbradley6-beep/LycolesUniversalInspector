@@ -56,7 +56,7 @@ def main():
  a.output.mkdir(parents=True,exist_ok=True)
  target=a.output/"interactive-runner-v84.luau";report=a.output/"release-manifest-v84.json"
  if not a.force and (target.exists() or report.exists()):p.error("release exists; use --force")
- target.write_text(script,encoding="utf-8")
+ target.write_bytes(script.encode("utf-8"))
  report.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
  if hashlib.sha256(target.read_bytes()).hexdigest()!=manifest["runnerSha256"]:raise RuntimeError("integrity mismatch")
  print(json.dumps(manifest,ensure_ascii=False))
