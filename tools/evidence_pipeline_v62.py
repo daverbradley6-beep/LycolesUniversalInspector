@@ -29,6 +29,7 @@ def import_console(text):
     place = None
     expected_samples = None
     headers, batches, ends, conflicts, warnings = {}, defaultdict(dict), set(), [], []
+    inferred_counts = {}
     for line_no, line in enumerate(text.splitlines(), 1):
         if len(line) > MAX_LINE:
             warnings.append(f"line {line_no}: oversized; skipped")
@@ -66,6 +67,9 @@ def import_console(text):
             except (ValueError, TypeError):
                 warnings.append(f"line {line_no}: invalid JSON")
                 continue
+            if i in inferred_counts and inferred_counts[i] != n:
+                conflicts.append(f"sample {i}: conflicting inferred batch totals")
+            inferred_counts[i] = n
             if j in batches[i] and batches[i][j] != record:
                 conflicts.append(f"sample {i} batch {j}: conflicting duplicates")
             else:
@@ -79,26 +83,29 @@ def import_console(text):
     samples = []
     missing = {}
     for index in sorted(set(headers) | set(batches) | ends):
-        expected = headers.get(index)
+        expected = headers.get(index, inferred_counts.get(index))
         parts = batches[index]
         if expected is None:
             missing[str(index)] = {"reason": "missing_begin", "received": len(parts)}
             continue
         gaps = [j for j in range(1, expected + 1) if j not in parts]
-        if gaps or index not in ends:
+        if gaps or index not in ends or index not in headers:
             missing[str(index)] = {"missingBatches": gaps, "hasEnd": index in ends,
+                                   "missingBegin": index not in headers,
                                    "received": len(parts), "expected": expected}
         entries = []
         for j in sorted(parts):
             if j <= expected:
                 entries.extend(parts[j]["entries"])
-        samples.append({"index": index, "complete": not gaps and index in ends,
+        samples.append({"index": index, "complete": not gaps and index in ends and index in headers,
                         "entries": entries, "receivedBatches": len(parts), "expectedBatches": expected})
     return {"schemaVersion": "62.partial", "placeId": place,
             "expectedSamples": expected_samples, "samples": samples,
             "completeSamples": sum(s["complete"] for s in samples),
             "missing": missing, "warnings": warnings[:200],
-            "streamEndSeen": "LYCOLES_V54_BATCH_STREAM_END" in text}
+            "streamEndSeen": "LYCOLES_V54_BATCH_STREAM_END" in text,
+            "placeIdSource": "stream_header" if place is not None else "missing",
+            "recoveredPartialBatches": sum(len(batches[i]) for i in batches if i not in headers)}
 
 def catalog(receipt):
     observations = defaultdict(list)
