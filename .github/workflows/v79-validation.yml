@@ -1,0 +1,18 @@
+name: v79 evidence validation
+on:
+  push:
+    paths:
+      - 'tools/action_validation_v79.py'
+      - 'tests/test_action_validation_v79.py'
+      - '.github/workflows/v79-validation.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile tools/action_validation_v79.py
+      - run: python -m unittest discover -s tests -p 'test_action_validation_v79.py' -v
