@@ -1,0 +1,24 @@
+name: v66 telemetry tests
+on:
+  push:
+    paths:
+      - 'tools/live_telemetry_v66.py'
+      - 'tests/test_live_telemetry_v66.py'
+      - '.github/workflows/v66-telemetry.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile tools/live_telemetry_v66.py tests/test_live_telemetry_v66.py
+      - name: Regression
+        run: python -m unittest discover -s tests -p 'test_live_telemetry_v66.py' -v
+      - name: Build Luau
+        run: |
+          python tools/live_telemetry_v66.py --place-id 85896571713843 --output build/release-v66
+          test -s build/release-v66/telemetry-v66.luau
