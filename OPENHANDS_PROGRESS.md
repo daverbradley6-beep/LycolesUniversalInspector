@@ -1,15 +1,15 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-01 — v108 controlled Luau execution cycle_
+_Last updated: 2026-11-01 — v108 system interpretation and historical-audit remediation cycle_
 
 ## Repository State
 
 - Workspace: `/projects/LycolesUniversalInspector`
 - Branch: `openhands-development`
-- Latest implementation commit: `45fb3a6` (`Add v108 controlled Luau execution`)
-- Implementation head: local and `origin/openhands-development` match at full SHA `45fb3a62346bbefd710dd15e85bb5747b9c71e0e`
-- Implementation snapshot relative to `origin/main`: **13 commits ahead, 0 behind**
-- Reviewed history from baseline `9b3bfbd` through implementation `45fb3a6`: **2 commits across 16 files**
+- Latest implementation commit: `edc3854` (`Harden v108 evidence interpretation and execution`)
+- Implementation head: local and `origin/openhands-development` match at full SHA `edc3854b22fcf7ef93eb9a02150bb066838047a6`
+- Implementation snapshot relative to `origin/main`: **15 commits ahead, 0 behind**
+- Reviewed history from baseline `9b3bfbd` through implementation `edc3854`: **4 commits across 19 files**
 - This report is published as a separate documentation commit, whose self-referential SHA is intentionally not embedded here
 - Remote policy: only the development branch is pushed; no merge and no pull request performed
 
@@ -82,6 +82,15 @@ _Last updated: 2026-11-01 — v108 controlled Luau execution cycle_
    - Added canonical UTF-8 Luau byte escaping and independent strict decoding for Unicode paths, identities, labels, and values; identity admission now uses a version-stable non-printing-code-point policy.
    - Hardened fail-closed handling for missing/`nil` properties, exact Luau integer precision, runtime/plan/fixture place provenance, unknown stub APIs, untrusted binaries, timeouts, and output limits.
    - Added a complete runtime-enabled CI workflow, v108 documentation, persistent validation guidance, 21 installer/runtime tests, and additional identity/model regressions.
+13. `fb5f71b` — published the v108 controlled-execution validation record separately from implementation.
+14. `edc3854` — hardened v108 interpretation, execution evidence, and supply-chain controls:
+   - Added deterministic `108.system-interpretation.1` role classification and system candidates over exact canonical v107 reports/plans, with optional strictly validated correlation-only relationship evidence.
+   - Preserves observation, deterministic inference, reported correlation, source authenticity, causality, server authority, and gameplay verification as separate explicit fields; ambiguous temporal evidence is quarantined and unsupported capabilities remain declared.
+   - Prevents source-evidence mutation and aliases, revalidates canonical output exactly, and covers interface, interaction-affordance, state, feedback-surface, confidence, provenance, ordering, and fail-closed role semantics.
+   - Replaced display-text status inference with structured generated-Luau status/value results so legitimate StringValue content matching an error phrase remains a resolved value.
+   - Made the controlled CLI print `ok == simulationPassed`, expose `simulationPassed`, preserve the complete report, and exit nonzero for any failed simulation.
+   - Pinned every action in the newly introduced v108 workflow to a reviewed immutable full commit SHA.
+   - Replaced too-fresh Luau `0.745` with soak-compliant immutable official `0.744`, independently matching GitHub's published archive digest and all four executable hashes.
 
 ## Tests and Results
 
@@ -157,6 +166,22 @@ v108 controlled Luau execution cycle from commit `45fb3a6`:
 - Python compilation, workflow YAML structure, deterministic reports, timeout/output/runtime-digest boundaries, Unicode actual-Luau execution, and `git diff --check`: **passed**.
 - Implementation push and exact local/remote full-SHA comparison at `45fb3a62346bbefd710dd15e85bb5747b9c71e0e`: **passed**.
 
+v108 interpretation and committed-history audit remediation cycle from commit `edc3854`:
+
+- Official immutable Luau `0.744` release age, tag target, GitHub asset digest, fresh archive download, exact four-member archive, and per-executable hashes: **verified**.
+  - Archive SHA-256: `6506f0852c623aaffcb28494aac16c26dc04a269ea0e16cc0aafc8c8ac79f3ec`.
+  - Runtime SHA-256: `fdb514ab8341829b7ca7b734fd8c5abea5efba47886632ce35e2c5400b3211ce`.
+- Structured error-like StringValue regressions and truthful failed-simulation CLI exit regression: **passed against actual Luau**.
+- Controlled CLI smoke: successful simulation exited `0`; failed simulation exited `1`; both summaries matched `simulationPassed` exactly.
+- Complete controlled-Luau suite: **24 passed** against `/tmp/lycoles-luau-0.744/luau`.
+- Focused v107/v108 compatibility suite after static-contract correction: **107 passed**.
+- Complete runtime-enabled Python suite: **1,284 passed** in 1.755s; independent re-review repeated all **1,284 passed**.
+- Receiver and Luau parser Node suite: **passed**, including all 3 parser tests and representative generated Luau.
+- Python compilation, deterministic system interpretation, source immutability/alias rejection, class-qualified identity, `nil`, Unicode, legacy ambiguity, model agreement, output/time/runtime-digest limits, tracked/untracked whitespace, and `git diff --check`: **passed**.
+- Historical audit covered exactly `9b3bfbd..fb5f71b`; its four findings were reproduced and remediated. Fresh interpretation review found no material issues; fresh combined re-review found no remaining implementation or evidence-boundary issue.
+- The combined reviewer additionally recommended pinning 98 legacy workflow references. That repository-wide suggestion was not part of the audited range: those workflows predate `9b3bfbd`; only `v108-controlled-luau.yml` changed in-range, and all three of its actions are immutable full-SHA pins.
+- Implementation push and exact local/tracking/remote comparison at `edc3854b22fcf7ef93eb9a02150bb066838047a6`: **passed**.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -179,9 +204,13 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Semantic parser review found that scanning only canonical entry prefixes could overlook a differently indented line inside the feature table. Parsing now isolates the exact table block and rejects every noncanonical line.
 - Initial model tests exposed that `ROOTS` is a set while canonical classes live in `ROOT_CLASSES`; fixture validation now uses the canonical mapping and all 10 model tests pass.
 - Official Luau rejects JSON-style Unicode escapes. Generated strings now use canonical three-digit decimal UTF-8 byte escapes, and the independent semantic verifier decodes only that strict grammar with strict UTF-8 validation.
-- Executing an untrusted or drifting runtime would weaken evidence. The installer and harness now accept only the pinned official Luau `0.745` archive and executable digests; arbitrary local binaries are rejected.
+- Executing an untrusted or drifting runtime would weaken evidence. The installer and harness now accept only the soak-compliant pinned official Luau `0.744` archive and executable digests; arbitrary local binaries are rejected.
 - Capturing unbounded subprocess pipes could exhaust memory before timeout handling. Runtime output is redirected to bounded temporary files under file-size limits and rejected at the deterministic capture cap.
 - Independent review reproduced oversized-integer conversion failure, Python-Unicode-database-dependent identity admission, and empty-plan fixture-place false success. Exact-integer bounds, an explicit non-printing code-point policy, and three-way place identity checks resolved them.
+- Historical audit found that the original controlled CLI reported process success when `simulationPassed` was false. The complete report is still written, but JSON `ok` now equals `simulationPassed` and failed simulation exits nonzero.
+- Historical audit found that display text doubled as status transport, misclassifying legitimate strings such as `missing object or identity mismatch`. Generated Luau now preserves explicit status/value pairs end to end, with actual-Luau regressions for every prior sentinel phrase.
+- Historical audit found mutable action tags in the newly added v108 workflow. Its checkout, Python, and Node actions are now pinned to reviewed established 40-character commit SHAs, and a regression enforces full-SHA references in that workflow.
+- Historical audit found Luau `0.745` was adopted inside the required seven-day soak window. The active runtime pin is official immutable `0.744`, published more than seven days before adoption; GitHub's asset digest, a fresh download, and all executable hashes agree.
 - The permanent requirements included anti-cheat bypass/security circumvention language that conflicts with permitted-interface inspection and project safety; it was not adopted, and `AGENTS.md` explicitly prohibits bypasses, exploit loaders, stealth, access-control evasion, and unauthorized remote invocation.
 - Adding evidence metadata directly to the existing schema would break strict consumers. The plan is versioned as `107.feature-plan.2`; v1 remains strictly accepted and can migrate only by exact comparison with its validated source report.
 - A test insertion briefly split the provenance tamper test body. Immediate source inspection restored separate tamper and diagnostics tests before the full suite ran.
@@ -196,6 +225,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Rich v107 resolution depends on class-qualified sibling ordering remaining stable after observation. Migrated legacy paths cannot recover missing class/ordinal evidence and therefore fail closed whenever a name match is ambiguous.
 - The Python resolver model remains synthetic and independent. v108 now executes emitted Luau in the official CLI, but only against strict local Roblox stubs; this does not validate Roblox engine behavior.
 - Feature source digests prove deterministic linkage to a validated report object, not that the observation is current, causal, server-authoritative, or available at runtime.
+- v108 system interpretation classifies observable roles and deterministic candidate groupings only. Optional relationship evidence remains caller-supplied correlation with unverified source authenticity; it cannot establish temporal direction, causality, server authority, action semantics, or gameplay success.
 - API compatibility is pinned to one public Studio dump version; it does not establish compatibility with later releases until the source hash is reviewed and the bounded snapshot is deliberately regenerated.
 - Class-member checks do not define Roblox globals or data-type helpers, and capitalized member-token accounting intentionally supports only the canonical v107 emitter format.
 - No Roblox-engine or permitted target-environment runtime result is available; client-visible observations and local simulation cannot establish server authority, causality, action semantics, or gameplay success.
@@ -207,8 +237,8 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Implement versioned v108 gameplay-system interpretation for observable UI, interactions, state, feedback relationships, confidence, explicit uncertainty, and unsupported boundaries.
-2. Define strict permitted-environment observation/result contracts and compare expected versus observed outcomes without upgrading evidence to causality, server authority, or gameplay verification.
-3. Integrate system plans, runtime checks/results, unsupported reporting, and per-feature verification into deterministic generation while preserving v107 input compatibility.
-4. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
-5. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update, and keep complete Python, controlled-Luau, receiver, parser, integrity, and determinism gates green after each cycle.
+1. Define strict permitted-environment observation/result contracts and compare expected versus observed outcomes without upgrading evidence to causality, server authority, or gameplay verification.
+2. Integrate system plans, runtime checks/results, unsupported reporting, and per-feature verification into deterministic generation while preserving v107 input compatibility.
+3. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
+4. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
+5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
