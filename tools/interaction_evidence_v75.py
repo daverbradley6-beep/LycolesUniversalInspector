@@ -158,7 +158,7 @@ def propose(catalog,observations,place_id,min_repeats=2):
    values=[(e["before"][stat],e["after"][stat]) for e in group]
    if all(type(a) in (int,float) and type(b) in (int,float) and b>a for a,b in values):op="increased"
    elif all(type(a) in (int,float) and type(b) in (int,float) and b<a for a,b in values):op="decreased"
-   elif all(a!=b for a,b in values):op="changed"
+   elif all(a!=b for a,b in values) and not all(type(a) in (int,float) and type(b) in (int,float) for a,b in values):op="changed"
    else:continue
    options.append((stat,op))
   if len(options)!=1:
