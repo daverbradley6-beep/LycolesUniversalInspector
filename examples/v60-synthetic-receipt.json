@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "54.0",
+  "placeId": 123,
+  "observations": [
+    {
+      "index": 1,
+      "entries": [
+        {
+          "path": "StarterPack/\"Weight\"#1@Tool",
+          "className": "Tool"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "entries": [
+        {
+          "path": "StarterPack/\"Weight\"#1@Tool",
+          "className": "Tool"
+        }
+      ]
+    }
+  ]
+}
