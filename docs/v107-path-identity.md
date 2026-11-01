@@ -49,6 +49,22 @@ A complete identity is the deduplication key. Objects with the same names but di
 
 The migration never fabricates missing intermediate classes or ordinals. Existing v104 builders and artifacts remain unchanged and reproducible; v107 is a one-way opt-in schema for identity-aware consumers.
 
+## Integrated generation
+
+```bash
+python tools/integrated_pipeline_v107.py \
+  --inspection inspection.json \
+  --place-id 85896571713843 \
+  --output build/v107
+python tools/integrated_pipeline_v107.py --output build/v107 --verify-only
+```
+
+The pipeline accepts raw supported observations, canonical v107 reports, and validated v104 reports. It emits deterministic inspection, feature-plan, quality, diagnostics, Luau, and manifest artifacts.
+
+Full-identity features resolve each descendant by matching name and class, then selecting the observed one-based ordinal among matching siblings. Legacy migrated features are explicitly labeled `legacy_terminal_identity`: each name-only intermediate segment must have exactly one matching child, and the terminal name/class pair must also have exactly one match. Missing or ambiguous legacy evidence fails closed and is never implied to be exact.
+
+The verifier reconstructs every derived artifact, validates report and feature-plan schemas, checks identity-mode counts and safety claims, enforces the static Luau contract, and compares canonical bytes plus SHA-256 hashes.
+
 ## Limits
 
 Sibling ordinals can change when a dynamic hierarchy is rebuilt. Full identity removes same-name ambiguity only while the observed class-qualified sibling ordering remains valid. The schema represents client-visible evidence and does not establish server authority, gameplay causality, or runtime success.

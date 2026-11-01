@@ -235,6 +235,55 @@ def build(source, place_id):
     return result
 
 
+def validate_report(report):
+    """Validate that a persisted v107 report is canonical and self-consistent."""
+    base_fields = {
+        "schemaVersion", "pathIdentityVersion", "placeId", "inputCount",
+        "acceptedCount", "rejectedCount", "rejections", "objects",
+        "verifiedInGame", "gameplayFunctionsGenerated", "readOnly",
+    }
+    fields = set(report) if isinstance(report, dict) else set()
+    if fields not in (base_fields, base_fields | {"migration"}):
+        raise ValueError("invalid v107 report fields")
+    if report.get("schemaVersion") != REPORT_SCHEMA_VERSION or report.get("pathIdentityVersion") != PATH_SCHEMA_VERSION:
+        raise ValueError("unsupported v107 schema")
+    if type(report.get("placeId")) is not int or report["placeId"] <= 0:
+        raise ValueError("invalid v107 place")
+    if report.get("readOnly") is not True or report.get("verifiedInGame") is not False or report.get("gameplayFunctionsGenerated") != 0:
+        raise ValueError("invalid v107 claims")
+    counts = (report.get("inputCount"), report.get("acceptedCount"), report.get("rejectedCount"))
+    if any(type(value) is not int or value < 0 for value in counts):
+        raise ValueError("invalid v107 counts")
+    objects = report.get("objects")
+    rejections = report.get("rejections")
+    if not isinstance(objects, list) or counts[1] != len(objects) or counts[0] != counts[1] + counts[2]:
+        raise ValueError("invalid v107 accounting")
+    if not isinstance(rejections, dict) or any(not isinstance(key, str) or type(value) is not int or value <= 0 for key, value in rejections.items()):
+        raise ValueError("invalid v107 rejections")
+    if sum(rejections.values()) != counts[2]:
+        raise ValueError("invalid v107 rejection count")
+    normalized = []
+    for item in objects:
+        value = normalize_observation(item)
+        if value != item:
+            raise ValueError("non-canonical v107 object")
+        normalized.append(value)
+    if normalized != sorted(normalized, key=_sort_key):
+        raise ValueError("unsorted v107 objects")
+    selection_rejections = Counter()
+    if _select(normalized, selection_rejections) != normalized or selection_rejections:
+        raise ValueError("duplicate or ambiguous v107 objects")
+    if "migration" in report:
+        expected = {
+            "sourceSchemaVersion": "104.release",
+            "preservedLegacyPaths": len(objects),
+            "fabricatedIdentitySegments": 0,
+        }
+        if report["migration"] != expected or any(item["pathIdentity"] is not None for item in objects):
+            raise ValueError("invalid v107 migration metadata")
+    return report
+
+
 def migrate_v104_report(report):
     """Migrate a validated v104 report without inventing missing path identity."""
     if not isinstance(report, dict) or report.get("schemaVersion") != "104.release":

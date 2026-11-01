@@ -41,6 +41,7 @@ from balanced_discovery_v54 import generate as balanced
 from interactive_runner_v82 import generate as runner
 from release_pipeline_v104 import build, luau
 from integrated_pipeline_v106 import generate as integrated
+from integrated_pipeline_v107 import generate as identity_integrated
 place=85896571713843
 inspection={'placeId':place,'objects':[
  {'path':['PlayerGui','HUD','Coins'],'className':'TextLabel'},
@@ -55,6 +56,13 @@ contract={'placeId':place,'contracts':[{'id':'inspect','approved':True,'executio
 (out/'v82.luau').write_text(runner(contract,place)[0],encoding='utf-8')
 (out/'v104.luau').write_text(luau(build(inspection,place)),encoding='utf-8')
 integrated(inspection,place,out/'v106')
+identity_integrated({'placeId':place,'observations':[
+ {'path':['Workspace','Stats','Coins'],'pathIdentity':[
+  {'name':'Workspace','className':'Workspace','ordinal':1},
+  {'name':'Stats','className':'Folder','ordinal':1},
+  {'name':'Coins','className':'IntValue','ordinal':2},
+ ],'className':'IntValue'},
+]},place,out/'v107')
 `;
   const generated = spawnSync("python", ["-B", "-c", script, output, ROOT], {
     cwd: ROOT,
@@ -67,6 +75,7 @@ integrated(inspection,place,out/'v106')
     path.join(output, "v82.luau"),
     path.join(output, "v104.luau"),
     path.join(output, "v106", "LycolesFunctionalObserver.client.lua"),
+    path.join(output, "v107", "LycolesFunctionalObserver.client.lua"),
   ];
   assertValid(await validateFiles(files));
 });
