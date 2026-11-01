@@ -1,0 +1,18 @@
+name: v96 bridge tests
+on: [push, workflow_dispatch]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_evidence_to_actions_v96.py -v
+      - run: python -m unittest discover -s tests -p test_secure_action_compiler_v95.py -v
+      - run: python tools/evidence_to_actions_v96.py --review examples/v96-review-example.json --mapping examples/v96-developer-mapping.json --output build/release-v96
+      - run: python tools/secure_action_compiler_v95.py --output build/release-v96 --audit-only
