@@ -1,0 +1,18 @@
+name: v97 end-to-end pipeline
+on: [push, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_universal_pipeline_v97.py -v
+      - run: python -m unittest discover -s tests -p test_evidence_to_actions_v96.py -v
+      - run: python -m unittest discover -s tests -p test_secure_action_compiler_v95.py -v
+      - run: python -m unittest discover -s tests -p test_temporal_attribution_v91.py -v
