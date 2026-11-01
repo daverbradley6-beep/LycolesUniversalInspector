@@ -75,5 +75,33 @@ class TestV83(unittest.TestCase):
             p.write_text(json.dumps({"placeId": PLACE, "contracts": [{"id": "hatch", "approved": True, "expectedSignals": [{"stat": "x", "operator": "unknown"}]}]}), encoding="utf-8")
             with self.assertRaises(ValueError): load_expected(p, PLACE)
 
+
+    def test_capture_deduplication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "log.txt"
+            row = result()
+            row.update({"captureId": "session-1", "index": 1})
+            line = "LYCOLES_V82_RESULT " + json.dumps(row)
+            p.write_text(line + "\n" + line, encoding="utf-8")
+            found, warnings = parse_logs([p], PLACE)
+            self.assertEqual(len(found), 1)
+            self.assertEqual(warnings, [])
+    def test_capture_conflict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "log.txt"
+            a = result()
+            a.update({"captureId": "session-1", "index": 1})
+            b = dict(a)
+            b["requested"] = False
+            p.write_text("LYCOLES_V82_RESULT " + json.dumps(a) + "\nLYCOLES_V82_RESULT " + json.dumps(b), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                parse_logs([p], PLACE)
+    def test_capture_count(self):
+        a = result()
+        a["captureId"] = "session-1"
+        b = result()
+        b["captureId"] = "session-2"
+        self.assertEqual(analyze([a, b])["actions"][0]["independentCaptures"], 2)
+
 if __name__ == "__main__":
     unittest.main()
