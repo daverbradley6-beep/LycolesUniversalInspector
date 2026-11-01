@@ -1,0 +1,24 @@
+name: v65 live inspector tests
+on:
+  push:
+    paths:
+      - 'tools/universal_live_v65.py'
+      - 'tests/test_universal_live_v65.py'
+      - '.github/workflows/v65-live-inspector.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python
+        run: python -m py_compile tools/universal_live_v65.py tests/test_universal_live_v65.py
+      - name: Run tests
+        run: python -m unittest discover -s tests -p 'test_universal_live_v65.py' -v
+      - name: Generate game-specific release
+        run: |
+          python tools/universal_live_v65.py --place-id 85896571713843 --output build/release-v65
+          test -s build/release-v65/live-inspector-v65.luau
