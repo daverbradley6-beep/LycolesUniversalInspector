@@ -1,0 +1,22 @@
+name: v68 evidence reconciliation
+on:
+  push:
+    paths:
+      - 'tools/evidence_reconciler_v68.py'
+      - 'tools/evidence_pipeline_v62.py'
+      - 'tools/live_telemetry_v66.py'
+      - 'tests/test_evidence_reconciler_v68.py'
+      - '.github/workflows/v68-reconciliation.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile modules
+        run: python -m py_compile tools/evidence_reconciler_v68.py tools/evidence_pipeline_v62.py tools/live_telemetry_v66.py
+      - name: Run regression suite
+        run: python -m unittest discover -s tests -p 'test_*v68.py' -v
