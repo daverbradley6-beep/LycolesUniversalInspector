@@ -2,7 +2,9 @@
 param([string]$ReceiverBundle="examples/muscle-legends-receiver-v15-sanitized.json",[string]$Build="build",[string]$Receipt="")
 $ErrorActionPreference="Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
-& powershell -ExecutionPolicy Bypass -File .\tools\run_v44.ps1 -ReceiverBundle $ReceiverBundle -Build $Build -Receipt $Receipt
+$v44Args = @("-ExecutionPolicy", "Bypass", "-File", ".\\tools\\run_v44.ps1", "-ReceiverBundle", $ReceiverBundle, "-Build", $Build)
+if (-not [string]::IsNullOrWhiteSpace($Receipt)) { $v44Args += @("-Receipt", $Receipt) }
+& powershell @v44Args
 if ($LASTEXITCODE -ne 0) { throw "v44 pipeline failed" }
 & py -m unittest discover -s tests -p "test_v45*.py"
 if ($LASTEXITCODE -ne 0) { throw "v45 tests failed" }
