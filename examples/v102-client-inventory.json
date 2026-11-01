@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "100.client-observations",
+  "placeId": 85896571713843,
+  "observations": [
+    {
+      "id": "Object1",
+      "path": [
+        "PlayerGui",
+        "HUD",
+        "Coins"
+      ],
+      "property": "Name",
+      "label": "TextLabel: Coins",
+      "className": "TextLabel",
+      "name": "Coins"
+    },
+    {
+      "id": "Object2",
+      "path": [
+        "Workspace",
+        "Eggs",
+        "BasicEgg"
+      ],
+      "property": "Name",
+      "label": "ProximityPrompt: BasicEgg",
+      "className": "ProximityPrompt",
+      "name": "BasicEgg"
+    }
+  ]
+}
