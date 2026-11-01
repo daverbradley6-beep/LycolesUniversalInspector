@@ -9,6 +9,7 @@ from pathlib import Path
 from gameplay_workflows_v58 import validate as validate_v58,generate as generate_v58
 from action_proposals_v57 import propose
 from balanced_discovery_v54 import analyze
+from evidence_explorer_v55 import compile_features,render as render_evidence
 
 def plan(receipt,contract=None):
     report=analyze(receipt)
@@ -43,6 +44,7 @@ def build(receipt,contract,out):
         subset={**contract,"actions":[a for a in contract["actions"] if a["id"] in allowed]}
         script=generate_v58(subset)
         (out/"gameplay-runner-v59.luau").write_text(script,encoding="utf-8")
+        (out/"combined-inspection-and-gameplay-v59.luau").write_text(evidence_script+"\\n"+script,encoding="utf-8")
     return result
 def main():
     p=argparse.ArgumentParser()
