@@ -39,10 +39,14 @@ class V59(unittest.TestCase):
    s=(Path(d)/"gameplay-runner-v59.luau").read_text()
    self.assertIn("Tool",s)
    self.assertIn("Activate()",s)
+   combined=(Path(d)/"combined-inspection-and-gameplay-v59.luau").read_text()
+   self.assertIn("LycolesV55",combined)
+   self.assertIn("LycolesV58",combined)
  def test_disabled_no_contract(self):
   with tempfile.TemporaryDirectory() as d:
    build(receipt(),None,Path(d))
    self.assertFalse((Path(d)/"gameplay-runner-v59.luau").exists())
+   self.assertTrue((Path(d)/"evidence-explorer-v59.luau").exists())
  def test_unsupported_no_script(self):
   with tempfile.TemporaryDirectory() as d:
    build(receipt(),contract("Unknown"),Path(d))
