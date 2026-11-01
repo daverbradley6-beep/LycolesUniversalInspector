@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "50.0",
+  "placeId": 3623096087,
+  "actions": [
+    {
+      "id": "read-local-score",
+      "kind": "read-value",
+      "path": "Players.LocalPlayer.leaderstats.Strength"
+    },
+    {
+      "id": "toggle-local-panel",
+      "kind": "toggle-local-visibility",
+      "path": "Players.LocalPlayer.PlayerGui.MainGui.Panel"
+    }
+  ]
+}
