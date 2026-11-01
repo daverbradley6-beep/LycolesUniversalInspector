@@ -13,9 +13,9 @@ from live_telemetry_v66 import parse_log
 
 MAX_BYTES=50_000_000
 MAX_SESSIONS=100
-SEGMENT=re.compile(r'"((?:\\\\.|[^"\\\\])*)"#\\d+@([A-Za-z][A-Za-z0-9]*)')
-MARKER=re.compile(r'LYCOLES_V66_HEADER\\s+')
-END=re.compile(r'LYCOLES_V66_END\\s+\\d+')
+SEGMENT=re.compile(r'"((?:\\.|[^"\\])*)"#\d+@([A-Za-z][A-Za-z0-9]*)')
+MARKER=re.compile(r'LYCOLES_V66_HEADER\s+')
+END=re.compile(r'LYCOLES_V66_END\s+\d+')
 
 def repair_encoding(value):
     # Repair console mojibake only when it round-trips cleanly.
@@ -62,7 +62,7 @@ def telemetry_sessions(text, place_id):
         if not ends:
             candidates.append({"index":index+1,"valid":False,"reason":"missing end"})
             continue
-        raw="\\n".join(block[:ends[-1]+1])
+        raw="\n".join(block[:ends[-1]+1])
         try:
             parsed=parse_log(raw,place_id)
             if not parsed["complete"]:
@@ -147,6 +147,6 @@ def main():
     for key,filename in (("manifest","release-manifest-v68.json"),("matches","matches-v68.json"),
                          ("unmatched","unmatched-v68.json"),("ambiguous","ambiguous-v68.json"),
                          ("catalog","catalog-v68.json")):
-        (a.output/filename).write_text(json.dumps(result[key],ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+        (a.output/filename).write_text(json.dumps(result[key],ensure_ascii=False,indent=2 )+"\n",encoding="utf-8")
     print(json.dumps(result["manifest"],ensure_ascii=False,indent=2))
 if __name__=="__main__": main()
