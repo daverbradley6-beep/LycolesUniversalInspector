@@ -1,0 +1,18 @@
+name: v83 action result analyzer
+on:
+  push:
+    paths:
+      - 'tools/action_result_analyzer_v83.py'
+      - 'tests/test_action_result_analyzer_v83.py'
+      - '.github/workflows/v83-action-results.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile tools/action_result_analyzer_v83.py
+      - run: python -m unittest discover -s tests -p 'test_action_result_analyzer_v83.py' -v
