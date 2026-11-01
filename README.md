@@ -16,12 +16,13 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
 - v108 controlled execution runs actual generated Luau against strict bounded Roblox stubs, drives generated UI controls, and compares results with the independent resolver model without claiming live Roblox verification.
+- v108 system interpretation deterministically infers interface, interaction-affordance, state, and candidate feedback-surface roles from observed v107 objects; optionally groups them through strictly shaped caller-supplied correlation references; and preserves source authenticity and causality as explicit unknowns without generating gameplay actions.
 
 ## Validate locally
 
 ```sh
-python3 tools/install_luau_v108.py --output build/luau-0.745
-LUAU_BIN="$PWD/build/luau-0.745/luau" python3 -B -m unittest discover -s tests -v
+python3 tools/install_luau_v108.py --output build/luau-0.744
+LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -v
 npm ci --ignore-scripts
 npm test
 ```
@@ -44,6 +45,18 @@ python3 tools/integrated_pipeline_v107.py --output build/v107 --verify-only
 ```
 
 See `docs/v107-path-identity.md` for identity, provenance, artifacts, guarantees, and limitations.
+
+## Interpret observable system candidates
+
+```sh
+python3 tools/system_interpreter_v108.py \
+  --report build/v107/inspection-report.json \
+  --feature-plan build/v107/feature-plan.json \
+  --relationship-evidence path/to/108.relationship-evidence.json \
+  --output build/v108/system-interpretation.json
+```
+
+Relationship evidence is optional, caller-supplied, and correlation-only; source authenticity remains unknown. See `docs/v108-system-interpretation.md` for schemas, canonical ordering, confidence categories, unsupported capabilities, and verification limits.
 
 ## Inspector installation
 

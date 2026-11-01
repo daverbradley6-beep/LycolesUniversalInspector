@@ -1,6 +1,8 @@
 """Actual Luau execution tests against bounded simulated Roblox APIs."""
 import hashlib
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,9 +22,10 @@ from feature_planner_v107 import plan
 from install_luau_v108 import BINARIES, _extract
 from integrated_pipeline_v107 import emit_luau
 from path_identity_v107 import build
+from release_pipeline_v104 import canonical
 
 PLACE = 85896571713843
-DEFAULT_LUAU = Path("/tmp/luau-0.745/luau")
+DEFAULT_LUAU = Path("/tmp/luau-0.744/luau")
 LUAU = Path(os.environ.get("LUAU_BIN", DEFAULT_LUAU))
 
 
@@ -48,6 +51,18 @@ def rich_plan(ordinal=2):
             {"name": "Coins", "className": "IntValue", "ordinal": ordinal},
         ],
         "className": "IntValue",
+    }]}, PLACE))
+
+
+def string_plan():
+    return plan(build({"placeId": PLACE, "observations": [{
+        "path": ["Workspace", "Stats", "Message"],
+        "pathIdentity": [
+            {"name": "Workspace", "className": "Workspace", "ordinal": 1},
+            {"name": "Stats", "className": "Folder", "ordinal": 1},
+            {"name": "Message", "className": "StringValue", "ordinal": 1},
+        ],
+        "className": "StringValue",
     }]}, PLACE))
 
 
@@ -133,6 +148,23 @@ class LuauInstallerV108Tests(unittest.TestCase):
             hashes = {name: hashlib.sha256(b"binary").hexdigest() for name in BINARIES}
             with self.assertRaisesRegex(ValueError, "unsafe"):
                 _extract(archive, runtime, hashes)
+
+    def test_workflow_actions_are_pinned_to_full_commit_shas(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github" / "workflows" / "v108-controlled-luau.yml"
+        ).read_text(encoding="utf-8")
+        references = [
+            line.split("@", 1)[1].split()[0]
+            for line in workflow.splitlines()
+            if "uses: actions/" in line
+        ]
+        self.assertEqual(len(references), 3)
+        self.assertTrue(all(
+            len(reference) == 40
+            and all(character in "0123456789abcdef" for character in reference)
+            for reference in references
+        ))
 
 
 @unittest.skipUnless(LUAU.is_file(), "official Luau runtime not installed")
@@ -234,6 +266,27 @@ class ControlledLuauV108Tests(unittest.TestCase):
         self.assertEqual(result["features"][0]["observedValue"], "café🚀")
         self.assertTrue(result["simulationPassed"])
 
+    def test_error_message_strings_remain_resolved_values(self):
+        values = (
+            "missing object or identity mismatch",
+            "missing identity segment",
+            "missing or ambiguous legacy path segment",
+            "property unavailable",
+            "unsupported path resolution",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                fixture = hierarchy(node("Workspace", "Workspace", children=[
+                    node("Stats", "Folder", children=[
+                        node("Message", "StringValue", properties={"Value": value}),
+                    ]),
+                ]))
+                result = execute(string_plan(), fixture, PLACE, LUAU)
+                self.assertEqual(result["features"][0]["status"], "resolved")
+                self.assertEqual(result["features"][0]["observedValue"], value)
+                self.assertTrue(result["features"][0]["modelAgreement"])
+                self.assertTrue(result["simulationPassed"])
+
     def test_legacy_ambiguity_executes_and_fails_closed(self):
         fixture = hierarchy(node("Workspace", "Workspace", children=[
             node("Stats", "Folder", children=[node("Coins", "IntValue", properties={"Value": 1})]),
@@ -254,6 +307,39 @@ class ControlledLuauV108Tests(unittest.TestCase):
         self.assertFalse(result["simulationPassed"])
         self.assertEqual(result["features"][0]["status"], "place_mismatch")
         self.assertTrue(result["modelAgreement"])
+
+    def test_cli_returns_failure_when_simulation_does_not_pass(self):
+        feature_plan = rich_plan(1)
+        fixture = hierarchy(workspace_with_coins(
+            node("Coins", "IntValue", properties={"Value": 1}),
+        ))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = root / "feature-plan.json"
+            hierarchy_path = root / "hierarchy.json"
+            output_path = root / "execution.json"
+            plan_path.write_bytes(canonical(feature_plan))
+            hierarchy_path.write_bytes(canonical(fixture))
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve().parents[1] / "tools" / "controlled_luau_v108.py"),
+                    "--feature-plan", str(plan_path),
+                    "--hierarchy", str(hierarchy_path),
+                    "--runtime-place-id", str(PLACE + 1),
+                    "--luau", str(LUAU),
+                    "--output", str(output_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            summary = json.loads(completed.stdout)
+            self.assertFalse(summary["ok"])
+            self.assertFalse(summary["simulationPassed"])
+            self.assertFalse(json.loads(output_path.read_text())["simulationPassed"])
 
     def test_empty_plan_cannot_pass_with_mismatched_fixture_place(self):
         feature_plan = plan(build({"placeId": PLACE, "observations": []}, PLACE))

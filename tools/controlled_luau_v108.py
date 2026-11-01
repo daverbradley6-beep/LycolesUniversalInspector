@@ -237,17 +237,6 @@ local function __hex(value)
  for index=1,#text do output[index]=string.format("%02x",string.byte(text,index)) end
  return table.concat(output)
 end
-local function __featureStatus(message)
- if message == "missing object or identity mismatch" or message == "missing identity segment" then
-  return "identity_mismatch",message
- end
- if message == "missing or ambiguous legacy path segment" then
-  return "legacy_resolution_failed",message
- end
- if message == "property unavailable" then return "property_unavailable",message end
- if message == "unsupported path resolution" then return "unsupported_path_resolution",message end
- return "resolved",message
-end
 local __refreshActivated=false
 local __filterApplied=false
 local __autoRefreshToggled=false
@@ -264,10 +253,9 @@ if gui.Parent ~= nil then
  autoButton.Activated:Fire()
  __autoRefreshToggled=autoButton.Text == "Auto refresh: ON"
  for index,feature in ipairs(features) do
-  local prefix=feature.label..": "
-  local message=string.sub(rows[index].Text,#prefix+1)
-  local statusName,value=__featureStatus(message)
-  print("LYCOLES|FEATURE|"..__hex(feature.id).."|"..__hex(statusName).."|"..__hex(value))
+  local result=rowResults[rows[index]]
+  if result == nil then error("missing structured observation result") end
+  print("LYCOLES|FEATURE|"..__hex(feature.id).."|"..__hex(result.status).."|"..__hex(result.value))
  end
  local unload=nil
  for _,child in ipairs(panel:GetChildren()) do
@@ -509,14 +497,16 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(canonical(result))
     print(json.dumps({
-        "ok": True,
+        "ok": result["simulationPassed"],
         "features": len(result["features"]),
         "modelAgreement": result["modelAgreement"],
+        "simulationPassed": result["simulationPassed"],
         "simulatedEnvironment": True,
         "luauExecuted": True,
         "robloxRuntimeVerified": False,
     }, sort_keys=True))
+    return 0 if result["simulationPassed"] else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

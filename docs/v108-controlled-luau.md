@@ -7,8 +7,8 @@ v108 executes the actual deterministic Luau emitted by the v107 integrated pipel
 Install the pinned official Ubuntu release. The installer limits the download to 10 MB, requires the exact four expected executables, rejects unsafe archive paths and stale targets, and verifies both the release archive SHA-256 and every executable SHA-256 before making files executable.
 
 ```bash
-python tools/install_luau_v108.py --output build/luau-0.745
-export LUAU_BIN="$PWD/build/luau-0.745/luau"
+python tools/install_luau_v108.py --output build/luau-0.744
+export LUAU_BIN="$PWD/build/luau-0.744/luau"
 python -m unittest tests.test_controlled_luau_v108 -v
 ```
 
@@ -27,7 +27,7 @@ python tools/controlled_luau_v108.py \
 
 The stubs implement only the APIs required by the current generated observer: service lookup, instance creation and parenting, child lookup, property reads/writes, property-change and button signals, destruction, UI value constructors, and bounded task scheduling. Unknown API members and services raise runtime errors instead of silently succeeding. Scheduled background tasks are counted but not executed, preventing the generated auto-refresh loop from running indefinitely.
 
-The harness drives the generated refresh, text filter, auto-refresh toggle, and unload controls. It records per-feature values and failure messages, compares them with the independent v107 resolver model, and reports source, fixture, runtime archive, and runtime executable hashes. Printable Unicode instance names, labels, and string values are emitted as canonical UTF-8 byte escapes and reconstructed independently by artifact verification. Missing and explicit `nil` properties both fail closed; numeric values are compared by scalar value rather than display formatting, and integer fixtures are limited to Luau's exact IEEE-754 range.
+The harness drives the generated refresh, text filter, auto-refresh toggle, and unload controls. The observer preserves each resolution status separately from its display value, so legitimate strings cannot collide with failure messages. The harness compares these structured results with the independent v107 resolver model and reports source, fixture, runtime archive, and runtime executable hashes. Printable Unicode instance names, labels, and string values are emitted as canonical UTF-8 byte escapes and reconstructed independently by artifact verification. Missing and explicit `nil` properties both fail closed; numeric values are compared by scalar value rather than display formatting, and integer fixtures are limited to Luau's exact IEEE-754 range.
 
 Execution is constrained to a temporary directory with an empty inherited `PATH`, closed standard input, a wall timeout of at most five seconds, two CPU seconds, 256 MB address space, 1 MB file limit, 32 open files, a 2 MB total source limit after stub injection, and a 1 MB captured-output limit.
 
@@ -36,6 +36,7 @@ Execution is constrained to a temporary directory with an empty inherited `PATH`
 - `luauExecuted: true` means the official Luau VM ran the instrumented generated source.
 - `generatedBodyExecuted: true` means the generated place guard admitted the simulated runtime.
 - `simulationPassed: true` means the runtime, plan, and fixture place identities agree; resolution agreed with the independent model; all tested GUI interactions succeeded; exactly one bounded background task was scheduled; and no unsupported stub API was used.
+- The CLI writes the complete report for either outcome, prints `ok` equal to `simulationPassed`, and exits nonzero whenever the simulation does not pass.
 - `readOnly: true` and `simulatedEnvironment: true` are always retained.
 - `robloxRuntimeVerified`, `liveGameVerified`, and `gameplayVerified` are always `false`.
 

@@ -10,15 +10,15 @@ import urllib.request
 from pathlib import Path
 from zipfile import ZipFile
 
-VERSION = "0.745"
+VERSION = "0.744"
 URL = f"https://github.com/luau-lang/luau/releases/download/{VERSION}/luau-ubuntu.zip"
-SHA256 = "186e5ddaa2b048ebc7390c11ed1b00c04e7d3beaffed429250329e3575d2ece2"
+SHA256 = "6506f0852c623aaffcb28494aac16c26dc04a269ea0e16cc0aafc8c8ac79f3ec"
 MAX_ARCHIVE_BYTES = 10_000_000
 BINARY_SHA256 = {
-    "luau": "4b9e07f548afdfe4aeb9a7ef8386e927e085529ac5dc4b0d42f6963fdde46095",
-    "luau-analyze": "f16fed21fa0d30ad3aac159ffc7fdd5712a06d0e55633aada9c9fef1eaa664ba",
-    "luau-ast": "790d7be2ee80bd19709a4b00a90eb72e50c43c72407470ef95186b6f130bf378",
-    "luau-compile": "49805c3bd6db1f2492aeb2217bdb4fa42817fcb992e87abe2889561f664760a7",
+    "luau": "fdb514ab8341829b7ca7b734fd8c5abea5efba47886632ce35e2c5400b3211ce",
+    "luau-analyze": "08bf084ed597388e4dfa04d196d09f34c65a9e242457e520f59fdb4fe76d9586",
+    "luau-ast": "89e18f6b617d1f762a6c655b4bcea692272e9f3ea7d9dfea958caf7614baad6e",
+    "luau-compile": "3c0ad32de04696fe47a63f074897096d69fd2b4b5ffb917f751987c14d9f7d06",
 }
 BINARIES = set(BINARY_SHA256)
 

@@ -34,6 +34,8 @@ Every contract must distinguish:
 
 Client visibility never proves server authority, causality, or gameplay success.
 
+Current v108 interpretation contract: `tools/system_interpreter_v108.py` emits explicitly classified deterministic-inference `108.system-interpretation.1` candidates over the exact canonical v107 report/feature plan. Optional `108.relationship-evidence.1` inputs are immutable caller-supplied, shape/provenance-reference validated, ambiguity-quarantined correlations; their source authenticity, causality, server authority, and gameplay meaning remain explicit unknowns.
+
 ## Generated features
 
 Each generated feature must define:
@@ -80,6 +82,6 @@ Do not stop merely because one implementation commit is complete; finish its tes
 
 ## Current controlled Luau validation
 
-- Install the hash-pinned official Luau `0.745` runtime with `python tools/install_luau_v108.py --output build/luau-0.745`.
-- Run all Python tests with `LUAU_BIN="$PWD/build/luau-0.745/luau" python -B -m unittest discover -s tests -v`, then run `npm test` and `git diff --check`.
+- Install the hash-pinned official Luau `0.744` runtime with `python tools/install_luau_v108.py --output build/luau-0.744`.
+- Run all Python tests with `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests -v`, then run `npm test` and `git diff --check`.
 - Controlled Luau success is simulated, read-only evidence only; it never upgrades Roblox runtime, live-game, server-authority, causality, or gameplay verification claims.
