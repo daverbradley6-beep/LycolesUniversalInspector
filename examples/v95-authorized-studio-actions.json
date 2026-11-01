@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "95.actions",
+  "placeId": 123456,
+  "enabled": true,
+  "authorizedUserIds": [
+    10001
+  ],
+  "actions": [
+    {
+      "id": "Collect",
+      "kind": "increment_stat",
+      "stat": "Coins",
+      "amount": 1,
+      "cooldownSeconds": 1
+    },
+    {
+      "id": "Ready",
+      "kind": "set_attribute",
+      "attribute": "Ready",
+      "value": true,
+      "cooldownSeconds": 2
+    },
+    {
+      "id": "Spawn",
+      "kind": "teleport_to_part",
+      "part": "SpawnLocation",
+      "cooldownSeconds": 5
+    }
+  ]
+}
