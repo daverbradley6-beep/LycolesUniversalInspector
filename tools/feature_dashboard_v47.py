@@ -6,6 +6,14 @@ from pathlib import Path
 from adaptive_probe_v44 import paths
 
 MAX_FEATURES=100
+SUPPORTED_ROOTS=frozenset(("Workspace","Players","ReplicatedStorage","ReplicatedFirst","Lighting","StarterGui","StarterPack","StarterPlayer","SoundService","Teams"))
+
+def supported_path(path):
+    """Match roots actually supported by the generated Luau resolver."""
+    if not isinstance(path,str) or not 1<=len(path)<=1024:
+        return False
+    parts=path.split(".")
+    return len(parts)>=2 and parts[0] in SUPPORTED_ROOTS and all(parts)
 
 def validate(manifest):
     inventory=set(paths(manifest))
@@ -19,7 +27,7 @@ def validate(manifest):
         pp=feature.get("evidencePaths")
         if not isinstance(fid,str) or not fid.startswith("inspect-") or fid in ids:
             raise ValueError("Invalid feature ID")
-        if not isinstance(pp,list) or not pp or any(p not in inventory for p in pp):
+        if not isinstance(pp,list) or not pp or any(p not in inventory or not supported_path(p) for p in pp):
             raise ValueError("Invalid feature evidence")
         if len(pp)!=len(set(pp)):
             raise ValueError("Duplicate feature paths")
