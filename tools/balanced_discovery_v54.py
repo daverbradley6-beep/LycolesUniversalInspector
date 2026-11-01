@@ -101,7 +101,7 @@ local function capture()
    local node=s.queue[s.cursor]
    s.cursor+=1
    local obj,path,depth=node[1],node[2],node[3]
-   if obj and obj.Parent then
+   if obj and (depth==0 or obj.Parent) then
     used+=1
     s.visited+=1
     local item={path=path,className=obj.ClassName,root=name}
