@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
 from universal_pipeline_v97 import proposal,plan,write_stage,audit_stage,run
+from temporal_attribution_v91 import release
 
 PLACE=123456
 def event(key,index,capture,start,match):
@@ -78,7 +79,10 @@ class PipelineTests(unittest.TestCase):
    self.assertFalse(result["approvedStudioCompilation"])
  def test_run_approved(self):
   with tempfile.TemporaryDirectory() as d:
-   result=run(events(),PLACE,d,mapping())
+   m=mapping()
+   candidate=next(c for c in release(events(),PLACE)["candidates"] if c["status"]=="review_candidate")
+   m["bindings"][0]["candidateId"]=candidate["id"]
+   result=run(events(),PLACE,d,m)
    self.assertTrue(result["approvedStudioCompilation"])
    self.assertTrue((Path(d)/"approved-studio"/"LycolesActionsV95.server.lua").is_file())
  def test_run_bad_mapping(self):
