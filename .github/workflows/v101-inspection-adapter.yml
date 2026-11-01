@@ -1,0 +1,16 @@
+name: v101 client inspection adapter
+on: [push, workflow_dispatch]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_inspection_adapter_v101.py -v
+      - run: python -m unittest discover -s tests -p test_client_observer_compiler_v100.py -v
