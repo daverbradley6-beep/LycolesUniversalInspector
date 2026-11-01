@@ -144,46 +144,47 @@ local function capture()
  end
  return items,perRoot
 end
-local receipt={schemaVersion="54.0",placeId=PLACE_ID,clientReceiptUntrusted=true,
- observations={}}
-local function emitChunks(raw)
- local chunkSize=9000
- local total=math.ceil(#raw/chunkSize)
- print("LYCOLES_V54_BEGIN "..tostring(total))
- for i=1,total do
-  print("LYCOLES_V54_CHUNK "..tostring(i).."/"..tostring(total).." "..raw:sub((i-1)*chunkSize+1,i*chunkSize))
+-- v54.2 incremental bounded export; encode individual entry groups.
+local function emitSample(index,items,coverage)
+ local batches={}
+ local size=90
+ for first=1,#items,size do
+  local entries={}
+  for k=first,math.min(#items,first+size-1) do
+   entries[#entries+1]=items[k]
+  end
+  local ok,encoded=pcall(function()
+   return HttpService:JSONEncode({index=index,entries=entries,
+    coverage=(first==1 and coverage or nil)})
+  end)
+  if not ok then
+   warn("Lycoles v54: batch JSON failed sample "..index.." entry "..first.." "..tostring(encoded))
+   return false
+  end
+  batches[#batches+1]=encoded
  end
- print("LYCOLES_V54_END")
+ print("LYCOLES_V54_BATCH_BEGIN "..index.." "..#batches)
+ for i,encoded in ipairs(batches) do
+  print("LYCOLES_V54_BATCH "..index.."/"..i.."/"..#batches.." "..encoded)
+ end
+ print("LYCOLES_V54_BATCH_END "..index)
+ return true
 end
 task.spawn(function()
+ print("LYCOLES_V54_BATCH_STREAM_BEGIN "..tostring(PLACE_ID).." "..tostring(SAMPLES))
  for i=1,SAMPLES do
   if not gui.Parent then return end
   local items,coverage=capture()
-  table.insert(receipt.observations,{index=i,entries=items,coverage=coverage})
-  label.Text="Lycoles v54 | "..tostring(i).."/"..tostring(SAMPLES).." | "..tostring(#items).." new objects"
-  if i<SAMPLES then task.wait(INTERVAL) end
- end
- -- Export each observation separately to avoid large single JSONEncode allocations.
- -- The v54 parser accepts this v54.1 line protocol after reconstruction.
- local count=#receipt.observations
- print("LYCOLES_V54_STREAM_BEGIN "..tostring(PLACE_ID).." "..tostring(count))
- for i,observation in ipairs(receipt.observations) do
-  local ok,encoded=pcall(function() return HttpService:JSONEncode(observation) end)
-  if not ok then
-   warn("Lycoles v54: observation "..i.." JSON failed: "..tostring(encoded))
-   label.Text="Lycoles v54 export failed at sample "..i
+  label.Text="Lycoles v54 | "..tostring(i).."/"..tostring(SAMPLES).." | "..tostring(#items).." objects"
+  if not emitSample(i,items,coverage) then
+   label.Text="Lycoles v54 failed to encode sample "..i
    return
   end
-  local chunkSize=6000
-  local total=math.ceil(#encoded/chunkSize)
-  print("LYCOLES_V54_SAMPLE_BEGIN "..i.." "..total)
-  for j=1,total do
-   print("LYCOLES_V54_SAMPLE_CHUNK "..i.."/"..j.."/"..total.." "..encoded:sub((j-1)*chunkSize+1,j*chunkSize))
-  end
-  print("LYCOLES_V54_SAMPLE_END "..i)
+  items=nil
+  if i<SAMPLES then task.wait(INTERVAL) end
  end
- print("LYCOLES_V54_STREAM_END")
- label.Text="Lycoles v54 complete | Save stream console lines"
+ print("LYCOLES_V54_BATCH_STREAM_END")
+ label.Text="Lycoles v54 complete | Save all batch console lines"
 end)
 '''
     return t.replace("PLACE_ID",str(place_id)).replace("SAMPLES",str(samples)).replace("INTERVAL",str(interval)).replace("CAP",str(cap))
@@ -191,6 +192,40 @@ end)
 def parse_receipt(raw):
     if isinstance(raw,dict): return raw
     if not isinstance(raw,str): raise ValueError("Expected JSON or console transcript")
+    if "LYCOLES_V54_BATCH_STREAM_BEGIN " in raw:
+        lines=raw.splitlines()
+        start=next((x.split("LYCOLES_V54_BATCH_STREAM_BEGIN ",1)[1] for x in lines if "LYCOLES_V54_BATCH_STREAM_BEGIN " in x),None)
+        if start is None or not any("LYCOLES_V54_BATCH_STREAM_END" in x for x in lines):
+            raise ValueError("Incomplete batch stream")
+        place,count=map(int,start.split())
+        if not 2<=count<=24: raise ValueError("Invalid sample count")
+        samples=[]
+        for index in range(1,count+1):
+            prefix="LYCOLES_V54_BATCH_BEGIN "+str(index)+" "
+            total_line=next((x.split(prefix,1)[1] for x in lines if prefix in x),None)
+            if total_line is None: raise ValueError("Missing sample "+str(index))
+            total=int(total_line.strip())
+            if not 1<=total<=1000: raise ValueError("Invalid batch count")
+            chunks={}
+            for line in lines:
+                marker="LYCOLES_V54_BATCH "
+                if marker not in line: continue
+                key,sep,payload=line.split(marker,1)[1].partition(" ")
+                if not sep: raise ValueError("Invalid batch")
+                i,j,n=map(int,key.split("/"))
+                if i!=index: continue
+                if n!=total or not 1<=j<=total or j in chunks: raise ValueError("Invalid batch index")
+                chunks[j]=json.loads(payload.strip())
+            if len(chunks)!=total or not any("LYCOLES_V54_BATCH_END "+str(index) in x for x in lines):
+                raise ValueError("Incomplete sample "+str(index))
+            entries=[]
+            for j in range(1,total+1):
+                part=chunks[j]
+                if part.get("index")!=index or not isinstance(part.get("entries"),list):
+                    raise ValueError("Invalid batch contents")
+                entries.extend(part["entries"])
+            samples.append({"index":index,"entries":entries})
+        return {"schemaVersion":"54.0","placeId":place,"observations":samples}
     if "LYCOLES_V54_STREAM_BEGIN " in raw:
         lines=raw.splitlines()
         start=next((line.split("LYCOLES_V54_STREAM_BEGIN ",1)[1] for line in lines if "LYCOLES_V54_STREAM_BEGIN " in line),None)
