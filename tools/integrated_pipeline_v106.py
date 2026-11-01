@@ -26,9 +26,9 @@ def emit_luau(feature_plan):
         if feature["kind"] != "read_property" or feature["status"] != "implemented_not_runtime_verified":
             raise ValueError("unsupported feature")
         path = feature["path"]
-        if not isinstance(path, list) or len(path) < 2 or any(not isinstance(p, str) for p in path):
+        if not isinstance(path, list) or len(path) < 2 or len(path) > 12 or path[0] not in {'Workspace', 'PlayerGui', 'ReplicatedStorage', 'Players'} or any(not isinstance(p, str) or not p or len(p) > 80 for p in path):
             raise ValueError("invalid path")
-        entries.append("  {id=%s,label=%s,path=%s,property=%s}," % (
+        if feature['property'] not in {'Text', 'Value'}:\n            raise ValueError('unsupported property')\n        entries.append("  {id=%s,label=%s,path=%s,property=%s}," % (
             json.dumps(feature["id"]), json.dumps(feature["label"]),
             "{" + ",".join(json.dumps(p) for p in path) + "}",
             json.dumps(feature["property"])))
@@ -64,7 +64,10 @@ def emit_luau(feature_plan):
         "local features = {",
         *entries,
         "}",
-        "local status = button('Refresh all observations',function() end)",
+        "local status = Instance.new('TextButton')",
+        "status.Size = UDim2.new(1,-12,0,34)",
+        "status.Text = 'Refresh all observations'",
+        "status.Parent = panel",
         "local rows = {}",
         "local function readFeature(feature)",
         " local node = roots[feature.path[1]]",
@@ -86,7 +89,7 @@ def emit_luau(feature_plan):
         "end",
         "local function refreshAll()",
         " for i,feature in ipairs(features) do refresh(feature,rows[i]) end",
-        " status.Text = 'Refreshed ' .. tostring(#features) .. ' observations'",
+        " status.Text = 'Refresh all (' .. tostring(#features) .. ' observations)'",
         " panel.CanvasSize = UDim2.fromOffset(0,layout.AbsoluteContentSize.Y+12)",
         "end",
         "status.Activated:Connect(refreshAll)",
