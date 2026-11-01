@@ -8,11 +8,6 @@ MAX_REPEATS=20
 def validate(spec):
     if not isinstance(spec,dict) or spec.get("schemaVersion")!="58.0":
         raise ValueError("Expected v58.0")
-    v57={**spec,"schemaVersion":"57.0"}
-    for action in v57.get("actions",[]):
-        if not isinstance(action,dict):raise ValueError("Invalid action")
-        v57action={k:v for k,v in action.items() if k not in ("repeatCount","cooldownSeconds")}
-        action.clear();action.update({**v57action,**{k:v for k,v in spec.get("actions",[])[0].items() if False}})
     # Validate a projection without mutating the original.
     projection={"schemaVersion":"57.0","placeId":spec.get("placeId"),
                 "ownerAuthorized":spec.get("ownerAuthorized"),
