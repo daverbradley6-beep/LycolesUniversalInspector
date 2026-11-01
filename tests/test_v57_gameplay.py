@@ -2,11 +2,18 @@ import sys,unittest,tempfile,json
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
 from gameplay_contracts_v57 import validate,generate,compile_release
+from action_proposals_v57 import propose
 def fixture():
  return {"schemaVersion":"57.0","placeId":123,"ownerAuthorized":True,"actions":[
   {"id":"TestWeight","operation":"activate_equipped_tool","toolName":"Weight",
    "expectedValue":{"container":"leaderstats","name":"Strength","minimumDelta":1},"timeoutSeconds":3}]}
 class V57(unittest.TestCase):
+ def test_proposal_is_disabled(self):
+  report={"schemaVersion":"54.analysis","placeId":123,"paths":[{"path":'StarterPack/"Weight"#1@Tool',"className":"Tool"}]}
+  p=propose(report)
+  self.assertEqual(len(p["candidateActions"]),1)
+  self.assertFalse(p["automaticExecutionAllowed"])
+  self.assertEqual(p["verifiedActions"],0)
  def test_valid(self):self.assertEqual(validate(fixture())["placeId"],123)
  def test_no_authorization(self):
   s=fixture();s["ownerAuthorized"]=False
