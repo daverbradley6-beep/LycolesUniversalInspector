@@ -1,7 +1,7 @@
 {
   "schemaVersion": "57.0",
-  "placeId": 3623096087,
-  "ownerAuthorized": true,
+  "placeId": 123456789,
+  "ownerAuthorized": false,
   "actions": [
     {
       "id": "TrainingToolSmoke",
