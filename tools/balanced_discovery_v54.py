@@ -167,8 +167,26 @@ local function emitSample(index,items,coverage)
     coverage=(first==1 and coverage or nil)})
   end)
   if not ok then
-   warn("Lycoles v54: batch JSON failed sample "..index.." entry "..first.." "..tostring(encoded))
-   return false
+   warn("Lycoles v54: recovering batch sample "..index.." entry "..first..": "..tostring(encoded))
+   local safeEntries={}
+   for offset,entry in ipairs(entries) do
+    local entryOk=pcall(function() return HttpService:JSONEncode(entry) end)
+    if entryOk then
+     safeEntries[#safeEntries+1]=entry
+    else
+     local safe={root=tostring(entry.root or ""),path=tostring(entry.path or ""),
+      className=tostring(entry.className or ""),encodingError=true}
+     safeEntries[#safeEntries+1]=safe
+     warn("Lycoles v54: replaced unencodable entry sample "..index.." index "..(first+offset-1))
+    end
+   end
+   ok,encoded=pcall(function()
+    return HttpService:JSONEncode({index=index,entries=safeEntries})
+   end)
+   if not ok then
+    warn("Lycoles v54: unrecoverable batch sample "..index.." entry "..first..": "..tostring(encoded))
+    return false
+   end
   end
   batches[#batches+1]=encoded
  end
