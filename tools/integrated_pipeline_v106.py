@@ -181,7 +181,7 @@ def verify(output):
             raise ValueError("place mismatch")
         if feature_plan != plan(report) or quality != assess(report, feature_plan):
             raise ValueError("feature plan mismatch")
-        if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 2:
+        if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 3:
             raise ValueError("control count mismatch")
         expected = {REPORT: canonical(report), PLAN: canonical(feature_plan), QUALITY: canonical(quality), SCRIPT: emit_luau(feature_plan).encode("utf-8")}
         contract = validate_source(expected[SCRIPT].decode('utf-8'), len(feature_plan['features']))
