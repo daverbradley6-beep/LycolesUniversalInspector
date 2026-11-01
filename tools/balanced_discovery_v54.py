@@ -7,12 +7,12 @@ from collections import Counter, defaultdict
 
 ROOTS=("Workspace","Players","ReplicatedStorage","ReplicatedFirst","Lighting","StarterGui","StarterPack","StarterPlayer","SoundService","Teams")
 PRIORITY={"ValueBase","RemoteEvent","RemoteFunction","BindableEvent","BindableFunction","ProximityPrompt","ClickDetector","TextButton","ImageButton","Tool"}
-MAX_RECORDS=3500
-def generate(place_id, samples=12, interval=3, cap=MAX_RECORDS):
+MAX_RECORDS=4000
+def generate(place_id, samples=12, interval=3, cap=3500):
     if type(place_id)!=int or place_id<=0: raise ValueError("Invalid place")
     if type(samples)!=int or not 2<=samples<=24: raise ValueError("Invalid samples")
     if type(interval)!=int or not 1<=interval<=10: raise ValueError("Invalid interval")
-    if type(cap)!=int or not 200<=cap<=MAX_RECORDS: raise ValueError("Invalid cap")
+    if type(cap)!=int or not 200<=cap<=3500: raise ValueError("Invalid cap")
     t=r'''-- Lycoles v54. Read-only. No remote calls or gameplay manipulation.
 local HttpService=game:GetService("HttpService")
 local Players=game:GetService("Players")
