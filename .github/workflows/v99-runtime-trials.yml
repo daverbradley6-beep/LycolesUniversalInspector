@@ -1,0 +1,16 @@
+name: v99 controlled trial evaluator
+on: [push, workflow_dispatch]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_runtime_trial_evaluator_v99.py -v
+      - run: python tools/runtime_trial_evaluator_v99.py --trial-log examples/v99-trials.jsonl --output build/v99-evaluation.json
