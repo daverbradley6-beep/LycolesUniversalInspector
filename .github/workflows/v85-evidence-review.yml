@@ -1,0 +1,18 @@
+name: v85 evidence review bridge
+on:
+  push:
+    paths:
+      - 'tools/evidence_to_contracts_v85.py'
+      - 'tests/test_evidence_to_contracts_v85.py'
+      - '.github/workflows/v85-evidence-review.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile tools/evidence_to_contracts_v85.py
+      - run: python -m unittest discover -s tests -p 'test_evidence_to_contracts_v85.py' -v
