@@ -65,6 +65,20 @@ Full-identity features resolve each descendant by matching name and class, then 
 
 The verifier reconstructs every derived artifact, validates report and feature-plan schemas, checks identity-mode counts and safety claims, enforces the static Luau contract, and compares canonical bytes plus SHA-256 hashes. It also independently parses the generated Luau feature table and compares every runtime ID, label, path, identity segment, resolution mode, class, and property to the canonical feature plan. Verification rejects noncanonical table lines, duplicate runtime entries, place-guard drift, extra artifact files, extra manifest fields, malformed hashes, and noncanonical manifest bytes.
 
+## Controlled resolver model
+
+`tools/resolver_harness_v107.py` evaluates a validated feature plan against a bounded synthetic `107.hierarchy-fixture` tree. It exercises class-qualified sibling ordinals, legacy uniqueness, place guards, and property availability with deterministic fail-closed outcomes.
+
+```bash
+python tools/resolver_harness_v107.py \
+  --feature-plan build/v107/feature-plan.json \
+  --hierarchy hierarchy-fixture.json \
+  --runtime-place-id 85896571713843 \
+  --output build/v107/resolver-model.json
+```
+
+The output always distinguishes `modelVerified` from `luauExecuted`, `robloxRuntimeVerified`, and `gameplayVerified`. The harness does not execute generated Luau, load Roblox API definitions, connect to Roblox, or replace an authorized Roblox Studio test.
+
 ## Limits
 
 Sibling ordinals can change when a dynamic hierarchy is rebuilt. Full identity removes same-name ambiguity only while the observed class-qualified sibling ordering remains valid. The schema represents client-visible evidence and does not establish server authority, gameplay causality, or runtime success.
