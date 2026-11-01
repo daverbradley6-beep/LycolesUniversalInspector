@@ -1,0 +1,20 @@
+name: v62 evidence pipeline tests
+on:
+  push:
+    paths:
+      - 'tools/evidence_pipeline_v62.py'
+      - 'tests/test_evidence_pipeline_v62.py'
+      - '.github/workflows/v62-evidence-pipeline.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile tools/evidence_pipeline_v62.py tests/test_evidence_pipeline_v62.py
+      - name: Regression tests
+        run: python -m unittest discover -s tests -p 'test_evidence_pipeline_v62.py' -v
