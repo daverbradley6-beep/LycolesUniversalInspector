@@ -31,7 +31,7 @@ def candidates(catalog):
         if not isinstance(item, dict):
             continue
         kind, path = item.get("kind"), item.get("path")
-        if kind not in SUPPORTED or not isinstance(path, str) or not 0 < len(path) <= 10000:
+        if kind not in SUPPORTED or not isinstance(path, str) or not 0 < len(path) <= 10000 or any(ord(c) < 32 for c in path):
             continue
         if item.get("actionStatus") not in ("unverified", None):
             continue
@@ -157,11 +157,9 @@ end)
 def generate(manifest, catalog, place_id):
     validate_release(manifest, place_id)
     entries=candidates(catalog)
-    payload=json.dumps(entries, ensure_ascii=True, separators=(",", ":"))
-    # JSON array/object literals are compatible with Luau only after translating JSON syntax.
-    # Encode as a Luau table with escaped string values instead.
+    # Emit a Luau table with UTF-8 string literals; avoid JSON surrogate escapes.
     def quote(s):
-        return json.dumps(s, ensure_ascii=True)
+        return json.dumps(s, ensure_ascii=False)
     table="{" + ",".join("{path="+quote(x["path"])+",kind="+quote(x["kind"])+"}" for x in entries) + "}"
     return LUA.replace("__PLACE__",str(place_id)).replace("__ITEMS__",table)
 
