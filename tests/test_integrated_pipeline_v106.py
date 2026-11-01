@@ -116,6 +116,20 @@ class IntegratedPipelineTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             self.assertFalse(verify(tmp)["ok"])
 
+    def test_generated_dashboard_controls(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        self.assertIn("search:GetPropertyChangedSignal('Text'):Connect(applyFilter)", script)
+        self.assertIn("autoButton = button('Auto refresh: OFF'", script)
+        self.assertIn("if autoRefresh then refreshAll() end", script)
+        self.assertIn("while gui.Parent do", script)
+
+    def test_manifest_control_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = generate(fixture(), PLACE, tmp)
+            self.assertTrue(result["ok"], result)
+            manifest = json.loads((Path(tmp) / "manifest.json").read_text())
+            self.assertEqual(manifest["functionalControlsGenerated"], 6)
+
     def test_missing_artifact_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             generate(fixture(), PLACE, tmp)
