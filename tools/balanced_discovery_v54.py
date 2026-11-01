@@ -362,9 +362,7 @@ def dashboard(report):
            'frame.CanvasSize=UDim2.fromOffset(0,(#rows+1)*36)']
     # Luau tables are not JSON objects; use explicit table literals.
     lines[10]='local rows={'+','.join('{path='+json.dumps(x["path"])+',className='+json.dumps(x["className"])+',changed='+str(x["valueChanged"]).lower()+'}' for x in candidates)+'}'
-    return "
-".join(lines)+"
-"
+    return "\n".join(lines)+"\n"
 
 def main():
     p=argparse.ArgumentParser()
