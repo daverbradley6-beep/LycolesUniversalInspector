@@ -1,0 +1,18 @@
+name: v92 diagnostic builder
+on: [push, workflow_dispatch]
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m py_compile tools/diagnostic_builder_v92.py tools/temporal_attribution_v91.py tools/evidence_release_v90.py
+      - run: python -m unittest discover -s tests -p test_diagnostic_builder_v92.py -v
+      - run: python -m unittest discover -s tests -p test_temporal_attribution_v91.py -v
+      - run: python -m unittest discover -s tests -p test_evidence_release_v90.py -v
