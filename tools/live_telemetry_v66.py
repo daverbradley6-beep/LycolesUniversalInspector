@@ -7,6 +7,7 @@ from pathlib import Path
 LUA = r'''-- Lycoles v66: passive local observation. No gameplay actions or remote calls.
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
+local UserInputService=game:GetService("UserInputService")
 if game.PlaceId~=__PLACE__ then warn("Lycoles v66: wrong place") return end
 local player=Players.LocalPlayer
 if not player then return end
@@ -24,6 +25,50 @@ title.Text="Lycoles v66 | Passive telemetry and export" title.Parent=panel
 local close=Instance.new("TextButton") close.Size=UDim2.fromOffset(44,34)
 close.Position=UDim2.new(1,-46,0,3) close.Text="X" close.Parent=panel
 close.MouseButton1Click:Connect(function() gui:Destroy() end)
+local minimize=Instance.new("TextButton")
+minimize.Name="Minimize" minimize.Size=UDim2.fromOffset(40,34)
+minimize.Position=UDim2.new(1,-90,0,3)
+minimize.Text="-" minimize.Parent=panel
+local expandedSize=panel.Size
+local minimized=false
+local content={}
+local function toggleMinimize()
+ minimized=not minimized
+ panel.Size=minimized and UDim2.fromOffset(660,42) or expandedSize
+ minimize.Text=minimized and "+" or "-"
+ for _,control in ipairs(content) do control.Visible=not minimized end
+end
+minimize.MouseButton1Click:Connect(toggleMinimize)
+local dragging=false
+local dragStart=nil
+local panelStart=nil
+local dragInput=nil
+title.Active=true
+title.InputBegan:Connect(function(input)
+ if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+  dragging=true dragStart=input.Position panelStart=panel.Position
+  local connection
+  connection=input.Changed:Connect(function()
+   if input.UserInputState==Enum.UserInputState.End then
+    dragging=false
+    connection:Disconnect()
+   end
+  end)
+ end
+end)
+title.InputChanged:Connect(function(input)
+ if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then
+  dragInput=input
+ end
+end)
+UserInputService.InputChanged:Connect(function(input)
+ if dragging and input==dragInput and panelStart and dragStart then
+  local delta=input.Position-dragStart
+  panel.Position=UDim2.new(panelStart.X.Scale,panelStart.X.Offset+delta.X,
+                          panelStart.Y.Scale,panelStart.Y.Offset+delta.Y)
+ end
+end)
+
 local filter=Instance.new("TextBox") filter.Size=UDim2.new(1,-16,0,34)
 filter.Position=UDim2.fromOffset(8,42) filter.PlaceholderText="Filter changes"
 filter.ClearTextOnFocus=false filter.Text="" filter.Parent=panel
@@ -37,6 +82,7 @@ local scroll=Instance.new("ScrollingFrame") scroll.Size=UDim2.new(1,-16,1,-126)
 scroll.Position=UDim2.fromOffset(8,122) scroll.CanvasSize=UDim2.fromOffset(0,0)
 scroll.Parent=panel
 local layout=Instance.new("UIListLayout") layout.Parent=scroll
+content={filter,export,status,scroll}
 local MAX_EVENTS=__MAXEVENTS__
 local MAX_SCAN=__MAXSCAN__
 local events={} local last={} local tick=0
