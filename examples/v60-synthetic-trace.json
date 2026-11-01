@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "60.trace",
+  "placeId": 123,
+  "events": [
+    {
+      "time": 0,
+      "actionId": "Training",
+      "kind": "before",
+      "value": 10
+    },
+    {
+      "time": 1,
+      "actionId": "Training",
+      "kind": "after",
+      "value": 12
+    },
+    {
+      "time": 2,
+      "actionId": "Training",
+      "kind": "before",
+      "value": 12
+    },
+    {
+      "time": 3,
+      "actionId": "Training",
+      "kind": "after",
+      "value": 14
+    }
+  ]
+}
