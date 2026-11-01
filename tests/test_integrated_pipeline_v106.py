@@ -39,7 +39,7 @@ class IntegratedPipelineTests(unittest.TestCase):
             generate(fixture(), PLACE, a)
             generate(fixture(), PLACE, b)
             for name in ("inspection-report.json", "feature-plan.json",
-                         "LycolesFunctionalObserver.client.lua", "quality-report.json", "manifest.json"):
+                         "LycolesFunctionalObserver.client.lua", "quality-report.json", "inspection-diagnostics.json", "manifest.json"):
                 self.assertEqual((Path(a) / name).read_bytes(), (Path(b) / name).read_bytes())
 
     def test_tampering_detected(self):
@@ -129,6 +129,14 @@ class IntegratedPipelineTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
             manifest = json.loads((Path(tmp) / "manifest.json").read_text())
             self.assertEqual(manifest["functionalControlsGenerated"], 6)
+
+    def test_integrated_inspection_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = generate(fixture(), PLACE, tmp)
+            self.assertTrue(result["ok"], result)
+            data = json.loads((Path(tmp) / "inspection-diagnostics.json").read_text())
+            self.assertEqual(data["supportedControls"], 3)
+            self.assertEqual(data["coverage"], 1.0)
 
     def test_missing_artifact_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
