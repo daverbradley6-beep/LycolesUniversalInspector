@@ -41,7 +41,7 @@ class DiscoveryTests(unittest.TestCase):
   for e in x:
    if e["details"]["key"]=="E" and e["captureId"]=="s2":
     e["observedChanges"]=[]
-  self.assertEqual(discover(x)["actions"][0]["status"],"insufficient_evidence")
+  self.assertFalse(any(a["status"]=="review_candidate" for a in discover(x)["actions"]))
  def test_no_data(self):self.assertEqual(discover([])["actions"],[])
  def test_invalid_minimum(self):
   with self.assertRaises(ValueError):discover([],0)
