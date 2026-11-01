@@ -13,6 +13,14 @@ class V47(unittest.TestCase):
   with self.assertRaises(ValueError):generate({**M,"schemaVersion":"wrong"})
  def test_read_only(self):
   with self.assertRaises(ValueError):generate({**M,"readOnly":False})
+ def test_supported_roots(self):
+  from feature_dashboard_v47 import supported_path
+  for root in ("Workspace","Players","ReplicatedStorage","ReplicatedFirst","Lighting","StarterGui","StarterPack","StarterPlayer","SoundService","Teams"):
+   self.assertTrue(supported_path(root+".Example"),root)
+ def test_unsupported_roots(self):
+  from feature_dashboard_v47 import supported_path
+  for path in ("NoRoot.A","ServerStorage.Secret","Workspace","Workspace..A","",None):
+   self.assertFalse(supported_path(path),path)
  def test_no_features(self):
   with self.assertRaises(ValueError):generate({**M,"features":[]})
  def test_duplicate_ids(self):
