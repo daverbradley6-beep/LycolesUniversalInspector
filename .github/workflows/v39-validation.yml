@@ -43,6 +43,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v51*.py'
       - name: Run v52 integrated release tests
         run: python -m unittest discover -s tests -p 'test_v52*.py'
+      - name: Run v53 live discovery regression tests
+        run: python -m unittest discover -s tests -p 'test_v53*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
@@ -67,6 +69,8 @@ jobs:
         run: python tools/action_contract_v50.py examples/authorized-local-actions-v50.json --output build/authorized-actions-v50.luau
       - name: Build and smoke-test v52 integrated release
         run: python tools/release_builder_v52.py --manifest build/generation-manifest-v42.json --output build/release-v52 --self-test
+      - name: Generate v53 bounded live discovery
+        run: python tools/live_discovery_v53.py --place-id 3623096087 --output build/release-v53
       - name: Assert game-first results
         run: |
           python - <<'PY'
