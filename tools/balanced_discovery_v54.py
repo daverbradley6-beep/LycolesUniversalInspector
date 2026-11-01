@@ -80,7 +80,8 @@ local function orderedChildren(obj)
  end
  return result
 end
-local tracked={}\nlocal emittedPaths={}
+local tracked={}
+local emittedPaths={}
 local state={}
 for _,root in ipairs(roots) do
  state[root[1]]={queue={{root[2],root[1],0}},cursor=1,visited=0}
@@ -145,7 +146,15 @@ local function capture()
  return items,perRoot
 end
 -- v54.2 incremental bounded export; encode individual entry groups.
-local function emitSample(index,items,coverage)\n local compact={}\n for _,item in ipairs(items) do\n  if item.priority or not emittedPaths[item.path] then\n   compact[#compact+1]=item\n   emittedPaths[item.path]=true\n  end\n end\n items=compact
+local function emitSample(index,items,coverage)
+ local compact={}
+ for _,item in ipairs(items) do
+  if item.priority or not emittedPaths[item.path] then
+   compact[#compact+1]=item
+   emittedPaths[item.path]=true
+  end
+ end
+ items=compact
  local batches={}
  local size=25
  for first=1,#items,size do
@@ -174,9 +183,18 @@ task.spawn(function()
  print("LYCOLES_V54_BATCH_STREAM_BEGIN "..tostring(PLACE_ID).." "..tostring(SAMPLES))
  for i=1,SAMPLES do
   if not gui.Parent then return end
-  local okCapture,items,coverage=pcall(capture)\n  if not okCapture then\n   warn("Lycoles v54: capture failed sample "..i..": "..tostring(items))\n   label.Text="Lycoles v54 capture failed sample "..i\n   return\n  end
+  local okCapture,items,coverage=pcall(capture)
+  if not okCapture then
+   warn("Lycoles v54: capture failed sample "..i..": "..tostring(items))
+   label.Text="Lycoles v54 capture failed sample "..i
+   return
+  end
   label.Text="Lycoles v54 | "..tostring(i).."/"..tostring(SAMPLES).." | "..tostring(#items).." objects"
-  local okExport,exported=pcall(emitSample,i,items,coverage)\n  if not okExport then\n   warn("Lycoles v54: export crashed sample "..i..": "..tostring(exported))\n  end\n  if not okExport or not exported then
+  local okExport,exported=pcall(emitSample,i,items,coverage)
+  if not okExport then
+   warn("Lycoles v54: export crashed sample "..i..": "..tostring(exported))
+  end
+  if not okExport or not exported then
    label.Text="Lycoles v54 failed to encode sample "..i
    return
   end
@@ -344,7 +362,9 @@ def dashboard(report):
            'frame.CanvasSize=UDim2.fromOffset(0,(#rows+1)*36)']
     # Luau tables are not JSON objects; use explicit table literals.
     lines[10]='local rows={'+','.join('{path='+json.dumps(x["path"])+',className='+json.dumps(x["className"])+',changed='+str(x["valueChanged"]).lower()+'}' for x in candidates)+'}'
-    return "\n".join(lines)+"\n"
+    return "
+".join(lines)+"
+"
 
 def main():
     p=argparse.ArgumentParser()
@@ -357,7 +377,8 @@ def main():
     if a.receipt:
         if a.receipt.stat().st_size>50_000_000: raise ValueError("Receipt too large")
         report=analyze(a.receipt.read_text(encoding="utf-8-sig"),a.place_id)
-        (a.output/"evidence-analysis-v54.json").write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+        (a.output/"evidence-analysis-v54.json").write_text(json.dumps(report,indent=2,ensure_ascii=False)+"
+",encoding="utf-8")
         (a.output/"evidence-dashboard-v54.luau").write_text(dashboard(report),encoding="utf-8")
         print("Analysed",report["recordedEntries"],"entries;",report["distinctPathKeys"],"keys")
     print("v54 generated")
