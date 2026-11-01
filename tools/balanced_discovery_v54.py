@@ -375,8 +375,7 @@ def main():
     if a.receipt:
         if a.receipt.stat().st_size>50_000_000: raise ValueError("Receipt too large")
         report=analyze(a.receipt.read_text(encoding="utf-8-sig"),a.place_id)
-        (a.output/"evidence-analysis-v54.json").write_text(json.dumps(report,indent=2,ensure_ascii=False)+"
-",encoding="utf-8")
+        (a.output/"evidence-analysis-v54.json").write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
         (a.output/"evidence-dashboard-v54.luau").write_text(dashboard(report),encoding="utf-8")
         print("Analysed",report["recordedEntries"],"entries;",report["distinctPathKeys"],"keys")
     print("v54 generated")
