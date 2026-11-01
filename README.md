@@ -2,9 +2,9 @@
 
 Current inspector release: **v30.0.0**
 
-Current integrated offline pipeline: **v107**
+Current integrated offline pipeline: **v108**
 
-The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v107 tools are staged, independently tested inspection-to-client-observer components; v107 does not change the inspector's v30 wire version.
+The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v108 tools are staged, independently tested inspection-to-client-observer components; v108 does not change the inspector's v30 wire version.
 
 ## Current capabilities
 
@@ -17,6 +17,7 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
 - v108 controlled execution runs actual generated Luau against strict bounded Roblox stubs, drives generated UI controls, and compares results with the independent resolver model without claiming live Roblox verification.
 - v108 system interpretation deterministically infers interface, interaction-affordance, state, and candidate feedback-surface roles from observed v107 objects; optionally groups them through strictly shaped caller-supplied correlation references; and preserves source authenticity and causality as explicit unknowns without generating gameplay actions.
+- v108 integrated bundles add system plans, expected runtime checks, optional permitted-client observation contracts, expected-versus-observed drift diagnostics, per-feature verification, explicit unsupported reporting, and exact full-bundle reconstruction while all live/gameplay/authority claims remain false.
 
 ## Validate locally
 
@@ -57,6 +58,18 @@ python3 tools/system_interpreter_v108.py \
 ```
 
 Relationship evidence is optional, caller-supplied, and correlation-only; source authenticity remains unknown. See `docs/v108-system-interpretation.md` for schemas, canonical ordering, confidence categories, unsupported capabilities, and verification limits.
+
+## Generate and verify a v108 integrated bundle
+
+```sh
+python3 tools/integrated_pipeline_v108.py \
+  --source inspection.json \
+  --place-id 85896571713843 \
+  --output build/v108
+python3 tools/integrated_pipeline_v108.py --output build/v108 --verify-only
+```
+
+Optional `--relationship-evidence` and `--runtime-observation` inputs add strictly validated, digest-bound evidence without changing v107 inspection compatibility or upgrading authenticity, causality, authority, runtime, or gameplay claims. Runtime checks carry exact class-qualified identity, provenance, property, and value-type contracts without inventing expected values. Supplied incomplete or drifted evidence writes a verifiable bundle with `comparisonPassed: false` and exits nonzero. See `docs/v108-runtime-contracts.md` for exact schemas, outcomes, artifact names, failure behavior, and evidence boundaries.
 
 ## Inspector installation
 

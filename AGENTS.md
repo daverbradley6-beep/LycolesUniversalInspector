@@ -36,6 +36,8 @@ Client visibility never proves server authority, causality, or gameplay success.
 
 Current v108 interpretation contract: `tools/system_interpreter_v108.py` emits explicitly classified deterministic-inference `108.system-interpretation.1` candidates over the exact canonical v107 report/feature plan. Optional `108.relationship-evidence.1` inputs are immutable caller-supplied, shape/provenance-reference validated, ambiguity-quarantined correlations; their source authenticity, causality, server authority, and gameplay meaning remain explicit unknowns.
 
+Current v108 runtime contract: `tools/runtime_contract_v108.py` derives exact expected checks and compares optional bounded `108.runtime-observation.1` evidence by structured status, never display text. Absence is `not_observed`, a failed status is `drifted`, and complete matching is only deterministic comparison evidence. `tools/integrated_pipeline_v108.py` must reconstruct every v107/v108 artifact exactly, report unsupported observations/capabilities/APIs explicitly, and keep source authenticity, Roblox runtime, live-game, server-authority, causality, and gameplay claims false.
+
 ## Generated features
 
 Each generated feature must define:
