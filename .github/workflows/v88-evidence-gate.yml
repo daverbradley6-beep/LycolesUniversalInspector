@@ -1,0 +1,18 @@
+name: v88 evidence gate
+on:
+  push:
+    paths:
+      - 'tools/evidence_gate_v88.py'
+      - 'tests/test_evidence_gate_v88.py'
+      - '.github/workflows/v88-evidence-gate.yml'
+  workflow_dispatch:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile tools/evidence_gate_v88.py tools/passive_recorder_v87.py
+      - run: python -m unittest discover -s tests -p 'test_evidence_gate_v88.py' -v
