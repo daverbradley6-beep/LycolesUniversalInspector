@@ -1,0 +1,24 @@
+name: v54 compact regression
+on:
+  push:
+    paths:
+      - 'tools/balanced_discovery_v54.py'
+      - 'tests/test_v54_compact_release.py'
+      - '.github/workflows/v54-compact-regression.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python
+        run: python -m py_compile tools/balanced_discovery_v54.py tests/test_v54_compact_release.py
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -p 'test_v54_compact_release.py' -v
+      - name: Generate game-specific inspector
+        run: python tools/balanced_discovery_v54.py --place-id 85896571713843 --output build/release-v54
+      - name: Validate generated file
+        run: test -s build/release-v54/balanced-discovery-v54.luau
