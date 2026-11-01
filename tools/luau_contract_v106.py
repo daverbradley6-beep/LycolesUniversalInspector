@@ -12,6 +12,9 @@ REQUIRED = (
     "gui:Destroy()",
     "pcall(function() return node[feature.property] end)",
     "local previous = playerGui:FindFirstChild(",
+    "search:GetPropertyChangedSignal('Text'):Connect(applyFilter)",
+    "autoButton = button('Auto refresh: OFF'",
+    "while gui.Parent do",
 )
 FORBIDDEN = (
     "loadstring(", "HttpGet(", "FireServer(", "InvokeServer(",
