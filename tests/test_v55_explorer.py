@@ -13,6 +13,8 @@ class V55(unittest.TestCase):
   self.assertEqual(parse_path('Workspace/"Cube.001"#2@MeshPart')[1],{"name":"Cube.001","ordinal":2,"className":"MeshPart"})
  def test_escaped(self):
   self.assertEqual(parse_path('Workspace/"a\\\"b"#1@Model')[1]["name"],'a"b')
+ def test_slash_in_quoted_name(self):
+  self.assertEqual(parse_path('Workspace/"Meshes/JunglePortal"#1@MeshPart')[1]['name'],'Meshes/JunglePortal')
  def test_reject_legacy(self):
   self.assertIsNone(parse_path('Workspace/"Cube"'))
  def test_reject_unknown_root(self):
