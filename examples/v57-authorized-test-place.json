@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "57.0",
+  "placeId": 3623096087,
+  "ownerAuthorized": true,
+  "actions": [
+    {
+      "id": "TrainingToolSmoke",
+      "operation": "activate_equipped_tool",
+      "toolName": "Weight",
+      "expectedValue": {
+        "container": "leaderstats",
+        "name": "Strength",
+        "minimumDelta": 1
+      },
+      "timeoutSeconds": 5
+    }
+  ]
+}
