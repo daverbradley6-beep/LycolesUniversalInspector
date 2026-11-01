@@ -31,7 +31,7 @@ def emit_luau(feature_plan):
         path = feature["path"]
         if not isinstance(path, list) or len(path) < 2 or len(path) > 12 or path[0] not in {'Workspace', 'PlayerGui', 'ReplicatedStorage', 'Players'} or any(not isinstance(p, str) or not p or len(p) > 80 for p in path):
             raise ValueError("invalid path")
-        if feature['property'] not in {'Text', 'Value'}:
+        if feature['property'] not in {'Text', 'Value', 'Visible', 'Enabled', 'Name'}:
             raise ValueError('unsupported property')
         entries.append("  {id=%s,label=%s,path=%s,property=%s}," % (
             json.dumps(feature["id"]), json.dumps(feature["label"]),
