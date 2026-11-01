@@ -1,0 +1,17 @@
+name: v104 release pipeline
+on: [push, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -p test_release_pipeline_v104.py -v
+      - run: python tools/release_pipeline_v104.py --inspection examples/v102-client-inventory.json --place-id 85896571713843 --output build/release-v104
+      - run: python tools/release_pipeline_v104.py --audit-only --output build/release-v104
