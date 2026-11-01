@@ -3,7 +3,7 @@ from collections import Counter
 import json
 
 ROOTS = frozenset({'Workspace', 'PlayerGui', 'ReplicatedStorage', 'Players'})
-KNOWN = {'TextLabel': 'Text', 'TextButton': 'Text', 'TextBox': 'Text', 'IntValue': 'Value', 'NumberValue': 'Value', 'BoolValue': 'Value', 'StringValue': 'Value'}
+from feature_planner_v106 import SUPPORTED as KNOWN
 
 def analyze(report, plan):
     if not isinstance(report, dict) or not isinstance(plan, dict):
