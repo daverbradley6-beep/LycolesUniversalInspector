@@ -1,0 +1,25 @@
+name: v67 evidence correlation
+on:
+  push:
+    paths:
+      - 'tools/evidence_correlator_v67.py'
+      - 'tools/evidence_pipeline_v62.py'
+      - 'tools/live_telemetry_v66.py'
+      - 'tests/test_evidence_correlator_v67.py'
+      - '.github/workflows/v67-correlation.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile tools/evidence_correlator_v67.py tools/evidence_pipeline_v62.py tools/live_telemetry_v66.py tests/test_evidence_correlator_v67.py
+      - name: Regression tests
+        run: |
+          python -m unittest discover -s tests -p 'test_evidence_correlator_v67.py' -v
+          python -m unittest discover -s tests -p 'test_live_telemetry_v66.py' -v
+          python -m unittest discover -s tests -p 'test_evidence_pipeline_v62.py' -v
