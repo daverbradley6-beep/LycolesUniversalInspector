@@ -31,6 +31,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v45*.py'
       - name: Run v46 automatic pipeline tests
         run: python -m unittest discover -s tests -p 'test_v46*.py'
+      - name: Run v47 generated dashboard tests
+        run: python -m unittest discover -s tests -p 'test_v47*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
@@ -47,6 +49,8 @@ jobs:
         run: python tools/adaptive_probe_v44.py build/generation-manifest-v42.json --luau build/adaptive-probe-v44.luau
       - name: Generate v46 automatic sampler
         run: python tools/auto_pipeline_v46.py build/generation-manifest-v42.json --output build
+      - name: Generate v47 functional diagnostic dashboard
+        run: python tools/feature_dashboard_v47.py build/generation-manifest-v42.json --output build/feature-dashboard-v47.luau
       - name: Assert game-first results
         run: |
           python - <<'PY'
