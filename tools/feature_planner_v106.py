@@ -14,6 +14,11 @@ SUPPORTED = {
     "NumberValue": "Value",
     "BoolValue": "Value",
     "StringValue": "Value",
+    "ImageButton": "Visible",
+    "ProximityPrompt": "Enabled",
+    "ClickDetector": "Name",
+    "Tool": "Name",
+    "ScreenGui": "Enabled",
 }
 
 @dataclass(frozen=True)
