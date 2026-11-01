@@ -1,0 +1,12 @@
+name: v89 tests
+on: [push, workflow_dispatch]
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile tools/universal_discovery_v89.py
+      - run: python -m unittest discover -s tests -p test_universal_discovery_v89.py -v
