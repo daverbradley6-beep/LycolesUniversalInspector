@@ -72,7 +72,7 @@ task.spawn(function()
   local checks={}
   for _,path in ipairs(cfg.paths) do table.insert(checks,sample(path)) end
   table.insert(observations,{index=index,checks=checks})
-  label.Text="Lycoles v48 | "..index.."/"..SAMPLE_COUNT.." samples"
+  label.Text="Lycoles v48 | "..tostring(index).."/"..tostring(SAMPLE_COUNT).." samples"
   if index<SAMPLE_COUNT then task.wait(SAMPLE_PERIOD) end
  end
  local receipt={schemaVersion="48.0",placeId=cfg.placeId,scanId=cfg.scanId,
