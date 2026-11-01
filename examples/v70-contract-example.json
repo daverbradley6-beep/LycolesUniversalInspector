@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "70.contracts",
+  "placeId": 85896571713843,
+  "contracts": [
+    {
+      "id": "example_hatch",
+      "label": "Example hatch button",
+      "action": {
+        "type": "local_gui_activate",
+        "className": "TextButton",
+        "path": [
+          "ExampleScreen",
+          "EggPanel",
+          "HatchButton"
+        ]
+      },
+      "outcome": {
+        "type": "leaderstat",
+        "stat": "🥚 Hatches",
+        "operator": "increased",
+        "target": null,
+        "timeoutSeconds": 5
+      }
+    }
+  ]
+}
