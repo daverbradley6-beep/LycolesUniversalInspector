@@ -13,8 +13,8 @@ from temporal_attribution_v91 import release
 from evidence_release_v90 import read_events, canonical
 
 def luau_quote(value):
-    # Encode as ASCII-only JSON string; valid Luau string syntax for these values.
-    return json.dumps(value,ensure_ascii=True)
+    # Preserve UTF-8 directly: Luau does not support JSON-style \\uXXXX escapes.
+    return json.dumps(value,ensure_ascii=False)
 
 def safe_identifier(value):
     return re.sub(r"[^A-Za-z0-9_]+","_",value)[:64]
