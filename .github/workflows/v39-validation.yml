@@ -25,6 +25,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v42*.py'
       - name: Run v43 receipt regression suite
         run: python -m unittest discover -s tests -p 'test_v43*.py'
+      - name: Run v44 adaptive regression suite
+        run: python -m unittest discover -s tests -p 'test_v44*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
@@ -37,6 +39,8 @@ jobs:
         run: python tools/generation_manifest_v42.py build/feature-spec-v41.json build/game-discovery-v39.json --output build/generation-manifest-v42.json
       - name: Generate v43 read-only live receipt collector
         run: python tools/receipt_collector_v43.py build/generation-manifest-v42.json --output build/receipt-collector-v43.luau
+      - name: Generate v44 adaptive probe
+        run: python tools/adaptive_probe_v44.py build/generation-manifest-v42.json --luau build/adaptive-probe-v44.luau
       - name: Assert game-first results
         run: |
           python - <<'PY'
