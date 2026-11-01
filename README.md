@@ -18,10 +18,11 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 
 ```sh
 python3 -B -m unittest discover -s tests -v
-node tests/test_receiver.mjs
+npm ci --ignore-scripts
+npm test
 ```
 
-The Python tools currently use only the standard library. The Node test exercises the Cloudflare Worker receiver contract without deploying it.
+The Python tools currently use only the standard library. The Node suite exercises the Cloudflare Worker receiver contract and parses checked-in plus representative generated Luau with a WebAssembly tree-sitter grammar. Lifecycle scripts stay disabled because native bindings are unnecessary for the WASM validator.
 
 ## Build from inspector scan parts
 
