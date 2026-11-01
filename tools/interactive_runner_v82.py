@@ -9,6 +9,8 @@ if game.PlaceId~=__PLACE__ then warn("v82: wrong place") return end
 local pg=P:WaitForChild("PlayerGui")
 local old=pg:FindFirstChild("LycolesV82") if old then old:Destroy() end
 local contracts=H:JSONDecode(__PAYLOAD__)
+local captureId=H:GenerateGUID(false)
+local attemptIndex=0
 local gui=Instance.new("ScreenGui") gui.Name="LycolesV82" gui.ResetOnSpawn=false gui.Parent=pg
 local panel=Instance.new("Frame") panel.Size=UDim2.fromOffset(460,math.min(560,130+#contracts*46)) panel.Position=UDim2.fromScale(.1,.12) panel.Parent=gui
 local status=Instance.new("TextLabel") status.Size=UDim2.new(1,-20,0,65) status.Position=UDim2.fromOffset(10,5) status.TextWrapped=true status.Text="v82: Click to test approved local GUI actions" status.Parent=panel
@@ -55,18 +57,20 @@ for i,c in ipairs(contracts) do
  b.Activated:Connect(function()
   if busy then return end
   busy=true
+  attemptIndex+=1
+  local testIndex=attemptIndex
   local target,err=find(c.path)
   if not target or not available(target) then
    local reason=err or "hidden/disabled"
    status.Text="Unavailable: "..reason
-   print("LYCOLES_V82_RESULT "..H:JSONEncode({id=c.id,requested=false,reason=reason,verified=false}))
+   print("LYCOLES_V82_RESULT "..H:JSONEncode({schemaVersion="82.result",placeId=game.PlaceId,captureId=captureId,index=testIndex,id=c.id,requested=false,reason=reason,observedChanges={},verified=false}))
    busy=false return
   end
   local before=snapshot()
   local ok,msg=pcall(function() target:Activate() end)
   if not ok then
    status.Text="Activation error: "..tostring(msg)
-   print("LYCOLES_V82_RESULT "..H:JSONEncode({id=c.id,requested=false,reason=tostring(msg),verified=false}))
+   print("LYCOLES_V82_RESULT "..H:JSONEncode({schemaVersion="82.result",placeId=game.PlaceId,captureId=captureId,index=testIndex,id=c.id,requested=false,reason=tostring(msg),observedChanges={},verified=false}))
    busy=false return
   end
   status.Text="Activation requested: "..c.id.." (awaiting snapshot)"
@@ -76,7 +80,7 @@ for i,c in ipairs(contracts) do
    for key,x in pairs(before) do
     if after[key]~=nil and after[key]~=x then table.insert(changed,{stat=key,before=x,after=after[key]}) end
    end
-   print("LYCOLES_V82_RESULT "..H:JSONEncode({schemaVersion="82.result",placeId=game.PlaceId,id=c.id,requested=true,observedChanges=changed,verified=false}))
+   print("LYCOLES_V82_RESULT "..H:JSONEncode({schemaVersion="82.result",placeId=game.PlaceId,captureId=captureId,index=testIndex,id=c.id,requested=true,observedChanges=changed,verified=false}))
    status.Text=c.id..": "..#changed.." leaderstat changes (not verified)"
    busy=false
   end)
