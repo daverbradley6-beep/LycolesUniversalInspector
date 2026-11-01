@@ -117,7 +117,8 @@ class IntegratedPipelineV107Tests(unittest.TestCase):
             generate(reversed_fixture, PLACE, b)
             for name in (
                 "inspection-report.json", "feature-plan.json", "quality-report.json",
-                "inspection-diagnostics.json", "LycolesFunctionalObserver.client.lua", "manifest.json",
+                "inspection-diagnostics.json", "api-compatibility.json",
+                "LycolesFunctionalObserver.client.lua", "manifest.json",
             ):
                 self.assertEqual((Path(a) / name).read_bytes(), (Path(b) / name).read_bytes())
 

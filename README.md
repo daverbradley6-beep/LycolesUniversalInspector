@@ -14,6 +14,7 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, and reproducible release archives.
 - v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
+- A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
 
 ## Validate locally
 

@@ -71,9 +71,17 @@ python tools/integrated_pipeline_v107.py \
 python tools/integrated_pipeline_v107.py --output build/v107 --verify-only
 ```
 
-The pipeline accepts raw supported observations, canonical v107 reports, and validated v104 reports. It emits deterministic inspection, feature-plan, quality, diagnostics, Luau, and manifest artifacts.
+The pipeline accepts raw supported observations, canonical v107 reports, and validated v104 reports. It emits deterministic inspection, feature-plan, quality, diagnostics, API compatibility, Luau, and manifest artifacts.
 
 Full-identity features resolve each descendant by matching name and class, then selecting the observed one-based ordinal among matching siblings. Legacy migrated features are explicitly labeled `legacy_terminal_identity`: each name-only intermediate segment must have exactly one matching child, and the terminal name/class pair must also have exactly one match. Missing or ambiguous legacy evidence fails closed and is never implied to be exact.
+
+## Public Roblox API compatibility
+
+`api-definitions/roblox-api-version-d0e8cfcd943d4ae2-v107.json` is a bounded snapshot extracted from Roblox's public `QTStudio` API dump. It records the source URL, the full 4,070,157-byte dump SHA-256 (`02276f872886a6bc29e2e05a2e551a8c92c0e1745276520f4203d52a15679856`), inherited member owners, member kinds, access security, and tags for every class member used by the v107 emitter or supported property map.
+
+`tools/roblox_api_contract_v107.py` reproducibly extracts the snapshot from a matching downloaded dump. Integrated generation emits `api-compatibility.json`, fails when a required member is missing, has the wrong kind, or requires non-public access, and includes that report in strict manifest verification. Global facilities not represented as class members by the dump, including `Instance.new`, `RBXScriptSignal.Connect`, `UDim`, `UDim2`, `game`, `task`, and `workspace`, remain explicit assumptions.
+
+Compatibility means the pinned public API definitions contain the emitted class members with the required public read/write/call/event access. It is static evidence, not proof of Luau execution, live object availability, property value, server behavior, gameplay causality, or current compatibility with a newer Roblox release.
 
 The verifier reconstructs every derived artifact, validates report and feature-plan schemas, checks identity-mode counts and safety claims, enforces the static Luau contract, and compares canonical bytes plus SHA-256 hashes. It also independently parses the generated Luau feature table and compares every runtime ID, label, path, identity segment, resolution mode, class, and property to the canonical feature plan. Verification rejects noncanonical table lines, duplicate runtime entries, place-guard drift, extra artifact files, extra manifest fields, malformed hashes, and noncanonical manifest bytes.
 

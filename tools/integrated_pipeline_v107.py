@@ -19,6 +19,11 @@ from path_identity_v107 import (
     validate_report,
 )
 from release_pipeline_v104 import canonical
+from roblox_api_contract_v107 import (
+    assess_compatibility,
+    load_snapshot,
+    validate_emitted_source_members,
+)
 
 SCRIPT = "LycolesFunctionalObserver.client.lua"
 PLAN = "feature-plan.json"
@@ -26,7 +31,13 @@ MANIFEST = "manifest.json"
 REPORT = "inspection-report.json"
 QUALITY = "quality-report.json"
 DIAGNOSTICS = "inspection-diagnostics.json"
-ARTIFACTS = (REPORT, PLAN, QUALITY, DIAGNOSTICS, SCRIPT)
+API_COMPATIBILITY = "api-compatibility.json"
+API_SNAPSHOT = (
+    Path(__file__).resolve().parents[1]
+    / "api-definitions"
+    / "roblox-api-version-d0e8cfcd943d4ae2-v107.json"
+)
+ARTIFACTS = (REPORT, PLAN, QUALITY, DIAGNOSTICS, API_COMPATIBILITY, SCRIPT)
 
 
 def _identity_luau(path_identity):
@@ -217,7 +228,12 @@ def generate(source, place_id, output):
     feature_plan = plan(report)
     quality = assess(report, feature_plan)
     diagnostics = analyze(report, feature_plan)
-    script = emit_luau(feature_plan).encode("utf-8")
+    api_compatibility = assess_compatibility(load_snapshot(API_SNAPSHOT), feature_plan)
+    if not api_compatibility["compatible"]:
+        raise ValueError("Roblox API incompatibility")
+    luau_source = emit_luau(feature_plan)
+    api_compatibility["emittedSourceMembers"] = validate_emitted_source_members(luau_source)
+    script = luau_source.encode("utf-8")
     root = Path(output)
     root.mkdir(parents=True, exist_ok=True)
     files = {
@@ -225,6 +241,7 @@ def generate(source, place_id, output):
         PLAN: canonical(feature_plan),
         QUALITY: canonical(quality),
         DIAGNOSTICS: canonical(diagnostics),
+        API_COMPATIBILITY: canonical(api_compatibility),
         SCRIPT: script,
     }
     for name, payload in files.items():
@@ -272,6 +289,7 @@ def verify(output):
         feature_plan = json.loads((root / PLAN).read_bytes())
         quality = json.loads((root / QUALITY).read_bytes())
         diagnostics = json.loads((root / DIAGNOSTICS).read_bytes())
+        api_compatibility = json.loads((root / API_COMPATIBILITY).read_bytes())
         validate_report(report)
         validate_feature_plan(feature_plan)
         manifest_fields = {
@@ -295,7 +313,17 @@ def verify(output):
         if manifest.get("placeId") != report["placeId"] or feature_plan["placeId"] != report["placeId"]:
             raise ValueError("place mismatch")
         expected_plan = plan(report)
-        if feature_plan != expected_plan or quality != assess(report, feature_plan) or diagnostics != analyze(report, feature_plan):
+        expected_source = emit_luau(feature_plan)
+        expected_api = assess_compatibility(load_snapshot(API_SNAPSHOT), feature_plan)
+        if not expected_api["compatible"]:
+            raise ValueError("Roblox API incompatibility")
+        expected_api["emittedSourceMembers"] = validate_emitted_source_members(expected_source)
+        if any((
+            feature_plan != expected_plan,
+            quality != assess(report, feature_plan),
+            diagnostics != analyze(report, feature_plan),
+            api_compatibility != expected_api,
+        )):
             raise ValueError("derived artifact mismatch")
         full, legacy = _resolution_counts(feature_plan)
         if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 3:
@@ -307,9 +335,11 @@ def verify(output):
             PLAN: canonical(feature_plan),
             QUALITY: canonical(quality),
             DIAGNOSTICS: canonical(diagnostics),
-            SCRIPT: emit_luau(feature_plan).encode("utf-8"),
+            API_COMPATIBILITY: canonical(api_compatibility),
+            SCRIPT: expected_source.encode("utf-8"),
         }
         actual_source = (root / SCRIPT).read_bytes().decode("utf-8")
+        validate_emitted_source_members(actual_source)
         contract = validate_source(actual_source, len(feature_plan["features"]))
         if not contract["ok"]:
             raise ValueError("Luau contract: " + ",".join(contract["issues"]))
@@ -326,6 +356,7 @@ def verify(output):
             "features": len(feature_plan["features"]),
             "fullIdentityFeatures": full,
             "legacyFeatures": legacy,
+            "apiCompatible": True,
             "runtimeVerified": False,
         }
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
