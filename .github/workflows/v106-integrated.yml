@@ -5,6 +5,7 @@ on:
       - 'tools/integrated_pipeline_v106.py'
       - 'tools/feature_planner_v106.py'
       - 'tools/luau_contract_v106.py'
+      - 'tools/feature_quality_v106.py'
       - 'tools/release_pipeline_v104.py'
       - 'tests/test_integrated_pipeline_v106.py'
       - '.github/workflows/v106-integrated.yml'
@@ -22,6 +23,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile source
-        run: python -m compileall -q tools/integrated_pipeline_v106.py tools/feature_planner_v106.py tools/luau_contract_v106.py
+        run: python -m compileall -q tools/integrated_pipeline_v106.py tools/feature_planner_v106.py tools/luau_contract_v106.py tools/feature_quality_v106.py
       - name: Integration regression tests
         run: python -m unittest discover -s tests -p 'test_integrated_pipeline_v106.py' -v
