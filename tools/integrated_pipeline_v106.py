@@ -13,12 +13,14 @@ from release_pipeline_v104 import build, canonical
 from feature_planner_v106 import plan
 from luau_contract_v106 import validate_source
 from feature_quality_v106 import assess
+from inspection_diagnostics_v106 import analyze
 
 SCRIPT = "LycolesFunctionalObserver.client.lua"
 PLAN = "feature-plan.json"
 MANIFEST = "manifest.json"
 REPORT = "inspection-report.json"
 QUALITY = "quality-report.json"
+DIAGNOSTICS = "inspection-diagnostics.json"
 
 def emit_luau(feature_plan):
     place = feature_plan["placeId"]
@@ -140,6 +142,7 @@ def generate(source, place_id, output):
         REPORT: canonical(report),
         PLAN: canonical(feature_plan),
         QUALITY: canonical(assess(report, feature_plan)),
+        DIAGNOSTICS: canonical(analyze(report, feature_plan)),
         SCRIPT: emit_luau(feature_plan).encode("utf-8"),
     }
     for name, payload in files.items():
@@ -165,7 +168,7 @@ def generate(source, place_id, output):
 def verify(output):
     root = Path(output)
     try:
-        names = (REPORT, PLAN, QUALITY, SCRIPT)
+        names = (REPORT, PLAN, QUALITY, DIAGNOSTICS, SCRIPT)
         paths = [root / name for name in (*names, MANIFEST)]
         if any(path.is_symlink() or not path.is_file() for path in paths):
             raise ValueError("missing or symlinked file")
@@ -173,17 +176,18 @@ def verify(output):
         report = json.loads((root / REPORT).read_bytes())
         feature_plan = json.loads((root / PLAN).read_bytes())
         quality = json.loads((root / QUALITY).read_bytes())
+        diagnostics = json.loads((root / DIAGNOSTICS).read_bytes())
         if manifest.get("schemaVersion") != "106.integrated-manifest" or set(manifest.get("files", {})) != set(names):
             raise ValueError("invalid manifest")
         if manifest.get("readOnly") is not True or manifest.get("runtimeVerified") is not False or manifest.get("gameplayVerified") is not False:
             raise ValueError("invalid verification claim")
         if manifest.get("placeId") != report.get("placeId"):
             raise ValueError("place mismatch")
-        if feature_plan != plan(report) or quality != assess(report, feature_plan):
+        if feature_plan != plan(report) or quality != assess(report, feature_plan) or diagnostics != analyze(report, feature_plan):
             raise ValueError("feature plan mismatch")
         if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 3:
             raise ValueError("control count mismatch")
-        expected = {REPORT: canonical(report), PLAN: canonical(feature_plan), QUALITY: canonical(quality), SCRIPT: emit_luau(feature_plan).encode("utf-8")}
+        expected = {REPORT: canonical(report), PLAN: canonical(feature_plan), QUALITY: canonical(quality), DIAGNOSTICS: canonical(diagnostics), SCRIPT: emit_luau(feature_plan).encode("utf-8")}
         contract = validate_source(expected[SCRIPT].decode('utf-8'), len(feature_plan['features']))
         if not contract['ok']:
             raise ValueError('Luau contract: ' + ','.join(contract['issues']))
