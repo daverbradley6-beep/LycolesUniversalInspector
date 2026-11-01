@@ -11,6 +11,7 @@ from pathlib import Path
 
 from release_pipeline_v104 import build, canonical
 from feature_planner_v106 import plan
+from luau_contract_v106 import validate_source
 
 SCRIPT = "LycolesFunctionalObserver.client.lua"
 PLAN = "feature-plan.json"
@@ -152,6 +153,9 @@ def verify(output):
         if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 2:
             raise ValueError("control count mismatch")
         expected = {REPORT: canonical(report), PLAN: canonical(feature_plan), SCRIPT: emit_luau(feature_plan).encode("utf-8")}
+        contract = validate_source(expected[SCRIPT].decode('utf-8'), len(feature_plan['features']))
+        if not contract['ok']:
+            raise ValueError('Luau contract: ' + ','.join(contract['issues']))
         for name, data in expected.items():
             if (root / name).read_bytes() != data or manifest["files"][name] != hashlib.sha256(data).hexdigest():
                 raise ValueError("artifact mismatch: " + name)
