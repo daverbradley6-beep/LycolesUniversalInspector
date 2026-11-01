@@ -1,0 +1,26 @@
+name: v106 integrated pipeline
+on:
+  push:
+    paths:
+      - 'tools/integrated_pipeline_v106.py'
+      - 'tools/feature_planner_v106.py'
+      - 'tools/release_pipeline_v104.py'
+      - 'tests/test_integrated_pipeline_v106.py'
+      - '.github/workflows/v106-integrated.yml'
+  pull_request:
+  workflow_dispatch:
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile source
+        run: python -m compileall -q tools/integrated_pipeline_v106.py tools/feature_planner_v106.py
+      - name: Integration regression tests
+        run: python -m unittest discover -s tests -p 'test_integrated_pipeline_v106.py' -v
