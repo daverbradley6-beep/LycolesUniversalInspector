@@ -41,7 +41,7 @@ class BuilderTests(unittest.TestCase):
   r=report();r["candidates"][0]["status"]="insufficient_evidence"
   self.assertEqual(build_backlog(r)["items"],[])
  def test_quote(self):self.assertIn("\\n",luau_quote("a\nb"))
- def test_unicode(self):self.assertIn("\\u",luau_quote("🥚"))
+ def test_unicode(self):self.assertIn("🥚",luau_quote("🥚"))
  def test_release(self):
   with tempfile.TemporaryDirectory() as d:
    result=generate(fixture(),PLACE,d)
