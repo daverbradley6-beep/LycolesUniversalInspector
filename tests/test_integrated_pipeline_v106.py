@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from integrated_pipeline_v106 import generate, verify, emit_luau
 from release_pipeline_v104 import build
 from feature_planner_v106 import plan
+from luau_contract_v106 import validate_source
 
 PLACE = 85896571713843
 
@@ -74,6 +75,22 @@ class IntegratedPipelineTests(unittest.TestCase):
             manifest["gameplayVerified"] = True
             path.write_text(json.dumps(manifest))
             self.assertFalse(verify(tmp)["ok"])
+
+    def test_static_contract_detects_missing_refresh_wiring(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        self.assertTrue(validate_source(script, 2)["ok"])
+        broken = script.replace("status.Activated:Connect(refreshAll)", "-- disconnected")
+        self.assertFalse(validate_source(broken, 2)["ok"])
+
+    def test_static_contract_rejects_remote_invocation(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        self.assertFalse(validate_source(script + "\\nremote:FireServer()\\n", 2)["ok"])
+
+    def test_invalid_generated_path_rejected(self):
+        feature_plan = plan(build(fixture(), PLACE))
+        feature_plan["features"][0]["path"][0] = "ServerStorage"
+        with self.assertRaises(ValueError):
+            emit_luau(feature_plan)
 
     def test_missing_artifact_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
