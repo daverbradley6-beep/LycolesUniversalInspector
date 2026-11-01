@@ -1,17 +1,17 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-01 — v108 system interpretation and historical-audit remediation cycle_
+_Last updated: 2026-11-01 — v108 runtime evidence integration cycle_
 
 ## Repository State
 
 - Workspace: `/projects/LycolesUniversalInspector`
 - Branch: `openhands-development`
-- Latest implementation commit: `edc3854` (`Harden v108 evidence interpretation and execution`)
-- Implementation head: local and `origin/openhands-development` match at full SHA `edc3854b22fcf7ef93eb9a02150bb066838047a6`
-- Implementation snapshot relative to `origin/main`: **15 commits ahead, 0 behind**
-- Reviewed history from baseline `9b3bfbd` through implementation `edc3854`: **4 commits across 19 files**
+- Latest implementation commit: `4749ea2` (`Integrate strict v108 runtime evidence pipeline`)
+- Implementation head: local full SHA `4749ea2924c5d7a12c6b6f7adc9f4c94b3cac64d`; `origin/openhands-development` remains one commit behind at `34d6575cb217efc49df52310971f0add28e8fbfd`
+- Implementation snapshot relative to `origin/main`: **17 commits ahead, 0 behind**
+- Reviewed history from baseline `9b3bfbd` through implementation `4749ea2`: **6 commits across 24 files**
 - This report is published as a separate documentation commit, whose self-referential SHA is intentionally not embedded here
-- Remote policy: only the development branch is pushed; no merge and no pull request performed
+- Remote policy: this cycle was committed locally only; no push, merge, pull request, or `main` modification was performed
 
 ## Changes Implemented
 
@@ -91,6 +91,13 @@ _Last updated: 2026-11-01 — v108 system interpretation and historical-audit re
    - Made the controlled CLI print `ok == simulationPassed`, expose `simulationPassed`, preserve the complete report, and exit nonzero for any failed simulation.
    - Pinned every action in the newly introduced v108 workflow to a reviewed immutable full commit SHA.
    - Replaced too-fresh Luau `0.745` with soak-compliant immutable official `0.744`, independently matching GitHub's published archive digest and all four executable hashes.
+15. `4749ea2` — integrated strict v108 permitted-environment runtime evidence:
+   - Added canonical runtime check, observation, comparison, system-plan, feature-verification, unsupported-report, and manifest contracts over exact reconstructed v107 artifacts.
+   - Preserved raw inspection, v104 report, and canonical v107 report compatibility while rejecting ambiguous legacy v107 plans unless they match their exact report and migrate deterministically.
+   - Made runtime checks self-contained with class-qualified full-path identity, class/property, source index/digest, deterministic scalar type, expected checks, failures, and unknowns.
+   - Added explicit `not_observed`, `matched`, and `drifted` outcomes; tri-state `comparisonPassed`; non-vacuous completeness; typed resolved-value drift; unsupported API failure; and safe value/status separation.
+   - Kept source authenticity, runtime execution, live-game behavior, server authority, causality, and gameplay verification false in every generated and supplied-evidence path.
+   - Added strict output-directory safety, optional-evidence artifact sets, canonical byte reconstruction, manifest cross-checks, CLI nonzero failure for supplied non-passing evidence, adversarial tests, README guidance, and detailed runtime-contract documentation.
 
 ## Tests and Results
 
@@ -182,6 +189,17 @@ v108 interpretation and committed-history audit remediation cycle from commit `e
 - The combined reviewer additionally recommended pinning 98 legacy workflow references. That repository-wide suggestion was not part of the audited range: those workflows predate `9b3bfbd`; only `v108-controlled-luau.yml` changed in-range, and all three of its actions are immutable full-SHA pins.
 - Implementation push and exact local/tracking/remote comparison at `edc3854b22fcf7ef93eb9a02150bb066838047a6`: **passed**.
 
+v108 runtime-evidence integration cycle from commit `4749ea2`:
+
+- Focused runtime-contract and integrated-pipeline suite: **22 passed** after final type, completeness, and review corrections.
+- Complete runtime-enabled Python suite: **1,306 passed** against official Luau `0.744` at `/tmp/lycoles-luau-0.744/luau`.
+- Receiver duplicate/conflict/count/integrity checks and all **3** Node/Luau parser tests: **passed**.
+- Independent architecture review confirmed the derived-v108 layering and motivated self-contained identity/provenance/type checks; its larger optional observer proposal was not required for the caller-supplied evidence contract.
+- Independent final review reproduced one material diagnostic issue: resolved value-type drift incorrectly attributed a failed property read. The result now retains `value_type_drift` with no false failed-read check, and regression coverage passes.
+- Adversarial missing/partial/drifted/unsupported/type-mismatched/empty-plan evidence, manifest/check-plan tampering, v104/v107 compatibility, CLI failure, symlink/nonempty output, deterministic bytes, and claim-boundary checks: **passed**.
+- Tracked and untracked whitespace checks, `git diff --check`, cache cleanup, branch verification, and exact local commit verification: **passed**.
+- Implementation committed locally at `4749ea2924c5d7a12c6b6f7adc9f4c94b3cac64d`; no push, merge, pull request, or `main` change was performed.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -217,6 +235,9 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - The official API dump is over 4 MB and changes independently. Only the required 41-member subset is committed; source version, URL, byte count, and full-dump hash retain reproducibility without vendoring unrelated definitions.
 - Roblox API dumps describe class members but not all globals/data-type helpers. The compatibility artifact explicitly separates `Instance.new`, `RBXScriptSignal.Connect`, `UDim`, `UDim2`, `game`, `task`, and `workspace` as assumptions rather than overstating dump coverage.
 - An initial source-accounting insertion split the compatibility assessment loop. Immediate file inspection replaced the affected block before validation; 70 focused and 1,237 complete tests then passed.
+- Architecture review exposed that feature IDs and digests alone made runtime checks inconvenient to execute independently. Each check now embeds exact full-path identity, class/property, source provenance, and deterministic expected scalar type, with source-digest binding and tamper tests.
+- A supplied complete observation over a zero-feature plan initially passed vacuously. Comparison completeness now requires at least one expected feature and emits `empty_runtime_check_plan` as a global fail-closed diagnostic.
+- Final independent review found resolved value-type drift incorrectly listed `property_read_succeeds` as failed. Type drift remains a comparison failure, but no longer contradicts the explicit resolved read status; a targeted regression locks the attribution.
 
 ## Remaining Technical Limitations
 
@@ -228,7 +249,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - v108 system interpretation classifies observable roles and deterministic candidate groupings only. Optional relationship evidence remains caller-supplied correlation with unverified source authenticity; it cannot establish temporal direction, causality, server authority, action semantics, or gameplay success.
 - API compatibility is pinned to one public Studio dump version; it does not establish compatibility with later releases until the source hash is reviewed and the bounded snapshot is deliberately regenerated.
 - Class-member checks do not define Roblox globals or data-type helpers, and capitalized member-token accounting intentionally supports only the canonical v107 emitter format.
-- No Roblox-engine or permitted target-environment runtime result is available; client-visible observations and local simulation cannot establish server authority, causality, action semantics, or gameplay success.
+- The repository defines strict caller-supplied permitted-environment observations but has no authenticated Roblox-engine or target-environment result. Even a fully matched supplied observation establishes only client-observable correspondence, never source authenticity, server authority, causality, action semantics, or gameplay success.
 - The harness instruments only the canonical place-guard line and suppresses scheduled loop execution after counting it; generated and instrumented source hashes remain separate.
 - The pinned Ubuntu runtime installation requires access to the official GitHub release; offline runs can reuse only an already verified executable with the exact digest.
 - The semantic verifier intentionally parses the canonical v107 emitter format rather than arbitrary equivalent Luau; noncanonical source is rejected even if it might execute equivalently.
@@ -237,8 +258,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Define strict permitted-environment observation/result contracts and compare expected versus observed outcomes without upgrading evidence to causality, server authority, or gameplay verification.
-2. Integrate system plans, runtime checks/results, unsupported reporting, and per-feature verification into deterministic generation while preserving v107 input compatibility.
-3. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
-4. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
-5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Exercise the strict observation contract with a user-supplied permitted-client capture when one becomes available, while retaining unknown source authenticity and all authority/causality/gameplay claims false.
+2. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
+3. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
+4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
