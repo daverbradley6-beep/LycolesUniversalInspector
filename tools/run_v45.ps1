@@ -7,7 +7,7 @@ if ($LASTEXITCODE -ne 0) { throw "v44 pipeline failed" }
 & py -m unittest discover -s tests -p "test_v45*.py"
 if ($LASTEXITCODE -ne 0) { throw "v45 tests failed" }
 $report=Join-Path $Build "adaptive-report-v44.json"
-if (Test-Path $report) {
+if ($Receipt -and (Test-Path $report)) {
  & py tools/evidence_compiler_v45.py (Join-Path $Build "generation-manifest-v42.json") $report --output (Join-Path $Build "evidence-contracts-v45.json")
  if ($LASTEXITCODE -ne 0) { throw "v45 compilation failed" }
 } else {
