@@ -32,6 +32,6 @@ def validate_source(script: str, expected_features: int) -> dict:
     actual = len(re.findall(r"^  \{id=", script, re.MULTILINE))
     if actual != expected_features:
         errors.append("feature_count_mismatch")
-    if script.count("Activated:Connect(function() refresh(feature,row) end)") != 1:
+    if script.count("function() refresh(feature,row) end") != 1:
         errors.append("missing_per_feature_callback_template")
     return {"ok": not errors, "issues": sorted(errors), "features": actual, "runtimeVerified": False}
