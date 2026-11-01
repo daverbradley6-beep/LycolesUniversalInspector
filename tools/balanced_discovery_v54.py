@@ -82,6 +82,10 @@ local function orderedChildren(obj)
 end
 local tracked={}
 local emittedPaths={}
+local lastPriorityValues={}
+local omittedDecorative=0
+local MAX_DECORATIVE=100
+local MAX_BATCH_CHARS=6500
 local state={}
 for _,root in ipairs(roots) do
  state[root[1]]={queue={{root[2],root[1],0}},cursor=1,visited=0}
@@ -146,55 +150,78 @@ local function capture()
  return items,perRoot
 end
 -- v54.2 incremental bounded export; encode individual entry groups.
+local function encodeSafe(entry)
+ local ok,encoded=pcall(function() return HttpService:JSONEncode(entry) end)
+ if ok and #encoded<=MAX_BATCH_CHARS then return entry end
+ local safe={root=tostring(entry.root or ""),path=tostring(entry.path or ""):sub(1,400),
+  className=tostring(entry.className or ""),encodingError=true}
+ local safeOk=pcall(function() return HttpService:JSONEncode(safe) end)
+ if safeOk then return safe end
+ return {root="unknown",path="unencodable",className="Unknown",encodingError=true}
+end
 local function emitSample(index,items,coverage)
  local compact={}
+ local newDecorative=0
+ local priorityChanged=0
  for _,item in ipairs(items) do
-  if item.priority or not emittedPaths[item.path] then
-   compact[#compact+1]=item
-   emittedPaths[item.path]=true
+  local path=item.path
+  if item.priority then
+   local signature=tostring(item.value or "<nil>").."|"..tostring(item.className)
+   if not emittedPaths[path] or lastPriorityValues[path]~=signature then
+    compact[#compact+1]=encodeSafe(item)
+    if emittedPaths[path] then priorityChanged+=1 end
+   end
+   lastPriorityValues[path]=signature
+   emittedPaths[path]=true
+  elseif not emittedPaths[path] then
+   emittedPaths[path]=true
+   if newDecorative<MAX_DECORATIVE then
+    compact[#compact+1]=encodeSafe(item)
+    newDecorative+=1
+   else
+    omittedDecorative+=1
+   end
   end
  end
- items=compact
  local batches={}
- local size=25
- for first=1,#items,size do
-  local entries={}
-  for k=first,math.min(#items,first+size-1) do
-   entries[#entries+1]=items[k]
-  end
-  local ok,encoded=pcall(function()
-   return HttpService:JSONEncode({index=index,entries=entries,
-    coverage=(first==1 and coverage or nil)})
-  end)
-  if not ok then
-   warn("Lycoles v54: recovering batch sample "..index.." entry "..first..": "..tostring(encoded))
-   local safeEntries={}
-   for offset,entry in ipairs(entries) do
-    local entryOk=pcall(function() return HttpService:JSONEncode(entry) end)
-    if entryOk then
-     safeEntries[#safeEntries+1]=entry
-    else
-     local safe={root=tostring(entry.root or ""),path=tostring(entry.path or ""),
-      className=tostring(entry.className or ""),encodingError=true}
-     safeEntries[#safeEntries+1]=safe
-     warn("Lycoles v54: replaced unencodable entry sample "..index.." index "..(first+offset-1))
-    end
-   end
-   ok,encoded=pcall(function()
-    return HttpService:JSONEncode({index=index,entries=safeEntries})
-   end)
-   if not ok then
-    warn("Lycoles v54: unrecoverable batch sample "..index.." entry "..first..": "..tostring(encoded))
-    return false
+ local current={}
+ local currentSize=0
+ local function flush()
+  if #current==0 then return end
+  local ok,encoded=pcall(function() return HttpService:JSONEncode({index=index,entries=current}) end)
+  if ok then
+   batches[#batches+1]=encoded
+  else
+   warn("Lycoles v54: recovering individual entries sample "..index)
+   for _,entry in ipairs(current) do
+    local safe=encodeSafe(entry)
+    local okSingle,encodedSingle=pcall(function()
+     return HttpService:JSONEncode({index=index,entries={safe}})
+    end)
+    if okSingle then batches[#batches+1]=encodedSingle end
    end
   end
-  batches[#batches+1]=encoded
+  current={}
+  currentSize=0
+ end
+ for _,item in ipairs(compact) do
+  local ok,encoded=pcall(function() return HttpService:JSONEncode(item) end)
+  if ok then
+   if currentSize+#encoded+80>MAX_BATCH_CHARS then flush() end
+   current[#current+1]=item
+   currentSize+=#encoded+1
+  end
+ end
+ flush()
+ if #batches==0 then
+  batches[1]=HttpService:JSONEncode({index=index,entries={}})
  end
  print("LYCOLES_V54_BATCH_BEGIN "..index.." "..#batches)
- for i,encoded in ipairs(batches) do
-  print("LYCOLES_V54_BATCH "..index.."/"..i.."/"..#batches.." "..encoded)
+ for j,encoded in ipairs(batches) do
+  print("LYCOLES_V54_BATCH "..index.."/"..j.."/"..#batches.." "..encoded)
  end
  print("LYCOLES_V54_BATCH_END "..index)
+ print("LYCOLES_V54_PROGRESS "..index.." emitted="..#compact.." changed="..priorityChanged.." decorativeOmitted="..omittedDecorative)
  return true
 end
 task.spawn(function()
@@ -213,8 +240,7 @@ task.spawn(function()
    warn("Lycoles v54: export crashed sample "..i..": "..tostring(exported))
   end
   if not okExport or not exported then
-   label.Text="Lycoles v54 failed to encode sample "..i
-   return
+   warn("Lycoles v54: export failed sample "..i.."; continuing")
   end
   items=nil
   if i<SAMPLES then task.wait(INTERVAL) end
