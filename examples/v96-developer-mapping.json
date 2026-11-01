@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "96.mapping",
+  "placeId": 123456,
+  "developerApproved": true,
+  "authorizedUserIds": [
+    10001
+  ],
+  "bindings": [
+    {
+      "candidateId": "candidate1",
+      "observedInput": "keyboard:E:processed=False",
+      "expectedOutcome": {
+        "stat": "Coins",
+        "operator": "increase"
+      },
+      "reviewedByDeveloper": true,
+      "action": {
+        "id": "Collect",
+        "kind": "increment_stat",
+        "stat": "Coins",
+        "amount": 1,
+        "cooldownSeconds": 1
+      }
+    }
+  ]
+}
