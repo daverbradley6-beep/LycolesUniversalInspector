@@ -49,6 +49,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_v54*.py'
       - name: Run v55 evidence explorer regression tests
         run: python -m unittest discover -s tests -p 'test_v55*.py'
+      - name: Run v56 compiler tests
+        run: python -m unittest discover -s tests -p 'test_v56*.py'
       - name: Validate real receiver fixture
         run: python tools/receiver_pipeline_v38.py validate examples/muscle-legends-receiver-v15-sanitized.json --output build/receiver-summary-v38.json
       - name: Discover game-first evidence and generate diagnostic
