@@ -62,8 +62,7 @@ for _,contract in ipairs(contracts) do
   local button,err=find(contract.path)
   if not button then return false,err end
   if not button:IsDescendantOf(pg) or not button.Visible or not button.Active then return false,"button unavailable" end
-  local ok,msg=pcall(function() button:Activate() end)
-  return ok,ok and "activation requested (outcome unverified)" or tostring(msg)
+  return false,"unsupported: GuiButton has no public Activate() method; use real UI interaction"
  end
 end
 -- Expose only locally in this script's environment, not as a global.
