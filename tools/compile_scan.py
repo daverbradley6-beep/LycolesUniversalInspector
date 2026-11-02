@@ -8,6 +8,58 @@ import argparse, collections, hashlib, json, pathlib, sys
 def fail(message):
     raise ValueError(message)
 
+_CORRELATION_CLASSIFICATION="feature-consistent-observable-change"
+_CORRELATION_STATUS="candidate-needs-causal-validation"
+
+def _false_claims(document,server_key):
+    required=("sourceAuthenticityVerified","causalityProven",server_key,"gameplayVerified")
+    aliases=("serverVerified","serverAuthorityVerified","outcomeVerified",
+             "runtimeVerified","liveGameVerified","replayable")
+    return (all(document.get(key) is False for key in required)
+            and not any(document.get(key) is True for key in aliases))
+
+def _correlation_evidence(event):
+    feature=event.get("featureCandidate")
+    state=event.get("featureStateEvidence")
+    gui=event.get("featureGuiEvidence")
+    candidate=event.get("observableOutcomeCandidate")
+    kinds=[]
+    for field,value,server_key,detail_key,kind in (
+        ("featureStateEvidence",state,"serverVerified","matchedKeys","state-change"),
+        ("featureGuiEvidence",gui,"serverVerified","matchedPaths","gui-change")):
+        if value is None:
+            continue
+        if not isinstance(value,dict):
+            fail(f"Malformed {field}")
+        if value.get("classification")!=_CORRELATION_CLASSIFICATION:
+            continue
+        details=value.get(detail_key)
+        if (value.get("feature")!=feature or value.get("status")!=_CORRELATION_STATUS
+                or not isinstance(details,list) or not details
+                or any(not isinstance(item,str) or not item for item in details)
+                or not _false_claims(value,server_key)):
+            fail("Feature correlation evidence claims verification or is malformed")
+        kinds.append(kind)
+    if candidate is None:
+        if kinds:
+            fail("Feature correlation evidence lacks observable outcome candidate")
+        return {"candidate":False,"state":False,"gui":False}
+    if not isinstance(candidate,dict):
+        fail("Malformed observable outcome candidate")
+    evidence_kinds=candidate.get("evidenceKinds")
+    if (candidate.get("feature")!=feature
+            or candidate.get("classification")!=_CORRELATION_CLASSIFICATION
+            or not isinstance(evidence_kinds,list) or not evidence_kinds
+            or any(kind not in ("state-change","gui-change") for kind in evidence_kinds)
+            or len(set(evidence_kinds))!=len(evidence_kinds)
+            or set(evidence_kinds)!=set(kinds)
+            or type(candidate.get("overlappingInteractionsPossible")) is not bool
+            or not _false_claims(candidate,"serverAuthorityVerified")
+            or event.get("outcomeVerified") is not False):
+        fail("Observable outcome candidate evidence claims verification or is malformed")
+    return {"candidate":True,"state":"state-change" in kinds,"gui":"gui-change" in kinds}
+
+
 def compile_scan(directory):
     files=sorted(pathlib.Path(directory).glob("*.json"))
     if not files: fail("No JSON scan parts found")
@@ -58,6 +110,7 @@ def compile_scan(directory):
         history=(metadata.get("interactionDiagnostics") or {}).get("recentInteractions") or []
     if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
     if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
+    history_evidence=[(event,_correlation_evidence(event)) for event in history]
     feature_evidence=metadata.get("featureEvidence") or {}
     readiness=metadata.get("featureReadiness") or {}
     # Evidence is descriptive, never an authorization to invoke arbitrary remotes.
@@ -75,18 +128,27 @@ def compile_scan(directory):
         fail(f"Duplicate object identities: {duplicate_count}")
     features=[]
     for name in sorted(feature_names):
-        events=[e for e in history if isinstance(e,dict) and e.get("featureCandidate")==name]
+        event_records=[record for record in history_evidence if record[0].get("featureCandidate")==name]
+        events=[record[0] for record in event_records]
+        correlations=[record[1] for record in event_records]
         observed=sum(1 for e in events if e.get("evidenceLevel"))
         corroborated=sum(1 for e in events if e.get("clientStateCorroborated") is True
             or (isinstance(e.get("featureStateEvidence"),dict)
                 and e["featureStateEvidence"].get("status")=="client-state-consistent"))
         transitions=sum(1 for e in events if e.get("stateChanges") or e.get("guiStateChanges"))
         outcomes=sum(1 for e in events if e.get("outcomeVerified") is True)
+        candidates=sum(item["candidate"] for item in correlations)
+        state_correlations=sum(item["state"] for item in correlations)
+        gui_correlations=sum(item["gui"] for item in correlations)
         features.append({
             "feature":name,"interactionEvents":len(events),
             "observedEvents":observed,"verifiedClientOutcomes":outcomes,
             "clientCorroboratedEvents":corroborated,"temporalTransitionEvents":transitions,
-            "status":"client-outcome-observed" if outcomes else ("interaction-observed" if observed else "discovered"),
+            "observableOutcomeCandidates":candidates,
+            "featureStateCorrelations":state_correlations,"featureGuiCorrelations":gui_correlations,
+            "status":"client-outcome-observed" if outcomes else
+                ("observable-outcome-candidate-unverified" if candidates else
+                 ("interaction-observed" if observed else "discovered")),
             "implementationReady":False,
             "reason":"No verified, permitted reproducible implementation contract in passive scan",
             "evidence":feature_evidence.get(name) if isinstance(feature_evidence,dict) else None,

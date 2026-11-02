@@ -8,6 +8,7 @@
 - Add explicit local report transport lifecycle fields for generation, upload attempt, acknowledgements, failures, receiver integrity, and downstream availability.
 - Add deterministic v109 manifest-only readiness analysis plus a sanitized Bubble Gum Simulator INFINITY regression fixture.
 - Route manifest-file input through `tools/build_release.py` to the v109 readiness artifact, returning blocked status without generating ZIP or Luau output.
+- Preserve validated v30.1 observable outcome candidates and feature-state/GUI correlation counts through capability plans, workflow specifications, release summaries, and implementation reviews without approving execution.
 - Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
 
 ## v30.0.0 — Provenance-aware evidence and per-feature verification

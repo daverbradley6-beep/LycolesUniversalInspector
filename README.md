@@ -37,7 +37,7 @@ The Python tools currently use only the standard library. The Node suite exercis
 python3 tools/build_release.py ./scan-parts --output ./build
 ```
 
-The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
+The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. Complete v30.1 parts preserve validated observable outcome candidates and feature-state/GUI correlation counts in `capability-plan.json`, `workflow-specs.json`, `release-manifest.json`, and `implementation-review.md`; those correlations never establish causality, outcome verification, replayability, server authority, or automatic execution. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
 
 When only the small local manifest is available, pass that file to the same release entry point:
 
