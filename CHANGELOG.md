@@ -7,8 +7,8 @@
 - Make `completedCandidates` reachable while preserving `outcomeVerified: false` and zero gameplay-verification claims.
 - Add explicit local report transport lifecycle fields for generation, upload attempt, acknowledgements, failures, receiver integrity, and downstream availability.
 - Add deterministic v109 manifest-only readiness analysis plus a sanitized Bubble Gum Simulator INFINITY regression fixture.
+- Route manifest-file input through `tools/build_release.py` to the v109 readiness artifact, returning blocked status without generating ZIP or Luau output.
 - Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
-
 
 ## v30.0.0 — Provenance-aware evidence and per-feature verification
 

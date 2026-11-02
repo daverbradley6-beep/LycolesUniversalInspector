@@ -254,8 +254,7 @@ def analyze(manifest):
     }
 
 
-def emit(manifest, output):
-    report = analyze(manifest)
+def write(report, output):
     payload = _canonical(report)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -270,7 +269,11 @@ def emit(manifest, output):
     }
 
 
-def _load(path):
+def emit(manifest, output):
+    return write(analyze(manifest), output)
+
+
+def load(path):
     path = Path(path)
     if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_INPUT_BYTES:
         raise ValueError("invalid manifest input")
@@ -283,7 +286,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("build/manifest-readiness-v109.json"))
     args = parser.parse_args()
     try:
-        result = emit(_load(args.manifest), args.output)
+        result = emit(load(args.manifest), args.output)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
         raise SystemExit(1)

@@ -2,11 +2,15 @@
 import importlib.util
 import json
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
 
-SOURCE=pathlib.Path(__file__).resolve().parents[1]/"tools"/"build_release.py"
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+SOURCE=ROOT/"tools"/"build_release.py"
+MANIFEST_FIXTURE=ROOT/"tests"/"fixtures"/"bubble_gum_infinity_manifest_v30_sanitized.json"
 spec=importlib.util.spec_from_file_location("release_builder",SOURCE)
 builder=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
@@ -46,6 +50,31 @@ class ReleaseBuilderTests(unittest.TestCase):
             make_parts(parts,missing=True)
             with self.assertRaisesRegex(ValueError,"Missing parts"):
                 builder.build(parts,base/"out")
+    def test_manifest_only_input_emits_structured_blockers_without_release(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output=pathlib.Path(temp)/"out"
+            result=builder.build(MANIFEST_FIXTURE,output)
+            self.assertFalse(result["generationReadiness"]["scriptGenerationReady"])
+            self.assertIn("full_multipart_report_unavailable",result["generationReadiness"]["blockers"])
+            self.assertTrue((output/"manifest-readiness-v109.json").is_file())
+            self.assertFalse(any(output.glob("*.zip")))
+            self.assertFalse((output/"LycolesGeneratedUtility.lua").exists())
+    def test_manifest_only_cli_returns_blocked_status_with_artifact(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output=pathlib.Path(temp)/"out"
+            completed=subprocess.run(
+                [sys.executable,str(SOURCE),str(MANIFEST_FIXTURE),"--output",str(output)],
+                capture_output=True,text=True,check=False)
+            self.assertEqual(completed.returncode,2)
+            self.assertIn("BUILD BLOCKED: manifest-only input",completed.stderr)
+            report=json.loads((output/"manifest-readiness-v109.json").read_text(encoding="utf-8"))
+            self.assertFalse(report["claims"]["gameplayVerified"])
+    def test_manifest_only_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);link=base/"manifest.json"
+            link.symlink_to(MANIFEST_FIXTURE)
+            with self.assertRaisesRegex(ValueError,"invalid manifest input"):
+                builder.build(link,base/"out")
     def test_disallowed_operations_rejected(self):
         with self.assertRaisesRegex(ValueError,"Forbidden"):
             builder.validate_lua(builder.load_module('generate_script.py','test_generator').render({'integrity':{'placeId':1,'scanComplete':True},'features':[]})+'\nFireServer(1)',1)

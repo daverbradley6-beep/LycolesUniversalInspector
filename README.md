@@ -39,15 +39,13 @@ python3 tools/build_release.py ./scan-parts --output ./build
 
 The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
 
-When only the small local manifest is available, analyze what it does and does not establish:
+When only the small local manifest is available, pass that file to the same release entry point:
 
 ```sh
-python3 tools/manifest_readiness_v109.py \
-  --manifest path/to/Lycoles_PLACE.json \
-  --output build/manifest-readiness-v109.json
+python3 tools/build_release.py path/to/Lycoles_PLACE.json --output build
 ```
 
-This produces diagnostics and feature-consistent outcome-candidate lower bounds. It always keeps script generation blocked because the manifest lacks the numbered object-bearing parts, canonical object identity, receiver integrity evidence, and a reviewed implementation contract.
+The command writes `build/manifest-readiness-v109.json`, emits explicit diagnostics and feature-consistent outcome-candidate lower bounds, and intentionally exits with blocked status 2. It never creates a release ZIP or Luau utility because the manifest lacks the numbered object-bearing parts, canonical object identity, receiver integrity evidence, and a reviewed implementation contract. The standalone `tools/manifest_readiness_v109.py` CLI remains available when a successful analysis-only exit status is preferred.
 
 ## Run the v107 integrated observer pipeline
 

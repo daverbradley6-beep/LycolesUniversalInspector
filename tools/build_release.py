@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Lycoles v10 one-command offline pipeline: scan -> plan -> Lua -> release ZIP.
+"""Lycoles offline pipeline: multipart scan -> release, or manifest -> blockers.
 
 Usage: python3 tools/build_release.py ./scan-parts --output ./build
+       python3 tools/build_release.py ./local-manifest.json --output ./build
 No remote execution, network access, GitHub credentials or third-party modules.
 """
 import argparse
@@ -45,7 +46,23 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
+def build_manifest_readiness(manifest_path,output):
+    analyzer=load_module("manifest_readiness_v109.py","lycoles_manifest_readiness_v109")
+    source=pathlib.Path(manifest_path)
+    document=analyzer.load(source)
+    output=pathlib.Path(output)
+    output.mkdir(parents=True,exist_ok=True)
+    target=output/"manifest-readiness-v109.json"
+    result=analyzer.analyze(document)
+    analyzer.write(result,target)
+    print("BLOCKED: manifest-only input cannot generate a release; readiness written to",target)
+    return result
+
+
 def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,audit_path=None):
+    parts_path=pathlib.Path(parts_dir)
+    if parts_path.is_file():
+        return build_manifest_readiness(parts_path,output)
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
@@ -181,7 +198,12 @@ def main():
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
     parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,args.audit);return 0
+    try:
+        result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,args.audit)
+        if result.get("schemaVersion")=="109.manifest-readiness.1":
+            print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)
+            return 2
+        return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 
