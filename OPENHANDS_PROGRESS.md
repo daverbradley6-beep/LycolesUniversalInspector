@@ -6,10 +6,10 @@ _Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cy
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `1c2e55b` (`Improve live evidence and upload diagnostics`)
-- Implementation head: full SHA `1c2e55b49a68f36df2a226e70c5e098baf9d4114`; progress/guidance head `eb39f9a99856f69f4c025107a4ed311223df17ea` was confirmed byte-for-byte on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **19 commits ahead, 0 behind**
-- All **18** workflows triggered for pushed head `eb39f9a` completed successfully
+- Latest implementation commit: `9a4591e` (`Integrate manifest readiness into release builder`)
+- Implementation head: full SHA `9a4591ec5beaaedfc55c183902bb8810f2613db8`; the previously published handover head `1581a568142b94393fd6d228f31d2a0a8679f7cd` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
+- Implementation snapshot relative to `origin/main`: **22 commits ahead, 0 behind**
+- All **18** workflows triggered for the prior pushed implementation/progress head `eb39f9a` completed successfully
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -109,6 +109,13 @@ _Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cy
    - Made `completedCandidates` reachable only for explicitly classified observable candidates while keeping `outcomeVerified`, causality, server authority, and gameplay verification false.
    - Added explicit pre-upload, uploading, acknowledged, incomplete, failed, and configuration-error manifest lifecycle diagnostics; ACK state still never claims receiver integrity or downstream availability.
    - Added deterministic `109.manifest-readiness.1` analysis, a sanitized eight-event real-world fixture retaining complete aggregate counts, and fail-closed transport/accounting tests.
+
+17. `9a4591e` — integrated manifest-only readiness with the release entry point:
+   - `tools/build_release.py` now accepts either a complete multipart directory or a local manifest file without changing valid multipart release behavior.
+   - Manifest-file mode writes only deterministic `manifest-readiness-v109.json`, returns blocked CLI status 2, and creates no ZIP or generated Luau artifact.
+   - Reused the v109 bounded-size and symlink-safe loader and deterministic writer instead of duplicating validation logic.
+   - Added direct API, subprocess exit/artifact, no-release-output, symlink rejection, and unchanged multipart reproducibility coverage.
+   - Exercised the full supplied manifest through the integrated command: 15 correlation candidates, generation false, gameplay verification false, and exactly one readiness artifact.
 
 ## Tests and Results
 
@@ -221,6 +228,15 @@ v30.1 live-evidence and v109 manifest-readiness cycle from commit `1c2e55b`:
 - Python compilation, deterministic emit, version consistency, sanitized-fixture privacy checks, and `git diff --check`: **passed**.
 - No Roblox runtime claim is made for v30.1; the updated inspector behavior has static/parser/offline regression coverage only.
 
+Manifest-to-builder integration cycle from commit `9a4591e`:
+
+- Regression-first direct and subprocess tests reproduced the prior unrelated `No JSON scan parts found` error before implementation.
+- Focused builder/readiness suite: **13 passed**, including complete multipart reproducibility, manifest artifact/exit semantics, no ZIP/Luau output, strict accounting, deterministic output, and symlink rejection.
+- Complete runtime-enabled Python suite against official Luau `0.744`: **1,320 passed** in 1.740s.
+- Receiver checks and all **3** Node/Luau parser tests: **passed**.
+- Integrated CLI over the complete supplied manifest: intentional exit 2; exactly `manifest-readiness-v109.json`; 15 correlation candidates; generation false; gameplay verification false.
+- Python compilation and `git diff --check`: **passed**.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -288,8 +304,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Integrate the v109 readiness output into the multipart release-builder entry point so manifest-only input produces one structured blocker report instead of an unrelated missing-directory failure.
-2. Extend downstream workflow compilation to consume v30.1 `observableOutcomeCandidate`, feature-state, and feature-GUI fields as unverified correlation evidence without automatically approving actions.
-3. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
-4. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
-5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Extend downstream workflow compilation to consume v30.1 `observableOutcomeCandidate`, feature-state, and feature-GUI fields as unverified correlation evidence without automatically approving actions.
+2. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
+3. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
+4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
