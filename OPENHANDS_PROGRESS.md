@@ -1,5 +1,18 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Resumable large-scan receiver retrieval
+
+- Pushed `9b522fca39cd14f741341a9283bd347ab1181bb6` (`Add resumable receiver scan retrieval`) to `origin/openhands-development`.
+- `tools/fetch_receiver_scan.py` now accepts an explicit `--resume` directory, persists exact digest-verified response bodies, and atomically advances a versioned checkpoint after each admitted part while leaving final output publication atomic.
+- Checkpoints bind receiver origin, scan/place/part identity, and a canonical full-metadata digest. Restarts strictly validate schema, metadata identity, cached byte digests, multipart identity, optional local ACK digests, global uniqueness/accounting, and compiler output before reuse.
+- Resume and output paths may not overlap. Cached files are read with fixed limits, streamed with bounded memory, and never contain the receiver read key. Corrupt bytes, metadata drift, conflicting ACKs, and incomplete retrieval fail without publishing output.
+- Imported manifests and CLI results expose resumed/downloaded counts, keep `resumeCheckpointAuthenticated` false, and set `receiverStoredPayloadDigestsRevalidatedThisRun` false whenever a cached part is reused.
+- Final local gate: **1,360 Python tests passed** with pinned official Luau 0.744 and no skips; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- The prior progress head `3378f02` completed all **16** attached GitHub workflows successfully. The new implementation head triggered **18** workflows; 3 had passed, 3 were running, and 12 were queued at the latest check.
+- Evidence boundary: resume state is a local, unauthenticated cache of earlier receiver-digest verification. It does not authenticate the checkpoint, receiver, or local manifest; prove original local payload equivalence; or establish causality, server authority, replayability, gameplay success, or verified action outcomes.
+- No Cloudflare deployment, production credential, or production receiver configuration was changed.
+- Next priorities: surface imported provenance and generation blockers in the unified Inspector / Generated Script workflow, then improve evidence-grounded generation without weakening reviewed-action gates.
+
 ## Update — 2026-11-02 — Receiver payload digest provenance
 
 - Pushed `061ea56b3ede69a19ace525d0f140cda89469e0f` (`Add receiver payload digest provenance`) to `origin/openhands-development` as the v30.2.0 inspector / v12 receiver checkpoint.
@@ -26,16 +39,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — receiver payload digest provenance_
+_Last updated: 2026-11-02 — resumable large-scan receiver retrieval_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `061ea56` (`Add receiver payload digest provenance`)
-- Implementation head: full SHA `061ea56b3ede69a19ace525d0f140cda89469e0f`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **30 commits ahead, 0 behind**
-- Current-head CI started all **18** workflows: one had passed and the remainder were queued or running at the latest check; final CI is pending
+- Latest implementation commit: `9b522fc` (`Add resumable receiver scan retrieval`)
+- Implementation head: full SHA `9b522fca39cd14f741341a9283bd347ab1181bb6`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **32 commits ahead, 0 behind**
+- Current-head CI started all **18** workflows: 3 had passed, 3 were running, and 12 were queued at the latest check; final CI is pending
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -166,7 +179,22 @@ _Last updated: 2026-11-02 — receiver payload digest provenance_
    - Requires digest-bearing inspector ACKs; validates and preserves raw receiver bytes; optionally reconciles inspector ACK digest records; and exposes bounded readiness diagnostics.
    - Maintains false authenticity, original-local-payload-equivalence, causality, authority, replayability, gameplay, and outcome-verification claims.
 
+22. `9b522fc` — added resumable large-scan receiver retrieval:
+   - Adds explicit persistent checkpoints bound to origin and canonical receiver metadata, with exact cached-body digests and atomic checkpoint replacement.
+   - Revalidates cache schema, byte digests, part identity, optional ACK equivalence, uniqueness, accounting, and compilation while streaming cached parts with bounded memory.
+   - Rejects corrupt, stale, conflicting, unsafe, or overlapping state without publishing output; keeps read credentials out of checkpoints and checkpoint authenticity explicitly false.
+
 ## Tests and Results
+
+Resumable retrieval cycle from commit `9b522fc`:
+
+- Regression-first interruption tests initially failed because the importer had no resume API.
+- Focused real-HTTP importer suite: **19 passed**, covering interruption/restart, cached-part reuse, tampered cache rejection, metadata-drift rejection, output/resume overlap, atomic non-publication, digest conflicts, retries, redirects, accounting, and compiler integration.
+- Official Luau 0.744-enabled complete Python suite: **1,360 passed**, no skips.
+- Receiver checks and **3** Node/Luau parser tests: **passed**.
+- Python compilation and `git diff --check`: **passed**.
+- Local and `origin/openhands-development` implementation SHA comparison: exact match at `9b522fca39cd14f741341a9283bd347ab1181bb6`.
+- Prior head `3378f02`: all **16** attached GitHub workflows passed. New implementation-head CI is pending.
 
 v30.2 receiver provenance cycle from commit `061ea56`:
 
@@ -373,6 +401,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - The v30.1 inspector changes have offline/static/parser validation only; no updated Roblox session has confirmed their runtime layout, event sequencing, sampling overhead, or transport snapshots.
 - Feature-consistent outcome candidates remain temporal correlations gathered during overlapping interaction windows. They are useful generation inputs but do not establish causal action success, server authority, or replayability.
 - Expanded state sampling is bounded to LocalPlayer numeric/boolean ValueBase objects. It does not observe arbitrary module state, server-only values, table values, protected payloads, or authoritative results.
+- Resumable retrieval checkpoints are local unauthenticated caches. Byte-digest, metadata, identity, ACK, accounting, and compiler revalidation detects accidental or isolated corruption, but cannot prove checkpoint authorship or resist coordinated modification of both checkpoint and cached parts.
 - The legacy Bubble Gum manifest cannot establish whether upload was attempted or whether any of 1,330 parts reached the receiver. No receiver endpoint, credentials, integrity response, or production deployment was tested.
 - Manifest-only v109 analysis cannot feed v107/v108 generation because canonical object-bearing parts and reviewed implementation contracts are absent.
 - The Cloudflare receiver still requires separate deployment plus secret/KV configuration.
@@ -380,6 +409,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Add a credential-safe receiver download/import path that retrieves a verified scan's metadata, integrity response, and numbered parts into an isolated local directory before invoking existing compilation; test it against a controlled local HTTP receiver without production access.
-2. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
-3. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Surface imported receiver provenance, resume diagnostics, validation outcomes, and generation blockers through the existing integrated Inspector / Generated Script artifacts and UI without adding network behavior to the offline builder.
+2. Add an end-to-end controlled regression from receiver import through release generation that proves provenance survives compilation while authenticity, causality, authority, replayability, and gameplay verification remain false.
+3. When complete real numbered parts become available, run them through receiver import plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
+4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
