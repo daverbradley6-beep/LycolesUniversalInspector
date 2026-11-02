@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -26,7 +27,7 @@ COMPILER = load_module(ROOT / "tools" / "compile_scan.py", "compile_receiver_sca
 class ReceiverServer:
     def __init__(self, *, incomplete=False, mismatch=False, redirect=False,
                  object_count_mismatch=False, malformed_length=False, transient=False,
-                 duplicate_object=False):
+                 duplicate_object=False, digest_mismatch=False, missing_digest=False):
         base = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -49,6 +50,7 @@ class ReceiverServer:
             self.parts[2]["scanId"] = "wrongscan01"
         if duplicate_object:
             self.parts[2]["objects"][0]["path"] = "Workspace.A"
+            self.parts[2]["objects"][0]["class"] = "Folder"
         self.metadata = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -62,6 +64,8 @@ class ReceiverServer:
         self.incomplete = incomplete
         self.redirect = redirect
         self.malformed_length = malformed_length
+        self.digest_mismatch = digest_mismatch
+        self.missing_digest = missing_digest
         self.transient = transient
         self.transient_failures = 0
         self.paths = []
@@ -101,6 +105,11 @@ class ReceiverServer:
                 body = json.dumps(payload).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
+                if "/part-" in self.path and not owner.missing_digest:
+                    digest = hashlib.sha256(body).hexdigest()
+                    if owner.digest_mismatch and self.path.endswith("/part-2"):
+                        digest = "0" * 64
+                    self.send_header("X-Lycoles-Content-SHA256", digest)
                 length = "not-a-number" if owner.malformed_length else str(len(body))
                 self.send_header("Content-Length", length)
                 self.end_headers()
@@ -144,8 +153,65 @@ class ReceiverImportTests(unittest.TestCase):
             self.assertEqual(manifest["scanId"], "receiverscan01")
             self.assertEqual(manifest["receiverIntegrity"]["integrityStatus"],
                              "verified-after-retrieval")
+            for entry in manifest["receiverPartContentDigests"]:
+                part_path = output / f"part-{entry['partIndex']:04d}.json"
+                self.assertEqual(hashlib.sha256(part_path.read_bytes()).hexdigest(),
+                                 entry["sha256"])
             self.assertFalse(any(path.endswith("/integrity") for path in receiver.paths))
             self.assertNotIn("read-secret", json.dumps(manifest))
+
+    def test_persisted_part_digest_mismatch_fails_atomically(self):
+        with ReceiverServer(digest_mismatch=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "receiver content digest mismatch"):
+                FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
+                                   "receiverscan01", output, allow_http=True)
+            self.assertFalse(output.exists())
+
+    def test_missing_persisted_part_digest_fails_atomically(self):
+        with ReceiverServer(missing_digest=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "content digest is missing"):
+                FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
+                                   "receiverscan01", output, allow_http=True)
+            self.assertFalse(output.exists())
+
+    def test_matching_acknowledgement_digests_are_preserved(self):
+        with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
+            acknowledgements = []
+            for index, part in receiver.parts.items():
+                raw = json.dumps(part).encode("utf-8")
+                acknowledgements.append({"partIndex": index,
+                                         "sha256": hashlib.sha256(raw).hexdigest()})
+            local_manifest = pathlib.Path(temp) / "local-manifest.json"
+            local_manifest.write_text(json.dumps({
+                "scanId": "receiverscan01", "placeId": 3623096087, "partCount": 2,
+                "reportTransport": {"acknowledgedPartDigests": acknowledgements},
+            }))
+            output = pathlib.Path(temp) / "scan"
+            result = FETCHER.fetch_scan(
+                receiver.server.base_url, "read-secret", "receiverscan01", output,
+                local_manifest=local_manifest, allow_http=True)
+            self.assertTrue(result["receiverAcknowledgementDigestEquivalent"])
+            self.assertFalse(result["localPayloadEquivalent"])
+            imported = json.loads((output / "receiver-manifest.json").read_text())
+            self.assertTrue(imported["receiverAcknowledgementDigestEquivalent"])
+
+    def test_conflicting_acknowledgement_digest_fails_atomically(self):
+        with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
+            local_manifest = pathlib.Path(temp) / "local-manifest.json"
+            local_manifest.write_text(json.dumps({
+                "scanId": "receiverscan01", "placeId": 3623096087, "partCount": 2,
+                "reportTransport": {"acknowledgedPartDigests": [
+                    {"partIndex": 1, "sha256": "0" * 64},
+                ]},
+            }))
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "does not match local acknowledgement"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    local_manifest=local_manifest, allow_http=True)
+            self.assertFalse(output.exists())
 
     def test_transient_part_failure_is_retried(self):
         with ReceiverServer(transient=True) as receiver, tempfile.TemporaryDirectory() as temp:

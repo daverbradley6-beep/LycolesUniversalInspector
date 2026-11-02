@@ -37,6 +37,10 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("scanId = reportScanId",SRC)
         self.assertIn("scanId=reportScanId",SRC)
         self.assertIn(r'.. "\\nScan ID: " .. tostring(resultData.scanId)',SRC)
+    def test_manifest_preserves_receiver_acknowledgement_digests(self):
+        self.assertIn('type(ack.sha256) == "string"',SRC)
+        self.assertIn("acknowledgedPartDigests = digests",SRC)
+        self.assertIn("sha256=ack.sha256",SRC)
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

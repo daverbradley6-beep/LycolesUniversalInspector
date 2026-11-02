@@ -1,3 +1,12 @@
+## v30.2.0 — Receiver payload digest provenance
+
+- Persist a SHA-256 digest for each exact receiver upload body, return it in upload acknowledgements, and expose it with numbered-part retrieval.
+- Repair missing digest sidecars and scan metadata on exact duplicate retries after partial KV write failures; legacy retrieval never fabricates a digest.
+- Require digest-bearing upload acknowledgements in the inspector and preserve sorted per-part acknowledgement digests in refreshed local manifests.
+- Verify every retrieved raw part against its receiver-stored upload digest before JSON parsing or publication; optionally reconcile all parts against a supplied local acknowledgement manifest.
+- Align importer duplicate-object identity with the Worker's path-plus-scan-ordinal contract, including cross-class collisions.
+- Keep response authenticity and original local payload equivalence false: receiver-stored and acknowledgement digest matches do not independently authenticate either record or prove gameplay outcomes.
+
 ## v30.1.0 — Live evidence attribution and transport diagnostics
 
 - Derive bounded action candidates from semantic ancestor names when controls use generic names such as `Button` or `Action`.

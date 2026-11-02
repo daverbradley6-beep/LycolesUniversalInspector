@@ -121,6 +121,36 @@ class ManifestReadinessTests(unittest.TestCase):
                     f"/reports/READ_KEY/{self.transport_scan_id}/integrity",
                 )
 
+    def test_v302_acknowledgement_digest_coverage_is_diagnostic_only(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["scanId"] = self.transport_scan_id
+        case = next(item for item in self.transport_cases
+                    if item["name"] == "post-acknowledgement")
+        manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+        manifest["reportTransport"]["acknowledgedPartDigests"] = [
+            {"partIndex": index, "sha256": f"{index:064x}"}
+            for index in range(1, manifest["expectedParts"] + 1)
+        ]
+        manifest["reportTransport"]["acknowledgedDigestParts"] = manifest["expectedParts"]
+        result = MODULE.analyze(manifest)
+        self.assertEqual(result["transport"]["acknowledgedDigestParts"],
+                         manifest["expectedParts"])
+        self.assertTrue(result["transport"]["acknowledgementDigestCoverageComplete"])
+        self.assertFalse(result["generationReadiness"]["scriptGenerationReady"])
+
+    def test_duplicate_acknowledgement_digest_index_is_rejected(self):
+        manifest = copy.deepcopy(self.manifest)
+        case = next(item for item in self.transport_cases
+                    if item["name"] == "post-acknowledgement")
+        manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+        manifest["reportTransport"]["acknowledgedPartDigests"] = [
+            {"partIndex": 1, "sha256": "1" * 64},
+            {"partIndex": 1, "sha256": "2" * 64},
+        ]
+        manifest["reportTransport"]["acknowledgedDigestParts"] = 2
+        with self.assertRaisesRegex(ValueError, "duplicate acknowledged digest"):
+            MODULE.analyze(manifest)
+
     def test_invalid_receiver_scan_id_is_rejected(self):
         manifest = copy.deepcopy(self.manifest)
         manifest["scanId"] = "bad/id"
@@ -152,7 +182,6 @@ class ManifestReadinessTests(unittest.TestCase):
         manifest["reportTransport"]["manifestSnapshotPhase"] = "pre-upload"
         with self.assertRaisesRegex(ValueError, "phase is inconsistent"):
             MODULE.analyze(manifest)
-
 
     def test_invalid_object_accounting_is_rejected(self):
         manifest = copy.deepcopy(self.manifest)

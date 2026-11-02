@@ -1,6 +1,6 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.1.0**
+Current inspector release: **v30.2.0**
 
 Current integrated offline pipeline: **v108**
 
@@ -44,11 +44,12 @@ The builder rejects incomplete or inconsistent multipart input and keeps executa
 Set `LYCOLES_READ_KEY` through a secure environment or secret manager, then run:
 
 ```sh
-python3 tools/fetch_receiver_scan.py https://receiver.example receiverscanid --output ./scan-parts
+python3 tools/fetch_receiver_scan.py https://receiver.example receiverscanid \
+  --local-manifest path/to/Lycoles_PLACE.json --output ./scan-parts
 python3 tools/build_release.py ./scan-parts --output ./build
 ```
 
-The read key has no command-line option and is never written to the imported directory. Retrieval requires HTTPS, rejects redirects, reads constant-cost receiver metadata, downloads every bounded numbered part with bounded transient retries, validates identity, uniqueness and accounting locally, runs the existing multipart compiler, and publishes the new directory atomically. The importer requires the checked-in Worker contract with `/metadata`; committing this source does not deploy it, and older deployments return 404 until separately updated by an authorized operator. `receiverIntegrityVerified` means the downloaded receiver record passed part identity and object-accounting checks. It does not prove that those bytes equal an earlier local export, authenticate a saved response independently of transport, or establish gameplay causality, server authority, replayability, or action success. The release builder remains offline and does not fetch network data itself.
+`--local-manifest` is optional; a v30.2 post-upload manifest lets the importer compare every retrieved part with the digest acknowledged during upload. The read key has no command-line option and is never written to the imported directory. Retrieval requires HTTPS, rejects redirects, reads constant-cost receiver metadata, downloads every bounded numbered part with bounded transient retries, verifies each exact response body against its receiver-stored upload digest, validates identity, uniqueness and accounting locally, runs the existing multipart compiler, and publishes the new directory atomically. The importer requires the checked-in Worker contract with `/metadata` and digest-bearing part responses; committing this source does not deploy it, and older deployments fail closed until separately updated by an authorized operator. `receiverStoredPayloadDigestsVerified` means retrieved bytes match digests persisted by the receiver at ingest. `receiverAcknowledgementDigestEquivalent` additionally means all supplied local ACK digest records match. Neither flag independently authenticates the local manifest or receiver response, proves equivalence to locally computed original bytes, nor establishes gameplay causality, server authority, replayability, or action success. The release builder remains offline and does not fetch network data itself.
 
 When only the small local manifest is available, pass that file to the same release entry point:
 

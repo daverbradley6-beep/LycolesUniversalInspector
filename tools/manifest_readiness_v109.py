@@ -81,6 +81,8 @@ def _transport(manifest):
             "uploadStatus": "unknown_legacy_manifest_snapshot",
             "acknowledgedParts": None,
             "expectedParts": expected,
+            "acknowledgedDigestParts": None,
+            "acknowledgementDigestCoverageComplete": False,
             "uploadFailed": False,
             "receiverIntegrityVerified": False,
             "downstreamReportAvailable": False,
@@ -100,6 +102,27 @@ def _transport(manifest):
     transport_expected = _integer(transport.get("expectedParts"), "transport expected parts", minimum=1)
     if transport_expected != expected or acknowledged > expected:
         raise ValueError("invalid transport part accounting")
+    digest_entries = transport.get("acknowledgedPartDigests", [])
+    if not isinstance(digest_entries, list) or len(digest_entries) > expected:
+        raise ValueError("invalid acknowledged digest list")
+    digest_indexes = set()
+    for entry in digest_entries:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid acknowledged digest entry")
+        index = _integer(entry.get("partIndex"), "acknowledged digest part index", minimum=1)
+        digest = entry.get("sha256")
+        if index > expected or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise ValueError("invalid acknowledged digest entry")
+        if index in digest_indexes:
+            raise ValueError("duplicate acknowledged digest index")
+        digest_indexes.add(index)
+    digest_count = _integer(
+        transport.get("acknowledgedDigestParts", len(digest_entries)),
+        "acknowledged digest count")
+    if digest_count != len(digest_entries) or digest_count > acknowledged:
+        raise ValueError("invalid acknowledged digest accounting")
+    digest_complete = digest_count == expected and digest_indexes == set(range(1, expected + 1))
+
     status = transport.get("uploadStatus")
     if status not in {"not-attempted", "uploading", "acknowledged", "incomplete", "failed", "configuration-error"}:
         raise ValueError("invalid upload status")
@@ -132,6 +155,8 @@ def _transport(manifest):
         "uploadStatus": status,
         "acknowledgedParts": acknowledged,
         "expectedParts": expected,
+        "acknowledgedDigestParts": digest_count,
+        "acknowledgementDigestCoverageComplete": digest_complete,
         "uploadFailed": status in {"incomplete", "failed", "configuration-error"},
         "receiverIntegrityVerified": integrity,
         "downstreamReportAvailable": available,

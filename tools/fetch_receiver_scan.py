@@ -7,6 +7,7 @@ that receiver bytes equal the inspector's original local payloads.
 """
 import argparse
 import concurrent.futures
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -57,9 +58,9 @@ def _read_key(value):
     return value
 
 
-def _read_json_once(opener, url, timeout):
+def _read_json_once(opener, url, timeout, require_digest=False):
     request = urllib.request.Request(url, headers={"Accept": "application/json",
-                                                   "User-Agent": "Lycoles-receiver-import/30.1"})
+                                                   "User-Agent": "Lycoles-receiver-import/30.2"})
     response = opener.open(request, timeout=timeout)
     with response:
         if response.status != 200:
@@ -74,23 +75,31 @@ def _read_json_once(opener, url, timeout):
                 raise ValueError("invalid receiver content length")
             if declared_size > MAX_JSON_BYTES:
                 raise ValueError("receiver JSON exceeds size limit")
+        persisted_digest = response.headers.get("X-Lycoles-Content-SHA256")
         raw = response.read(MAX_JSON_BYTES + 1)
     if len(raw) > MAX_JSON_BYTES:
         raise ValueError("receiver JSON exceeds size limit")
+    digest = hashlib.sha256(raw).hexdigest()
+    if require_digest:
+        if not isinstance(persisted_digest, str) or not re.fullmatch(
+                r"[a-f0-9]{64}", persisted_digest):
+            raise ValueError("receiver content digest is missing or invalid")
+        if digest != persisted_digest:
+            raise ValueError("receiver content digest mismatch")
     try:
         document = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError("receiver returned invalid JSON") from None
     if not isinstance(document, dict):
         raise ValueError("receiver JSON must be an object")
-    return document
+    return (document, digest, raw) if require_digest else document
 
 
-def _read_json(opener, url, timeout):
+def _read_json(opener, url, timeout, require_digest=False):
     transient_statuses = {408, 425, 429, 500, 502, 503, 504}
     for attempt in range(3):
         try:
-            return _read_json_once(opener, url, timeout)
+            return _read_json_once(opener, url, timeout, require_digest)
         except urllib.error.HTTPError as exc:
             status = exc.code
             exc.close()
@@ -123,6 +132,48 @@ def _validate_metadata(document, scan_id):
     return metadata, place_id, part_count
 
 
+def _acknowledged_digests(path, scan_id, place_id, part_count):
+    if path is None:
+        return {}
+    path = pathlib.Path(path)
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"cannot read local manifest: {exc}") from None
+    if len(raw) > MAX_JSON_BYTES:
+        raise ValueError("local manifest exceeds size limit")
+    try:
+        manifest = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("local manifest is invalid JSON") from None
+    if not isinstance(manifest, dict):
+        raise ValueError("local manifest must be an object")
+    if (manifest.get("scanId") != scan_id or manifest.get("placeId") != place_id
+            or manifest.get("partCount") != part_count):
+        raise ValueError("local manifest identity mismatch")
+    transport = manifest.get("reportTransport")
+    if not isinstance(transport, dict):
+        return {}
+    entries = transport.get("acknowledgedPartDigests")
+    if entries is None:
+        return {}
+    if not isinstance(entries, list):
+        raise ValueError("invalid acknowledgement digest list")
+    result = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid acknowledgement digest entry")
+        index = _positive_integer(entry.get("partIndex"), "acknowledged part index",
+                                  part_count)
+        digest = entry.get("sha256")
+        if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise ValueError("invalid acknowledgement digest")
+        if index in result:
+            raise ValueError("duplicate acknowledgement digest index")
+        result[index] = digest
+    return result
+
+
 def _validate_part(part, scan_id, place_id, part_count, index):
     if (part.get("scanId") != scan_id or part.get("placeId") != place_id
             or part.get("partCount") != part_count or part.get("partIndex") != index):
@@ -142,9 +193,8 @@ def _worker_string(value):
 
 
 def _object_key(item):
-    return "|".join((_worker_string(item.get("class") or item.get("className")),
-                     _worker_string(item.get("path")),
-                     _worker_string(item.get("scanOrdinal"))))
+    return _worker_string(item.get("path") or "") + "#" + _worker_string(
+        item.get("scanOrdinal") or "")
 
 
 def _write_json(path, document):
@@ -161,7 +211,7 @@ def _compile_scan(directory):
 
 
 def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
-               allow_http=False):
+               local_manifest=None, allow_http=False):
     origin = _receiver_origin(endpoint, allow_http)
     read_key = _read_key(read_key)
     scan_id = _identifier(scan_id, "receiver scan ID")
@@ -176,19 +226,28 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
     root = "/reports/" + urllib.parse.quote(read_key, safe="") + "/" + scan_id
     metadata_document = _read_json(opener, origin + root + "/metadata", timeout)
     metadata, place_id, part_count = _validate_metadata(metadata_document, scan_id)
+    acknowledgement_digests = _acknowledged_digests(
+        local_manifest, scan_id, place_id, part_count)
 
     with tempfile.TemporaryDirectory(prefix=".lycoles-receiver-", dir=output.parent) as temp:
         staging = pathlib.Path(temp)
         total_objects = 0
         object_keys = set()
+        part_digests = {}
 
         def retrieve(index):
-            return index, _read_json(opener, origin + root + f"/part-{index}", timeout)
+            part, digest, raw = _read_json(
+                opener, origin + root + f"/part-{index}", timeout, require_digest=True)
+            return index, part, digest, raw
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             for start in range(1, part_count + 1, workers * 2):
                 indexes = list(range(start, min(part_count + 1, start + workers * 2)))
-                for index, part in executor.map(retrieve, indexes):
+                for index, part, digest, raw in executor.map(retrieve, indexes):
+                    acknowledged_digest = acknowledgement_digests.get(index)
+                    if acknowledged_digest is not None and acknowledged_digest != digest:
+                        raise ValueError("receiver part does not match local acknowledgement digest")
+                    part_digests[index] = digest
                     objects = _validate_part(part, scan_id, place_id, part_count, index)
                     for item in objects:
                         key = _object_key(item)
@@ -198,7 +257,14 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
                     total_objects += len(objects)
                     if total_objects > MAX_OBJECTS:
                         raise ValueError("receiver object count exceeds safety limit")
-                    _write_json(staging / f"part-{index:04d}.json", part)
+                    (staging / f"part-{index:04d}.json").write_bytes(raw)
+        acknowledgement_equivalent = (
+            len(acknowledgement_digests) == part_count
+            and all(acknowledgement_digests.get(index) == part_digests.get(index)
+                    for index in range(1, part_count + 1)))
+        receiver_part_digests = [
+            {"partIndex": index, "sha256": part_digests[index]}
+            for index in range(1, part_count + 1)]
         integrity = {
             "scanId": scan_id,
             "placeId": place_id,
@@ -214,8 +280,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             "integrityStatus": "verified-after-retrieval",
             "verificationMethod": "complete receiver part retrieval plus local multipart compilation",
         }
-        local_manifest = {
-            "schemaVersion": "30.1.receiver-import.1",
+        import_manifest = {
+            "schemaVersion": "30.2.receiver-import.1",
             "scanId": scan_id,
             "placeId": place_id,
             "partCount": part_count,
@@ -223,23 +289,28 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             "objectCount": total_objects,
             "metadata": metadata,
             "receiverIntegrity": integrity,
+            "receiverPartContentDigests": receiver_part_digests,
+            "receiverStoredPayloadDigestsVerified": True,
+            "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
             "receiverIntegrityVerified": True,
             "receiverResponseAuthenticityVerified": False,
             "localPayloadEquivalent": False,
-            "note": "All receiver parts were retrieved and locally passed identity, uniqueness, accounting, and compiler checks; original local payload equivalence was not established",
+            "note": "Retrieved bytes matched receiver-stored upload digests and passed local identity, uniqueness, accounting, and compiler checks; ACK digest equivalence is separate from original local payload equivalence and response authenticity",
         }
-        _write_json(staging / "receiver-manifest.json", local_manifest)
+        _write_json(staging / "receiver-manifest.json", import_manifest)
         plan = _compile_scan(staging)
         if output.exists() or output.is_symlink():
             raise ValueError("output path was created during import")
         staging.replace(output)
     return {
-        "schemaVersion": "30.1.receiver-import.1",
+        "schemaVersion": "30.2.receiver-import.1",
         "scanId": scan_id,
         "placeId": place_id,
         "partCount": part_count,
         "objectCount": total_objects,
         "featureCount": plan["featureCount"],
+        "receiverStoredPayloadDigestsVerified": True,
+        "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
         "receiverIntegrityVerified": True,
         "receiverResponseAuthenticityVerified": False,
         "localPayloadEquivalent": False,
@@ -252,6 +323,8 @@ def main():
     parser.add_argument("endpoint", help="HTTPS receiver origin, without a path")
     parser.add_argument("scan_id", help="receiver scan ID from the local manifest")
     parser.add_argument("--output", required=True, help="new directory for verified numbered parts")
+    parser.add_argument("--local-manifest",
+                        help="optional inspector manifest containing receiver ACK digests")
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
@@ -261,7 +334,8 @@ def main():
         return 2
     try:
         result = fetch_scan(args.endpoint, read_key, args.scan_id, args.output,
-                            timeout=args.timeout, workers=args.workers)
+                            timeout=args.timeout, workers=args.workers,
+                            local_manifest=args.local_manifest)
     except (ValueError, OSError) as exc:
         print("IMPORT BLOCKED:", exc, file=sys.stderr)
         return 2

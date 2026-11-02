@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.1.0
+-- Lycoles Universal Inspector v30.2.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.1.0"
+local VERSION = "30.2.0"
 
 local endpoint = ""
 local autoSend = true
@@ -31,6 +31,15 @@ local uploadState = {
 }
 local refreshLocalManifest = nil
 local function uploadSnapshot(phase)
+    local digests = {}
+    for partIndex,ack in pairs(pendingAcknowledged) do
+        if type(partIndex)=="number" and type(ack)=="table"
+            and type(ack.sha256)=="string" and ack.sha256:match("^[a-f0-9]+$")
+            and #ack.sha256==64 then
+            digests[#digests+1]={partIndex=partIndex,sha256=ack.sha256}
+        end
+    end
+    table.sort(digests,function(a,b) return a.partIndex < b.partIndex end)
     return {
         reportGenerated = pendingParts ~= nil or uploadState.expectedParts > 0,
         manifestSnapshotPhase = phase,
@@ -38,6 +47,8 @@ local function uploadSnapshot(phase)
         uploadStatus = uploadState.status,
         acknowledgedParts = uploadState.acknowledgedParts,
         expectedParts = uploadState.expectedParts,
+        acknowledgedPartDigests = digests,
+        acknowledgedDigestParts = #digests,
         lastError = uploadState.lastError,
         receiverIntegrityVerified = false,
         downstreamReportAvailable = false,
@@ -714,8 +725,10 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
             end)
             if decodedOk and type(ack) == "table" and ack.ok == true
                 and ack.scanId == scanId and ack.partIndex == partIndex
-                and ack.partCount == partCount and type(ack.id) == "string" then
-                return true, ack.id
+                and ack.partCount == partCount and type(ack.id) == "string"
+                and type(ack.sha256) == "string" and #ack.sha256 == 64
+                and ack.sha256:match("^[a-f0-9]+$") then
+                return true, {id=ack.id,sha256=ack.sha256}
             end
             lastError = "invalid acknowledgement"
         else
