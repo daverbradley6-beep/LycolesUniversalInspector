@@ -6,10 +6,10 @@ _Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cy
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `9a4591e` (`Integrate manifest readiness into release builder`)
-- Implementation head: full SHA `9a4591ec5beaaedfc55c183902bb8810f2613db8`; the previously published handover head `1581a568142b94393fd6d228f31d2a0a8679f7cd` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
-- Implementation snapshot relative to `origin/main`: **22 commits ahead, 0 behind**
-- All **18** workflows triggered for the prior pushed implementation/progress head `eb39f9a` completed successfully
+- Latest implementation commit: `c721d40` (`Preserve outcome candidates in workflow compilation`)
+- Implementation head: full SHA `c721d40c18587fdadae19a7f0480d6d0e4251f00`; the previously published handover head `fc51c4af7619587439fb1809a3fb8600212e11c9` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
+- Implementation snapshot relative to `origin/main`: **24 commits ahead, 0 behind**
+- All **18** workflows triggered for pushed head `fc51c4a` completed successfully
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -116,6 +116,13 @@ _Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cy
    - Reused the v109 bounded-size and symlink-safe loader and deterministic writer instead of duplicating validation logic.
    - Added direct API, subprocess exit/artifact, no-release-output, symlink rejection, and unchanged multipart reproducibility coverage.
    - Exercised the full supplied manifest through the integrated command: 15 correlation candidates, generation false, gameplay verification false, and exactly one readiness artifact.
+
+18. `c721d40` — preserved v30.1 observable candidates through workflow compilation:
+   - Validates the exact feature-consistent state/GUI evidence and observable-candidate shapes, feature identity, evidence kinds, non-empty references, and explicit false authenticity/causality/authority/gameplay claims.
+   - Rejects malformed, mismatched, or positively verified candidate evidence, including hidden positive verification aliases.
+   - Carries distinct observable-candidate, state-correlation, and GUI-correlation counts through capability plans, workflow specs, release summaries, and implementation review output.
+   - Ranks candidates above generic temporal transitions while labelling them `observable-outcome-candidate-unverified`; executable contracts, automatic execution, causality, authority, and gameplay verification remain false.
+   - Added complete multipart-to-release regression coverage proving candidates reach artifacts without creating gameplay automation.
 
 ## Tests and Results
 
@@ -237,6 +244,15 @@ Manifest-to-builder integration cycle from commit `9a4591e`:
 - Integrated CLI over the complete supplied manifest: intentional exit 2; exactly `manifest-readiness-v109.json`; 15 correlation candidates; generation false; gameplay verification false.
 - Python compilation and `git diff --check`: **passed**.
 
+Correlation-aware workflow compilation cycle from commit `c721d40`:
+
+- Four regression-first tests reproduced missing candidate counters/ranking and absent fail-closed validation before implementation.
+- Focused scan/workflow/release integration suite: **18 passed**.
+- Complete runtime-enabled Python suite against official Luau `0.744`: **1,325 passed** in 1.762s.
+- Receiver checks and all **3** Node/Luau parser tests: **passed**.
+- Python compilation and `git diff --check`: **passed**.
+- The prior pushed builder-cycle head `fc51c4a` completed all **18** GitHub workflows successfully.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -304,7 +320,6 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Extend downstream workflow compilation to consume v30.1 `observableOutcomeCandidate`, feature-state, and feature-GUI fields as unverified correlation evidence without automatically approving actions.
-2. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
-3. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
-4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
+2. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
+3. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
