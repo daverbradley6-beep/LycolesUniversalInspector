@@ -40,7 +40,7 @@ Current v108 runtime contract: `tools/runtime_contract_v108.py` derives exact ex
 
 Current v30.1 inspector contract: generic controls may derive action candidates only from bounded semantic ancestry; feature readiness may use only feature-consistent observable state/GUI changes. `completedCandidates` means an observable correlation candidate, never causal success. `outcomeVerified`, source authenticity, server authority, and gameplay verification remain false unless separately established.
 
-Current v109 manifest contract: `tools/manifest_readiness_v109.py` analyzes a local manifest without treating it as the numbered multipart report. Legacy `uploadedParts: 0` is an unknown pre-upload snapshot, not transport failure. Explicit ACK state still does not establish receiver integrity or downstream availability. Manifest-only input must keep v107/v108 script generation blocked because canonical object parts and reviewed contracts are absent.
+Current v109 manifest contract: `tools/manifest_readiness_v109.py` analyzes a local manifest without treating it as the numbered multipart report. Legacy `uploadedParts: 0` is an unknown pre-upload snapshot, not transport failure. New manifests expose the generated multipart `scanId`, and local-manifest identity/counts must match numbered parts. Explicit ACK state still does not establish receiver integrity or downstream availability. A separately validated direct Worker `/integrity` response may establish receiver-stored report availability, but not local payload equivalence without matching hashes. Manifest-only input must keep v107/v108 script generation blocked because canonical object parts and reviewed contracts are absent.
 
 ## Generated features
 

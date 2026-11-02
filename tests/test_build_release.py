@@ -9,13 +9,26 @@ import unittest
 import zipfile
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+TRANSPORT_FIXTURE=ROOT/"tests"/"fixtures"/"report_transport_v301_cases.json"
+TRANSPORT_CASES=json.loads(TRANSPORT_FIXTURE.read_text(encoding="utf-8"))["cases"]
+
+def transport_snapshot(case,expected_parts):
+    transport=json.loads(json.dumps(case["reportTransport"]))
+    acknowledged=transport["acknowledgedParts"]
+    if acknowledged=="ALL":acknowledged=expected_parts
+    elif acknowledged=="ALL_BUT_ONE":acknowledged=expected_parts-1
+    elif acknowledged=="PARTIAL":acknowledged=max(1,expected_parts//2)
+    transport["acknowledgedParts"]=acknowledged
+    transport["expectedParts"]=expected_parts
+    return transport
+
 SOURCE=ROOT/"tools"/"build_release.py"
 MANIFEST_FIXTURE=ROOT/"tests"/"fixtures"/"bubble_gum_infinity_manifest_v30_sanitized.json"
 spec=importlib.util.spec_from_file_location("release_builder",SOURCE)
 builder=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
-def make_parts(directory,missing=False,event=None):
+def make_parts(directory,missing=False,event=None,transport=None):
     scan={"scanId":"testscan123","placeId":3623096087,"partCount":2,
           "version":"10.0","objects":[]}
     one=dict(scan,partIndex=1,scanStats={"recorded":2,"complete":True},
@@ -27,6 +40,11 @@ def make_parts(directory,missing=False,event=None):
              interactionHistoryChunk=[interaction])
     (directory/"1.json").write_text(json.dumps(one))
     if not missing:(directory/"2.json").write_text(json.dumps(two))
+    if transport is not None:
+        manifest={"scanId":scan["scanId"],"placeId":scan["placeId"],
+                  "objectCount":2,"partCount":2,"expectedParts":2,
+                  "reportTransport":transport}
+        (directory/"manifest.json").write_text(json.dumps(manifest))
 
 class ReleaseBuilderTests(unittest.TestCase):
     def test_build_and_reproducibility(self):
@@ -66,6 +84,17 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertEqual(workflows["workflows"][0]["evidenceLevel"],"observable-outcome-candidate-unverified")
             self.assertFalse(workflows["workflows"][0]["automaticallyExecutable"])
             self.assertEqual(manifest["implementedGameplayAutomation"],[])
+    def test_transport_lifecycle_manifests_are_multipart_compatible(self):
+        for index,case in enumerate(TRANSPORT_CASES):
+            with self.subTest(case=case["name"]), tempfile.TemporaryDirectory() as temp:
+                base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+                make_parts(parts,transport=transport_snapshot(case,2))
+                output=base/f"out-{index}"
+                manifest=builder.build(parts,output)
+                plan=json.loads((output/"capability-plan.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["scanId"],"testscan123")
+                self.assertEqual(plan["integrity"]["parts"],2)
+                self.assertEqual(manifest["implementedGameplayAutomation"],[])
     def test_incomplete_scan_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()

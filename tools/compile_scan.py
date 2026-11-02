@@ -64,12 +64,14 @@ def compile_scan(directory):
     files=sorted(pathlib.Path(directory).glob("*.json"))
     if not files: fail("No JSON scan parts found")
     parts=[]
+    local_manifests=[]
     for file in files:
         raw=file.read_bytes()
         if len(raw)>3_000_000: fail(f"Part too large: {file.name}")
         data=json.loads(raw)
         if not isinstance(data,dict) or not isinstance(data.get("objects"),list):
             if isinstance(data,dict) and "partIndex" not in data and ("objectCount" in data or "metadata" in data):
+                local_manifests.append(data)
                 continue
             fail(f"Invalid part: {file.name}")
         parts.append(data)
@@ -79,6 +81,13 @@ def compile_scan(directory):
     count=first.get("partCount")
     if not isinstance(scan_id,str) or not isinstance(place_id,int) or not isinstance(count,int) or count<1 or count>2000:
         fail("Invalid scan identity")
+    for manifest in local_manifests:
+        if ((manifest.get("scanId") is not None and manifest.get("scanId")!=scan_id)
+                or (manifest.get("placeId") is not None and manifest.get("placeId")!=place_id)
+                or (manifest.get("partCount") is not None and manifest.get("partCount")!=count)
+                or (manifest.get("expectedParts") is not None and manifest.get("expectedParts")!=count)):
+            fail("Local manifest identity mismatch")
+
     by_index={}
     for part in parts:
         index=part.get("partIndex")
@@ -97,12 +106,16 @@ def compile_scan(directory):
         fail("Malformed object record")
     objects=[o for p in ordered for o in p["objects"]]
     if len(objects)>2_000_000: fail("Object count exceeds safety limit")
+
     metadata=next((p for p in ordered if isinstance(p.get("scanStats"),dict)),None)
     if metadata is None: fail("Missing scan metadata")
     expected=metadata["scanStats"].get("recorded")
     if expected is None: expected=metadata["scanStats"].get("recordedObjects")
     if expected is not None and expected!=len(objects):
         fail(f"Object count mismatch: expected {expected}, received {len(objects)}")
+    if any(manifest.get("objectCount") is not None
+           and manifest.get("objectCount")!=len(objects) for manifest in local_manifests):
+        fail("Local manifest object count mismatch")
     history=[]
     for p in ordered:
         history.extend(p.get("interactionHistoryChunk") or [])

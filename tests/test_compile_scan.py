@@ -68,6 +68,23 @@ class ScanCompilerTests(unittest.TestCase):
             self.parts(path,event=event)
             with self.assertRaisesRegex(ValueError,"candidate evidence claims verification"):
                 compiler.compile_scan(path)
+    def test_local_manifest_must_match_multipart_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path)
+            manifest={"scanId":"other123","placeId":3623096087,"objectCount":2,
+                      "partCount":2,"expectedParts":2}
+            (path/"manifest.json").write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError,"Local manifest identity mismatch"):
+                compiler.compile_scan(path)
+    def test_local_manifest_must_match_multipart_object_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path)
+            manifest={"scanId":"abc12345","placeId":3623096087,"objectCount":3,
+                      "partCount":2,"expectedParts":2}
+            (path/"manifest.json").write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError,"Local manifest object count mismatch"):
+                compiler.compile_scan(path)
+
     def test_mixed_scan(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)

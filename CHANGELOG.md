@@ -9,6 +9,10 @@
 - Add deterministic v109 manifest-only readiness analysis plus a sanitized Bubble Gum Simulator INFINITY regression fixture.
 - Route manifest-file input through `tools/build_release.py` to the v109 readiness artifact, returning blocked status without generating ZIP or Luau output.
 - Preserve validated v30.1 observable outcome candidates and feature-state/GUI correlation counts through capability plans, workflow specifications, release summaries, and implementation reviews without approving execution.
+- Add synthetic pre-upload, retry, ACK, incomplete, transport-failure, and configuration-error regression snapshots across readiness, reconciliation, and release-builder paths, with fail-closed generation/phase validation.
+- Include the multipart `scanId` in new local manifests, expose safe receiver integrity lookup diagnostics, and reject local-manifest/multipart identity or object-count mismatches.
+- Reconcile direct Worker `/integrity` responses separately from local upload snapshots; verified receiver availability does not claim local payload equivalence without hashes.
+- Include `placeId` in receiver integrity output for exact local/receiver identity checks.
 - Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
 
 ## v30.0.0 — Provenance-aware evidence and per-feature verification

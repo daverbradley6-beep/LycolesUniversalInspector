@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 MAX_INPUT_BYTES = 2_000_000
@@ -30,6 +31,14 @@ def _integer(value, name, *, minimum=0):
 def _mapping(value, name):
     if not isinstance(value, dict):
         raise ValueError(f"invalid {name}")
+    return value
+
+def _scan_id(manifest):
+    value = manifest.get("scanId")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,100}", value):
+        raise ValueError("invalid receiver scan ID")
     return value
 
 
@@ -78,6 +87,12 @@ def _transport(manifest):
             "diagnostic": "legacy uploadedParts is a pre-upload placeholder, not failure or success evidence",
         }
     transport = _mapping(transport, "report transport")
+    generated = transport.get("reportGenerated")
+    if generated is not True:
+        raise ValueError("invalid report generation status")
+    phase = transport.get("manifestSnapshotPhase")
+    if not isinstance(phase, str) or not phase or len(phase) > 80:
+        raise ValueError("invalid manifest snapshot phase")
     attempted = transport.get("uploadAttempted")
     if type(attempted) is not bool:
         raise ValueError("invalid upload attempted status")
@@ -88,6 +103,16 @@ def _transport(manifest):
     status = transport.get("uploadStatus")
     if status not in {"not-attempted", "uploading", "acknowledged", "incomplete", "failed", "configuration-error"}:
         raise ValueError("invalid upload status")
+    expected_phase = {
+        "not-attempted": "pre-upload",
+        "uploading": "upload-started",
+        "acknowledged": "post-upload",
+        "incomplete": "post-upload",
+        "failed": "post-upload",
+        "configuration-error": "upload-blocked",
+    }[status]
+    if phase != expected_phase:
+        raise ValueError("manifest snapshot phase is inconsistent with upload status")
     if status == "acknowledged" and acknowledged != expected:
         raise ValueError("acknowledged transport is incomplete")
     if status in {"uploading", "acknowledged", "incomplete", "failed"} and not attempted:
@@ -101,8 +126,8 @@ def _transport(manifest):
     if available and not integrity:
         raise ValueError("downstream availability requires receiver integrity verification")
     return {
-        "reportGenerated": transport.get("reportGenerated") is True,
-        "manifestSnapshotPhase": str(transport.get("manifestSnapshotPhase", "unspecified")),
+        "reportGenerated": generated,
+        "manifestSnapshotPhase": phase,
         "uploadAttempted": attempted,
         "uploadStatus": status,
         "acknowledgedParts": acknowledged,
@@ -172,8 +197,13 @@ def analyze(manifest):
     if not isinstance(manifest, dict):
         raise ValueError("manifest must be an object")
     place_id = _integer(manifest.get("placeId"), "place ID", minimum=1)
+    scan_id = _scan_id(manifest)
     scan = _object_accounting(manifest)
     transport = _transport(manifest)
+    transport["receiverIntegrityLookupAvailable"] = scan_id is not None
+    transport["receiverIntegrityPath"] = (
+        f"/reports/READ_KEY/{scan_id}/integrity" if scan_id else None
+    )
     diagnostics = _mapping(manifest.get("interactionDiagnostics"), "interaction diagnostics")
     workflow = _mapping(diagnostics.get("workflowStats"), "workflow stats")
     history = diagnostics.get("recentInteractions") or []
@@ -213,8 +243,11 @@ def analyze(manifest):
     ]
     if history_subset:
         blockers.append("complete_interaction_history_unavailable")
+    if scan_id is None:
+        blockers.append("receiver_scan_id_unavailable")
     return {
         "schemaVersion": "109.manifest-readiness.1",
+        "scanId": scan_id,
         "placeId": place_id,
         "inspectorVersion": manifest.get("version"),
         "scan": scan,

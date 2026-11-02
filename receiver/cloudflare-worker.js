@@ -29,7 +29,8 @@ async function inspect(env, scanId, partCount) {
     && !!metadata && metadata.scanStats.complete===true
     && expected!==null && expected===totalObjects
     && uniqueObjects===totalObjects;
-  return {scanId,partCount,receivedParts:partCount-missing.length,missingParts:missing,
+  return {scanId,placeId:metadata?.placeId ?? rows.find(part=>part)?.placeId ?? null,
+    partCount,receivedParts:partCount-missing.length,missingParts:missing,
     indexedObjects:totalObjects,uniqueObjectKeys:uniqueObjects,duplicateObjectKeys:totalObjects-uniqueObjects,
     identityErrors,
     duplicateExamples:duplicates,expectedObjects:expected,interactionHistoryEvents:interactionEvents,

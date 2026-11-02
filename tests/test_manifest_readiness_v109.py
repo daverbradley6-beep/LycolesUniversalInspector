@@ -7,15 +7,33 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "bubble_gum_infinity_manifest_v30_sanitized.json"
+TRANSPORT_FIXTURE = ROOT / "tests" / "fixtures" / "report_transport_v301_cases.json"
 SOURCE = ROOT / "tools" / "manifest_readiness_v109.py"
 SPEC = importlib.util.spec_from_file_location("manifest_readiness_v109", SOURCE)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def transport_snapshot(case, expected_parts):
+    transport = copy.deepcopy(case["reportTransport"])
+    acknowledged = transport["acknowledgedParts"]
+    if acknowledged == "ALL":
+        acknowledged = expected_parts
+    elif acknowledged == "ALL_BUT_ONE":
+        acknowledged = expected_parts - 1
+    elif acknowledged == "PARTIAL":
+        acknowledged = max(1, expected_parts // 2)
+    transport["acknowledgedParts"] = acknowledged
+    transport["expectedParts"] = expected_parts
+    return transport
+
+
 class ManifestReadinessTests(unittest.TestCase):
     def setUp(self):
         self.manifest = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        matrix = json.loads(TRANSPORT_FIXTURE.read_text(encoding="utf-8"))
+        self.transport_scan_id = matrix["scanId"]
+        self.transport_cases = matrix["cases"]
 
     def test_real_manifest_explains_evidence_and_generation_blockers(self):
         result = MODULE.analyze(self.manifest)
@@ -36,8 +54,14 @@ class ManifestReadinessTests(unittest.TestCase):
         )
         self.assertFalse(result["generationReadiness"]["scriptGenerationReady"])
         self.assertFalse(result["generationReadiness"]["v108SourceCompatible"])
+        self.assertIsNone(result["scanId"])
+        self.assertFalse(result["transport"]["receiverIntegrityLookupAvailable"])
         self.assertIn(
             "full_multipart_report_unavailable",
+            result["generationReadiness"]["blockers"],
+        )
+        self.assertIn(
+            "receiver_scan_id_unavailable",
             result["generationReadiness"]["blockers"],
         )
         self.assertFalse(result["claims"]["causalityProven"])
@@ -50,6 +74,8 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport["uploadStatus"], "unknown_legacy_manifest_snapshot")
         self.assertIsNone(transport["acknowledgedParts"])
         self.assertFalse(transport["uploadFailed"])
+        self.assertTrue(transport["reportGenerated"])
+        self.assertEqual(transport["manifestSnapshotPhase"], "legacy-unspecified")
         self.assertFalse(transport["receiverIntegrityVerified"])
         self.assertFalse(transport["downstreamReportAvailable"])
 
@@ -71,6 +97,62 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(result["transport"]["uploadStatus"], "acknowledged")
         self.assertFalse(result["transport"]["uploadFailed"])
         self.assertFalse(result["transport"]["downstreamReportAvailable"])
+
+    def test_v301_transport_lifecycle_matrix(self):
+        for case in self.transport_cases:
+            with self.subTest(case=case["name"]):
+                manifest = copy.deepcopy(self.manifest)
+                manifest["scanId"] = self.transport_scan_id
+                manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+                result = MODULE.analyze(manifest)
+                transport = result["transport"]
+                expected = case["reportTransport"]
+                self.assertEqual(result["scanId"], self.transport_scan_id)
+                self.assertEqual(transport["uploadStatus"], expected["uploadStatus"])
+                self.assertIs(transport["reportGenerated"], expected["reportGenerated"])
+                self.assertEqual(transport["manifestSnapshotPhase"], expected["manifestSnapshotPhase"])
+                self.assertIs(transport["uploadAttempted"], expected["uploadAttempted"])
+                self.assertIs(transport["uploadFailed"], case["expectedUploadFailed"])
+                self.assertFalse(transport["receiverIntegrityVerified"])
+                self.assertFalse(transport["downstreamReportAvailable"])
+                self.assertTrue(transport["receiverIntegrityLookupAvailable"])
+                self.assertEqual(
+                    transport["receiverIntegrityPath"],
+                    f"/reports/READ_KEY/{self.transport_scan_id}/integrity",
+                )
+
+    def test_invalid_receiver_scan_id_is_rejected(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["scanId"] = "bad/id"
+        with self.assertRaisesRegex(ValueError, "receiver scan ID"):
+            MODULE.analyze(manifest)
+
+    def test_transport_rejects_generation_contradiction(self):
+        manifest = copy.deepcopy(self.manifest)
+        case = next(item for item in self.transport_cases
+                    if item["name"] == "post-acknowledgement")
+        manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+        manifest["reportTransport"]["reportGenerated"] = False
+        with self.assertRaisesRegex(ValueError, "report generation status"):
+            MODULE.analyze(manifest)
+
+    def test_transport_rejects_invalid_snapshot_phase(self):
+        manifest = copy.deepcopy(self.manifest)
+        case = next(item for item in self.transport_cases if item["name"] == "pre-upload")
+        manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+        manifest["reportTransport"]["manifestSnapshotPhase"] = {"invalid": True}
+        with self.assertRaisesRegex(ValueError, "snapshot phase"):
+            MODULE.analyze(manifest)
+
+    def test_transport_rejects_phase_status_contradiction(self):
+        manifest = copy.deepcopy(self.manifest)
+        case = next(item for item in self.transport_cases
+                    if item["name"] == "post-acknowledgement")
+        manifest["reportTransport"] = transport_snapshot(case, manifest["expectedParts"])
+        manifest["reportTransport"]["manifestSnapshotPhase"] = "pre-upload"
+        with self.assertRaisesRegex(ValueError, "phase is inconsistent"):
+            MODULE.analyze(manifest)
+
 
     def test_invalid_object_accounting_is_rejected(self):
         manifest = copy.deepcopy(self.manifest)

@@ -31,6 +31,13 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("receiverIntegrityVerified = false",SRC)
         self.assertIn("downstreamReportAvailable = false",SRC)
         self.assertIn("refreshLocalManifest(\"post-upload\")",SRC)
+    def test_manifest_exposes_receiver_scan_id(self):
+        self.assertIn("return parts, scanId",SRC)
+        self.assertIn("local parts, reportScanId = prepareParts(result)",SRC)
+        self.assertIn("scanId = reportScanId",SRC)
+        self.assertIn("scanId=reportScanId",SRC)
+        self.assertIn(r'.. "\\nScan ID: " .. tostring(resultData.scanId)',SRC)
+
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)

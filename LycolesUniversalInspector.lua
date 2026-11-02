@@ -1069,7 +1069,7 @@ local function prepareParts(report)
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
-    return parts
+    return parts, scanId
 end
 
 -- Dynamic discovery records newly replicated instances without accessing script source.
@@ -2577,11 +2577,12 @@ local function inspect(requestType)
         local encoded, resultData = pcall(function()
             -- Large universal scans must never be encoded as one JSON document.
             -- The receiver accepts bounded parts; keep only a small clipboard manifest.
-            local parts = prepareParts(result)
+            local parts, reportScanId = prepareParts(result)
             uploadState={attempted=false,status="not-attempted",acknowledgedParts=0,
                 expectedParts=#parts,lastError=nil}
             local manifestData = {
                 version = VERSION, gameName = result.gameName,
+                scanId = reportScanId,
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
@@ -2597,7 +2598,7 @@ local function inspect(requestType)
                 note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
             }
             local manifest = encodeStage("scan-manifest", manifestData)
-            return {json=manifest,parts=parts,manifest=manifestData}
+            return {json=manifest,parts=parts,manifest=manifestData,scanId=reportScanId}
         end)
         if encoded then
             snapshotId = result.snapshotId
@@ -2610,6 +2611,7 @@ local function inspect(requestType)
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
+                .. "\\nScan ID: " .. tostring(resultData.scanId)
                 .. "\\nEntries: " .. #result.objects
                 .. "\\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0) .. " events, "

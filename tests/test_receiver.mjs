@@ -31,6 +31,8 @@ const url='https://example.test/reports/test-read-secret/testscan123/integrity';
 const result=await context.receiver.fetch(new Request(url),env);
 const integrity=await result.json();
 assert.equal(integrity.complete,true);
+assert.equal(integrity.placeId,base.placeId);
+
 assert.equal(integrity.indexedObjects,1);
 assert.equal(integrity.receivedParts,2);
 assert.equal(integrity.duplicateObjectKeys,0);
