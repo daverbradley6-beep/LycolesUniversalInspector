@@ -1,15 +1,15 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cycle_
+_Last updated: 2026-11-02 — v30.1 transport identity and receiver reconciliation cycle_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `c721d40` (`Preserve outcome candidates in workflow compilation`)
-- Implementation head: full SHA `c721d40c18587fdadae19a7f0480d6d0e4251f00`; the previously published handover head `fc51c4af7619587439fb1809a3fb8600212e11c9` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
-- Implementation snapshot relative to `origin/main`: **24 commits ahead, 0 behind**
-- All **18** workflows triggered for pushed head `fc51c4a` completed successfully
+- Latest implementation commit: `fbe1833` (`Harden report transport reconciliation`)
+- Implementation head: full SHA `fbe183393be9d20ffb63fffd78bc775e4d9e0746`; the previously published handover head `2f67731d2012012ddb1a598ce5b0e4b4bc73eb69` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
+- Implementation snapshot relative to `origin/main`: **26 commits ahead, 0 behind**
+- All **18** workflows triggered for prior pushed head `2f67731` completed successfully
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -123,6 +123,13 @@ _Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cy
    - Carries distinct observable-candidate, state-correlation, and GUI-correlation counts through capability plans, workflow specs, release summaries, and implementation review output.
    - Ranks candidates above generic temporal transitions while labelling them `observable-outcome-candidate-unverified`; executable contracts, automatic execution, causality, authority, and gameplay verification remain false.
    - Added complete multipart-to-release regression coverage proving candidates reach artifacts without creating gameplay automation.
+
+19. `fbe1833` — hardened report transport identity and receiver reconciliation:
+   - Threads the generated multipart `scanId` into the local manifest and visible inspector summary; the supplied legacy Bubble Gum manifest remains explicitly unreconcilable because it has no receiver scan ID.
+   - Covers six synthetic v30.1 lifecycle states across readiness analysis, release compilation, and receiver reconciliation, with fail-closed generation/phase semantics.
+   - Accepts local lifecycle manifests alongside numbered parts while rejecting scan, place, part-count, or object-count mismatches.
+   - Adds receiver `placeId` integrity output and direct `/integrity` reconciliation requiring exact local/receiver part and object accounting.
+   - Separates ACK state, receiver integrity, downstream availability, caller-supplied response authenticity, and local payload equivalence; no client observation or transport result proves causality, authority, replayability, or gameplay success.
 
 ## Tests and Results
 
@@ -253,6 +260,15 @@ Correlation-aware workflow compilation cycle from commit `c721d40`:
 - Python compilation and `git diff --check`: **passed**.
 - The prior pushed builder-cycle head `fc51c4a` completed all **18** GitHub workflows successfully.
 
+Transport identity and receiver reconciliation cycle from commit `fbe1833`:
+
+- Regression-first failures reproduced missing scan-ID handoff, accepted local identity/object-count mismatches, absent direct integrity reconciliation, and malformed lifecycle metadata acceptance before implementation.
+- Six lifecycle templates pass readiness, release-builder, and separate receiver-integrity compatibility checks.
+- Complete runtime-enabled Python suite against official Luau `0.744`: **1,338 passed** in 1.764s.
+- Receiver checks and all **3** Node/Luau parser tests: **passed**.
+- Python compilation and `git diff --check`: **passed**.
+- The prior pushed workflow-cycle head `2f67731` completed all **18** GitHub workflows successfully.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -320,6 +336,6 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
+1. Add a credential-safe receiver download/import path that retrieves a verified scan's metadata, integrity response, and numbered parts into an isolated local directory before invoking existing compilation; test it against a controlled local HTTP receiver without production access.
 2. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
 3. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
