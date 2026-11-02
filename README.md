@@ -39,6 +39,17 @@ python3 tools/build_release.py ./scan-parts --output ./build
 
 The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. Complete v30.1 parts preserve validated observable outcome candidates and feature-state/GUI correlation counts in `capability-plan.json`, `workflow-specs.json`, `release-manifest.json`, and `implementation-review.md`; those correlations never establish causality, outcome verification, replayability, server authority, or automatic execution. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
 
+### Retrieve verified receiver parts
+
+Set `LYCOLES_READ_KEY` through a secure environment or secret manager, then run:
+
+```sh
+python3 tools/fetch_receiver_scan.py https://receiver.example receiverscanid --output ./scan-parts
+python3 tools/build_release.py ./scan-parts --output ./build
+```
+
+The read key has no command-line option and is never written to the imported directory. Retrieval requires HTTPS, rejects redirects, reads constant-cost receiver metadata, downloads every bounded numbered part with bounded transient retries, validates identity, uniqueness and accounting locally, runs the existing multipart compiler, and publishes the new directory atomically. The importer requires the checked-in Worker contract with `/metadata`; committing this source does not deploy it, and older deployments return 404 until separately updated by an authorized operator. `receiverIntegrityVerified` means the downloaded receiver record passed part identity and object-accounting checks. It does not prove that those bytes equal an earlier local export, authenticate a saved response independently of transport, or establish gameplay causality, server authority, replayability, or action success. The release builder remains offline and does not fetch network data itself.
+
 When only the small local manifest is available, pass that file to the same release entry point:
 
 ```sh

@@ -27,6 +27,13 @@ assert.equal((await post(one)).status,200);
 assert.equal((await post({...one,scanStats:{recorded:99,complete:true}})).status,409);
 assert.equal((await post({...two,placeId:123})).status,409);
 assert.equal((await post(two)).status,201);
+const metadataResult=await context.receiver.fetch(new Request(
+  'https://example.test/reports/test-read-secret/testscan123/metadata'),env);
+const metadata=await metadataResult.json();
+assert.equal(metadata.metadata.scanId,base.scanId);
+assert.equal(metadata.metadata.placeId,base.placeId);
+assert.equal(metadata.metadata.partCount,base.partCount);
+
 const url='https://example.test/reports/test-read-secret/testscan123/integrity';
 const result=await context.receiver.fetch(new Request(url),env);
 const integrity=await result.json();

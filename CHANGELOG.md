@@ -13,6 +13,8 @@
 - Include the multipart `scanId` in new local manifests, expose safe receiver integrity lookup diagnostics, and reject local-manifest/multipart identity or object-count mismatches.
 - Reconcile direct Worker `/integrity` responses separately from local upload snapshots; verified receiver availability does not claim local payload equivalence without hashes.
 - Include `placeId` in receiver integrity output for exact local/receiver identity checks.
+- Add an HTTPS-only receiver scan importer with environment-only read-key handling, redirect rejection, bounded downloads and retries, exact identity/accounting checks, offline compilation, and atomic publication.
+- Add a constant-cost receiver metadata endpoint so importing large reports does not require the Worker's O(part-count) integrity route.
 - Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
 
 ## v30.0.0 — Provenance-aware evidence and per-feature verification

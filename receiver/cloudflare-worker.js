@@ -73,6 +73,10 @@ export default {
      partCount:part.partCount,receivedObjects:part.objects.length},201);
   }
   if(request.method==="GET"&&p[0]==="reports"&&p[1]===env.READ_KEY) {
+   if(p.length===4 && p[3]==="metadata") {
+    const meta=await env.REPORTS.get("scan:"+p[2]+":meta","json");
+    return meta?respond({metadata:meta}):respond({error:"Scan not found"},404);
+   }
    if(p.length===4 && p[3]==="integrity") {
     const meta=await env.REPORTS.get("scan:"+p[2]+":meta","json");
     if(!meta)return respond({error:"Scan not found"},404);
