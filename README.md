@@ -1,6 +1,6 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.2.0**
+Current inspector release: **v30.3.0**
 
 Current integrated offline pipeline: **v108**
 
@@ -9,6 +9,7 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 ## Current capabilities
 
 - Read-only inspection of bounded, client-visible Roblox instance metadata across replicated services, the local player, character, GUI, lighting, teams, sound, and workspace.
+- A two-tab in-game interface keeps inspection controls and Generated Script status in one panel. `PRODUCE SCRIPT` records a bounded client-visible capability request and captures a complete scan for offline compilation; it does not generate or execute gameplay behavior in the target session.
 - Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, explicit local transport lifecycle status, and a separately deployed Cloudflare Worker integrity endpoint.
 - Passive observation of normal user interactions and bounded before/after client-state evidence from leaderstats, Data, and privacy-filtered LocalPlayer numeric/boolean ValueBase candidates. v30.1 distinguishes generic temporal changes from feature-consistent observable outcome candidates; neither proves causality, server authority, or gameplay success.
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, reproducible release archives, and normalized source-provenance status. Generated utility UI exposes retrieval integrity and its explicit trust limits without claiming authenticity or gameplay verification.

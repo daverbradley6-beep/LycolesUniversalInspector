@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.2.0
+-- Lycoles Universal Inspector v30.3.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.2.0"
+local VERSION = "30.3.0"
 
 local endpoint = ""
 local autoSend = true
@@ -509,15 +509,19 @@ local panel = create("Frame", {
     Active = true
 }, gui)
 
+create("Frame", {
+    Name = "HeaderBackground", Size = UDim2.new(1, 0, 0, 48),
+    BackgroundColor3 = Color3.fromRGB(80, 80, 80), BorderSizePixel = 0
+}, panel)
 create("TextLabel", {
     Text = "Lycoles Universal Inspector v" .. VERSION,
-    Size = UDim2.new(1, -50, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+    Size = UDim2.fromOffset(260, 48), BackgroundTransparency = 1,
     TextXAlignment = Enum.TextXAlignment.Left,
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
-    Font = Enum.Font.GothamBold
+    Font = Enum.Font.GothamBold,
+    ZIndex = 2
 }, panel)
 
 local function button(label, x)
@@ -533,6 +537,19 @@ local function button(label, x)
         Active = true
     }, panel)
 end
+
+local inspectorTab = create("TextButton", {
+    Name = "InspectorTab", Text = "Inspector",
+    Size = UDim2.fromOffset(78, 28), Position = UDim2.fromOffset(270, 10),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
+local generatedScriptTab = create("TextButton", {
+    Name = "GeneratedScriptTab", Text = "Generated Script",
+    Size = UDim2.fromOffset(112, 28), Position = UDim2.fromOffset(352, 10),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
 
 -- Draggable panel and compact minimised launcher.
 local UserInputService = game:GetService("UserInputService")
@@ -698,6 +715,57 @@ local automatic = create("TextButton", {
     BackgroundColor3 = Color3.fromRGB(90, 90, 90),
     BorderSizePixel = 2
 }, config)
+
+local generatedScriptPane = create("Frame", {
+    Name = "GeneratedScriptPane", Size = UDim2.fromOffset(510, 396),
+    Position = UDim2.fromOffset(0, 48), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderSizePixel = 0, Visible = false, ZIndex = 7
+}, panel)
+create("TextLabel", {
+    Text = "Request an evidence-grounded client utility",
+    Size = UDim2.fromOffset(486, 30), Position = UDim2.fromOffset(12, 10),
+    BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1),
+    TextXAlignment = Enum.TextXAlignment.Left, TextSize = 15, ZIndex = 8
+}, generatedScriptPane)
+local featureRequestInput = create("TextBox", {
+    Name = "FeatureRequest", Text = "",
+    PlaceholderText = "Describe the client-visible capability to generate",
+    Size = UDim2.fromOffset(486, 72), Position = UDim2.fromOffset(12, 46),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.new(1, 1, 1),
+    PlaceholderColor3 = Color3.fromRGB(165, 172, 180), TextSize = 13,
+    TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
+    TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+    ZIndex = 8
+}, generatedScriptPane)
+local produceScript = create("TextButton", {
+    Name = "ProduceScript", Text = "PRODUCE SCRIPT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(12, 128),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+local generatedStatus = create("TextLabel", {
+    Name = "GenerationStatus",
+    Text = "No generated script is loaded. Enter a request to capture it with the next full scan.\n\nGeneration and static validation run offline from complete numbered parts. Gameplay remains unverified.",
+    Size = UDim2.fromOffset(486, 112), Position = UDim2.fromOffset(12, 176),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(215, 224, 232),
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+create("TextBox", {
+    Name = "GeneratedCodeOutput", Text = "-- Generated Luau becomes available only after offline compilation and validation.",
+    Size = UDim2.fromOffset(486, 78), Position = UDim2.fromOffset(12, 302),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
+    TextSize = 11, Font = Enum.Font.Code, TextWrapped = true, MultiLine = true,
+    TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 8
+}, generatedScriptPane)
+local function showGeneratedScriptPane(visible)
+    generatedScriptPane.Visible = visible
+    inspectorTab.BackgroundColor3 = visible and Color3.fromRGB(95, 95, 95) or Color3.fromRGB(48, 116, 150)
+    generatedScriptTab.BackgroundColor3 = visible and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+end
+inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(false) end)
+generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(true) end)
 
 _G.LycolesInspectorClose = function()
     alive = false
@@ -986,6 +1054,7 @@ local function prepareParts(report)
             version=report.version,placeId=report.placeId,gameId=report.gameId,
             placeVersion=report.placeVersion,inspectedAt=report.inspectedAt,
             gameName=report.gameName,scanId=scanId,partIndex=index,partCount=total,
+            featureRequest=meta and report.featureRequest or nil,
             counts=meta and report.counts or nil,
             groups=meta and report.groups or nil,
             scanStats=meta and report.scanStats or nil,
@@ -2209,22 +2278,24 @@ interactionToggle.MouseButton1Click:Connect(function()
         or "Manual interaction observation paused"
 end)
 
-local function inspect(requestType)
+local function inspect(requestType, featureRequest)
     if running or uploading then
         status.Text = "Wait for current scan/upload to finish"
-        return
+        return false
     end
     if pendingParts and #pendingParts > 0 then
         for i = 1, #pendingParts do
             if not pendingAcknowledged[i] then
                 status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
-                return
+                return false
             end
         end
     end
 
     scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or (requestType == "auto-evidence" and "auto-evidence" or "manual")
+    scanRequestType = requestType == "startup-baseline" and "startup-baseline"
+        or (requestType == "auto-evidence" and "auto-evidence"
+        or (requestType == "feature-request" and "feature-request" or "manual"))
     running = true
     siblingContextCache = setmetatable({}, {__mode="k"})
     status.Text = "Scanning..."
@@ -2240,6 +2311,7 @@ local function inspect(requestType)
                 placeVersion = game.PlaceVersion,
                 inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 gameName = nil,
+                featureRequest = featureRequest,
                 objects = {},
                 counts = {},
                 groups = {}
@@ -2603,6 +2675,7 @@ local function inspect(requestType)
                 automationDiagnostics = result.automationDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
+                featureRequest = result.featureRequest,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
                 reportTransport = uploadSnapshot("pre-upload"),
@@ -2638,12 +2711,17 @@ local function inspect(requestType)
                 .. "\\nScan type: " .. scanRequestType
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
+            if result.featureRequest then
+                generatedStatus.Text = "Evidence package captured for:\n" .. result.featureRequest
+                    .. "\n\nExport or upload all numbered parts for offline generation and static validation. No gameplay outcome is verified."
+            end
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
             status.Text = "JSON error: " .. tostring(resultData)
         end
         running = false
     end)
+    return true
 end
 
 -- v6 automatic evidence collection: observe ordinary user gameplay without requiring
@@ -2721,6 +2799,24 @@ task.spawn(function()
         end
     end
 end)
+produceScript.MouseButton1Click:Connect(function()
+    local request = trim(featureRequestInput.Text:gsub("[%c]+", " "))
+    if request == "" then
+        generatedStatus.Text = "Enter a client-visible capability request first."
+        return
+    end
+    if #request > 240 then
+        generatedStatus.Text = "Request is too long; use 240 bytes or fewer."
+        return
+    end
+    featureRequestInput.Text = request
+    if inspect("feature-request", request) then
+        generatedStatus.Text = "Capturing a complete evidence package for offline generation.\n\nNo gameplay implementation or outcome is verified in-game."
+    else
+        generatedStatus.Text = "Evidence capture not started:\n" .. status.Text
+    end
+end)
+
 scan.MouseButton1Click:Connect(function() inspect("manual") end)
 
 copy.MouseButton1Click:Connect(function()

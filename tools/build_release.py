@@ -123,6 +123,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     manifest={
         "schemaVersion":"30.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
+        "requestedCapability":plan.get("requestedCapability"),
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),

@@ -1,3 +1,11 @@
+## v30.3.0 — Integrated capability request handoff
+
+- Add principal Inspector and Generated Script tabs to the in-game panel while reusing the existing scan, export, and transport controls.
+- Add a bounded capability-request field and `PRODUCE SCRIPT` action that captures a fresh complete evidence package for offline compilation rather than claiming in-game generation.
+- Preserve the request in metadata-bearing multipart reports, local lifecycle manifests, compiled capability plans, release manifests, and generated read-only Luau.
+- Display the requested capability as evidence-review context and keep gameplay implementation and outcomes explicitly unverified.
+- Reject empty, padded, control-character-bearing, and overlong requests during compilation and generation.
+
 ## v30.2.0 — Receiver payload digest provenance
 
 - Persist a SHA-256 digest for each exact receiver upload body, return it in upload acknowledgements, and expose it with numbered-part retrieval.

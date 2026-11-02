@@ -46,6 +46,8 @@ Current v30.2 transport contract: the Worker hashes exact accepted request bodie
 
 Current release provenance contract: `tools/compile_scan.py` must distinguish ordinary local manifests from `30.2.receiver-import.2`, require its exact schema, reconcile every identity/accounting field, and recompute each current raw part digest before emitting normalized `30.2.source-provenance.1`. Direct multipart input must report receiver checks unavailable. `source-provenance.json`, release manifests, documentation, and generated UI may surface retrieval integrity, ACK equivalence, and resume reuse only while checkpoint authentication, receiver-response/source authenticity, original local payload equivalence, causality, authority, replayability, gameplay, and action outcomes remain false or unverified.
 
+Current v30.3 capability-request contract: the in-game Generated Script tab stages one bounded client-visible request and triggers a complete evidence scan. The request may be carried through metadata-bearing parts, lifecycle manifests, capability plans, release manifests, and generated read-only Luau only as user intent and evidence-review context. `PRODUCE SCRIPT` does not imply in-game generation, runtime installation, action support, causality, replayability, authority, or gameplay success; those remain offline-validated or unverified as explicitly reported.
+
 ## Generated features
 
 Each generated feature must define:

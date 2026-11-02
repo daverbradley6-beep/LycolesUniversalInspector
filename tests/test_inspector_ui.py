@@ -41,6 +41,18 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('type(ack.sha256) == "string"',SRC)
         self.assertIn("acknowledgedPartDigests = digests",SRC)
         self.assertIn("sha256=ack.sha256",SRC)
+    def test_two_tab_generation_request_ui(self):
+        self.assertIn('Name = "InspectorTab"',SRC)
+        self.assertIn('Name = "GeneratedScriptTab"',SRC)
+        self.assertIn('Name = "GeneratedScriptPane"',SRC)
+        self.assertIn('PlaceholderText = "Describe the client-visible capability to generate"',SRC)
+        self.assertIn('Text = "PRODUCE SCRIPT"',SRC)
+        self.assertIn('report.featureRequest',SRC)
+        self.assertIn('featureRequest=meta and report.featureRequest or nil',SRC)
+        self.assertIn('featureRequest = result.featureRequest',SRC)
+        self.assertIn('local function inspect(requestType, featureRequest)',SRC)
+        self.assertIn('inspect("feature-request", request)',SRC)
+        self.assertNotIn('local requestedCapability',SRC)
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

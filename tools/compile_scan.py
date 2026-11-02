@@ -3,7 +3,7 @@
 No third-party packages, Roblox credentials, or game-specific hardcoding required.
 Usage: python3 tools/compile_scan.py scan-parts-dir --output build
 """
-import argparse, collections, hashlib, json, pathlib, sys
+import argparse, collections, hashlib, json, pathlib, sys, unicodedata
 
 def fail(message):
     raise ValueError(message)
@@ -223,6 +223,15 @@ def compile_scan(directory):
 
     metadata=next((p for p in ordered if isinstance(p.get("scanStats"),dict)),None)
     if metadata is None: fail("Missing scan metadata")
+    requested_capability=metadata.get("featureRequest")
+    if requested_capability is not None:
+        if (not isinstance(requested_capability,str) or not requested_capability
+                or len(requested_capability.encode("utf-8"))>240
+                or requested_capability!=requested_capability.strip()
+                or any(unicodedata.category(character)=="Cc"
+                       for character in requested_capability)):
+            fail("Invalid feature request")
+
     expected=metadata["scanStats"].get("recorded")
     if expected is None: expected=metadata["scanStats"].get("recordedObjects")
     if expected is not None and expected!=len(objects):
@@ -294,6 +303,7 @@ def compile_scan(directory):
     if not integrity["scanComplete"]: fail("Source scan reports incomplete root coverage")
     plan={"schemaVersion":"20.0","integrity":integrity,"featureCount":len(features),
           "features":features,"classCounts":dict(counts),
+          "requestedCapability":requested_capability,
           "sourceProvenance":source_provenance,
           "sourceDiagnostics":{"omittedObjects":metadata["scanStats"].get("omitted"),
               "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),

@@ -17,6 +17,18 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("Response authenticity: unverified",result)
         self.assertNotIn("FireServer(",result)
         self.assertNotIn("InvokeServer(",result)
+    def test_requested_capability_is_displayed_as_unverified(self):
+        plan=self.plan();plan["requestedCapability"]="Show observable pet inventory"
+        result=generator.render(plan)
+        self.assertIn("Requested capability: Show observable pet inventory",result)
+        self.assertIn("Request status: evidence review only; gameplay is unverified",result)
+    def test_malformed_requested_capability_blocked(self):
+        for request in ("x"*241,"🙂"*61,"Show\u0085status"):
+            with self.subTest(request=repr(request)):
+                plan=self.plan();plan["requestedCapability"]=request
+                with self.assertRaisesRegex(ValueError,"Malformed requested capability"):
+                    generator.render(plan)
+
     def test_invalid_scan_blocked(self):
         plan=self.plan();plan["integrity"]["scanComplete"]=False
         with self.assertRaises(ValueError):generator.render(plan)

@@ -28,11 +28,11 @@ spec=importlib.util.spec_from_file_location("release_builder",SOURCE)
 builder=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
-def make_parts(directory,missing=False,event=None,transport=None):
+def make_parts(directory,missing=False,event=None,transport=None,request=None):
     scan={"scanId":"testscan123","placeId":3623096087,"partCount":2,
           "version":"10.0","objects":[]}
     one=dict(scan,partIndex=1,scanStats={"recorded":2,"complete":True},
-             featureEvidence={"rebirth":{}},
+             featureEvidence={"rebirth":{}},featureRequest=request,
              objects=[{"path":"Workspace.A","class":"Part","scanOrdinal":1}])
     interaction=event or {"featureCandidate":"rebirth",
         "evidenceLevel":"interaction-observed","outcomeVerified":False}
@@ -85,12 +85,19 @@ class ReleaseBuilderTests(unittest.TestCase):
                        "evidenceKinds":["state-change"],"overlappingInteractionsPossible":True,
                        "sourceAuthenticityVerified":False,"causalityProven":False,
                        "serverAuthorityVerified":False,"gameplayVerified":False}}
-            make_parts(parts,event=event)
+            request="Show observable rebirth status"
+            make_parts(parts,event=event,request=request)
             manifest=builder.build(parts,base/"out")
             workflows=json.loads((base/"out"/"workflow-specs.json").read_text(encoding="utf-8"))
+            plan=json.loads((base/"out"/"capability-plan.json").read_text(encoding="utf-8"))
+            generated=(base/"out"/"LycolesGeneratedUtility.lua").read_text(encoding="utf-8")
             self.assertEqual(manifest["workflowEvidenceSummary"]["observableOutcomeCandidates"],1)
             self.assertEqual(workflows["workflows"][0]["evidenceLevel"],"observable-outcome-candidate-unverified")
             self.assertFalse(workflows["workflows"][0]["automaticallyExecutable"])
+            self.assertEqual(plan["requestedCapability"],request)
+            self.assertEqual(manifest["requestedCapability"],request)
+            self.assertIn("Requested capability: "+request,generated)
+            self.assertIn("Request status: evidence review only; gameplay is unverified",generated)
             self.assertEqual(manifest["implementedGameplayAutomation"],[])
     def test_transport_lifecycle_manifests_are_multipart_compatible(self):
         for index,case in enumerate(TRANSPORT_CASES):
