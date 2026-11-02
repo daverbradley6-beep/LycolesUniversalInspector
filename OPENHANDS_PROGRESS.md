@@ -1,5 +1,18 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Receiver provenance in generated releases
+
+- Pushed `6f6931c84488868101ad6848f7a7816ca25ead12` (`Surface receiver provenance in generated releases`) to `origin/openhands-development`.
+- `tools/compile_scan.py` now distinguishes ordinary local manifests from exact `30.2.receiver-import.2` records, requires strict receiver-import schema/identity/accounting/resume claims, and recomputes every current raw-part digest before normalizing provenance.
+- Every complete build now emits deterministic `30.2.source-provenance.1` in `source-provenance.json`, `capability-plan.json`, and `release-manifest.json`. Direct local multipart inputs report receiver checks unavailable instead of inheriting imported status.
+- The generated Luau Features panel and bundled README expose baseline input mode, receiver payload-digest and retrieval-integrity status, inspector ACK digest equivalence, current-run versus resumed digest checking, and explicit unauthenticated/unverified boundaries.
+- Compiler/generator regressions reject forged positive authenticity claims and post-import part drift. Matching ACK evidence and resumed-import diagnostics survive import → compilation → generated UI without becoming authenticity or gameplay claims.
+- Final local gate: **1,363 Python tests passed** with pinned official Luau 0.744 and no skips; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- The resumable implementation head `9b522fc` completed all **18** GitHub workflows successfully. The new implementation head triggered **18** workflows; 2 were running and 16 were queued at the latest check.
+- Evidence boundary: digest/retrieval checks remain local validation records. Checkpoint authentication, receiver-response/source authenticity, original local payload equivalence, causality, server authority, replayability, gameplay verification, and action outcomes remain explicitly false or unverified.
+- No Cloudflare deployment, production credential, or production receiver configuration was changed.
+- Next priorities: advance the two-tab Inspector / Generated Script experience around existing offline artifacts, and add controlled end-to-end provenance display coverage without adding network behavior to the builder.
+
 ## Update — 2026-11-02 — Resumable large-scan receiver retrieval
 
 - Pushed `9b522fca39cd14f741341a9283bd347ab1181bb6` (`Add resumable receiver scan retrieval`) to `origin/openhands-development`.
@@ -39,16 +52,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — resumable large-scan receiver retrieval_
+_Last updated: 2026-11-02 — receiver provenance in generated releases_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `9b522fc` (`Add resumable receiver scan retrieval`)
-- Implementation head: full SHA `9b522fca39cd14f741341a9283bd347ab1181bb6`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **32 commits ahead, 0 behind**
-- Current-head CI started all **18** workflows: 3 had passed, 3 were running, and 12 were queued at the latest check; final CI is pending
+- Latest implementation commit: `6f6931c` (`Surface receiver provenance in generated releases`)
+- Implementation head: full SHA `6f6931c84488868101ad6848f7a7816ca25ead12`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **34 commits ahead, 0 behind**
+- Current-head CI started all **18** workflows: 2 were running and 16 were queued at the latest check; final CI is pending
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -184,7 +197,22 @@ _Last updated: 2026-11-02 — resumable large-scan receiver retrieval_
    - Revalidates cache schema, byte digests, part identity, optional ACK equivalence, uniqueness, accounting, and compilation while streaming cached parts with bounded memory.
    - Rejects corrupt, stale, conflicting, unsafe, or overlapping state without publishing output; keeps read credentials out of checkpoints and checkpoint authenticity explicitly false.
 
+23. `6f6931c` — propagated normalized source provenance through generated releases:
+   - Revalidates exact receiver-import schema, identity, accounting, resume diagnostics, and every current raw-part digest during compilation; direct local multipart scans receive a separate unavailable-receiver status.
+   - Carries deterministic provenance through capability plans, release manifests, standalone `source-provenance.json`, ZIPs, bundled README text, and the generated Luau Features panel.
+   - Rejects forged positive claims and post-import part drift while explicitly keeping checkpoint authentication, authenticity, local-payload equivalence, causality, authority, replayability, gameplay, and action outcomes false or unverified.
+
 ## Tests and Results
+
+Source-provenance release cycle from commit `6f6931c`:
+
+- Regression-first receiver import tests failed before implementation for missing propagation and missing forged-claim rejection.
+- Focused importer/compiler/builder/generator suites: **43 passed**, including receiver/local provenance, matching ACK propagation, resumed-cache disclosure, forged-claim rejection, part-drift rejection, ZIP contents, and deterministic rebuilds.
+- Official Luau 0.744-enabled complete Python suite: **1,363 passed**, no skips.
+- Receiver checks and **3** Node/Luau parser tests: **passed**.
+- Python compilation and `git diff --check`: **passed**.
+- Local and `origin/openhands-development` implementation SHA comparison: exact match at `6f6931c84488868101ad6848f7a7816ca25ead12`.
+- Prior implementation `9b522fc`: all **18** GitHub workflows passed. New implementation-head CI is pending.
 
 Resumable retrieval cycle from commit `9b522fc`:
 
@@ -401,7 +429,8 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - The v30.1 inspector changes have offline/static/parser validation only; no updated Roblox session has confirmed their runtime layout, event sequencing, sampling overhead, or transport snapshots.
 - Feature-consistent outcome candidates remain temporal correlations gathered during overlapping interaction windows. They are useful generation inputs but do not establish causal action success, server authority, or replayability.
 - Expanded state sampling is bounded to LocalPlayer numeric/boolean ValueBase objects. It does not observe arbitrary module state, server-only values, table values, protected payloads, or authoritative results.
-- Resumable retrieval checkpoints are local unauthenticated caches. Byte-digest, metadata, identity, ACK, accounting, and compiler revalidation detects accidental or isolated corruption, but cannot prove checkpoint authorship or resist coordinated modification of both checkpoint and cached parts.
+- Resumable retrieval checkpoints and normalized release provenance are local unauthenticated records. Byte-digest, metadata, identity, ACK, accounting, and compiler revalidation detects accidental or isolated corruption, but cannot prove authorship, authenticate a receiver response, or resist coordinated modification of both records and payloads.
+- The current inspector UI and generated read-only utility remain separate runtime artifacts; the requested two-tab Inspector / Generated Script experience is not yet a single integrated in-game workflow, and offline building still requires externally supplied complete parts.
 - The legacy Bubble Gum manifest cannot establish whether upload was attempted or whether any of 1,330 parts reached the receiver. No receiver endpoint, credentials, integrity response, or production deployment was tested.
 - Manifest-only v109 analysis cannot feed v107/v108 generation because canonical object-bearing parts and reviewed implementation contracts are absent.
 - The Cloudflare receiver still requires separate deployment plus secret/KV configuration.
@@ -409,7 +438,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Surface imported receiver provenance, resume diagnostics, validation outcomes, and generation blockers through the existing integrated Inspector / Generated Script artifacts and UI without adding network behavior to the offline builder.
-2. Add an end-to-end controlled regression from receiver import through release generation that proves provenance survives compilation while authenticity, causality, authority, replayability, and gameplay verification remain false.
+1. Audit and incrementally converge the existing inspector and generated read-only utility toward the required two-tab Inspector / Generated Script experience, reusing current controls and preserving offline/network boundaries.
+2. Carry separately compiled dynamic-observation overlay provenance into release artifacts without misrepresenting it as baseline receiver provenance, and add deterministic controlled coverage for mixed local/receiver sources.
 3. When complete real numbered parts become available, run them through receiver import plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
 4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
