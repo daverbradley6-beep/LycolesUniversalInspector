@@ -1,5 +1,18 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Integrated request handoff and overlay provenance
+
+- Pushed `5b4f3e2a7484dcb48b4071862ef89b33a5d6312e` (`Integrate capability requests into inspector workflow`) and `a79c5ff6f017a155ed00f83a0766adcaa226e391` (`Preserve dynamic overlay source provenance`) to `origin/openhands-development`.
+- Released inspector **v30.3.0** with principal Inspector / Generated Script tabs, a bounded capability request, explicit capture/preflight status, and a `PRODUCE SCRIPT` action that starts one request-bound full scan without claiming in-game generation or execution.
+- Propagated validated request context through the metadata-bearing report part, local lifecycle manifest, capability plan, release manifest, and generated read-only Luau. ASCII, multibyte, Unicode-control, padding, and malformed-input regressions fail closed under the inspector's 240-byte boundary.
+- Dynamic observation overlays now require matching compiler-normalized scan/place/part provenance, reject inconsistent source modes and positive unsupported trust claims, and retain each overlay source separately from baseline `source-provenance.json`.
+- Complete releases now include deterministic `evidence-overlay-provenance.json`, a digest-linked release-manifest summary, bundled guidance, and generated Features-panel source counts. Controlled coverage distinguishes local baselines from receiver-import overlays without turning integrity records into authenticity or gameplay claims.
+- Final local gate: **1,371 Python tests passed** with pinned official Luau 0.744 and no skips; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- Commit `5b4f3e2` completed all **18** GitHub workflows successfully. On commit `a79c5ff`, 14 of **18** workflows had succeeded and 4 were running at the latest check; none had failed.
+- Evidence boundary: requested capability text is user intent, and overlay chronology is additive observation evidence. Neither establishes source authenticity, causality, server authority, replayability, runtime installation, gameplay success, or verified action outcomes.
+- No Cloudflare deployment, production credential, production receiver configuration, or live Roblox session was changed or used.
+- Next priorities: derive deterministic request-to-feature readiness and blockers from existing evidence; incrementally present offline release/provenance status in the Generated Script tab without crossing the offline/network boundary; then continue broad generation improvements.
+
 ## Update — 2026-11-02 — Receiver provenance in generated releases
 
 - Pushed `6f6931c84488868101ad6848f7a7816ca25ead12` (`Surface receiver provenance in generated releases`) to `origin/openhands-development`.
@@ -52,16 +65,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — receiver provenance in generated releases_
+_Last updated: 2026-11-02 — integrated request handoff and overlay provenance_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `6f6931c` (`Surface receiver provenance in generated releases`)
-- Implementation head: full SHA `6f6931c84488868101ad6848f7a7816ca25ead12`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **34 commits ahead, 0 behind**
-- Current-head CI started all **18** workflows: 2 were running and 16 were queued at the latest check; final CI is pending
+- Latest implementation commit: `a79c5ff` (`Preserve dynamic overlay source provenance`)
+- Implementation head: full SHA `a79c5ff6f017a155ed00f83a0766adcaa226e391`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **37 commits ahead, 0 behind**
+- Implementation-head CI: 14 of **18** workflows succeeded and 4 were running at the latest check; none failed and final CI is pending
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -430,7 +443,7 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Feature-consistent outcome candidates remain temporal correlations gathered during overlapping interaction windows. They are useful generation inputs but do not establish causal action success, server authority, or replayability.
 - Expanded state sampling is bounded to LocalPlayer numeric/boolean ValueBase objects. It does not observe arbitrary module state, server-only values, table values, protected payloads, or authoritative results.
 - Resumable retrieval checkpoints and normalized release provenance are local unauthenticated records. Byte-digest, metadata, identity, ACK, accounting, and compiler revalidation detects accidental or isolated corruption, but cannot prove authorship, authenticate a receiver response, or resist coordinated modification of both records and payloads.
-- The current inspector UI and generated read-only utility remain separate runtime artifacts; the requested two-tab Inspector / Generated Script experience is not yet a single integrated in-game workflow, and offline building still requires externally supplied complete parts.
+- The v30.3 inspector now provides a two-tab Inspector / Generated Script experience and request-bound evidence capture, but offline releases are not loaded back into the in-game pane; the generated read-only utility remains a separate artifact and building still requires externally supplied complete numbered parts.
 - The legacy Bubble Gum manifest cannot establish whether upload was attempted or whether any of 1,330 parts reached the receiver. No receiver endpoint, credentials, integrity response, or production deployment was tested.
 - Manifest-only v109 analysis cannot feed v107/v108 generation because canonical object-bearing parts and reviewed implementation contracts are absent.
 - The Cloudflare receiver still requires separate deployment plus secret/KV configuration.
@@ -438,7 +451,8 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 ## Next Highest-Priority Tasks
 
-1. Audit and incrementally converge the existing inspector and generated read-only utility toward the required two-tab Inspector / Generated Script experience, reusing current controls and preserving offline/network boundaries.
-2. Carry separately compiled dynamic-observation overlay provenance into release artifacts without misrepresenting it as baseline receiver provenance, and add deterministic controlled coverage for mixed local/receiver sources.
-3. When complete real numbered parts become available, run them through receiver import plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
-4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Derive a deterministic request-to-feature readiness artifact from `requestedCapability`, classified feature evidence, workflow candidates, and explicit blockers; preserve user intent without treating name matches or temporal correlation as implementation proof.
+2. Incrementally enrich the Generated Script tab with identified-capability, validation, unsupported-behavior, transport, and provenance summaries, plus bounded regeneration status, while keeping offline builds and explicit execution controls separate.
+3. Improve feature-specific interaction/state attribution where real evidence supports it, especially observation-window ownership and relevant-state selection, without lowering causality or outcome-verification standards.
+4. When complete real numbered parts become available, run them through receiver import plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
+5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
