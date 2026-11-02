@@ -1,15 +1,27 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-02 — v30.1 transport identity and receiver reconciliation cycle_
+## Update — 2026-11-02 — Receiver retrieval integrated with offline generation
+
+- Pushed `b211c10976612b1f5618d384692332e3e84d6362` (`Add secure receiver scan import`) to `origin/openhands-development`.
+- Added `tools/fetch_receiver_scan.py` as the explicit network boundary between the receiver and the existing offline compiler/release builder. Read credentials come only from `LYCOLES_READ_KEY`; production retrieval requires HTTPS and rejects redirects.
+- Added bounded response, object, part, worker, timeout, credential and transient-retry limits. All numbered parts are identity-, uniqueness- and accounting-checked, compiled, and published atomically only after complete validation.
+- Added the constant-cost Worker `/reports/READ_KEY/SCAN_ID/metadata` route so a 1,330-part live report does not require the Worker's O(part-count) `/integrity` implementation before download. Production receiver deployment remains separate and was not modified.
+- Added 11 real-HTTP regressions covering successful import through `tools/build_release.py`, missing parts, identity and object-count mismatches, duplicate object identity, redirects, malformed lengths, transient retries, HTTP opt-in, missing environment credentials, and pre-existing outputs.
+- Final gate: **1,349 Python tests passed** with the pinned official Luau runtime; Worker checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- Evidence boundary: retrieval integrity means every receiver part was downloaded and passed local structure/accounting/compiler checks. It does not establish byte equivalence with an earlier local payload, saved-response authenticity, causality, server authority, replayability, action success, or live gameplay verification.
+- The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
+- Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
+
+_Last updated: 2026-11-02 — receiver retrieval and offline generation integration_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `fbe1833` (`Harden report transport reconciliation`)
-- Implementation head: full SHA `fbe183393be9d20ffb63fffd78bc775e4d9e0746`; the previously published handover head `2f67731d2012012ddb1a598ce5b0e4b4bc73eb69` was confirmed byte-for-byte on `origin/openhands-development` before this cycle
-- Implementation snapshot relative to `origin/main`: **26 commits ahead, 0 behind**
-- All **18** workflows triggered for prior pushed head `2f67731` completed successfully
+- Latest implementation commit: `b211c10` (`Add secure receiver scan import`)
+- Implementation head: full SHA `b211c10976612b1f5618d384692332e3e84d6362`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **28 commits ahead, 0 behind**
+- All **18** workflows triggered for prior pushed head `0e594c4` completed successfully; current-head CI is pending
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
