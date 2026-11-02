@@ -13,6 +13,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("3623096087",result)
         self.assertIn('button("Stats"',result)
         self.assertIn('button("Menus"',result)
+        self.assertIn("Receiver payload digests: unavailable",result)
+        self.assertIn("Response authenticity: unverified",result)
         self.assertNotIn("FireServer(",result)
         self.assertNotIn("InvokeServer(",result)
     def test_invalid_scan_blocked(self):
@@ -21,6 +23,16 @@ class GeneratorTests(unittest.TestCase):
     def test_malformed_feature_blocked(self):
         plan=self.plan();plan["features"]=[{"feature":4}]
         with self.assertRaises(ValueError):generator.render(plan)
+    def test_forged_source_authenticity_blocked(self):
+        plan=self.plan();plan["sourceProvenance"]={
+            "inputMode":"receiver-import","resumeCheckpointAuthenticated":False,
+            "receiverResponseAuthenticityVerified":True,"localPayloadEquivalent":False,
+            "sourceAuthenticityVerified":False,"causalityProven":False,
+            "serverAuthorityVerified":False,"gameplayVerified":False,
+            "receiverStoredPayloadDigestsVerified":True,"receiverIntegrityVerified":True,
+            "receiverStoredPayloadDigestsRevalidatedThisRun":True}
+        with self.assertRaisesRegex(ValueError,"unsupported verification"):
+            generator.render(plan)
     def test_escape_untrusted_feature_name(self):
         plan=self.plan();plan["features"]=[{"feature":'abc"\\\\\nscript'}]
         result=generator.render(plan)

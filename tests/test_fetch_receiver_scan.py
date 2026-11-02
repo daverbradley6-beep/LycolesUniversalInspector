@@ -155,6 +155,16 @@ class ReceiverImportTests(unittest.TestCase):
                  "--output", str(release)], text=True, capture_output=True, timeout=30)
             self.assertEqual(release_run.returncode, 0, release_run.stderr)
             self.assertTrue((release / "release-manifest.json").is_file())
+            provenance = json.loads((release / "source-provenance.json").read_text())
+            self.assertEqual(provenance["inputMode"], "receiver-import")
+            self.assertTrue(provenance["receiverStoredPayloadDigestsVerified"])
+            self.assertFalse(provenance["receiverResponseAuthenticityVerified"])
+            self.assertFalse(provenance["localPayloadEquivalent"])
+            release_manifest = json.loads((release / "release-manifest.json").read_text())
+            self.assertEqual(release_manifest["sourceProvenance"], provenance)
+            generated = (release / "LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("Receiver payload digests: verified", generated)
+            self.assertIn("Response authenticity: unverified", generated)
             self.assertEqual(len(list(output.glob("part-*.json"))), 2)
             manifest = json.loads((output / "receiver-manifest.json").read_text())
             self.assertEqual(manifest["scanId"], "receiverscan01")
@@ -166,6 +176,28 @@ class ReceiverImportTests(unittest.TestCase):
                                  entry["sha256"])
             self.assertFalse(any(path.endswith("/integrity") for path in receiver.paths))
             self.assertNotIn("read-secret", json.dumps(manifest))
+
+    def test_forged_receiver_authenticity_claim_blocks_compilation(self):
+        with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
+                               "receiverscan01", output, allow_http=True)
+            manifest_path = output / "receiver-manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["receiverResponseAuthenticityVerified"] = True
+            manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "receiver provenance"):
+                COMPILER.compile_scan(output)
+
+    def test_imported_part_tampering_blocks_compilation(self):
+        with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
+                               "receiverscan01", output, allow_http=True)
+            part = output / "part-0001.json"
+            part.write_bytes(part.read_bytes() + b" ")
+            with self.assertRaisesRegex(ValueError, "receiver provenance digest"):
+                COMPILER.compile_scan(output)
 
     def test_persisted_part_digest_mismatch_fails_atomically(self):
         with ReceiverServer(digest_mismatch=True) as receiver, tempfile.TemporaryDirectory() as temp:
@@ -203,6 +235,11 @@ class ReceiverImportTests(unittest.TestCase):
             self.assertFalse(result["localPayloadEquivalent"])
             imported = json.loads((output / "receiver-manifest.json").read_text())
             self.assertTrue(imported["receiverAcknowledgementDigestEquivalent"])
+            plan = COMPILER.compile_scan(output)
+            self.assertTrue(plan["sourceProvenance"]["receiverAcknowledgementDigestEquivalent"])
+            generator = load_module(ROOT / "tools" / "generate_script.py", "generator_ack")
+            self.assertIn("Inspector ACK digest equivalence: verified",
+                          generator.render(plan))
 
     def test_conflicting_acknowledgement_digest_fails_atomically(self):
         with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
@@ -254,6 +291,15 @@ class ReceiverImportTests(unittest.TestCase):
             self.assertEqual(sum(path.endswith("/part-1") for path in receiver.paths),
                              first_part_requests)
             self.assertTrue(output.is_dir())
+            plan = COMPILER.compile_scan(output)
+            provenance = plan["sourceProvenance"]
+            self.assertEqual(provenance["inputMode"], "receiver-import")
+            self.assertEqual(provenance["resumedPartCount"], 1)
+            self.assertFalse(provenance["receiverStoredPayloadDigestsRevalidatedThisRun"])
+            generator = load_module(ROOT / "tools" / "generate_script.py", "generator_resume")
+            generated = generator.render(plan)
+            self.assertIn("Receiver digests rechecked this run: no (cached checkpoint used)",
+                          generated)
 
     def test_tampered_resume_part_fails_without_publication(self):
         with ReceiverServer(fail_part=2) as receiver, tempfile.TemporaryDirectory() as temp:

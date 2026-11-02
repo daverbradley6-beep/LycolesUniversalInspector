@@ -44,6 +44,8 @@ Current v109 manifest contract: `tools/manifest_readiness_v109.py` analyzes a lo
 
 Current v30.2 transport contract: the Worker hashes exact accepted request bodies, persists per-part SHA-256 sidecars, and returns them in ACKs and numbered-part headers. The inspector requires and records digest-bearing ACKs. The importer must fail closed on missing/mismatched persisted digests and may compare a supplied local ACK manifest. Optional resume state must stay outside output, contain no read key, bind to receiver origin plus canonical metadata, retain only digest-verified parts through atomic checkpoint updates, revalidate every cached part before final atomic publication, and remain explicitly unauthenticated. `receiverStoredPayloadDigestsVerified`, `receiverAcknowledgementDigestEquivalent`, and resume checks do not authenticate either party or establish locally computed original-byte equivalence. Production Worker deployment remains separately authorized.
 
+Current release provenance contract: `tools/compile_scan.py` must distinguish ordinary local manifests from `30.2.receiver-import.2`, require its exact schema, reconcile every identity/accounting field, and recompute each current raw part digest before emitting normalized `30.2.source-provenance.1`. Direct multipart input must report receiver checks unavailable. `source-provenance.json`, release manifests, documentation, and generated UI may surface retrieval integrity, ACK equivalence, and resume reuse only while checkpoint authentication, receiver-response/source authenticity, original local payload equivalence, causality, authority, replayability, gameplay, and action outcomes remain false or unverified.
+
 ## Generated features
 
 Each generated feature must define:

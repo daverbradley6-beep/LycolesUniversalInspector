@@ -59,28 +59,141 @@ def _correlation_evidence(event):
         fail("Observable outcome candidate evidence claims verification or is malformed")
     return {"candidate":True,"state":"state-change" in kinds,"gui":"gui-change" in kinds}
 
+_RECEIVER_PROVENANCE_FIELDS={
+    "schemaVersion","scanId","placeId","partCount","expectedParts","objectCount",
+    "metadata","receiverIntegrity","receiverPartContentDigests",
+    "resumableRetrievalEnabled","resumedPartCount","downloadedPartCount",
+    "resumeCheckpointAuthenticated","receiverStoredPayloadDigestsRevalidatedThisRun",
+    "receiverStoredPayloadDigestsVerified","receiverAcknowledgementDigestEquivalent",
+    "receiverIntegrityVerified","receiverResponseAuthenticityVerified",
+    "localPayloadEquivalent","note",
+}
+_RECEIVER_MARKERS={
+    "receiverIntegrity","receiverPartContentDigests",
+    "receiverStoredPayloadDigestsVerified","receiverIntegrityVerified",
+    "receiverResponseAuthenticityVerified","localPayloadEquivalent",
+}
+
+
+def _local_source_provenance(scan_id,place_id,part_count):
+    return {
+        "schemaVersion":"30.2.source-provenance.1","inputMode":"local-multipart",
+        "scanId":scan_id,"placeId":place_id,"partCount":part_count,
+        "partContentDigests":[],"receiverStoredPayloadDigestsVerified":False,
+        "receiverStoredPayloadDigestsRevalidatedThisRun":False,
+        "receiverAcknowledgementDigestEquivalent":False,
+        "receiverIntegrityVerified":False,"resumableRetrievalEnabled":False,
+        "resumedPartCount":0,"downloadedPartCount":0,
+        "resumeCheckpointAuthenticated":False,
+        "receiverResponseAuthenticityVerified":False,"localPayloadEquivalent":False,
+        "sourceAuthenticityVerified":False,"causalityProven":False,
+        "serverAuthorityVerified":False,"replayable":False,
+        "gameplayVerified":False,"actionOutcomesVerified":False,
+    }
+
+
+def _receiver_source_provenance(manifest,scan_id,place_id,part_count,
+                                object_count,actual_digests):
+    if set(manifest)!=_RECEIVER_PROVENANCE_FIELDS:
+        fail("Invalid receiver provenance schema")
+    if (manifest.get("schemaVersion")!="30.2.receiver-import.2"
+            or manifest.get("scanId")!=scan_id or manifest.get("placeId")!=place_id
+            or manifest.get("partCount")!=part_count
+            or manifest.get("expectedParts")!=part_count
+            or manifest.get("objectCount")!=object_count):
+        fail("Invalid receiver provenance identity")
+    metadata=manifest.get("metadata")
+    if (not isinstance(metadata,dict) or metadata.get("scanId")!=scan_id
+            or metadata.get("placeId")!=place_id or metadata.get("partCount")!=part_count):
+        fail("Invalid receiver provenance metadata")
+    integrity=manifest.get("receiverIntegrity")
+    if (not isinstance(integrity,dict) or integrity.get("scanId")!=scan_id
+            or integrity.get("placeId")!=place_id
+            or integrity.get("partCount")!=part_count
+            or integrity.get("receivedParts")!=part_count
+            or integrity.get("missingParts")!=[]
+            or integrity.get("indexedObjects")!=object_count
+            or integrity.get("uniqueObjectKeys")!=object_count
+            or integrity.get("duplicateObjectKeys")!=0
+            or integrity.get("identityErrors")!=[]
+            or integrity.get("expectedObjects")!=object_count
+            or integrity.get("complete") is not True
+            or integrity.get("integrityStatus")!="verified-after-retrieval"):
+        fail("Invalid receiver provenance integrity")
+    entries=manifest.get("receiverPartContentDigests")
+    if not isinstance(entries,list) or len(entries)!=part_count:
+        fail("Invalid receiver provenance digests")
+    digests={}
+    for entry in entries:
+        if not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}:
+            fail("Invalid receiver provenance digest")
+        index=entry.get("partIndex"); digest=entry.get("sha256")
+        if (type(index) is not int or not 1<=index<=part_count or index in digests
+                or not isinstance(digest,str) or len(digest)!=64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or actual_digests.get(index)!=digest):
+            fail("Invalid receiver provenance digest")
+        digests[index]=digest
+    resumed=manifest.get("resumedPartCount")
+    downloaded=manifest.get("downloadedPartCount")
+    if (type(resumed) is not int or type(downloaded) is not int
+            or resumed<0 or downloaded<0 or resumed+downloaded!=part_count
+            or type(manifest.get("resumableRetrievalEnabled")) is not bool
+            or (resumed>0 and manifest.get("resumableRetrievalEnabled") is not True)
+            or manifest.get("resumeCheckpointAuthenticated") is not False
+            or manifest.get("receiverStoredPayloadDigestsRevalidatedThisRun") is not (resumed==0)
+            or manifest.get("receiverStoredPayloadDigestsVerified") is not True
+            or type(manifest.get("receiverAcknowledgementDigestEquivalent")) is not bool
+            or manifest.get("receiverIntegrityVerified") is not True
+            or manifest.get("receiverResponseAuthenticityVerified") is not False
+            or manifest.get("localPayloadEquivalent") is not False
+            or not isinstance(manifest.get("note"),str)):
+        fail("Invalid receiver provenance claims")
+    result=_local_source_provenance(scan_id,place_id,part_count)
+    result.update({
+        "inputMode":"receiver-import",
+        "partContentDigests":[{"partIndex":index,"sha256":digests[index]}
+                              for index in range(1,part_count+1)],
+        "receiverStoredPayloadDigestsVerified":True,
+        "receiverStoredPayloadDigestsRevalidatedThisRun":resumed==0,
+        "receiverAcknowledgementDigestEquivalent":manifest["receiverAcknowledgementDigestEquivalent"],
+        "receiverIntegrityVerified":True,
+        "resumableRetrievalEnabled":manifest["resumableRetrievalEnabled"],
+        "resumedPartCount":resumed,"downloadedPartCount":downloaded,
+    })
+    return result
+
 
 def compile_scan(directory):
     files=sorted(pathlib.Path(directory).glob("*.json"))
     if not files: fail("No JSON scan parts found")
     parts=[]
+    part_file_digests=[]
     local_manifests=[]
+    receiver_manifests=[]
     for file in files:
         raw=file.read_bytes()
         if len(raw)>3_000_000: fail(f"Part too large: {file.name}")
         data=json.loads(raw)
         if not isinstance(data,dict) or not isinstance(data.get("objects"),list):
+            if isinstance(data,dict) and "partIndex" not in data and _RECEIVER_MARKERS & set(data):
+                receiver_manifests.append(data)
+                continue
             if isinstance(data,dict) and "partIndex" not in data and ("objectCount" in data or "metadata" in data):
                 local_manifests.append(data)
                 continue
             fail(f"Invalid part: {file.name}")
         parts.append(data)
+        part_file_digests.append(hashlib.sha256(raw).hexdigest())
     if not parts: fail("No multipart payloads found")
     first=parts[0]
     scan_id=first.get("scanId"); place_id=first.get("placeId")
     count=first.get("partCount")
     if not isinstance(scan_id,str) or not isinstance(place_id,int) or not isinstance(count,int) or count<1 or count>2000:
         fail("Invalid scan identity")
+    if len(receiver_manifests)>1:
+        fail("Multiple receiver provenance manifests")
+
     for manifest in local_manifests:
         if ((manifest.get("scanId") is not None and manifest.get("scanId")!=scan_id)
                 or (manifest.get("placeId") is not None and manifest.get("placeId")!=place_id)
@@ -89,7 +202,7 @@ def compile_scan(directory):
             fail("Local manifest identity mismatch")
 
     by_index={}
-    for part in parts:
+    for part,raw_digest in zip(parts,part_file_digests):
         index=part.get("partIndex")
         if part.get("scanId")!=scan_id or part.get("placeId")!=place_id or part.get("partCount")!=count:
             fail("Mixed scan IDs, place IDs, or part counts")
@@ -98,10 +211,11 @@ def compile_scan(directory):
         if index in by_index:
             if by_index[index][0]!=fingerprint: fail(f"Conflicting duplicate part {index}")
             continue
-        by_index[index]=(fingerprint,part)
+        by_index[index]=(fingerprint,part,raw_digest)
     missing=[i for i in range(1,count+1) if i not in by_index]
     if missing: fail(f"Missing parts: {missing[:30]} (total {len(missing)})")
     ordered=[by_index[i][1] for i in range(1,count+1)]
+    actual_part_digests={i:by_index[i][2] for i in range(1,count+1)}
     if any(not isinstance(o,dict) for p in ordered for o in p["objects"]):
         fail("Malformed object record")
     objects=[o for p in ordered for o in p["objects"]]
@@ -139,6 +253,10 @@ def compile_scan(directory):
     duplicate_count=sum(v-1 for v in paths.values())
     if duplicate_count:
         fail(f"Duplicate object identities: {duplicate_count}")
+    source_provenance=(_receiver_source_provenance(
+        receiver_manifests[0],scan_id,place_id,count,len(objects),actual_part_digests)
+        if receiver_manifests else _local_source_provenance(scan_id,place_id,count))
+
     features=[]
     for name in sorted(feature_names):
         event_records=[record for record in history_evidence if record[0].get("featureCandidate")==name]
@@ -176,6 +294,7 @@ def compile_scan(directory):
     if not integrity["scanComplete"]: fail("Source scan reports incomplete root coverage")
     plan={"schemaVersion":"20.0","integrity":integrity,"featureCount":len(features),
           "features":features,"classCounts":dict(counts),
+          "sourceProvenance":source_provenance,
           "sourceDiagnostics":{"omittedObjects":metadata["scanStats"].get("omitted"),
               "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),
               "scanMode":metadata["scanStats"].get("mode"),

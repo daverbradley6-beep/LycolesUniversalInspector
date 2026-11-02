@@ -7,6 +7,8 @@
 - Align importer duplicate-object identity with the Worker's path-plus-scan-ordinal contract, including cross-class collisions.
 - Add optional metadata-bound resumable imports with atomic per-part checkpoints, strict cached-part revalidation, bounded-memory reuse, and unchanged atomic final publication.
 - Keep resume checkpoints credential-free and explicitly unauthenticated; report whether all receiver digest records were revalidated during the current run.
+- Strictly revalidate receiver-import manifests and current part bytes during compilation; reject forged authenticity claims, digest drift, malformed resume diagnostics, and accounting conflicts.
+- Add deterministic `source-provenance.json`, propagate normalized status into capability/release manifests, and show retrieval integrity, ACK equivalence, resume reuse, and explicit trust limits in the generated Features panel.
 - Keep response authenticity and original local payload equivalence false: receiver-stored and acknowledgement digest matches do not independently authenticate either record or prove gameplay outcomes.
 
 ## v30.1.0 — Live evidence attribution and transport diagnostics

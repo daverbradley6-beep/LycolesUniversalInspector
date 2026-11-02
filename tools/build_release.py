@@ -67,6 +67,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
+    source_provenance=plan["sourceProvenance"]
     if observation_dirs:
         merger=load_module('merge_observations.py','lycoles_merge')
         observations=[compiler.compile_scan(folder) for folder in observation_dirs]
@@ -142,6 +143,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
         "implementedClientControls":["Stats","Menus","Prompts","Features"],
         "implementedGameplayAutomation":[],
+        "sourceProvenance":source_provenance,
         "validation":validation,
         "runtimeVerified":False,
         "releaseStatus":"GENERATED_STATIC_CHECKED_NOT_LIVE_TESTED",
@@ -156,6 +158,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
+      "source-provenance.json":(json.dumps(source_provenance,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
       "LycolesGeneratedUtility.lua":lua.encode(),
@@ -163,6 +166,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
           "This release contains client-side diagnostics only.\n"
+          "Baseline source input: "+source_provenance["inputMode"]+".\n"
+          "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
+          "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
+          "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
