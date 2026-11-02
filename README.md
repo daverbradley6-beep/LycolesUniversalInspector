@@ -184,7 +184,7 @@ The build pipeline now optionally accepts a reviewed contract file: `python3 too
 
 ## v16 — Baseline plus dynamic observation fusion
 
-The release builder can now combine a verified complete baseline scan with up to 64 complete dynamic-observation scans for the same Roblox Place ID. Example: `python3 tools/build_release.py ./baseline-parts --observation ./delta1-parts --observation ./delta2-parts --output ./build`. The new `tools/merge_observations.py` validates scan identity, rejects duplicate scans and mismatched places, merges per-feature evidence counters and records overlay provenance in the capability plan. Dynamic observations never replace the baseline object inventory or establish executable gameplay contracts. Supply each scan's complete multipart JSON files in its own folder.
+The release builder can combine a verified complete baseline scan with up to 64 complete dynamic-observation scans for the same Roblox Place ID. Example: `python3 tools/build_release.py ./baseline-parts --observation ./delta1-parts --observation ./delta2-parts --output ./build`. `tools/merge_observations.py` validates scan and normalized source-provenance identity, rejects duplicate scans, mismatched places, and unsupported positive trust claims, then merges per-feature evidence counters. Each overlay retains provenance separately in the capability plan and deterministic `evidence-overlay-provenance.json`; `source-provenance.json` continues to describe only the baseline. Dynamic observations never replace the baseline object inventory or establish authenticity, causality, authority, replayability, gameplay success, or executable gameplay contracts. Supply each scan's complete multipart JSON files in its own folder.
 
 
 ## v17 — Executable reviewed client actions

@@ -22,6 +22,21 @@ class GeneratorTests(unittest.TestCase):
         result=generator.render(plan)
         self.assertIn("Requested capability: Show observable pet inventory",result)
         self.assertIn("Request status: evidence review only; gameplay is unverified",result)
+    def test_receiver_overlay_is_reported_separately(self):
+        provenance={"schemaVersion":"30.2.source-provenance.1",
+            "inputMode":"receiver-import","scanId":"delta","placeId":3623096087,"partCount":2,
+            "resumeCheckpointAuthenticated":False,"receiverResponseAuthenticityVerified":False,
+            "localPayloadEquivalent":False,"sourceAuthenticityVerified":False,
+            "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
+            "gameplayVerified":False,"actionOutcomesVerified":False,
+            "receiverStoredPayloadDigestsVerified":True,"receiverIntegrityVerified":True,
+            "receiverAcknowledgementDigestEquivalent":False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun":True}
+        plan=self.plan();plan["evidenceOverlays"]=[{
+            "scanId":"delta","parts":2,"sourceProvenance":provenance}]
+        result=generator.render(plan)
+        self.assertIn("Dynamic evidence overlays: 1",result)
+        self.assertIn("Overlay sources: 1 receiver import, 0 local multipart; separate provenance",result)
     def test_malformed_requested_capability_blocked(self):
         for request in ("x"*241,"🙂"*61,"Show\u0085status"):
             with self.subTest(request=repr(request)):

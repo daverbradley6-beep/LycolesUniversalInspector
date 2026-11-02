@@ -72,6 +72,17 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         merger=load_module('merge_observations.py','lycoles_merge')
         observations=[compiler.compile_scan(folder) for folder in observation_dirs]
         plan=merger.merge_evidence(plan,observations)
+    evidence_overlays=plan.get("evidenceOverlays",[])
+    overlay_provenance={
+        "schemaVersion":"30.3.evidence-overlay-provenance.1",
+        "baselineScanId":plan["integrity"]["scanId"],
+        "overlayCount":len(evidence_overlays),"overlays":evidence_overlays,
+        "sourceAuthenticityVerified":False,"causalityProven":False,
+        "serverAuthorityVerified":False,"replayable":False,
+        "gameplayVerified":False,"actionOutcomesVerified":False,
+    }
+    overlay_provenance_bytes=(json.dumps(overlay_provenance,indent=2,sort_keys=True)+"\n").encode()
+
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
     sequence_compiler=load_module("compile_interaction_sequences.py","lycoles_sequences")
@@ -137,6 +148,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "manualVerificationChecks":len(verification_plan["checks"]),
         "submittedRuntimeObservations":feedback["summary"]["submitted"] if feedback else 0,
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
+        "evidenceOverlayProvenance":{"schemaVersion":overlay_provenance["schemaVersion"],
+            "artifact":"evidence-overlay-provenance.json",
+            "overlayCount":overlay_provenance["overlayCount"],
+            "sha256":sha(overlay_provenance_bytes)},
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
@@ -159,6 +174,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
+      "evidence-overlay-provenance.json":overlay_provenance_bytes,
       "source-provenance.json":(json.dumps(source_provenance,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
@@ -168,6 +184,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
           "This release contains client-side diagnostics only.\n"
           "Baseline source input: "+source_provenance["inputMode"]+".\n"
+          "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
           "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"

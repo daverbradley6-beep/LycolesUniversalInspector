@@ -5,6 +5,7 @@
 - Preserve the request in metadata-bearing multipart reports, local lifecycle manifests, compiled capability plans, release manifests, and generated read-only Luau.
 - Display the requested capability as evidence-review context and keep gameplay implementation and outcomes explicitly unverified.
 - Reject empty, padded, control-character-bearing, and overlong requests during compilation and generation.
+- Validate and preserve each dynamic observation overlay's normalized source provenance separately from baseline provenance, emit deterministic `evidence-overlay-provenance.json`, and surface bounded overlay-source summaries in generated releases.
 
 ## v30.2.0 — Receiver payload digest provenance
 

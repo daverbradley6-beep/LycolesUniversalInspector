@@ -28,10 +28,13 @@ spec=importlib.util.spec_from_file_location("release_builder",SOURCE)
 builder=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
-def make_parts(directory,missing=False,event=None,transport=None,request=None):
-    scan={"scanId":"testscan123","placeId":3623096087,"partCount":2,
+def make_parts(directory,missing=False,event=None,transport=None,request=None,
+               scan_id="testscan123",scan_mode=None):
+    scan={"scanId":scan_id,"placeId":3623096087,"partCount":2,
           "version":"10.0","objects":[]}
-    one=dict(scan,partIndex=1,scanStats={"recorded":2,"complete":True},
+    scan_stats={"recorded":2,"complete":True}
+    if scan_mode is not None:scan_stats["mode"]=scan_mode
+    one=dict(scan,partIndex=1,scanStats=scan_stats,
              featureEvidence={"rebirth":{}},featureRequest=request,
              objects=[{"path":"Workspace.A","class":"Part","scanOrdinal":1}])
     interaction=event or {"featureCandidate":"rebirth",
@@ -71,6 +74,30 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(provenance["actionOutcomesVerified"])
             builder.build(parts,base/"out")
             self.assertEqual(original,z.read_bytes())
+    def test_dynamic_overlay_provenance_remains_separate_from_baseline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            observations=base/"observations";observations.mkdir()
+            make_parts(parts)
+            make_parts(observations,scan_id="dynamic456",scan_mode="dynamic-observations")
+            output=base/"out"
+            manifest=builder.build(parts,output,observation_dirs=[observations])
+            baseline=json.loads((output/"source-provenance.json").read_text())
+            overlays=json.loads((output/"evidence-overlay-provenance.json").read_text())
+            generated=(output/"LycolesGeneratedUtility.lua").read_text()
+            bundled_readme=(output/"README.txt").read_text()
+            self.assertEqual(baseline["scanId"],"testscan123")
+            self.assertEqual(overlays["baselineScanId"],"testscan123")
+            self.assertEqual(overlays["overlayCount"],1)
+            self.assertEqual(overlays["overlays"][0]["scanId"],"dynamic456")
+            self.assertEqual(overlays["overlays"][0]["sourceProvenance"]["scanId"],"dynamic456")
+            self.assertFalse(overlays["sourceAuthenticityVerified"])
+            self.assertEqual(manifest["evidenceOverlayProvenance"]["overlayCount"],1)
+            self.assertRegex(manifest["evidenceOverlayProvenance"]["sha256"],r"^[a-f0-9]{64}$")
+            self.assertIn("Dynamic evidence overlays: 1",generated)
+            self.assertIn("separate provenance",bundled_readme)
+            with zipfile.ZipFile(next(output.glob("*.zip"))) as archive:
+                self.assertIn("evidence-overlay-provenance.json",archive.namelist())
     def test_v301_candidate_reaches_workflow_artifacts_without_action_approval(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()

@@ -48,6 +48,8 @@ Current release provenance contract: `tools/compile_scan.py` must distinguish or
 
 Current v30.3 capability-request contract: the in-game Generated Script tab stages one bounded client-visible request and triggers a complete evidence scan. The request may be carried through metadata-bearing parts, lifecycle manifests, capability plans, release manifests, and generated read-only Luau only as user intent and evidence-review context. `PRODUCE SCRIPT` does not imply in-game generation, runtime installation, action support, causality, replayability, authority, or gameplay success; those remain offline-validated or unverified as explicitly reported.
 
+Current dynamic-overlay provenance contract: each complete observation scan must carry compiler-normalized source provenance whose scan/place/part identity matches that overlay and whose unsupported trust claims remain false. `source-provenance.json` describes only the baseline; overlay records stay separate in `capability-plan.json` and `evidence-overlay-provenance.json`, with a digest-linked release-manifest summary. Mixed source modes never imply source authenticity, causality, server authority, replayability, gameplay verification, or action-outcome verification.
+
 ## Generated features
 
 Each generated feature must define:

@@ -5,6 +5,33 @@ This is an evidence overlay, not object reconstruction or gameplay execution.
 """
 import copy
 
+
+_UNVERIFIED_PROVENANCE=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
+    "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
+    "serverAuthorityVerified","replayable","gameplayVerified","actionOutcomesVerified")
+
+def _observation_provenance(observation,integrity):
+    provenance=observation.get("sourceProvenance")
+    mode=provenance.get("inputMode") if isinstance(provenance,dict) else None
+    receiver=mode=="receiver-import"
+    digest_verified=provenance.get("receiverStoredPayloadDigestsVerified") if provenance else None
+    integrity_verified=provenance.get("receiverIntegrityVerified") if provenance else None
+    acknowledgement=provenance.get("receiverAcknowledgementDigestEquivalent") if provenance else None
+    revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun") if provenance else None
+    if (not isinstance(provenance,dict)
+            or provenance.get("schemaVersion")!="30.2.source-provenance.1"
+            or mode not in ("local-multipart","receiver-import")
+            or provenance.get("scanId")!=integrity.get("scanId")
+            or provenance.get("placeId")!=integrity.get("placeId")
+            or provenance.get("partCount")!=integrity.get("parts")
+            or any(provenance.get(field) is not False for field in _UNVERIFIED_PROVENANCE)
+            or type(digest_verified) is not bool or digest_verified is not receiver
+            or type(integrity_verified) is not bool or integrity_verified is not receiver
+            or type(acknowledgement) is not bool or type(revalidated) is not bool
+            or (not receiver and (acknowledgement or revalidated))):
+        raise ValueError("Invalid observation source provenance")
+    return copy.deepcopy(provenance)
+
 def merge_evidence(baseline, observations):
     base=baseline.get("integrity") or {}
     if base.get("scanComplete") is not True or type(base.get("placeId")) is not int:
@@ -29,6 +56,7 @@ def merge_evidence(baseline, observations):
         seen.add(sid)
         if (obs.get("sourceDiagnostics") or {}).get("scanMode")!="dynamic-observations":
             raise ValueError("Only dynamic observations may be overlaid")
+        provenance=_observation_provenance(obs,integrity)
         for feature in obs.get("features",[]):
             name=feature.get("feature")
             if not isinstance(name,str) or not name:
@@ -49,7 +77,8 @@ def merge_evidence(baseline, observations):
                 target[key]=old+value
             target["implementationReady"]=False
         overlays.append({"scanId":sid,"parts":integrity.get("parts"),
-                         "interactionEvents":integrity.get("interactionEvents",0)})
+                         "interactionEvents":integrity.get("interactionEvents",0),
+                         "sourceProvenance":provenance})
     result["features"]=sorted(by_name.values(),key=lambda x:x["feature"])
     result["featureCount"]=len(result["features"])
     result["evidenceOverlays"]=overlays

@@ -35,16 +35,7 @@ def validate(plan):
         raise ValueError("Malformed requested capability")
     return place
 
-def source_provenance_lines(plan):
-    provenance=plan.get("sourceProvenance")
-    if provenance is None:
-        return ["Baseline input: local multipart","Receiver payload digests: unavailable",
-                "Receiver retrieval integrity: unavailable",
-                "Inspector ACK digest equivalence: not established",
-                "Resume checkpoint authentication: unavailable",
-                "Response authenticity: unverified",
-                "Original local payload equivalence: unverified",
-                "Gameplay outcomes: unverified"]
+def _validate_source_provenance(provenance):
     if not isinstance(provenance,dict):
         raise ValueError("Malformed source provenance")
     mode=provenance.get("inputMode")
@@ -66,19 +57,55 @@ def source_provenance_lines(plan):
             or digest_verified is not receiver or integrity_verified is not receiver
             or (not receiver and (acknowledgement_equivalent or revalidated))):
         raise ValueError("Inconsistent source provenance")
-    return [
-        "Baseline input: "+("receiver import" if receiver else "local multipart"),
-        "Receiver payload digests: "+("verified" if digest_verified else "unavailable"),
-        "Receiver retrieval integrity: "+("verified" if integrity_verified else "unavailable"),
-        "Inspector ACK digest equivalence: "+(
-            "verified" if acknowledgement_equivalent else "not established"),
-        "Receiver digests rechecked this run: "+(
-            "yes" if revalidated else "no (cached checkpoint used)" if receiver else "not applicable"),
-        "Resume checkpoint authentication: unavailable",
-        "Response authenticity: unverified",
-        "Original local payload equivalence: unverified",
-        "Gameplay outcomes: unverified",
-    ]
+    return receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated
+
+
+def source_provenance_lines(plan):
+    provenance=plan.get("sourceProvenance")
+    if provenance is None:
+        lines=["Baseline input: local multipart","Receiver payload digests: unavailable",
+               "Receiver retrieval integrity: unavailable",
+               "Inspector ACK digest equivalence: not established",
+               "Resume checkpoint authentication: unavailable",
+               "Response authenticity: unverified",
+               "Original local payload equivalence: unverified",
+               "Gameplay outcomes: unverified"]
+    else:
+        receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated=(
+            _validate_source_provenance(provenance))
+        lines=[
+            "Baseline input: "+("receiver import" if receiver else "local multipart"),
+            "Receiver payload digests: "+("verified" if digest_verified else "unavailable"),
+            "Receiver retrieval integrity: "+("verified" if integrity_verified else "unavailable"),
+            "Inspector ACK digest equivalence: "+(
+                "verified" if acknowledgement_equivalent else "not established"),
+            "Receiver digests rechecked this run: "+(
+                "yes" if revalidated else "no (cached checkpoint used)" if receiver else "not applicable"),
+            "Resume checkpoint authentication: unavailable",
+            "Response authenticity: unverified",
+            "Original local payload equivalence: unverified",
+            "Gameplay outcomes: unverified",
+        ]
+    overlays=plan.get("evidenceOverlays",[])
+    if not isinstance(overlays,list) or len(overlays)>64:
+        raise ValueError("Malformed evidence overlays")
+    receiver_overlays=0
+    for overlay in overlays:
+        if not isinstance(overlay,dict):
+            raise ValueError("Malformed evidence overlay")
+        overlay_provenance=overlay.get("sourceProvenance")
+        if (_validate_source_provenance(overlay_provenance)[0]):
+            receiver_overlays+=1
+        if (overlay_provenance.get("schemaVersion")!="30.2.source-provenance.1"
+                or overlay_provenance.get("scanId")!=overlay.get("scanId")
+                or overlay_provenance.get("placeId")!=plan["integrity"]["placeId"]
+                or overlay_provenance.get("partCount")!=overlay.get("parts")):
+            raise ValueError("Evidence overlay provenance identity mismatch")
+    lines.append("Dynamic evidence overlays: "+str(len(overlays)))
+    if overlays:
+        lines.append("Overlay sources: "+str(receiver_overlays)+" receiver import, "
+                     +str(len(overlays)-receiver_overlays)+" local multipart; separate provenance")
+    return lines
 
 
 def lua_quote(value):
