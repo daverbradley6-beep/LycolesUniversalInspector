@@ -5,6 +5,8 @@
 - Require digest-bearing upload acknowledgements in the inspector and preserve sorted per-part acknowledgement digests in refreshed local manifests.
 - Verify every retrieved raw part against its receiver-stored upload digest before JSON parsing or publication; optionally reconcile all parts against a supplied local acknowledgement manifest.
 - Align importer duplicate-object identity with the Worker's path-plus-scan-ordinal contract, including cross-class collisions.
+- Add optional metadata-bound resumable imports with atomic per-part checkpoints, strict cached-part revalidation, bounded-memory reuse, and unchanged atomic final publication.
+- Keep resume checkpoints credential-free and explicitly unauthenticated; report whether all receiver digest records were revalidated during the current run.
 - Keep response authenticity and original local payload equivalence false: receiver-stored and acknowledgement digest matches do not independently authenticate either record or prove gameplay outcomes.
 
 ## v30.1.0 — Live evidence attribution and transport diagnostics

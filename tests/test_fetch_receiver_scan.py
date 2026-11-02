@@ -27,7 +27,8 @@ COMPILER = load_module(ROOT / "tools" / "compile_scan.py", "compile_receiver_sca
 class ReceiverServer:
     def __init__(self, *, incomplete=False, mismatch=False, redirect=False,
                  object_count_mismatch=False, malformed_length=False, transient=False,
-                 duplicate_object=False, digest_mismatch=False, missing_digest=False):
+                 duplicate_object=False, digest_mismatch=False, missing_digest=False,
+                 fail_part=None):
         base = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -67,6 +68,7 @@ class ReceiverServer:
         self.digest_mismatch = digest_mismatch
         self.missing_digest = missing_digest
         self.transient = transient
+        self.fail_part = fail_part
         self.transient_failures = 0
         self.paths = []
         self.server = None
@@ -85,6 +87,11 @@ class ReceiverServer:
                     return
                 if owner.transient and self.path.endswith("/part-2") and owner.transient_failures == 0:
                     owner.transient_failures += 1
+                    self.send_response(503)
+                    self.end_headers()
+                    return
+                if owner.fail_part is not None and self.path.endswith(
+                        f"/part-{owner.fail_part}"):
                     self.send_response(503)
                     self.end_headers()
                     return
@@ -221,6 +228,74 @@ class ReceiverImportTests(unittest.TestCase):
             self.assertEqual(result["objectCount"], 2)
             self.assertEqual(receiver.transient_failures, 1)
             self.assertEqual(sum(path.endswith("/part-2") for path in receiver.paths), 2)
+
+    def test_resume_reuses_verified_parts_after_interruption(self):
+        with ReceiverServer(fail_part=2) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            resume = pathlib.Path(temp) / "resume"
+            with self.assertRaisesRegex(ValueError, "unexpected HTTP status 503"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=resume, allow_http=True)
+            self.assertFalse(output.exists())
+            self.assertTrue((resume / "part-0001.json").is_file())
+            self.assertTrue((resume / "receiver-resume.json").is_file())
+            self.assertNotIn("read-secret", (resume / "receiver-resume.json").read_text())
+            first_part_requests = sum(path.endswith("/part-1") for path in receiver.paths)
+
+            receiver.fail_part = None
+            result = FETCHER.fetch_scan(
+                receiver.server.base_url, "read-secret", "receiverscan01", output,
+                resume=resume, allow_http=True)
+            self.assertEqual(result["resumedPartCount"], 1)
+            self.assertEqual(result["downloadedPartCount"], 1)
+            self.assertFalse(result["resumeCheckpointAuthenticated"])
+            self.assertFalse(result["receiverStoredPayloadDigestsRevalidatedThisRun"])
+            self.assertEqual(sum(path.endswith("/part-1") for path in receiver.paths),
+                             first_part_requests)
+            self.assertTrue(output.is_dir())
+
+    def test_tampered_resume_part_fails_without_publication(self):
+        with ReceiverServer(fail_part=2) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            resume = pathlib.Path(temp) / "resume"
+            with self.assertRaisesRegex(ValueError, "unexpected HTTP status 503"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=resume, allow_http=True)
+            cached_part = resume / "part-0001.json"
+            cached_part.write_bytes(cached_part.read_bytes() + b" ")
+            receiver.fail_part = None
+            with self.assertRaisesRegex(ValueError, "resume part digest mismatch"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=resume, allow_http=True)
+            self.assertFalse(output.exists())
+
+    def test_resume_metadata_drift_fails_without_publication(self):
+        with ReceiverServer(fail_part=2) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            resume = pathlib.Path(temp) / "resume"
+            with self.assertRaisesRegex(ValueError, "unexpected HTTP status 503"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=resume, allow_http=True)
+            receiver.metadata["version"] = "changed-version"
+            receiver.fail_part = None
+            with self.assertRaisesRegex(ValueError, "resume checkpoint identity mismatch"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=resume, allow_http=True)
+            self.assertFalse(output.exists())
+
+    def test_resume_and_output_paths_must_not_overlap(self):
+        with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "must not overlap"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    resume=output, allow_http=True)
+            self.assertFalse(output.exists())
 
     def test_missing_part_fails_without_publishing_directory(self):
         with ReceiverServer(incomplete=True) as receiver, tempfile.TemporaryDirectory() as temp:

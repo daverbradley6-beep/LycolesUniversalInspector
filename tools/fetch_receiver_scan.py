@@ -132,16 +132,26 @@ def _validate_metadata(document, scan_id):
     return metadata, place_id, part_count
 
 
+def _read_bounded_file(path, label):
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{label} must be a regular file")
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_JSON_BYTES + 1)
+    except OSError as exc:
+        raise ValueError(f"cannot read {label}: {exc}") from None
+    if len(raw) > MAX_JSON_BYTES:
+        raise ValueError(f"{label} exceeds size limit")
+    return raw
+
+
 def _acknowledged_digests(path, scan_id, place_id, part_count):
     if path is None:
         return {}
     path = pathlib.Path(path)
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"cannot read local manifest: {exc}") from None
-    if len(raw) > MAX_JSON_BYTES:
-        raise ValueError("local manifest exceeds size limit")
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("local manifest must be a regular file")
+    raw = _read_bounded_file(path, "local manifest")
     try:
         manifest = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -210,8 +220,133 @@ def _compile_scan(directory):
     return module.compile_scan(directory)
 
 
+def _atomic_write(path, raw):
+    descriptor, temporary = tempfile.mkstemp(prefix=".resume-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _canonical_digest(document):
+    raw = json.dumps(document, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _checkpoint_document(origin, scan_id, place_id, part_count,
+                         metadata_digest, digests):
+    return {
+        "schemaVersion": "30.2.receiver-resume.1",
+        "receiverOrigin": origin,
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": part_count,
+        "metadataSha256": metadata_digest,
+        "parts": [
+            {"partIndex": index, "sha256": digests[index]}
+            for index in sorted(digests)
+        ],
+        "authenticated": False,
+        "note": "Local resume state records earlier receiver-digest verification but is not independently authenticated",
+    }
+
+
+def _write_checkpoint(directory, document):
+    raw = (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False)
+           + "\n").encode("utf-8")
+    _atomic_write(directory / "receiver-resume.json", raw)
+
+
+def _load_resume(directory, origin, scan_id, place_id, part_count,
+                 metadata_digest, acknowledgement_digests):
+    checkpoint_path = directory / "receiver-resume.json"
+    if not checkpoint_path.exists():
+        if any(directory.iterdir()):
+            raise ValueError("resume directory lacks a checkpoint")
+        _write_checkpoint(directory, _checkpoint_document(
+            origin, scan_id, place_id, part_count, metadata_digest, {}))
+        return {}
+    if checkpoint_path.is_symlink() or not checkpoint_path.is_file():
+        raise ValueError("invalid resume checkpoint")
+    raw = _read_bounded_file(checkpoint_path, "resume checkpoint")
+    try:
+        document = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("invalid resume checkpoint JSON") from None
+    expected = {
+        "schemaVersion": "30.2.receiver-resume.1",
+        "receiverOrigin": origin,
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": part_count,
+        "metadataSha256": metadata_digest,
+        "authenticated": False,
+        "note": "Local resume state records earlier receiver-digest verification but is not independently authenticated",
+    }
+    if (not isinstance(document, dict)
+            or set(document) != set(expected) | {"parts"}
+            or any(document.get(key) != value for key, value in expected.items())):
+        raise ValueError("resume checkpoint identity mismatch")
+    entries = document.get("parts")
+    if not isinstance(entries, list) or len(entries) > part_count:
+        raise ValueError("invalid resume checkpoint parts")
+    result = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"partIndex", "sha256"}:
+            raise ValueError("invalid resume checkpoint part")
+        index = _positive_integer(entry.get("partIndex"), "resume part index", part_count)
+        digest = entry.get("sha256")
+        if (index in result or not isinstance(digest, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", digest)):
+            raise ValueError("invalid resume checkpoint part")
+        part_path = directory / f"part-{index:04d}.json"
+        if part_path.is_symlink() or not part_path.is_file():
+            raise ValueError("resume part is missing or invalid")
+        part_raw = _read_bounded_file(part_path, "resume part")
+        if hashlib.sha256(part_raw).hexdigest() != digest:
+            raise ValueError("resume part digest mismatch")
+        try:
+            part = json.loads(part_raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("resume part is invalid JSON") from None
+        if not isinstance(part, dict):
+            raise ValueError("resume part JSON must be an object")
+        _validate_part(part, scan_id, place_id, part_count, index)
+        acknowledged = acknowledgement_digests.get(index)
+        if acknowledged is not None and acknowledged != digest:
+            raise ValueError("resume part does not match local acknowledgement digest")
+        result[index] = digest
+    return result
+
+
+def _resume_directory(path, output):
+    if path is None:
+        return None
+    directory = pathlib.Path(path)
+    output_resolved = output.resolve(strict=False)
+    directory_resolved = directory.resolve(strict=False)
+    try:
+        common = pathlib.Path(os.path.commonpath((output_resolved, directory_resolved)))
+    except ValueError:
+        common = None
+    if common in {output_resolved, directory_resolved}:
+        raise ValueError("output and resume paths must not overlap")
+    if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+        raise ValueError("invalid resume directory")
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
-               local_manifest=None, allow_http=False):
+               local_manifest=None, resume=None, allow_http=False):
     origin = _receiver_origin(endpoint, allow_http)
     read_key = _read_key(read_key)
     scan_id = _identifier(scan_id, "receiver scan ID")
@@ -226,38 +361,81 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
     root = "/reports/" + urllib.parse.quote(read_key, safe="") + "/" + scan_id
     metadata_document = _read_json(opener, origin + root + "/metadata", timeout)
     metadata, place_id, part_count = _validate_metadata(metadata_document, scan_id)
+    metadata_digest = _canonical_digest(metadata)
     acknowledgement_digests = _acknowledged_digests(
         local_manifest, scan_id, place_id, part_count)
+    resume_directory = _resume_directory(resume, output)
+    resumed_parts = (_load_resume(
+        resume_directory, origin, scan_id, place_id, part_count,
+        metadata_digest, acknowledgement_digests)
+        if resume_directory is not None else {})
 
     with tempfile.TemporaryDirectory(prefix=".lycoles-receiver-", dir=output.parent) as temp:
         staging = pathlib.Path(temp)
         total_objects = 0
         object_keys = set()
         part_digests = {}
+        resume_digests = dict(resumed_parts)
+        downloaded_part_count = 0
+
+        def admit(index, part, digest, raw, *, cache):
+            nonlocal total_objects, downloaded_part_count
+            if hashlib.sha256(raw).hexdigest() != digest:
+                raise ValueError("part digest changed during import")
+            acknowledged_digest = acknowledgement_digests.get(index)
+            if acknowledged_digest is not None and acknowledged_digest != digest:
+                raise ValueError("receiver part does not match local acknowledgement digest")
+            objects = _validate_part(part, scan_id, place_id, part_count, index)
+            for item in objects:
+                key = _object_key(item)
+                if key in object_keys:
+                    raise ValueError("duplicate receiver object identity")
+                object_keys.add(key)
+            total_objects += len(objects)
+            if total_objects > MAX_OBJECTS:
+                raise ValueError("receiver object count exceeds safety limit")
+            part_digests[index] = digest
+            (staging / f"part-{index:04d}.json").write_bytes(raw)
+            if cache:
+                downloaded_part_count += 1
+                if resume_directory is not None:
+                    _atomic_write(resume_directory / f"part-{index:04d}.json", raw)
+                    resume_digests[index] = digest
+                    _write_checkpoint(resume_directory, _checkpoint_document(
+                        origin, scan_id, place_id, part_count,
+                        metadata_digest, resume_digests))
+
+        for index in sorted(resumed_parts):
+            raw = _read_bounded_file(
+                resume_directory / f"part-{index:04d}.json", "resume part")
+            part = json.loads(raw)
+            admit(index, part, resumed_parts[index], raw, cache=False)
 
         def retrieve(index):
             part, digest, raw = _read_json(
                 opener, origin + root + f"/part-{index}", timeout, require_digest=True)
             return index, part, digest, raw
 
+        missing_indexes = [
+            index for index in range(1, part_count + 1)
+            if index not in resumed_parts
+        ]
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            for start in range(1, part_count + 1, workers * 2):
-                indexes = list(range(start, min(part_count + 1, start + workers * 2)))
-                for index, part, digest, raw in executor.map(retrieve, indexes):
-                    acknowledged_digest = acknowledgement_digests.get(index)
-                    if acknowledged_digest is not None and acknowledged_digest != digest:
-                        raise ValueError("receiver part does not match local acknowledgement digest")
-                    part_digests[index] = digest
-                    objects = _validate_part(part, scan_id, place_id, part_count, index)
-                    for item in objects:
-                        key = _object_key(item)
-                        if key in object_keys:
-                            raise ValueError("duplicate receiver object identity")
-                        object_keys.add(key)
-                    total_objects += len(objects)
-                    if total_objects > MAX_OBJECTS:
-                        raise ValueError("receiver object count exceeds safety limit")
-                    (staging / f"part-{index:04d}.json").write_bytes(raw)
+            for start in range(0, len(missing_indexes), workers * 2):
+                batch = missing_indexes[start:start + workers * 2]
+                futures = {executor.submit(retrieve, index): index for index in batch}
+                results = []
+                failure = None
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except (ValueError, OSError) as exc:
+                        if failure is None:
+                            failure = exc
+                for index, part, digest, raw in sorted(results):
+                    admit(index, part, digest, raw, cache=True)
+                if failure is not None:
+                    raise failure
         acknowledgement_equivalent = (
             len(acknowledgement_digests) == part_count
             and all(acknowledgement_digests.get(index) == part_digests.get(index)
@@ -281,7 +459,7 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             "verificationMethod": "complete receiver part retrieval plus local multipart compilation",
         }
         import_manifest = {
-            "schemaVersion": "30.2.receiver-import.1",
+            "schemaVersion": "30.2.receiver-import.2",
             "scanId": scan_id,
             "placeId": place_id,
             "partCount": part_count,
@@ -290,12 +468,17 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             "metadata": metadata,
             "receiverIntegrity": integrity,
             "receiverPartContentDigests": receiver_part_digests,
+            "resumableRetrievalEnabled": resume_directory is not None,
+            "resumedPartCount": len(resumed_parts),
+            "downloadedPartCount": downloaded_part_count,
+            "resumeCheckpointAuthenticated": False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts,
             "receiverStoredPayloadDigestsVerified": True,
             "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
             "receiverIntegrityVerified": True,
             "receiverResponseAuthenticityVerified": False,
             "localPayloadEquivalent": False,
-            "note": "Retrieved bytes matched receiver-stored upload digests and passed local identity, uniqueness, accounting, and compiler checks; ACK digest equivalence is separate from original local payload equivalence and response authenticity",
+            "note": "Downloaded bytes matched receiver-stored upload digests; resumed bytes matched an unauthenticated local checkpoint of prior verification; all parts passed current identity, uniqueness, accounting, and compiler checks; ACK equivalence remains separate from local payload equivalence and response authenticity",
         }
         _write_json(staging / "receiver-manifest.json", import_manifest)
         plan = _compile_scan(staging)
@@ -303,12 +486,17 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             raise ValueError("output path was created during import")
         staging.replace(output)
     return {
-        "schemaVersion": "30.2.receiver-import.1",
+        "schemaVersion": "30.2.receiver-import.2",
         "scanId": scan_id,
         "placeId": place_id,
         "partCount": part_count,
         "objectCount": total_objects,
         "featureCount": plan["featureCount"],
+        "resumableRetrievalEnabled": resume_directory is not None,
+        "resumedPartCount": len(resumed_parts),
+        "downloadedPartCount": downloaded_part_count,
+        "resumeCheckpointAuthenticated": False,
+        "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts,
         "receiverStoredPayloadDigestsVerified": True,
         "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
         "receiverIntegrityVerified": True,
@@ -325,6 +513,8 @@ def main():
     parser.add_argument("--output", required=True, help="new directory for verified numbered parts")
     parser.add_argument("--local-manifest",
                         help="optional inspector manifest containing receiver ACK digests")
+    parser.add_argument("--resume",
+                        help="persistent directory for verified part resume checkpoints")
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
@@ -335,7 +525,7 @@ def main():
     try:
         result = fetch_scan(args.endpoint, read_key, args.scan_id, args.output,
                             timeout=args.timeout, workers=args.workers,
-                            local_manifest=args.local_manifest)
+                            local_manifest=args.local_manifest, resume=args.resume)
     except (ValueError, OSError) as exc:
         print("IMPORT BLOCKED:", exc, file=sys.stderr)
         return 2
