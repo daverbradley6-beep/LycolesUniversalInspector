@@ -1,5 +1,19 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Receiver payload digest provenance
+
+- Pushed `061ea56b3ede69a19ace525d0f140cda89469e0f` (`Add receiver payload digest provenance`) to `origin/openhands-development` as the v30.2.0 inspector / v12 receiver checkpoint.
+- The receiver now hashes the exact accepted UTF-8 POST bytes with SHA-256, persists a per-part digest sidecar, returns the persisted digest for first-write and duplicate ACKs, and exposes it on numbered-part retrieval. Invalid UTF-8 is rejected.
+- Exact duplicate retries repair missing digest sidecars and scan metadata after partial KV write failures. Legacy part retrieval does not invent a digest; re-uploading the exact stored part backfills one.
+- The inspector requires a valid lowercase SHA-256 in successful ACKs and serializes bounded, sorted per-part ACK digests plus explicit coverage in refreshed local manifests.
+- `tools/fetch_receiver_scan.py` requires every raw numbered-part response to match its receiver-stored digest before JSON parsing, preserves the verified bytes unchanged, and fails atomically on missing, malformed, or mismatched digests. `--local-manifest` optionally identity-checks and reconciles receiver bytes with inspector ACK digest records.
+- Imported manifests expose `receiverStoredPayloadDigestsVerified` and `receiverAcknowledgementDigestEquivalent` separately while keeping `receiverResponseAuthenticityVerified` and `localPayloadEquivalent` false. Manifest readiness reports ACK digest coverage diagnostically but remains generation-blocked without numbered evidence and reviewed contracts.
+- Corrected importer object uniqueness to exactly match Worker `path + "#" + scanOrdinal` semantics, including cross-class collisions.
+- Final gate: **1,356 Python tests passed** with the pinned official Luau 0.744 runtime; receiver tests passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- Evidence boundary: matching receiver-stored and ACK digest records establishes only bounded byte equivalence among those receiver records. It does not authenticate the receiver or local manifest, establish a client-computed pre-upload payload hash, prove sender identity, or verify causality, server authority, replayability, gameplay success, or action outcomes.
+- Production Cloudflare infrastructure was not modified. The v12 Worker source must be deployed separately by an authorized operator before v30.2 uploads/imports can use this contract.
+- Next priorities: add resumable, safely checkpointed retrieval for 1,000+ part scans; surface imported provenance and generation blockers in the unified Inspector / Generated Script workflow; then expand evidence-grounded generation without weakening reviewed-action gates.
+
 ## Update — 2026-11-02 — Receiver retrieval integrated with offline generation
 
 - Pushed `b211c10976612b1f5618d384692332e3e84d6362` (`Add secure receiver scan import`) to `origin/openhands-development`.
@@ -12,16 +26,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — receiver retrieval and offline generation integration_
+_Last updated: 2026-11-02 — receiver payload digest provenance_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `b211c10` (`Add secure receiver scan import`)
-- Implementation head: full SHA `b211c10976612b1f5618d384692332e3e84d6362`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **28 commits ahead, 0 behind**
-- All **18** workflows triggered for prior pushed head `0e594c4` completed successfully; current-head CI is pending
+- Latest implementation commit: `061ea56` (`Add receiver payload digest provenance`)
+- Implementation head: full SHA `061ea56b3ede69a19ace525d0f140cda89469e0f`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **30 commits ahead, 0 behind**
+- Current-head CI started all **18** workflows: one had passed and the remainder were queued or running at the latest check; final CI is pending
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
@@ -143,7 +157,25 @@ _Last updated: 2026-11-02 — receiver retrieval and offline generation integrat
    - Adds receiver `placeId` integrity output and direct `/integrity` reconciliation requiring exact local/receiver part and object accounting.
    - Separates ACK state, receiver integrity, downstream availability, caller-supplied response authenticity, and local payload equivalence; no client observation or transport result proves causality, authority, replayability, or gameplay success.
 
+20. `b211c10` — integrated secure receiver retrieval with offline generation:
+   - Added an HTTPS-only, redirect-rejecting, environment-credentialed importer with bounded concurrent retrieval, metadata lookup, retries, strict multipart validation, and atomic publication.
+   - Corrected importer uniqueness to use the Worker's path-plus-scan-ordinal object identity and feeds validated parts through the existing compiler without adding network behavior to the release builder.
+
+21. `061ea56` — added v30.2 receiver payload digest provenance:
+   - Persists and retrieves exact-body SHA-256 records, repairs partial-write metadata/digest state on duplicate retries, and preserves explicit legacy behavior.
+   - Requires digest-bearing inspector ACKs; validates and preserves raw receiver bytes; optionally reconciles inspector ACK digest records; and exposes bounded readiness diagnostics.
+   - Maintains false authenticity, original-local-payload-equivalence, causality, authority, replayability, gameplay, and outcome-verification claims.
+
 ## Tests and Results
+
+v30.2 receiver provenance cycle from commit `061ea56`:
+
+- Official Luau 0.744-enabled complete Python suite: **1,356 passed**, no skips.
+- Receiver digest, legacy migration, exact duplicate retry, invalid UTF-8, conflict, count, and integrity checks: **passed**.
+- Luau parser checks: **3 passed** for malformed rejection, checked-in sources, and representative generated artifacts.
+- Python compilation and `git diff --check`: **passed**.
+- Local and `origin/openhands-development` implementation SHA comparison: exact match at `061ea56b3ede69a19ace525d0f140cda89469e0f`.
+- GitHub Actions: all **18** current-head workflows triggered; one passed and remaining jobs were queued/running at the latest check.
 
 Resumed clean validation from commit `d48c6ab`:
 
