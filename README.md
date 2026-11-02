@@ -1,17 +1,18 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.0.0**
+Current inspector release: **v30.1.0**
 
 Current integrated offline pipeline: **v108**
 
-The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v108 tools are staged, independently tested inspection-to-client-observer components; v108 does not change the inspector's v30 wire version.
+The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v109 tools are staged, independently tested inspection-to-client-observer components; v109 analyzes local manifest readiness without changing the inspector's multipart wire format.
 
 ## Current capabilities
 
 - Read-only inspection of bounded, client-visible Roblox instance metadata across replicated services, the local player, character, GUI, lighting, teams, sound, and workspace.
-- Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, and a separately deployed Cloudflare Worker integrity endpoint.
-- Passive observation of normal user interactions and bounded before/after client-state evidence. Observation never proves causality or server authority.
+- Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, explicit local transport lifecycle status, and a separately deployed Cloudflare Worker integrity endpoint.
+- Passive observation of normal user interactions and bounded before/after client-state evidence from leaderstats, Data, and privacy-filtered LocalPlayer numeric/boolean ValueBase candidates. v30.1 distinguishes generic temporal changes from feature-consistent observable outcome candidates; neither proves causality, server authority, or gameplay success.
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, and reproducible release archives.
+- v109 manifest readiness analysis explains upload ambiguity, interaction evidence, outcome-candidate lower bounds, missing multipart data, and generation blockers without treating the local manifest as a full report.
 - v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
@@ -37,6 +38,16 @@ python3 tools/build_release.py ./scan-parts --output ./build
 ```
 
 The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
+
+When only the small local manifest is available, analyze what it does and does not establish:
+
+```sh
+python3 tools/manifest_readiness_v109.py \
+  --manifest path/to/Lycoles_PLACE.json \
+  --output build/manifest-readiness-v109.json
+```
+
+This produces diagnostics and feature-consistent outcome-candidate lower bounds. It always keeps script generation blocked because the manifest lacks the numbered object-bearing parts, canonical object identity, receiver integrity evidence, and a reviewed implementation contract.
 
 ## Run the v107 integrated observer pipeline
 
@@ -128,7 +139,7 @@ The build validates multipart integrity, compiles a capability plan, generates a
 
 ## v11 real inspection data compatibility
 
-The compiler accepts numbered JSON parts from the actual inspector, including metadata-only and interaction-history-only parts, plus an optional local manifest JSON. Run `python3 tools/build_release.py scan-parts --output build`. Inspect the receiver's `/reports/READ_KEY/SCAN_ID/integrity` response and require all parts acknowledged, no duplicate object keys and exact recorded-object accounting. Receiver changes are source-only until the Cloudflare Worker is deployed. The manifest's `uploadedParts: 0` is a snapshot-time placeholder, not proof of failure or success. Client-side state corroboration is not server-side verification.
+The compiler accepts numbered JSON parts from the actual inspector, including metadata-only and interaction-history-only parts, plus an optional local manifest JSON. Run `python3 tools/build_release.py scan-parts --output build`. Inspect the receiver's `/reports/READ_KEY/SCAN_ID/integrity` response and require all parts acknowledged, no duplicate object keys and exact recorded-object accounting. Receiver changes are source-only until the Cloudflare Worker is deployed. In legacy manifests, `uploadedParts: 0` is a snapshot-time placeholder, not proof of failure or success. v30.1 adds `reportTransport` with explicit not-attempted, uploading, acknowledged, incomplete, failed, or configuration-error state; even `acknowledged` keeps receiver integrity and downstream availability false until separately verified. Client-side state corroboration is not server-side verification.
 
 
 ## v12 Inspector UI fix

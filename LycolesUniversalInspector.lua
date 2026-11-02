@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.0.0
+-- Lycoles Universal Inspector v30.1.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,17 +13,37 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.0.0"
+local VERSION = "30.1.0"
 
 local endpoint = ""
 local autoSend = true
 local last = nil
 local pendingParts = nil
+local pendingManifest = nil
 local MAX_PART_BYTES = 105000
 local running = false
 local uploading = false
 local uploadGeneration = 0
 local pendingAcknowledged = {}
+local uploadState = {
+    attempted=false,status="not-attempted",acknowledgedParts=0,
+    expectedParts=0,lastError=nil
+}
+local refreshLocalManifest = nil
+local function uploadSnapshot(phase)
+    return {
+        reportGenerated = pendingParts ~= nil or uploadState.expectedParts > 0,
+        manifestSnapshotPhase = phase,
+        uploadAttempted = uploadState.attempted,
+        uploadStatus = uploadState.status,
+        acknowledgedParts = uploadState.acknowledgedParts,
+        expectedParts = uploadState.expectedParts,
+        lastError = uploadState.lastError,
+        receiverIntegrityVerified = false,
+        downstreamReportAvailable = false,
+        note = "Receiver acknowledgements require separate integrity verification before downstream use"
+    }
+end
 local MAX_UPLOAD_ATTEMPTS = 3
 local MAX_CONCURRENT_UPLOADS = 3
 local SCAN_YIELD_BUDGET_SECONDS = 0.012
@@ -42,6 +62,9 @@ local watchUploaded = 0
 local changeQueue = {}
 local changeCount = 0
 local observed = setmetatable({}, {__mode = "k"})
+local stateSnapshotCandidates = {}
+local stateSnapshotCandidateSeen = setmetatable({}, {__mode = "k"})
+local MAX_STATE_SNAPSHOT_CANDIDATES = 1000
 local changeUploaded = 0
 local WATCH_BATCH = 1500
 local interactionObserveEnabled = true
@@ -190,7 +213,7 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= 1000 then break end
+                if count >= MAX_STATE_SNAPSHOT_CANDIDATES then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
                     local segments = {}
                     local parent = obj
@@ -211,6 +234,16 @@ local function safeInteractionState()
                     end
                 end
             end
+        end
+    end
+    for _,candidate in ipairs(stateSnapshotCandidates) do
+        if count>=MAX_STATE_SNAPSHOT_CANDIDATES then break end
+        local obj=candidate.object
+        local ok,value=pcall(function() return obj.Value end)
+        if ok and (type(value)=="boolean" or (type(value)=="number"
+            and value==value and math.abs(value)<=1e12)) then
+            state[candidate.path]=value
+            count=count+1
         end
     end
     return state
@@ -342,11 +375,13 @@ local function buildReadiness(evidence, observedCount)
             discovered = discovered,
             observed = featureInteractions[feature] ~= nil and featureInteractions[feature].count > 0,
             observedStateChange = featureInteractions[feature] ~= nil and featureInteractions[feature].stateChanges > 0,
+            temporalStateChanges = featureInteractions[feature] and featureInteractions[feature].temporalStateChanges or 0,
+            observableOutcomeCandidates = featureInteractions[feature] and featureInteractions[feature].outcomeCandidates or 0,
             interactionEvidence = featureInteractions[feature],
             implemented = false,
             tested = false,
             readiness = not discovered and "not-discovered"
-                or (featureInteractions[feature] and featureInteractions[feature].stateChanges > 0 and "state-change-candidate-needs-validation")
+                or (featureInteractions[feature] and featureInteractions[feature].outcomeCandidates > 0 and "observable-outcome-candidate-needs-causal-validation")
                 or (featureInteractions[feature] and featureInteractions[feature].count > 0 and "interaction-observed-needs-state-verification")
                 or "needs-observed-interaction",
             controllerCandidates = item.counts.controllers,
@@ -358,7 +393,7 @@ local function buildReadiness(evidence, observedCount)
                 "Implement the feature in the game-specific script",
                 "Execute and verify the implementation"
             },
-            note = "Unattributed interaction count is not feature verification",
+            note = "Only feature-consistent observable changes become candidates; temporal correlation is not causation or verification",
             unattributedInteractionEvents = unattributedInteractionCount or 0
         }
     end
@@ -705,11 +740,17 @@ local function transmit()
     end
     endpoint = trim(url.Text)
     if not validEndpoint(endpoint) then
+        uploadState.status="configuration-error"
+        uploadState.lastError="invalid receiver endpoint"
+        refreshLocalManifest("upload-blocked")
         status.Text = "Use https://HOST/ingest/KEY"
         return
     end
     local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="HTTP requests unavailable"
+        refreshLocalManifest("upload-blocked")
         status.Text = "HTTP requests unavailable"
         return
     end
@@ -718,6 +759,9 @@ local function transmit()
     local parts = pendingParts
     local firstOk, first = pcall(function() return HttpService:JSONDecode(parts[1]) end)
     if not firstOk or type(first)~="table" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="malformed first part"
+        refreshLocalManifest("upload-blocked")
         status.Text = "Upload blocked: malformed first part"
         return
     end
@@ -730,10 +774,23 @@ local function transmit()
         if not ok or type(item)~="table" or item.scanId~=scanId
             or item.partIndex~=i or item.partCount~=partCount
             or item.placeId~=game.PlaceId then
+            uploadState.status="configuration-error"
+            uploadState.lastError="inconsistent part "..tostring(i)
+            refreshLocalManifest("upload-blocked")
             status.Text="Upload blocked: inconsistent part "..tostring(i)
             return
         end
     end
+    local acknowledgedBefore=0
+    for i=1,partCount do
+        if pendingAcknowledged[i] then acknowledgedBefore=acknowledgedBefore+1 end
+    end
+    uploadState.attempted=true
+    uploadState.status="uploading"
+    uploadState.acknowledgedParts=acknowledgedBefore
+    uploadState.expectedParts=partCount
+    uploadState.lastError=nil
+    refreshLocalManifest("upload-started")
     uploading = true
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
@@ -743,6 +800,7 @@ local function transmit()
         for i = 1, partCount do
             if pendingAcknowledged[i] then succeeded = succeeded + 1 end
         end
+        uploadState.acknowledgedParts=succeeded
         local workers = math.min(MAX_CONCURRENT_UPLOADS, partCount)
         for _ = 1, workers do
             active = active + 1
@@ -759,6 +817,7 @@ local function transmit()
                         end
                         pendingAcknowledged[i] = message
                         succeeded = succeeded + 1
+                        uploadState.acknowledgedParts=succeeded
                         status.Text = "Receiver ACK " .. succeeded .. "/" .. partCount .. " parts"
                     end
                 end
@@ -769,14 +828,22 @@ local function transmit()
         uploading = false
         if not alive or generation ~= uploadGeneration then return end
         local elapsed = math.floor((os.clock()-started)*100)/100
+        uploadState.acknowledgedParts=succeeded
         if failed then
+            uploadState.status="failed"
+            uploadState.lastError=failed
             status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
         elseif succeeded == partCount then
+            uploadState.status="acknowledged"
+            uploadState.lastError=nil
             status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
                 .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
         else
+            uploadState.status="incomplete"
+            uploadState.lastError="not all parts acknowledged"
             status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
         end
+        refreshLocalManifest("post-upload")
     end)
 end
 
@@ -819,6 +886,17 @@ local function encodeStage(stage, value)
     end)
     if not ok then error(stage .. ": " .. tostring(encoded), 2) end
     return encoded
+end
+
+refreshLocalManifest = function(phase)
+    if not pendingManifest then return false end
+    pendingManifest.uploadedParts = uploadState.acknowledgedParts
+    pendingManifest.reportTransport = uploadSnapshot(phase)
+    local ok, encoded = pcall(function()
+        return encodeStage("scan-manifest-refresh", pendingManifest)
+    end)
+    if ok then last=encoded end
+    return ok
 end
 
 local function prepareParts(report)
@@ -1329,6 +1407,21 @@ local function observeObject(obj, root, label)
     if not property then return end
     local path = watchPath(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return end
+    if property=="Value" and label=="LocalPlayer"
+        and not stateSnapshotCandidateSeen[obj]
+        and #stateSnapshotCandidates<MAX_STATE_SNAPSHOT_CANDIDATES then
+        local top=obj
+        while top.Parent and top.Parent~=player do top=top.Parent end
+        local low=path:lower()
+        local primary=top.Name=="Data" or top.Name=="leaderstats"
+        local private=low:find("token",1,true) or low:find("secret",1,true)
+            or low:find("auth",1,true) or low:find("password",1,true)
+            or low:find("userid",1,true)
+        if not primary and not private then
+            stateSnapshotCandidateSeen[obj]=true
+            stateSnapshotCandidates[#stateSnapshotCandidates+1]={object=obj,path=path:sub(1,180)}
+        end
+    end
     observed[obj] = true
     local ok, signal = pcall(function() return obj:GetPropertyChangedSignal(property) end)
     if not ok then return end
@@ -1361,35 +1454,49 @@ local MENU_FEATURE_HINTS = {
     fortunewheelmenugui="rewards", fortuneothermenusgui="rewards",
     buyspinsmenu="shops"
 }
-local function relevantStateEvidence(feature, changes)
+local function featureConsistentStateEvidence(feature, changes)
     if not feature then return nil end
-    if feature == "rebirth" then
-        local rebirthIncreased, strengthReset = false, false
-        for _, change in ipairs(changes) do
-            local key = change.key:lower()
-            if key:find("rebirth",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after > change.before then
-                rebirthIncreased = true
-            end
-            if key:find("strength",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after < change.before then
-                strengthReset = true
-            end
+    local matched={}
+    local strengthReset=false
+    for _,change in ipairs(changes) do
+        local key=change.key:lower()
+        local relevant=(feature=="rebirth" and key:find("rebirth",1,true))
+            or (feature=="training" and (key:find("strength",1,true) or key:find("agility",1,true)))
+            or (feature=="pets" and (key:find("pet",1,true) or key:find("hatch",1,true) or key:find("egg",1,true)))
+            or (feature=="inventory" and (key:find("inventory",1,true) or key:find("equip",1,true)))
+            or (feature=="quests" and (key:find("quest",1,true) or key:find("mission",1,true)))
+            or (feature=="rewards" and (key:find("reward",1,true) or key:find("claim",1,true)))
+        if relevant and change.before~=change.after then
+            matched[#matched+1]=change.key
         end
-        if rebirthIncreased then
-            return {rule="rebirth-counter-increased", corroboratingStrengthReset=strengthReset,
-                status="client-state-consistent", serverVerified=false}
-        end
-    elseif feature == "training" then
-        for _, change in ipairs(changes) do
-            if change.key:lower():find("strength",1,true)
-                and type(change.before)=="number" and type(change.after)=="number"
-                and change.after > change.before then
-                return {rule="strength-increased", status="client-state-consistent", serverVerified=false}
-            end
+        if feature=="rebirth" and key:find("strength",1,true)
+            and type(change.before)=="number" and type(change.after)=="number"
+            and change.after<change.before then strengthReset=true end
+    end
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="feature-key-changed",feature=feature,matchedKeys=matched,
+        corroboratingStrengthReset=strengthReset,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
+end
+local function featureConsistentGuiEvidence(feature, changes)
+    if feature~="rewards" then return nil end
+    local matched={}
+    for _,change in ipairs(changes) do
+        local path=change.path:lower()
+        if change.afterVisible==true and (path:find("claimed",1,true)
+            or path:find("completed",1,true)) then
+            matched[#matched+1]=change.path
         end
     end
-    return nil
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="reward-status-became-visible",feature=feature,matchedPaths=matched,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
 end
 local function actionKind(name)
     local n=name:lower()
@@ -1398,13 +1505,38 @@ local function actionKind(name)
     if n:find("sell",1,true) then return "sell" end
     if n:find("equip",1,true) then return "equip" end
     if n:find("craft",1,true) or n:find("fuse",1,true) then return "craft" end
-    if n:find("claim",1,true) then return "claim" end
+    if n:find("claim",1,true) or n:find("reward",1,true) then return "claim" end
     if n:find("buy",1,true) or n:find("purchase",1,true) then return "purchase" end
+    if n:find("hatch",1,true) or n=="egg" then return "hatch" end
     if n:find("rebirth",1,true) then return "rebirth" end
     if n:find("travel",1,true) or n:find("teleport",1,true) then return "travel" end
     return nil
 end
-local function workflowContext(obj, feature)
+local function semanticActionKind(obj, feature)
+    local direct=actionKind(obj.Name)
+    if direct then return direct,"control-name" end
+    local parentName=obj.Parent and obj.Parent.Name:lower() or ""
+    if obj.Name:lower():find("close",1,true) or parentName:find("close",1,true)
+        or obj.Name:lower():find("cancel",1,true) or parentName:find("cancel",1,true) then
+        return nil,nil
+    end
+    local generic=obj.Name:lower()=="button" or obj.Name:lower()=="action"
+        or obj.Name:lower()=="template" or obj:IsA("ProximityPrompt")
+    if not generic then return nil,nil end
+    local node=obj.Parent
+    for depth=1,7 do
+        if not node or node:IsA("ScreenGui") then break end
+        local lower=node.Name:lower()
+        if feature=="pets" and (lower:find("hatch",1,true) or lower:find("egg",1,true)) then
+            return "hatch","bounded-feature-ancestor-name"
+        end
+        local kind=actionKind(node.Name)
+        if kind then return kind,"bounded-ancestor-name" end
+        node=node.Parent
+    end
+    return nil,nil
+end
+local function workflowContext(obj, feature, kind, actionSource)
     local names, node={},obj
     for i=1,9 do
         if not node then break end
@@ -1412,7 +1544,7 @@ local function workflowContext(obj, feature)
         node=node.Parent
     end
     return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
-        kind=actionKind(obj.Name), clientOnly=true}
+        kind=kind, actionSource=actionSource, clientOnly=true}
 end
 local function classifyInteraction(obj)
     -- Specific local menu context wins over generic controls like EquipButton.
@@ -1506,12 +1638,13 @@ local function linkWorkflow(obj, feature, sequence)
     if isYes and feature=="travel" then
         return {phase="travel-confirmed",action="travel",confidence="menu-context-heuristic",verified=false}
     end
-    local kind=actionKind(obj.Name)
+    local kind, actionSource = semanticActionKind(obj,feature)
     if kind then
-        local context=workflowContext(obj,feature)
+        local context=workflowContext(obj,feature,kind,actionSource)
         pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
         if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
-        return {phase="initiated",action=kind,confidence="control-name-heuristic",verified=false}
+        return {phase="initiated",action=kind,actionSource=actionSource,
+            confidence="bounded-name-context-heuristic",verified=false}
     end
     return nil
 end
@@ -1525,6 +1658,8 @@ local function relevantActionEvidence(feature, workflow, changes)
             signals[#signals+1]="strength-change"
         elseif key:find("rebirth",1,true) then
             signals[#signals+1]="rebirth-change"
+        elseif key:find("hatch",1,true) or key:find("egg",1,true) then
+            signals[#signals+1]="hatch-related-value-change"
         elseif key:find("pet",1,true) or key:find("equip",1,true)
             or key:find("inventory",1,true) then
             signals[#signals+1]="inventory-related-value-change"
@@ -1545,6 +1680,10 @@ local function relevantActionEvidence(feature, workflow, changes)
     elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="sell" or kind=="craft" then
         for _,signal in ipairs(signals) do
             if signal=="inventory-related-value-change" then corroborated=true end
+        end
+    elseif kind=="hatch" then
+        for _,signal in ipairs(signals) do
+            if signal=="hatch-related-value-change" then corroborated=true end
         end
     elseif kind=="purchase" or kind=="claim" then
         for _,signal in ipairs(signals) do
@@ -1625,7 +1764,8 @@ local function observeInteractionObject(obj, root, label)
         local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if rootPart then beforePosition=rootPart.Position end
         if feature then
-            local item = featureInteractions[feature] or {count=0,stateChanges=0}
+            local item = featureInteractions[feature] or {
+                count=0,stateChanges=0,temporalStateChanges=0,outcomeCandidates=0}
             item.count = item.count + 1
             featureInteractions[feature] = item
         end
@@ -1708,23 +1848,35 @@ local function observeInteractionObject(obj, root, label)
                     end
                     workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
                     workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                    local featureStateEvidence=featureConsistentStateEvidence(feature,transactionFresh)
+                    local featureGuiEvidence=featureConsistentGuiEvidence(feature,freshGui)
                     if feature=="travel" and distance and distance>100 and not historyItem.travelCandidate then
                         historyItem.travelCandidate=true
                         workflowStats.travelCandidates=workflowStats.travelCandidates+1
                     end
-                    if feature=="rewards" and not historyItem.rewardClaimGuiCandidate then
-                        for _,g in ipairs(guiChanges) do
-                            if g.path:lower():find("claimed",1,true) and g.afterVisible==true then
-                                historyItem.rewardClaimGuiCandidate=true
-                                workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
-                                break
-                            end
-                        end
+                    if featureGuiEvidence and not historyItem.rewardClaimGuiCandidate then
+                        historyItem.rewardClaimGuiCandidate=true
+                        workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
+                    end
+                    if featureStateEvidence then historyItem.featureStateEvidence=featureStateEvidence end
+                    if featureGuiEvidence then historyItem.featureGuiEvidence=featureGuiEvidence end
+                    if (featureStateEvidence or featureGuiEvidence) and not historyItem.observableOutcomeCandidate then
+                        historyItem.observableOutcomeCandidate={feature=feature,
+                            classification="feature-consistent-observable-change",
+                            evidenceKinds={featureStateEvidence and "state-change" or "gui-change",
+                                featureStateEvidence and featureGuiEvidence and "gui-change" or nil},
+                            overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                            causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                        historyItem.outcomeVerified=false
+                        workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                        local item=feature and featureInteractions[feature]
+                        if item then item.outcomeCandidates=item.outcomeCandidates+1 end
                     end
                     local window={seconds=delaySeconds,stateChanges=freshState,
                         stateChangeCount=#freshState,guiChanges=freshGui,
                         guiChangeCount=#freshGui,travelDistanceStuds=distance,
-                        actionEvidence=evidence}
+                        featureStateEvidence=featureStateEvidence,
+                        featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
                     if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
@@ -1767,11 +1919,13 @@ local function observeInteractionObject(obj, root, label)
                         historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
                         historyItem.stateChanges=historyItem.stateChanges or {}
                         for _,change in ipairs(transactionFresh) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
-                        historyItem.featureStateEvidence=relevantStateEvidence(feature,transactionFresh)
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
                             local item=featureInteractions[feature]
-                            if item then item.stateChanges=item.stateChanges+1 end
+                            if item then
+                                item.temporalStateChanges=item.temporalStateChanges+1
+                                if featureStateEvidence then item.stateChanges=item.stateChanges+1 end
+                            end
                         end
                     end
                     if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
@@ -1785,6 +1939,8 @@ local function observeInteractionObject(obj, root, label)
                             featureCandidate=feature,sequence=historyItem.sequence,
                             observationWindowSeconds=delaySeconds,changes=transactionFresh,
                             guiChanges=freshGui,travelDistanceStuds=distance,
+                            featureStateEvidence=featureStateEvidence,
+                            featureGuiEvidence=featureGuiEvidence,
                             actionEvidence=evidence,causalVerification=false,
                             sessionId=sessionId,snapshotId=snapshotId}
                     end
@@ -2347,10 +2503,17 @@ local function inspect(requestType)
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
                 inventoryDiscovery="candidate-first-gui-sampling-parent-aware-pagination",
-                evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
-                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
+                evidenceLevels={"interaction-observed","temporal-state-change-observed",
+                    "feature-consistent-observable-change","gameplay-outcome-verified"},
+                gameplayOutcomesVerified=0,
+                completedCandidateDefinition="feature-consistent observable change; causality and gameplay remain unverified",
+                actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
+                stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates"},
+                stateSnapshotCandidateCount=#stateSnapshotCandidates,
+                stateSnapshotMaxValues=MAX_STATE_SNAPSHOT_CANDIDATES,
+                observationWindowsSeconds=OBSERVATION_WINDOWS,
                 stateChangeLimit=MAX_STATE_CHANGES,
-                featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
+                featureEvidenceRules={"feature-key-changed","reward-status-became-visible"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
@@ -2415,7 +2578,9 @@ local function inspect(requestType)
             -- Large universal scans must never be encoded as one JSON document.
             -- The receiver accepts bounded parts; keep only a small clipboard manifest.
             local parts = prepareParts(result)
-            local manifest = encodeStage('scan-manifest', {
+            uploadState={attempted=false,status="not-attempted",acknowledgedParts=0,
+                expectedParts=#parts,lastError=nil}
+            local manifestData = {
                 version = VERSION, gameName = result.gameName,
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
@@ -2426,16 +2591,19 @@ local function inspect(requestType)
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
+                reportTransport = uploadSnapshot("pre-upload"),
                 localPerformance = result.localPerformance,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
                 note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
-            })
-            return {json = manifest, parts = parts}
+            }
+            local manifest = encodeStage("scan-manifest", manifestData)
+            return {json=manifest,parts=parts,manifest=manifestData}
         end)
         if encoded then
             snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
+            pendingManifest = resultData.manifest
             pendingAcknowledged = {}
             status.Text = (result.diagnostics.complete and "Scan complete - " or "PARTIAL SCAN - ")
                 .. #result.objects .. " entries in " .. #pendingParts .. " part(s)"

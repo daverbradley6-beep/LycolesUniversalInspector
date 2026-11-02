@@ -1,3 +1,15 @@
+## v30.1.0 — Live evidence attribution and transport diagnostics
+
+- Derive bounded action candidates from semantic ancestor names when controls use generic names such as `Button` or `Action`.
+- Recognize pet hatch counters and reward `Claimed`/`Completed` visibility as feature-consistent observable outcome candidates.
+- Expand before/after snapshots beyond `leaderstats` and `Data` to a bounded, privacy-filtered registry of other LocalPlayer numeric/boolean ValueBase objects.
+- Separate unrelated temporal state changes from feature-relevant readiness evidence; candidates remain explicitly non-causal, non-authoritative, and unverified.
+- Make `completedCandidates` reachable while preserving `outcomeVerified: false` and zero gameplay-verification claims.
+- Add explicit local report transport lifecycle fields for generation, upload attempt, acknowledgements, failures, receiver integrity, and downstream availability.
+- Add deterministic v109 manifest-only readiness analysis plus a sanitized Bubble Gum Simulator INFINITY regression fixture.
+- Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
+
+
 ## v30.0.0 — Provenance-aware evidence and per-feature verification
 
 - Require matching scan IDs when both reviewed contracts and runtime audit carry scan provenance; retain compatibility with legacy v28 audit exports without scan IDs.
