@@ -1,17 +1,17 @@
 # OpenHands Development Progress
 
-_Last updated: 2026-11-01 — v108 runtime evidence integration cycle_
+_Last updated: 2026-11-02 — v30.1 live evidence and v109 manifest readiness cycle_
 
 ## Repository State
 
-- Workspace: `/projects/LycolesUniversalInspector`
+- Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `4749ea2` (`Integrate strict v108 runtime evidence pipeline`)
-- Implementation head: local full SHA `4749ea2924c5d7a12c6b6f7adc9f4c94b3cac64d`; `origin/openhands-development` remains one commit behind at `34d6575cb217efc49df52310971f0add28e8fbfd`
-- Implementation snapshot relative to `origin/main`: **17 commits ahead, 0 behind**
-- Reviewed history from baseline `9b3bfbd` through implementation `4749ea2`: **6 commits across 24 files**
+- Latest implementation commit: `1c2e55b` (`Improve live evidence and upload diagnostics`)
+- Implementation head: local full SHA `1c2e55b49a68f36df2a226e70c5e098baf9d4114`; pre-push `origin/openhands-development` is `9cb8531d8c3141a1f7fe12b666c39127c2eb7c40`
+- Implementation snapshot relative to `origin/main`: **19 commits ahead, 0 behind**
+- The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - This report is published as a separate documentation commit, whose self-referential SHA is intentionally not embedded here
-- Remote policy: this cycle was committed locally only; no push, merge, pull request, or `main` modification was performed
+- Remote policy: push only `openhands-development`; never modify or merge `main`
 
 ## Changes Implemented
 
@@ -98,6 +98,16 @@ _Last updated: 2026-11-01 — v108 runtime evidence integration cycle_
    - Added explicit `not_observed`, `matched`, and `drifted` outcomes; tri-state `comparisonPassed`; non-vacuous completeness; typed resolved-value drift; unsupported API failure; and safe value/status separation.
    - Kept source authenticity, runtime execution, live-game behavior, server authority, causality, and gameplay verification false in every generated and supplied-evidence path.
    - Added strict output-directory safety, optional-evidence artifact sets, canonical byte reconstruction, manifest cross-checks, CLI nonzero failure for supplied non-passing evidence, adversarial tests, README guidance, and detailed runtime-contract documentation.
+
+16. `1c2e55b` — improved live interaction evidence and manifest diagnostics:
+   - Audited the complete 273,704-byte Bubble Gum Simulator INFINITY v30 manifest: 153 interactions, 89 heuristic attributions, 10 distinct state events, 88 GUI transitions, and zero linked, corroborated, or completed outcomes.
+   - Confirmed the historical v108 resolved-value type-drift attribution defect is already fixed: `value_type_drift` retains an empty `failedRuntimeChecks` list, with targeted regression coverage.
+   - Made v30.1 semantic action discovery use bounded ancestry for generic controls and added pet-scoped egg/hatch interpretation without promoting unrelated quest tabs.
+   - Expanded before/after state sampling to a bounded, privacy-filtered registry of other LocalPlayer numeric/boolean ValueBase objects while retaining existing leaderstats/Data coverage.
+   - Added feature-consistent state and reward-GUI outcome candidates; unrelated Bubbles drift remains temporal evidence and does not raise shops/inventory readiness.
+   - Made `completedCandidates` reachable only for explicitly classified observable candidates while keeping `outcomeVerified`, causality, server authority, and gameplay verification false.
+   - Added explicit pre-upload, uploading, acknowledged, incomplete, failed, and configuration-error manifest lifecycle diagnostics; ACK state still never claims receiver integrity or downstream availability.
+   - Added deterministic `109.manifest-readiness.1` analysis, a sanitized eight-event real-world fixture retaining complete aggregate counts, and fail-closed transport/accounting tests.
 
 ## Tests and Results
 
@@ -200,6 +210,16 @@ v108 runtime-evidence integration cycle from commit `4749ea2`:
 - Tracked and untracked whitespace checks, `git diff --check`, cache cleanup, branch verification, and exact local commit verification: **passed**.
 - Implementation committed locally at `4749ea2924c5d7a12c6b6f7adc9f4c94b3cac64d`; no push, merge, pull request, or `main` change was performed.
 
+v30.1 live-evidence and v109 manifest-readiness cycle from commit `1c2e55b`:
+
+- Pre-change baseline: **1,306 Python tests passed**, receiver checks passed, all **3** parser tests passed, and the historical v108 type-drift attribution regression was present and green.
+- Focused v30.1/v109 suite: **17 passed**, covering explicit transport states, impossible ACK counts, real-manifest readiness, deterministic output, bounded semantic actions, state scope, and candidate verification boundaries.
+- Complete runtime-enabled Python suite against official Luau `0.744`: **1,317 passed** in 1.705s.
+- Receiver duplicate/conflict/count/integrity checks and all **3** Node/Luau parser tests: **passed**.
+- v109 CLI over the complete supplied manifest: scan/accounting valid; legacy upload attempt remains unknown; **15** feature-consistent outcome candidates found as a lower bound across pets and rewards; script generation remains blocked; every runtime/live/authority/causality/gameplay claim remains false.
+- Python compilation, deterministic emit, version consistency, sanitized-fixture privacy checks, and `git diff --check`: **passed**.
+- No Roblox runtime claim is made for v30.1; the updated inspector behavior has static/parser/offline regression coverage only.
+
 Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-test Python suites before the v106/v107 tests were added.
 
 ## Failures and Regressions
@@ -238,6 +258,10 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Architecture review exposed that feature IDs and digests alone made runtime checks inconvenient to execute independently. Each check now embeds exact full-path identity, class/property, source provenance, and deterministic expected scalar type, with source-digest binding and tamper tests.
 - A supplied complete observation over a zero-feature plan initially passed vacuously. Comparison completeness now requires at least one expected feature and emits `empty_runtime_check_plan` as a global fail-closed diagnostic.
 - Final independent review found resolved value-type drift incorrectly listed `property_read_succeeds` as failed. Type drift remains a comparison failure, but no longer contradicts the explicit resolved read status; a targeted regression locks the attribution.
+- The live report's 153 interactions produced zero completed candidates because `completedCandidates` had no increment path, generic control names lacked semantic ancestry, and feature readiness counted any temporal state drift. v30.1 adds bounded semantics and feature-consistent candidates while keeping causality and verification false.
+- The live report primarily exposed `Data.Bubbles` changes around shops, inventory, quest, and hatch interfaces. v30.1 records such drift temporally but no longer promotes unrelated feature readiness; state monitoring also expands to bounded non-private LocalPlayer ValueBase objects.
+- `uploadedParts: 0` was generated before `transmit()` and therefore could not diagnose receiver behavior. v30.1 refreshes explicit lifecycle metadata around attempts and acknowledgements; v109 treats legacy zero as unknown rather than failure.
+- The supplied artifact contains the complete local manifest and interaction history but no numbered multipart object payloads. The sanitized fixture preserves aggregate evidence plus eight representative sequences, and the analyzer blocks downstream script generation instead of inventing missing objects.
 
 ## Remaining Technical Limitations
 
@@ -253,12 +277,18 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - The harness instruments only the canonical place-guard line and suppresses scheduled loop execution after counting it; generated and instrumented source hashes remain separate.
 - The pinned Ubuntu runtime installation requires access to the official GitHub release; offline runs can reuse only an already verified executable with the exact digest.
 - The semantic verifier intentionally parses the canonical v107 emitter format rather than arbitrary equivalent Luau; noncanonical source is rejected even if it might execute equivalently.
+- The v30.1 inspector changes have offline/static/parser validation only; no updated Roblox session has confirmed their runtime layout, event sequencing, sampling overhead, or transport snapshots.
+- Feature-consistent outcome candidates remain temporal correlations gathered during overlapping interaction windows. They are useful generation inputs but do not establish causal action success, server authority, or replayability.
+- Expanded state sampling is bounded to LocalPlayer numeric/boolean ValueBase objects. It does not observe arbitrary module state, server-only values, table values, protected payloads, or authoritative results.
+- The legacy Bubble Gum manifest cannot establish whether upload was attempted or whether any of 1,330 parts reached the receiver. No receiver endpoint, credentials, integrity response, or production deployment was tested.
+- Manifest-only v109 analysis cannot feed v107/v108 generation because canonical object-bearing parts and reviewed implementation contracts are absent.
 - The Cloudflare receiver still requires separate deployment plus secret/KV configuration.
 - The README retains a long historical chronology below its corrected current overview.
 
 ## Next Highest-Priority Tasks
 
-1. Exercise the strict observation contract with a user-supplied permitted-client capture when one becomes available, while retaining unknown source authenticity and all authority/causality/gameplay claims false.
-2. Add a deliberate API-snapshot refresh workflow that reports reviewed upstream member/security diffs instead of silently following the latest release.
-3. Replace the deprecated transitive grammar dependency when the maintained Luau package publishes a compatible update.
-4. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+1. Integrate the v109 readiness output into the multipart release-builder entry point so manifest-only input produces one structured blocker report instead of an unrelated missing-directory failure.
+2. Extend downstream workflow compilation to consume v30.1 `observableOutcomeCandidate`, feature-state, and feature-GUI fields as unverified correlation evidence without automatically approving actions.
+3. Add synthetic v30.1 multipart fixtures covering pre-upload, retry, ACK, incomplete, and failure snapshots, then verify compatibility through the existing receiver integrity and release-builder paths.
+4. When complete real numbered parts become available, run them through receiver integrity plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
+5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.

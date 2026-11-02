@@ -38,6 +38,10 @@ Current v108 interpretation contract: `tools/system_interpreter_v108.py` emits e
 
 Current v108 runtime contract: `tools/runtime_contract_v108.py` derives exact expected checks and compares optional bounded `108.runtime-observation.1` evidence by structured status, never display text. Absence is `not_observed`, a failed status is `drifted`, and complete matching is only deterministic comparison evidence. `tools/integrated_pipeline_v108.py` must reconstruct every v107/v108 artifact exactly, report unsupported observations/capabilities/APIs explicitly, and keep source authenticity, Roblox runtime, live-game, server-authority, causality, and gameplay claims false.
 
+Current v30.1 inspector contract: generic controls may derive action candidates only from bounded semantic ancestry; feature readiness may use only feature-consistent observable state/GUI changes. `completedCandidates` means an observable correlation candidate, never causal success. `outcomeVerified`, source authenticity, server authority, and gameplay verification remain false unless separately established.
+
+Current v109 manifest contract: `tools/manifest_readiness_v109.py` analyzes a local manifest without treating it as the numbered multipart report. Legacy `uploadedParts: 0` is an unknown pre-upload snapshot, not transport failure. Explicit ACK state still does not establish receiver integrity or downstream availability. Manifest-only input must keep v107/v108 script generation blocked because canonical object parts and reviewed contracts are absent.
+
 ## Generated features
 
 Each generated feature must define:
