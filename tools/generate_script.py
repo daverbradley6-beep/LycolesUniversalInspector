@@ -349,17 +349,29 @@ def main():
                                           "generate_admin_commands.py")
         admin_lua=admin_generator.render(plan["integrity"]["placeId"],understanding)
         lua=utility_lua+"\n"+admin_lua
+        result_builder=load_local_module("lycoles_generated_result","generated_result.py")
+        generated_result=result_builder.build(plan["integrity"]["placeId"],
+            plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
+            {"placeGuard":True,"note":"Generator structural contract; not live runtime validation"},
+            list(ALLOWED_FEATURES)+["Admin Commands"])
+
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
         script=out/"LycolesGeneratedUtility.lua"
         script.write_text(lua,encoding="utf-8")
         (out/"LycolesAdminCommands.lua").write_text(admin_lua,encoding="utf-8")
         (out/"gameplay-understanding.json").write_text(
             json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        result_name="Lycoles-"+str(plan["integrity"]["placeId"])+"-generated-result.json"
+        (out/result_name).write_text(json.dumps(
+            generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+
         manifest={"schemaVersion":"9.0","placeId":plan["integrity"]["placeId"],
           "sourcePlanSHA256":hashlib.sha256(raw).hexdigest(),
           "generatedLuaSHA256":hashlib.sha256(lua.encode()).hexdigest(),
           "implementedFeatures":list(ALLOWED_FEATURES)+["Admin Commands"],
           "adminCommands":list(admin_generator.COMMANDS),
+          "generatedResult":{"artifact":result_name,"schemaVersion":generated_result["schemaVersion"],
+            "displayOnly":True,"executionAuthorized":False},
           "gameplayUnderstanding":{"artifact":"gameplay-understanding.json",
             "schemaVersion":understanding["schemaVersion"],"summary":understanding["summary"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,

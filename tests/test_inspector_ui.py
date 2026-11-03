@@ -74,6 +74,16 @@ class InspectorUITests(unittest.TestCase):
                       'Local export finished'):
             self.assertIn(f'refreshGeneratedHandoff("{phase}")',SRC)
 
+    def test_generated_result_loader_is_place_bound_and_display_only(self):
+        self.assertIn('Name = "LoadGeneratedResult", Text = "LOAD RESULT"',SRC)
+        self.assertIn('"Lycoles-"..tostring(game.PlaceId).."-generated-result.json"',SRC)
+        self.assertIn('result.schemaVersion=="110.generated-result.1"',SRC)
+        self.assertIn('result.placeId==game.PlaceId',SRC)
+        self.assertIn('result.executionAuthorized==false',SRC)
+        self.assertIn('generatedCodeOutput.Text=code',SRC)
+        self.assertIn('package authenticity, runtime, execution, and gameplay remain unverified',SRC)
+        self.assertNotIn('loadstring(code)',SRC)
+
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)

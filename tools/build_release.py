@@ -182,6 +182,16 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "releaseStatus":"GENERATED_STATIC_CHECKED_NOT_LIVE_TESTED",
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
+    result_builder=load_module("generated_result.py","lycoles_generated_result")
+    generated_result=result_builder.build(place,plan["integrity"]["scanId"],lua,
+        plan.get("requestedCapability"),validation,manifest["implementedClientControls"])
+    generated_result_name="Lycoles-"+str(place)+"-generated-result.json"
+    generated_result_bytes=(json.dumps(
+        generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    manifest["generatedResult"]={"artifact":generated_result_name,
+        "schemaVersion":generated_result["schemaVersion"],
+        "sha256":sha(generated_result_bytes),"displayOnly":True,"executionAuthorized":False}
+
     files={
       "feature-coverage.json":(json.dumps(coverage,indent=2,sort_keys=True)+"\n").encode(),
       "review-contracts-template.json":(json.dumps(review_template,indent=2,sort_keys=True)+"\n").encode(),
@@ -198,6 +208,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
       "LycolesAdminCommands.lua":admin_lua.encode("utf-8"),
       "LycolesGeneratedUtility.lua":lua.encode(),
+      generated_result_name:generated_result_bytes,
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"

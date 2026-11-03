@@ -3,6 +3,7 @@
 - Classify bubble generation, capacity progression, selling, and upgrades with feature-consistent, direction-aware client-state evidence while preserving non-causal and unverified outcome status.
 - Replace manifest-only `SAVE JSON` behavior with `SAVE REPORT`, exporting exact numbered multipart bodies and a scan-ID-matched manifest for offline generation when receiver upload is unavailable.
 - Surface scan, local-export, upload-acknowledgement, and pending-validation lifecycle in the Generated Script tab while labeling request text as non-evidence and receiver integrity/gameplay as unverified.
+- Emit a bounded, place-bound, display-only generated-result JSON from release and standalone pipelines; `LOAD RESULT` rejects positive execution/runtime/gameplay/authenticity claims and never evaluates imported code.
 - Add deterministic v110 gameplay understanding for concurrent systems, resources, observed actions, relationships, loop candidates, objective candidates, automation opportunities, and request blockers without forcing a single genre.
 - Emit digest-linked `gameplay-understanding.json` in deterministic releases and display bounded system/request summaries in generated Features panels.
 - Add a reusable Admin Commands section and `;` command bar with autocomplete, history, GUI/chat entry, shared state, feedback, and safe cleanup for local movement/session utilities.

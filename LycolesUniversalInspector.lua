@@ -744,6 +744,13 @@ local produceScript = create("TextButton", {
     BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1),
     TextSize = 13, ZIndex = 8
 }, generatedScriptPane)
+local loadGeneratedResult = create("TextButton", {
+    Name = "LoadGeneratedResult", Text = "LOAD RESULT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(204, 128),
+    BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+
 local generatedStatus = create("TextLabel", {
     Name = "GenerationStatus",
     Text = "No generated script is loaded. Enter a request to capture it with the next full scan.\n\nGeneration and static validation run offline from complete numbered parts. Gameplay remains unverified.",
@@ -752,7 +759,7 @@ local generatedStatus = create("TextLabel", {
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, TextSize = 13, ZIndex = 8
 }, generatedScriptPane)
-create("TextBox", {
+local generatedCodeOutput = create("TextBox", {
     Name = "GeneratedCodeOutput", Text = "-- Generated Luau becomes available only after offline compilation and validation.",
     Size = UDim2.fromOffset(486, 78), Position = UDim2.fromOffset(12, 302),
     BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
@@ -789,6 +796,36 @@ local function refreshGeneratedHandoff(phase)
         .."; integrity unverified"
         .."\nGeneration: offline compilation/validation pending; gameplay unverified"
 end
+loadGeneratedResult.MouseButton1Click:Connect(function()
+    if type(readfile)~="function" then
+        generatedStatus.Text="Result loading unavailable: readfile is not supported."
+        return
+    end
+    local filename="Lycoles-"..tostring(game.PlaceId).."-generated-result.json"
+    local readOk,raw=pcall(readfile,filename)
+    if not readOk or type(raw)~="string" or #raw>1200000 then
+        generatedStatus.Text="Result load failed: expected bounded file "..filename
+        return
+    end
+    local decodeOk,result=pcall(function() return HttpService:JSONDecode(raw) end)
+    local code=decodeOk and type(result)=="table" and result.generatedCode or nil
+    local valid=decodeOk and type(result)=="table"
+        and result.schemaVersion=="110.generated-result.1"
+        and result.placeId==game.PlaceId and type(result.scanId)=="string"
+        and result.staticValidationPassed==true and result.packageAuthenticityVerified==false
+        and result.runtimeVerified==false and result.gameplayVerified==false
+        and result.executionAuthorized==false and type(code)=="string" and #code<=1000000
+        and code:find("assert(game.PlaceId == "..tostring(game.PlaceId),1,true)~=nil
+    if not valid then
+        generatedStatus.Text="Result rejected: schema, place guard, or verification claims are invalid."
+        return
+    end
+    generatedCodeOutput.Text=code
+    generatedStatus.Text="Loaded display-only offline result for scan "..result.scanId
+        ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+    showGeneratedScriptPane(true)
+end)
+
 
 
 _G.LycolesInspectorClose = function()

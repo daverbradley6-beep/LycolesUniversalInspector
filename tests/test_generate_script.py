@@ -108,6 +108,12 @@ class GeneratorTests(unittest.TestCase):
             gameplay=json.loads((output/"gameplay-understanding.json").read_text())
             combined=(output/"LycolesGeneratedUtility.lua").read_text()
             commands=(output/"LycolesAdminCommands.lua").read_text()
+            generated_result=json.loads((output/(
+                "Lycoles-3623096087-generated-result.json")).read_text())
+            self.assertEqual(generated_result["schemaVersion"],"110.generated-result.1")
+            self.assertFalse(generated_result["executionAuthorized"])
+            self.assertFalse(generated_result["gameplayVerified"])
+
             self.assertEqual(manifest["gameplayUnderstanding"]["schemaVersion"],
                              "110.gameplay-understanding.1")
             self.assertIn("egg_selection_observation",

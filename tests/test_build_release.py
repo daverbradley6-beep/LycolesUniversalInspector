@@ -67,6 +67,12 @@ class ReleaseBuilderTests(unittest.TestCase):
                 self.assertIn("source-provenance.json",archive.namelist())
                 self.assertIn("gameplay-understanding.json",archive.namelist())
                 self.assertIn("LycolesAdminCommands.lua",archive.namelist())
+                result_name="Lycoles-3623096087-generated-result.json"
+                self.assertIn(result_name,archive.namelist())
+                generated_result=json.loads(archive.read(result_name))
+                self.assertFalse(generated_result["packageAuthenticityVerified"])
+                self.assertFalse(generated_result["executionAuthorized"])
+
             admin=(base/"out"/"LycolesAdminCommands.lua").read_text()
             combined=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
             self.assertEqual(first["adminCommandFramework"]["commands"],
