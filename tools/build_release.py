@@ -59,7 +59,8 @@ def build_manifest_readiness(manifest_path,output):
     return result
 
 
-def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,audit_path=None):
+def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
+          audit_path=None,prompt_feedback_path=None):
     parts_path=pathlib.Path(parts_dir)
     if parts_path.is_file():
         return build_manifest_readiness(parts_path,output)
@@ -139,6 +140,18 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     prompt_generator=load_module("generate_prompt_interactions.py","lycoles_prompt_interactions")
     prompt_interactions_lua=prompt_generator.render(action_discovery)
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
+    prompt_feedback=None
+    prompt_feedback_bytes=None
+    if prompt_feedback_path is not None:
+        prompt_feedback_evaluator=load_module(
+            "evaluate_prompt_trial_feedback.py","lycoles_prompt_feedback")
+        prompt_feedback_document=json.loads(
+            pathlib.Path(prompt_feedback_path).read_text(encoding="utf-8"))
+        prompt_feedback=prompt_feedback_evaluator.evaluate(
+            action_discovery,prompt_feedback_document)
+        prompt_feedback_bytes=(json.dumps(
+            prompt_feedback,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
     admin_lua=admin_generator.render(place,gameplay_understanding)
     lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
     validation=validate_lua(lua,place)
@@ -167,6 +180,13 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "generated":prompt_interactions_lua is not None,"runtimeVerified":False,"gameplayVerified":False,
             "multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],
             "compatibilityAlias":True},
+        "promptTrialFeedback":{"artifact":"prompt-trial-evaluation.json" if prompt_feedback else None,
+            "sha256":sha(prompt_feedback_bytes) if prompt_feedback_bytes else None,
+            "submitted":prompt_feedback is not None,
+            "attempts":prompt_feedback["summary"]["submittedAttempts"] if prompt_feedback else 0,
+            "expectedChangesObserved":prompt_feedback["summary"]["expectedChangesObserved"] if prompt_feedback else 0,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+            "actionOutcomesVerified":False},
 
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
@@ -256,6 +276,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         files["action-audit-evaluation.json"]=(json.dumps(audit_evaluation,indent=2,sort_keys=True)+"\n").encode()
     if feedback is not None:
         files["runtime-feedback.json"]=(json.dumps(feedback,indent=2,sort_keys=True)+"\n").encode()
+    if prompt_feedback_bytes is not None:
+        files["prompt-trial-evaluation.json"]=prompt_feedback_bytes
     if verification_lua is not None:
         files["LycolesManualVerification.lua"]=verification_lua.encode("utf-8")
     if actions_gui_lua is not None:
@@ -282,10 +304,13 @@ def main():
     parser.add_argument("--contracts",default=None)
     parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
+    parser.add_argument("--prompt-feedback",default=None,
+        help="Optional generated prompt trial feedback (v112 schema)")
     parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
     args=parser.parse_args()
     try:
-        result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,args.audit)
+        result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
+            args.audit,args.prompt_feedback)
         if result.get("schemaVersion")=="109.manifest-readiness.1":
             print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)
             return 2

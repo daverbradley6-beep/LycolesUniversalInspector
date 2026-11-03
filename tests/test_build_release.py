@@ -78,6 +78,47 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue((base/"out"/"LycolesPromptInteractions.lua").exists())
             self.assertFalse((base/"out"/"LycolesEggAutofarm.lua").exists())
 
+    def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            event={"featureCandidate":"pets","path":"Workspace.Egg.Prompt.ProximityPrompt",
+                "controlType":"ProximityPrompt.Triggered","evidenceLevel":"temporal-state-change-observed",
+                "outcomeVerified":False,"stateChanges":[{"key":"leaderstats.Hatches","before":5,"after":6}]}
+            make_parts(parts,event=event)
+            first=json.loads((parts/"1.json").read_text())
+            first["featureEvidence"]={"pets":{}}
+            first["objects"][0]={"path":event["path"],"class":"ProximityPrompt","scanOrdinal":1,
+                "interaction":{"actionText":"Hatch","objectText":"Egg","holdDuration":0,
+                    "maxActivationDistance":10}}
+            (parts/"1.json").write_text(json.dumps(first))
+            builder.build(parts,base/"initial")
+            discovery=json.loads((base/"initial"/"action-capabilities.json").read_text())
+            target=discovery["promptInteractions"]["targets"][0]
+            raw=json.dumps(discovery,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+            feedback={"schemaVersion":"112.prompt-trial-feedback.1",
+                "placeId":discovery["placeId"],"scanId":discovery["scanId"],
+                "discoverySHA256":hashlib.sha256(raw).hexdigest(),"sessionId":"release-test-session",
+                "entries":[{"sequence":1,"targetPath":target["path"],
+                    "outcomeKey":target["selectedOutcome"]["key"],
+                    "expected":target["selectedOutcome"]["change"],"before":5,"after":6,
+                    "observedExpectedChange":True,"status":"expected-change-observed",
+                    "message":"bounded test observation","observedAtUnix":1793635200}],
+                "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
+                    "serverAuthorityVerified":False,"runtimeVerified":False,
+                    "gameplayVerified":False,"actionOutcomesVerified":False}}
+            feedback_path=base/"feedback.json";feedback_path.write_text(json.dumps(feedback))
+            manifest=builder.build(parts,base/"out",prompt_feedback_path=feedback_path)
+            summary=manifest["promptTrialFeedback"]
+            self.assertTrue(summary["submitted"])
+            self.assertEqual(summary["expectedChangesObserved"],1)
+            self.assertFalse(summary["runtimeVerified"])
+            evaluated=json.loads((base/"out"/"prompt-trial-evaluation.json").read_text())
+            self.assertFalse(evaluated["gameplayVerified"])
+            with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
+                self.assertIn("prompt-trial-evaluation.json",archive.namelist())
+
+
 
     def test_build_and_reproducibility(self):
         with tempfile.TemporaryDirectory() as temp:
