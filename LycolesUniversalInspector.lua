@@ -767,6 +767,29 @@ local function showGeneratedScriptPane(visible)
 end
 inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(false) end)
 generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(true) end)
+local function refreshGeneratedHandoff(phase)
+    if not pendingManifest then return end
+    local requestText=pendingManifest.featureRequest
+    local requestLine="Request (not evidence): none"
+    if type(requestText)=="string" and requestText~="" then
+        requestLine="Request (not evidence): "..requestText:sub(1,96)
+    end
+    local exported=pendingManifest.localExport
+    local exportLine="Local export: not attempted"
+    if type(exported)=="table" then
+        exportLine="Local export: "..tostring(exported.status).." "
+            ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0).." parts"
+    end
+    generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
+        .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
+        ..tostring(uploadState.expectedParts).." numbered parts"
+        .."\n"..exportLine
+        .."\nReceiver: "..tostring(uploadState.status).."; ACK "
+        ..tostring(uploadState.acknowledgedParts).."/"..tostring(uploadState.expectedParts)
+        .."; integrity unverified"
+        .."\nGeneration: offline compilation/validation pending; gameplay unverified"
+end
+
 
 _G.LycolesInspectorClose = function()
     alive = false
@@ -825,6 +848,7 @@ local function transmit()
         uploadState.status="configuration-error"
         uploadState.lastError="invalid receiver endpoint"
         refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Use https://HOST/ingest/KEY"
         return
     end
@@ -833,6 +857,7 @@ local function transmit()
         uploadState.status="configuration-error"
         uploadState.lastError="HTTP requests unavailable"
         refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "HTTP requests unavailable"
         return
     end
@@ -844,6 +869,7 @@ local function transmit()
         uploadState.status="configuration-error"
         uploadState.lastError="malformed first part"
         refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Upload blocked: malformed first part"
         return
     end
@@ -859,6 +885,7 @@ local function transmit()
             uploadState.status="configuration-error"
             uploadState.lastError="inconsistent part "..tostring(i)
             refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
             status.Text="Upload blocked: inconsistent part "..tostring(i)
             return
         end
@@ -873,6 +900,7 @@ local function transmit()
     uploadState.expectedParts=partCount
     uploadState.lastError=nil
     refreshLocalManifest("upload-started")
+    refreshGeneratedHandoff("Upload started")
     uploading = true
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
@@ -926,6 +954,7 @@ local function transmit()
             status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
         end
         refreshLocalManifest("post-upload")
+        refreshGeneratedHandoff("Upload finished")
     end)
 end
 
@@ -2739,10 +2768,7 @@ local function inspect(requestType, featureRequest)
                 .. "\\nScan type: " .. scanRequestType
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
-            if result.featureRequest then
-                generatedStatus.Text = "Evidence package captured for:\n" .. result.featureRequest
-                    .. "\n\nExport or upload all numbered parts for offline generation and static validation. No gameplay outcome is verified."
-            end
+            refreshGeneratedHandoff("Scan complete")
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
             status.Text = "JSON error: " .. tostring(resultData)
@@ -2895,6 +2921,7 @@ save.MouseButton1Click:Connect(function()
         status.Text="Report save incomplete: "..exported.."/"..#pendingParts
         if firstError then warn("Lycoles local report export failed",firstError) end
     end
+    refreshGeneratedHandoff("Local export finished")
 end)
 
 close.MouseButton1Click:Connect(_G.LycolesInspectorClose)

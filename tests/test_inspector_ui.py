@@ -64,6 +64,16 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('inspect("feature-request", request)',SRC)
         self.assertNotIn('local requestedCapability',SRC)
 
+    def test_generated_pane_tracks_evidence_handoff_without_verification_claims(self):
+        self.assertIn('local function refreshGeneratedHandoff(phase)',SRC)
+        self.assertIn('Request (not evidence):',SRC)
+        self.assertIn('Local export: not attempted',SRC)
+        self.assertIn('; integrity unverified',SRC)
+        self.assertIn('offline compilation/validation pending; gameplay unverified',SRC)
+        for phase in ('Scan complete','Upload blocked','Upload started','Upload finished',
+                      'Local export finished'):
+            self.assertIn(f'refreshGeneratedHandoff("{phase}")',SRC)
+
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)
