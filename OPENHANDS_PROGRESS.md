@@ -11,6 +11,8 @@
 - Accepted prompt feedback remains operator-supplied client correlation. It does not establish causal effects, server authority, Roblox runtime correctness, gameplay verification, or action-outcome verification. GUI Auto/Multi replay remains blocked pending a validated exact control identity, persistent enabled-state observation, unattended outcome evidence, and a reviewed replay primitive.
 - Added regression coverage for strict-default v12 behavior, explicit v11 success through full release generation, incomplete v11 integrity rejection, no legacy resume, credential-safe diagnostics, discovery-bound feedback generation, identity/outcome mismatch rejection, and false directional-claim rejection.
 - Complete local gate passed: **1,431 Python tests** with pinned official Luau 0.744, receiver integrity checks, **3 Node/Luau parser tests**, Python compilation, and `git diff --check`. Controlled prompt execution remains simulation only. After access is securely supplied, run diagnostics for both confirmed scan IDs, use strict v12 import where supported or explicit v11 mode where diagnosed, build releases, inspect generation readiness, and compare recovered evidence with the manifest-only fixture.
+- Committed and pushed `b20ca744fffd5d468b81c26f215168a6dae8e923` (`Recover legacy receiver scans and ingest prompt feedback`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed and **18/18 GitHub Actions workflows passed**.
+
 
 
 
