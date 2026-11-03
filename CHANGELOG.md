@@ -1,13 +1,14 @@
-## v30.5.0 — Actionable gameplay discovery and egg autofarm trials
+## v30.5.0 — Actionable gameplay discovery and prompt interaction trials
 
 - Preserve bounded prompt, GUI-control, ClickDetector, and Tool metadata from complete multipart scans for downstream action discovery without retaining the full object inventory in generated plans.
 - Capture prompt labels, keys, activation distance, hold duration, nearest anchor, GUI button labels, passive `Tool.Activated` events, and bounded class/name/sibling-ordinal identities for both interaction targets and observable state values. Ambiguous new state keys cannot authorize a trial.
 - Discover the live Bubble Gum Simulator INFINITY Rainbow Egg prompt and its temporal `🥚 Hatches` increment as an evidence-backed runtime trial target; causality, runtime success, and gameplay success remain false.
-- Generate a place-bound egg autofarm trial with egg selection, automatic teleport to the observed prompt, a single start/stop toggle, three-failure shutdown, and before/after hatch-counter reporting.
-- Keep Multi mode unavailable unless a distinct multi-hatch prompt also has an observed hatch/egg counter increment; observed Auto/Multi GUI controls remain non-executable candidates until a permitted replay mechanism is established.
-- Register `;eggs`, `;egg`, `;eggmode`, `;eggstart`, and `;eggstop` in the shared top-centre Admin Commands system, including categorized command rows and `;stopall` cleanup.
+- Generate reusable, place-bound ProximityPrompt trials for observed prompt targets with resolvable scalar outcomes. Request alignment and objective usefulness rank targets ahead of menu-like navigation; generated loops preserve component identities, move to the prompt anchor, expose start/stop controls, monitor the observed direction, and stop after three failures.
+- Use the Rainbow Egg as the primary integration example while also generating a synthetic non-egg daily-reward prompt contract. No discovered remote is called and temporal correlation remains non-causal.
+- Keep Auto and Multi game modes unavailable: Auto lacks a validated GUI replay primitive, persistent enabled-state observation, and unattended outcome; Multi lacks a distinct resolved prompt/outcome and an observed hatch delta greater than one. The capability artifact lists exact minimum live observations.
+- Register generic `;interactions`, `;interaction`, `;interactionstart`, and `;interactionstop` plus compatible `;egg*` aliases in shared Admin Commands, including categorized rows and `;stopall` cleanup.
 - Add composable world-interaction, GUI-control, Tool-action, state-signal, and combat candidate families for non-simulator games. Bounded action-to-state/GUI relationships carry explicit evidence tiers and generation blockers without inferring causality or replay contracts from names or timing.
-- Parse generated egg and combined Admin Luau, then execute target resolution, teleport, prompt activation, hatch-counter observation, unavailable Multi mode, and `;stopall` against bounded official-Luau stubs. This is simulated execution; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
+- Parse generated prompt and combined Admin Luau, then execute generic command dispatch, identity resolution, teleport, prompt activation, hatch-counter observation, unavailable Multi mode, and `;stopall` against bounded official-Luau stubs. This is simulated execution; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
 
 ## v30.4.0 — Composable gameplay understanding and local utilities
 

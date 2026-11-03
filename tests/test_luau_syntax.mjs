@@ -43,7 +43,7 @@ from release_pipeline_v104 import build, luau
 from integrated_pipeline_v106 import generate as integrated
 from integrated_pipeline_v107 import generate as identity_integrated
 from generate_admin_commands import render as admin_commands
-from generate_egg_autofarm import render as egg_autofarm
+from generate_prompt_interactions import render as egg_autofarm
 place=85896571713843
 inspection={'placeId':place,'objects':[
  {'path':['PlayerGui','HUD','Coins'],'className':'TextLabel'},

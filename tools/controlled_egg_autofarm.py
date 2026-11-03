@@ -6,7 +6,7 @@ from pathlib import Path
 from controlled_admin_commands import STUBS
 from controlled_luau_v108 import ControlledExecutionError,run_bounded_program
 from generate_admin_commands import render as render_admin
-from generate_egg_autofarm import render as render_egg
+from generate_prompt_interactions import render as render_prompt
 
 SCHEMA="111.controlled-egg-autofarm.1"
 
@@ -32,7 +32,7 @@ local chunker=newInstance("Folder","Chunker");chunker.Parent=rendered
 local egg=newInstance("Model","Rainbow.Egg");egg.Parent=chunker
 local anchor=newInstance("Part","Anchor");anchor.CFrame=CFrame.new(20,4,30);anchor.Parent=egg
 local promptFolder=newInstance("Folder","Prompt");promptFolder.Parent=egg
-local prompt=newInstance("ProximityPrompt","ProximityPrompt");prompt.MaxActivationDistance=10;prompt.Parent=promptFolder
+local prompt=newInstance("ProximityPrompt","ProximityPrompt");prompt.Enabled=true;prompt.MaxActivationDistance=10;prompt.Parent=promptFolder
 local leaderstats=newInstance("Folder","leaderstats");leaderstats.Parent=player
 local hatches=newInstance("IntValue","🥚.Hatches");hatches.Value=285;hatches.Parent=leaderstats
 _G.__promptCalls=0
@@ -49,15 +49,15 @@ DRIVER=r'''
 local test=_G.__eggTest
 local root=player.Character:FindFirstChild("HumanoidRootPart")
 local beforeCFrame=root.CFrame
-player.Chatted:Fire(";eggstart")
-assert(_G.__promptCalls==1,"egg prompt was not activated exactly once")
+player.Chatted:Fire(";interactionstart")
+assert(_G.__promptCalls==1,"prompt was not activated exactly once")
 assert(test.hatches.Value==286,"hatch outcome was not observed")
 assert(root.CFrame~=beforeCFrame,"automatic teleport was not attempted")
-local eggGui=playerGui:FindFirstChild("LycolesEggAutofarm")
-assert(eggGui~=nil,"egg GUI missing")
+local promptGui=playerGui:FindFirstChild("LycolesPromptInteractions")
+assert(promptGui~=nil,"prompt interaction GUI missing")
 local observed=false
-for _,item in ipairs(eggGui:GetDescendants()) do
-    if item:IsA("TextLabel") and string.find(item.Text or "","Observed leaderstats.🥚.Hatches increase",1,true) then observed=true end
+for _,item in ipairs(promptGui:GetDescendants()) do
+    if item:IsA("TextLabel") and string.find(item.Text or "","Observed leaderstats.🥚.Hatches increased",1,true) then observed=true end
 end
 assert(observed,"outcome status was not displayed")
 player.Chatted:Fire(";eggmode multi")
@@ -94,7 +94,7 @@ def discovery(place_id):
 def execute(place_id,luau_binary,timeout_seconds=2.0):
     if type(place_id) is not int or place_id<1:raise ValueError("invalid place ID")
     source=(STUBS.replace("__RUNTIME_PLACE",str(place_id),1)+"\n"+SETUP+"\n"+
-        render_egg(discovery(place_id))+"\n"+render_admin(place_id)+"\n"+DRIVER)
+        render_prompt(discovery(place_id))+"\n"+render_admin(place_id)+"\n"+DRIVER)
     stdout=run_bounded_program(source,Path(luau_binary),timeout_seconds=timeout_seconds)
     if stdout.strip()!="LYCOLES_EGG|PASS|1|1|1|1":
         raise ControlledExecutionError("invalid controlled egg transcript")

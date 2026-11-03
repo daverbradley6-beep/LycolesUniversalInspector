@@ -83,6 +83,34 @@ def _state_identity(change):
     return identity
 
 
+_STOPWORDS={"a","an","and","auto","automatic","automatically","for","game","in","mode",
+    "of","on","selected","the","to","use","with"}
+_USEFUL_TERMS=("buy","claim","collect","egg","hatch","quest","rebirth","reward","sell",
+    "teleport","travel","upgrade")
+_NAVIGATION_TERMS=("back","close","menu","next","open","page","previous","settings","tab")
+
+
+def _tokens(value):
+    return {token for token in re.findall(r"[a-z0-9]+",str(value).lower())
+        if len(token)>2 and token not in _STOPWORDS}
+
+
+def _prompt_objective(path,feature,action,label,request,state_signals):
+    evidence=" ".join(str(value or "") for value in (path,feature,action,label))
+    evidence_tokens=_tokens(evidence);request_tokens=_tokens(request or "")
+    matched=sorted(evidence_tokens & request_tokens)
+    lower=evidence.lower();score=3 if state_signals else 0
+    if feature and feature!="other":score+=2
+    if action:score+=2
+    score+=min(6,len(matched)*3)
+    score+=2*sum(term in lower for term in _USEFUL_TERMS)
+    score-=3*sum(term in lower for term in _NAVIGATION_TERMS)
+    return {"score":score,"requestMatchedTerms":matched,
+        "requestAligned":bool(request_tokens and matched),
+        "classification":"gameplay-objective-candidate" if score>=5 else "interaction-candidate",
+        "objectiveVerified":False}
+
+
 
 def _label(path,metadata):
     interaction=metadata.get("interaction") if isinstance(metadata,dict) else None
@@ -113,7 +141,10 @@ def analyze(plan):
             raise ValueError("Malformed actionable object identity")
         by_path.setdefault(path,item)
         class_counts[kind]=class_counts.get(kind,0)+1
-    observed_actions=[];egg_targets={}
+    request=plan.get("requestedCapability")
+    if request is not None and (not isinstance(request,str) or len(request)>500):
+        raise ValueError("Malformed requested capability")
+    observed_actions=[];egg_targets={};prompt_targets={}
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
         path=event.get("path");control=event.get("controlType")
@@ -148,6 +179,35 @@ def analyze(plan):
             "stateChanges":changes,"stateOutcomeSignals":state_signals,
             "guiOutcomeSignals":gui_signals,"replayContractAvailable":False,
             "causalityProven":False,"outcomeVerified":False})
+        if control=="ProximityPrompt.Triggered":
+            event_metadata=event.get("controlMetadata") if isinstance(event.get("controlMetadata"),dict) else {}
+            label=_label(path,{"interaction":event_metadata} if event_metadata else by_path.get(path,{}))
+            target=prompt_targets.setdefault(path,{"path":path,"label":label,"controlType":control,
+                "pathIdentity":identity,"identityMode":"component" if identity else "legacy-flat-path",
+                "featureCandidate":event.get("featureCandidate"),
+                "actionCandidate":(event.get("workflow") or {}).get("action")
+                    if isinstance(event.get("workflow"),dict) else None,
+                "observedTriggers":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "evidenceTier":"interaction-observed","trialGenerationReady":False,
+                "prerequisites":{"executorFireProximityPrompt":True,"characterRoot":True,
+                    "targetAnchor":True,"promptEnabledAtRuntime":True},
+                "temporalCorrelationOnly":True,"causalityProven":False,
+                "runtimeVerified":False,"gameplayVerified":False})
+            if identity:target["pathIdentity"]=identity;target["identityMode"]="component"
+            if event_metadata:target["promptMetadata"]=event_metadata
+            target["observedTriggers"]+=1
+            target["evidenceTier"]=tier
+            seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}
+            for signal in state_signals:
+                marker=(signal["key"],signal["change"])
+                if signal["generationResolvable"] and marker not in seen_outcomes:
+                    target["outcomeSignals"].append(signal);seen_outcomes.add(marker)
+            seen_gui={(item["path"],item["change"]) for item in target["guiOutcomeSignals"]}
+            for signal in gui_signals:
+                marker=(signal["path"],signal["change"])
+                if marker not in seen_gui:target["guiOutcomeSignals"].append(signal);seen_gui.add(marker)
+            target["trialGenerationReady"]=bool(target["outcomeSignals"])
+
         lower=path.lower()
         hatch_changes=[(change,state_identity) for change,state_identity in changes_with_identity
             if state_identity is not False and isinstance(change.get("key"),str)
@@ -170,6 +230,29 @@ def analyze(plan):
                     [change["key"] for change,_ in hatch_changes]))
                 for change,state_identity in hatch_changes:
                     if state_identity:target["outcomeIdentities"][change["key"]]=state_identity
+    prompt_list=[]
+    for target in prompt_targets.values():
+        target["outcomeSignals"].sort(key=lambda item:(item["key"],item["change"]))
+        target["guiOutcomeSignals"].sort(key=lambda item:(item["path"],item["change"]))
+        target["objective"]=_prompt_objective(target["path"],target.get("featureCandidate"),
+            target.get("actionCandidate"),target["label"],request,target["outcomeSignals"])
+        blockers=[]
+        if not target["outcomeSignals"]:blockers.append("no resolvable scalar outcome change observed")
+        blockers.extend(["temporal correlation does not prove causality",
+            "live Roblox prompt activation and outcome remain unverified"])
+        target["blockers"]=blockers
+        prompt_list.append(target)
+    prompt_list.sort(key=lambda item:(-item["objective"]["requestAligned"],
+        -item["objective"]["score"],item["label"].lower(),item["path"]))
+    prompt_ready=[item for item in prompt_list if item["trialGenerationReady"]]
+    prompt_interactions={"targets":prompt_list,"trialReadyTargets":len(prompt_ready),
+        "selectedTargetPath":prompt_ready[0]["path"] if prompt_ready else None,
+        "automaticMovementSupported":bool(prompt_ready),
+        "executionMechanism":"executor-provided fireproximityprompt; availability checked at runtime",
+        "selectionPolicy":"request alignment, objective usefulness, label, path",
+        "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False,
+        "blockers":[] if prompt_ready else ["no observed prompt has a resolvable scalar outcome change"]}
+
     for path,item in by_path.items():
         lower=path.lower()
         if item.get("class")=="ProximityPrompt" and ("egg" in lower or "hatch" in lower):
@@ -211,7 +294,24 @@ def analyze(plan):
     if not multi_targets:blockers.append("no distinct multi-hatch prompt has an observed counter increment")
     egg={"targets":targets,"correlatedTargets":len(correlated),"modeControls":mode_controls,
         "automaticSingleTrialReady":bool(correlated),"multiHatchTrialReady":bool(multi_targets),
+        "autoGameModeExecutable":False,"multiGameModeExecutable":False,
         "teleportTargetDerivable":bool(correlated),"blockers":blockers,
+        "modeExecutionBlockers":{
+            "auto":["observed Auto GUI activation has no validated client replay primitive",
+                "no observable Auto-enabled state transition was captured",
+                "no unattended hatch outcome was observed after Auto activation"],
+            "multi":["no distinct multi-hatch ProximityPrompt has a resolved outcome identity",
+                "observed Multi/Auto GUI controls have no validated client replay primitive",
+                "no single activation produced an observed hatch-count delta greater than one"]},
+        "minimumLiveObservations":{
+            "auto":["activate the Auto control once while the inspector records its component identity",
+                "capture a persistent observable Auto-enabled value/attribute before and after activation",
+                "observe a later hatch-counter increment with no manual prompt activation",
+                "identify and validate a permitted client-side replay primitive for that exact control"],
+            "multi":["perform one multi-hatch activation while recording the exact prompt/control identity",
+                "capture hatch counter and relevant cost/currency values before and after activation",
+                "observe a hatch-count delta greater than one in the linked observation window",
+                "if GUI-controlled, identify and validate a permitted client-side replay primitive"]},
         "executionMechanism":"executor-provided fireproximityprompt; availability checked at runtime",
         "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
     family_for={"ProximityPrompt":"world-interaction","ClickDetector":"world-interaction",
@@ -262,7 +362,8 @@ def analyze(plan):
     return {"schemaVersion":SCHEMA,"placeId":integrity["placeId"],
         "scanId":integrity.get("scanId"),"actionableObjectCounts":dict(sorted(class_counts.items())),
         "actionableObjectsTruncated":plan.get("actionableObjectsTruncated") is True,
-        "observedActions":observed_actions,"genericCapabilities":generic,"eggHatching":egg,
+        "observedActions":observed_actions,"genericCapabilities":generic,
+        "promptInteractions":prompt_interactions,"eggHatching":egg,
         "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
             "serverAuthorityVerified":False,"runtimeVerified":False,
             "gameplayVerified":False,"actionOutcomesVerified":False}}

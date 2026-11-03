@@ -64,13 +64,19 @@ class ReleaseBuilderTests(unittest.TestCase):
                     "maxActivationDistance":10}}
             (parts/"1.json").write_text(json.dumps(first))
             manifest=builder.build(parts,base/"out")
-            self.assertTrue(manifest["eggAutofarmTrial"]["generated"])
-            self.assertFalse(manifest["eggAutofarmTrial"]["gameplayVerified"])
+            self.assertTrue(manifest["promptInteractionTrial"]["generated"])
+            self.assertTrue(manifest["promptInteractionTrial"]["automaticMovement"])
+            self.assertFalse(manifest["promptInteractionTrial"]["gameplayVerified"])
+            self.assertTrue(manifest["eggAutofarmTrial"]["compatibilityAlias"])
             source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
             self.assertIn("fireproximityprompt(prompt)",source)
+            self.assertIn("interactionstart=",source)
+            self.assertIn("interactionstop=",source)
+
             self.assertIn('_G.LycolesGameCommands={',source)
             self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
-            self.assertTrue((base/"out"/"LycolesEggAutofarm.lua").exists())
+            self.assertTrue((base/"out"/"LycolesPromptInteractions.lua").exists())
+            self.assertFalse((base/"out"/"LycolesEggAutofarm.lua").exists())
 
 
     def test_build_and_reproducibility(self):

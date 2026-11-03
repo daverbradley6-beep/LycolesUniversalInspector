@@ -8,7 +8,7 @@ def load(name,file):
 
 
 discovery=load("action_discovery","discover_action_capabilities.py")
-generator=load("egg_generator","generate_egg_autofarm.py")
+generator=load("egg_generator","generate_prompt_interactions.py")
 FIXTURE=json.loads((ROOT/"tests"/"fixtures"/"bubble_gum_infinity_manifest_v30_sanitized.json").read_text())
 
 
@@ -31,12 +31,20 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(target["outcomeKeys"],["leaderstats.🥚 Hatches"])
         self.assertEqual(target["evidenceTier"],"temporal-state-increment-observed")
         self.assertFalse(target["causalityProven"])
+        self.assertFalse(egg["autoGameModeExecutable"])
+        self.assertFalse(egg["multiGameModeExecutable"])
+        self.assertIn("no unattended hatch outcome was observed after Auto activation",
+            egg["modeExecutionBlockers"]["auto"])
+        self.assertIn("observe a hatch-count delta greater than one in the linked observation window",
+            egg["minimumLiveObservations"]["multi"])
+
 
     def test_generated_trial_has_toggle_teleport_outcome_and_shared_commands(self):
         source=generator.render(discovery.analyze(self.real_plan()))
-        for token in ("Egg Autofarm | evidence-bounded trial","fireproximityprompt(prompt)",
+        for token in ("Prompt Interactions | evidence-bounded trial","fireproximityprompt(prompt)",
                       "root.CFrame=anchor.CFrame","before=readOutcome", "after=readOutcome",
                       "Stopped after 3 uncorroborated attempts","_G.LycolesGameCommands",
+                      "interactionstart=","interactionstop=","interaction=",
                       "eggstart=","eggstop=","eggmode="):
             self.assertIn(token,source)
         self.assertNotIn("FireServer(",source)
@@ -44,18 +52,17 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
 
     def test_generator_rejects_forged_target_evidence(self):
         result=discovery.analyze(self.real_plan())
-        result["eggHatching"]["targets"][0]["controlType"]="RemoteEvent.FireServer"
-        with self.assertRaisesRegex(ValueError,"Malformed correlated egg target"):
+        result["promptInteractions"]["targets"][0]["controlType"]="RemoteEvent.FireServer"
+        with self.assertRaisesRegex(ValueError,"Malformed correlated prompt target"):
             generator.render(result)
 
     def test_generator_rejects_forged_outcome_identity(self):
         result=discovery.analyze(self.real_plan())
-        target=next(item for item in result["eggHatching"]["targets"]
-            if item["incrementObservations"]>0)
-        target["outcomeIdentities"]={target["outcomeKeys"][0]:[
+        target=result["promptInteractions"]["targets"][0]
+        target["outcomeSignals"][0]["stateIdentity"]=[
             {"name":"Other","className":"Folder","ordinal":1},
-            {"name":"Hatches","className":"IntValue","ordinal":1}]}
-        with self.assertRaisesRegex(ValueError,"Malformed correlated egg target"):
+            {"name":"Hatches","className":"IntValue","ordinal":1}]
+        with self.assertRaisesRegex(ValueError,"Malformed correlated prompt target"):
             generator.render(result)
 
 
@@ -84,6 +91,33 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertIn('name="🥚 Hatches",className="IntValue",ordinal=1',source)
         self.assertIn("for _,child in ipairs(current:GetChildren())",source)
 
+    def test_non_egg_prompt_generates_request_ranked_interaction_trial(self):
+        plan={"integrity":{"scanComplete":True,"placeId":123,"scanId":"reward-scan"},
+            "requestedCapability":"Automatically claim daily reward",
+            "actionableObjects":[],"observedInteractionHistory":[{
+                "path":"Workspace.Rewards.Daily.ClaimPrompt","controlType":"ProximityPrompt.Triggered",
+                "featureCandidate":"rewards","pathIdentity":[
+                    {"name":"Workspace","className":"Workspace","ordinal":1},
+                    {"name":"Rewards","className":"Folder","ordinal":1},
+                    {"name":"Daily","className":"Part","ordinal":1},
+                    {"name":"ClaimPrompt","className":"ProximityPrompt","ordinal":1}],
+                "stateChanges":[{"key":"Data.DailyClaims","before":2,"after":3,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"DailyClaims","className":"IntValue","ordinal":1}]}]}]}
+        result=discovery.analyze(plan)
+        prompt=result["promptInteractions"]
+        self.assertEqual(prompt["trialReadyTargets"],1)
+        self.assertEqual(prompt["selectedTargetPath"],"Workspace.Rewards.Daily.ClaimPrompt")
+        self.assertTrue(prompt["targets"][0]["objective"]["requestAligned"])
+        source=generator.render(result)
+        self.assertIn('label="Daily"',source)
+        self.assertIn('feature="rewards"',source)
+        self.assertIn("egg=false",source)
+        self.assertIn("interactionstart=",source)
+        self.assertNotIn("FireServer(",source)
+
+
     def test_unavailable_new_state_identity_blocks_trial_readiness(self):
         plan=self.real_plan()
         event=next(item for item in plan["observedInteractionHistory"]
@@ -97,6 +131,8 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                     change["stateIdentityStatus"]="unavailable"
         result=discovery.analyze(plan)
         self.assertFalse(result["eggHatching"]["automaticSingleTrialReady"])
+        self.assertEqual(result["promptInteractions"]["trialReadyTargets"],0)
+
         self.assertIsNone(generator.render(result))
 
 
