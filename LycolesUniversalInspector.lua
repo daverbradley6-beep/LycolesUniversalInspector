@@ -56,7 +56,7 @@ local function uploadSnapshot(phase)
     }
 end
 local MAX_UPLOAD_ATTEMPTS = 3
-local MAX_CONCURRENT_UPLOADS = 3
+local MAX_CONCURRENT_UPLOADS = 1
 local SCAN_YIELD_BUDGET_SECONDS = 0.012
 local UPLOAD_RETRY_DELAYS = {1, 3, 6}
 local alive = true
