@@ -82,6 +82,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "gameplayVerified":False,"actionOutcomesVerified":False,
     }
     overlay_provenance_bytes=(json.dumps(overlay_provenance,indent=2,sort_keys=True)+"\n").encode()
+    gameplay_compiler=load_module("understand_gameplay.py","lycoles_gameplay_understanding")
+    gameplay_understanding=gameplay_compiler.analyze(plan)
+    gameplay_understanding_bytes=(json.dumps(
+        gameplay_understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
@@ -127,7 +131,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     if actions_gui_lua is not None:
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
-    lua=generator.render(plan)
+    lua=generator.render(plan,gameplay_understanding)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
@@ -135,6 +139,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "schemaVersion":"30.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
         "requestedCapability":plan.get("requestedCapability"),
+        "gameplayUnderstanding":{"schemaVersion":gameplay_understanding["schemaVersion"],
+            "artifact":"gameplay-understanding.json",
+            "sha256":sha(gameplay_understanding_bytes),
+            "summary":gameplay_understanding["summary"],
+            "requestedCapabilityAssessment":gameplay_understanding["requestedCapabilityAssessment"]},
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),
@@ -172,6 +181,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
+      "gameplay-understanding.json":gameplay_understanding_bytes,
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
       "evidence-overlay-provenance.json":overlay_provenance_bytes,
@@ -186,6 +196,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Baseline source input: "+source_provenance["inputMode"]+".\n"
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
+          "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
+          "Gameplay understanding is evidence-ranked and does not verify objectives, causality, replayability, or actions.\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
           "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"

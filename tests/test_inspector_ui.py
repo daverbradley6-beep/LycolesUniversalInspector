@@ -59,6 +59,15 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)
         self.assertIn('feature=="pets" and (lower:find("hatch",1,true) or lower:find("egg",1,true))',SRC)
         self.assertIn('if n:find("hatch",1,true) or n=="egg" then return "hatch" end',SRC)
+    def test_simulator_actions_capture_progression_and_conversion(self):
+        self.assertIn('progression={"progression","bubble","capacity","blow","farm"}',SRC)
+        self.assertIn('shops={"shop","purchase","store","sell","upgrade"}',SRC)
+        self.assertIn('return "blow"',SRC)
+        self.assertIn('elseif kind=="blow" then',SRC)
+        self.assertIn('elseif kind=="sell" then',SRC)
+        self.assertIn('corroborated=resourceDecrease and currencyIncrease',SRC)
+        self.assertIn('feature=="progression" and (key:find("bubble",1,true)',SRC)
+
     def test_completed_candidates_are_observable_not_verified(self):
         self.assertIn("workflowStats.completedCandidates=workflowStats.completedCandidates+1",SRC)
         self.assertIn('classification="feature-consistent-observable-change"',SRC)

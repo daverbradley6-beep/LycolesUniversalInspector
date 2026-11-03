@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.3.0
+-- Lycoles Universal Inspector v30.4.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.3.0"
+local VERSION = "30.4.0"
 
 local endpoint = ""
 local autoSend = true
@@ -114,8 +114,9 @@ local observationSequence = 0
 -- paths. This prevents 'LiveRequest' being classified as a quest.
 local FEATURE_TERMS = {
  training={"training","gym","strength","agility","treadmill"},
+ progression={"progression","bubble","capacity","blow","farm"},
  rebirth={"rebirth"}, pets={"pet","hatch","egg"},
- shops={"shop","purchase","store"}, travel={"teleport","portal"},
+ shops={"shop","purchase","store","sell","upgrade"}, travel={"teleport","portal"},
  bosses={"boss","arena"}, quests={"quest","mission"},
  combat={"combat","attack","damage"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
@@ -1285,10 +1286,10 @@ local function enrichEntry(entry, obj)
     local haystack = lower .. " " .. objectName .. " " .. parentName
     local groups = {
         training={"train","training","gym","strength","agility","durability","rep","machine"},
-        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement"},
+        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement","bubble","capacity","blow"},
         quests={"quest","mission","objective","daily","weekly","task"},
         pets={"pet","companion","egg","hatch","enchant","evolve"},
-        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase"},
+        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase","sell","upgrade"},
         rewards={"reward","claim","chest","crate","gift","spin","drop"},
         bosses={"boss","raid","elite","arena"},
         travel={"teleport","portal","spawn","vehicle","mount","area"},
@@ -1544,6 +1545,9 @@ local function featureConsistentStateEvidence(feature, changes)
         local key=change.key:lower()
         local relevant=(feature=="rebirth" and key:find("rebirth",1,true))
             or (feature=="training" and (key:find("strength",1,true) or key:find("agility",1,true)))
+            or (feature=="progression" and (key:find("bubble",1,true) or key:find("capacity",1,true)))
+            or (feature=="shops" and (key:find("coin",1,true) or key:find("gem",1,true)
+                or key:find("currency",1,true) or key:find("cash",1,true)))
             or (feature=="pets" and (key:find("pet",1,true) or key:find("hatch",1,true) or key:find("egg",1,true)))
             or (feature=="inventory" and (key:find("inventory",1,true) or key:find("equip",1,true)))
             or (feature=="quests" and (key:find("quest",1,true) or key:find("mission",1,true)))
@@ -1584,6 +1588,7 @@ local function actionKind(name)
     local n=name:lower()
     if n:find("unequipall",1,true) then return "unequip-all" end
     if n:find("unequip",1,true) then return "unequip" end
+    if n:find("blow",1,true) or n=="bubble" or n=="bubbles" then return "blow" end
     if n:find("sell",1,true) then return "sell" end
     if n:find("equip",1,true) then return "equip" end
     if n:find("craft",1,true) or n:find("fuse",1,true) then return "craft" end
@@ -1736,7 +1741,9 @@ local function relevantActionEvidence(feature, workflow, changes)
     local signals={}
     for _,change in ipairs(changes) do
         local key=change.key:lower()
-        if key:find("strength",1,true) then
+        if key:find("bubble",1,true) or key:find("capacity",1,true) then
+            signals[#signals+1]="progression-resource-change"
+        elseif key:find("strength",1,true) then
             signals[#signals+1]="strength-change"
         elseif key:find("rebirth",1,true) then
             signals[#signals+1]="rebirth-change"
@@ -1759,13 +1766,34 @@ local function relevantActionEvidence(feature, workflow, changes)
                 type(change.before)=="number" and type(change.after)=="number"
                 and change.after>change.before then corroborated=true end
         end
-    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="sell" or kind=="craft" then
+    elseif kind=="blow" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                and type(change.before)=="number" and type(change.after)=="number"
+                and change.after>change.before then corroborated=true end
+        end
+    elseif kind=="sell" then
+        local resourceDecrease,currencyIncrease=false,false
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number" then
+                if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                    and change.after<change.before then resourceDecrease=true end
+                if (key:find("coin",1,true) or key:find("gem",1,true)
+                    or key:find("currency",1,true) or key:find("cash",1,true))
+                    and change.after>change.before then currencyIncrease=true end
+            end
+        end
+        corroborated=resourceDecrease and currencyIncrease
+    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="craft" then
         for _,signal in ipairs(signals) do
             if signal=="inventory-related-value-change" then corroborated=true end
         end
     elseif kind=="hatch" then
         for _,signal in ipairs(signals) do
-            if signal=="hatch-related-value-change" then corroborated=true end
+            if signal=="hatch-related-value-change" or signal=="inventory-related-value-change" then
+                corroborated=true end
         end
     elseif kind=="purchase" or kind=="claim" then
         for _,signal in ipairs(signals) do

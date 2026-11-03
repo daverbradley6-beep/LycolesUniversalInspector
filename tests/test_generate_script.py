@@ -6,8 +6,18 @@ generator=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
 class GeneratorTests(unittest.TestCase):
     def plan(self):
-        return {"integrity":{"placeId":3623096087,"scanComplete":True},
+        return {"integrity":{"placeId":3623096087,"scanId":"testscan","scanComplete":True},
                 "features":[{"feature":"rebirth"},{"feature":"pets"}]}
+    def gameplay(self):
+        return {"schemaVersion":"110.gameplay-understanding.1","placeId":3623096087,
+            "scanId":"testscan","model":"composable_capabilities","genre":None,
+            "objectiveCandidates":[],"progressionLoops":[],
+            "systems":[{"label":"Companions","evidenceTier":"structural_candidate"}],
+            "requestedCapabilityAssessment":None,"claims":{
+                "sourceAuthenticityVerified":False,"primaryObjectiveVerified":False,
+                "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
+                "runtimeVerified":False,"gameplayVerified":False,"actionOutcomesVerified":False}}
+
     def test_generates_client_utility(self):
         result=generator.render(self.plan())
         self.assertIn("3623096087",result)
@@ -17,6 +27,16 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("Response authenticity: unverified",result)
         self.assertNotIn("FireServer(",result)
         self.assertNotIn("InvokeServer(",result)
+    def test_gameplay_understanding_is_displayed_without_verification(self):
+        result=generator.render(self.plan(),self.gameplay())
+        self.assertIn("Gameplay systems: 1",result)
+        self.assertIn("Companions [structural_candidate]",result)
+        self.assertIn("No gameplay mechanics are verified",result)
+    def test_forged_gameplay_understanding_is_blocked(self):
+        gameplay=self.gameplay();gameplay["claims"]["gameplayVerified"]=True
+        with self.assertRaisesRegex(ValueError,"gameplay understanding claims"):
+            generator.render(self.plan(),gameplay)
+
     def test_requested_capability_is_displayed_as_unverified(self):
         plan=self.plan();plan["requestedCapability"]="Show observable pet inventory"
         result=generator.render(plan)

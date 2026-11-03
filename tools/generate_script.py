@@ -108,15 +108,64 @@ def source_provenance_lines(plan):
     return lines
 
 
+def gameplay_understanding_lines(plan,understanding):
+    if understanding is None:
+        return ["Gameplay understanding: unavailable","No gameplay mechanics are verified"]
+    integrity=plan["integrity"]
+    if not isinstance(understanding,dict):
+        raise ValueError("Malformed gameplay understanding")
+    claims=understanding.get("claims")
+    false_claims=("sourceAuthenticityVerified","primaryObjectiveVerified","causalityProven",
+                  "serverAuthorityVerified","replayable","runtimeVerified",
+                  "gameplayVerified","actionOutcomesVerified")
+    if (understanding.get("schemaVersion")!="110.gameplay-understanding.1"
+            or understanding.get("placeId")!=integrity.get("placeId")
+            or understanding.get("scanId")!=integrity.get("scanId")
+            or understanding.get("model")!="composable_capabilities"
+            or understanding.get("genre") is not None
+            or not isinstance(claims,dict)
+            or any(claims.get(field) is not False for field in false_claims)):
+        raise ValueError("Invalid gameplay understanding claims")
+    systems=understanding.get("systems")
+    objectives=understanding.get("objectiveCandidates")
+    loops=understanding.get("progressionLoops")
+    if (not isinstance(systems,list) or len(systems)>128
+            or not isinstance(objectives,list) or len(objectives)>128
+            or not isinstance(loops,list) or len(loops)>128):
+        raise ValueError("Malformed gameplay understanding")
+    lines=["Gameplay systems: "+str(len(systems)),
+           "Objective candidates: "+str(len(objectives)),
+           "Progression loops: "+str(len(loops)),
+           "No gameplay mechanics are verified"]
+    assessment=understanding.get("requestedCapabilityAssessment")
+    if assessment is not None:
+        if (not isinstance(assessment,dict)
+                or assessment.get("implementationReady") is not False
+                or assessment.get("runtimeVerified") is not False
+                or assessment.get("gameplayVerified") is not False):
+            raise ValueError("Invalid requested capability assessment")
+        lines.append("Request readiness: "+str(assessment.get("status")))
+        lines.append("Request evidence: "+str(assessment.get("evidenceTier")))
+    for system in systems[:8]:
+        label=system.get("label") if isinstance(system,dict) else None
+        tier=system.get("evidenceTier") if isinstance(system,dict) else None
+        if not isinstance(label,str) or not isinstance(tier,str):
+            raise ValueError("Malformed gameplay system")
+        lines.append(label+" ["+tier+"]")
+    return lines
+
+
 def lua_quote(value):
     return json.dumps(str(value),ensure_ascii=True)
 
-def render(plan):
+def render(plan,gameplay_understanding=None):
     place=validate(plan)
     names=sorted({f["feature"] for f in plan["features"]})
     feature_list="\n".join("    "+lua_quote(name)+"," for name in names)
     provenance_list="\n".join(
         "    "+lua_quote(line)+"," for line in source_provenance_lines(plan))
+    gameplay_list="\n".join("    "+lua_quote(line)+"," for line in
+                             gameplay_understanding_lines(plan,gameplay_understanding))
     request=plan.get("requestedCapability")
     request_lines=(["Requested capability: "+request,
                     "Request status: evidence review only; gameplay is unverified"]
@@ -227,9 +276,12 @@ end)
 button("Features",function()
     local candidates=FEATURE_NAMES
     local provenance=SOURCE_PROVENANCE_LINES
+    local gameplay=GAMEPLAY_UNDERSTANDING_LINES
     local request=REQUEST_STATUS_LINES
     local lines={"Discovered: "..tostring(#candidates),"These are candidates, not implemented gameplay actions.",""}
     for _,line in ipairs(request) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for _,line in ipairs(gameplay) do lines[#lines+1]=line end
     lines[#lines+1]=""
     for _,line in ipairs(provenance) do lines[#lines+1]=line end
     lines[#lines+1]=""
@@ -263,6 +315,7 @@ show("Ready",{"Validated scan inventory loaded.","Client diagnostic features onl
 """.replace("PLACE_ID",str(place)).replace(
         "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
         "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
+        "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(
         "REQUEST_STATUS_LINES", "{\n"+request_list+"\n}")
 
 def main():
