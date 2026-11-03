@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Controlled Admin Commands execution
+
+- Pushed `42093cd07e8702b91bf5d132b1ea62706326337c` (`Validate generated commands in bounded Luau`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
+- Added `tools/controlled_admin_commands.py`, which runs actual generated `LycolesAdminCommands.lua` code through the hash-pinned official Luau 0.744 CLI in bounded Roblox client stubs.
+- The simulation executes chat commands and GUI-prefill submission, validates shared row state, tracked speed/jump/collision cleanup, fly mover setup and teardown, fly continuity across simulated character replacement, command GUI closure, deterministic reports, and assertion-based place guarding.
+- Simulation reports explicitly keep Roblox-runtime, live-game, server-authority, and gameplay verification false. No target server, production service, remote payload, or gameplay mechanic is exercised.
+- Final local gate: **1,392 Python tests passed** with actual pinned Luau enabled; the suite had no skipped test results; receiver integrity checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
+- GitHub CI at the latest check: 4 of 18 workflows running and 14 queued for `42093cd`; none had failed. Final CI remains pending.
+- Next priorities: finish CI verification, then add structured game-specific command proposal metadata so evidence-supported local capabilities and blocked gameplay actions are presented through one fail-closed command surface without inventing action mechanisms.
+
 ## Update — 2026-11-02 — Composable gameplay understanding and generated Admin Commands
 
 - Pushed `bd998987a1e3b52d434e2524c0cd901c8fda1fde` (`Model composable gameplay understanding`) to `origin/openhands-development`; all **18** attached GitHub workflows completed successfully.
@@ -77,16 +87,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — composable gameplay understanding and generated Admin Commands_
+_Last updated: 2026-11-02 — controlled Admin Commands execution_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `45b302e` (`Add generated admin command framework`)
-- Implementation head: full SHA `45b302e6f710ad15fb58675920e3ed31c4270440`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **41 commits ahead, 0 behind**
-- Implementation-head CI: newly queued after push; final result pending. The immediately preceding gameplay-understanding head `bd998987` completed all **18** workflows successfully.
+- Latest implementation commit: `42093cd` (`Validate generated commands in bounded Luau`)
+- Implementation head: full SHA `42093cd07e8702b91bf5d132b1ea62706326337c`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **43 commits ahead, 0 behind**
+- Implementation-head CI: 4 of **18** workflows running and 14 queued at the latest check; none failed and final CI is pending.
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
