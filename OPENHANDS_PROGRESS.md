@@ -1,5 +1,17 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Composable gameplay understanding and generated Admin Commands
+
+- Pushed `bd998987a1e3b52d434e2524c0cd901c8fda1fde` (`Model composable gameplay understanding`) to `origin/openhands-development`; all **18** attached GitHub workflows completed successfully.
+- Inspector **v30.4.0** recognizes Bubble-style generation, capacity, sell, hatch, upgrade, progression, commerce, and economy evidence with direction-aware state corroboration while retaining non-causal and unverified outcome status.
+- Added deterministic v110 gameplay understanding across concurrent systems, resources, observed actions, temporal relationships, loop/objective candidates, automation opportunities, and request blockers. Releases and standalone generation emit `gameplay-understanding.json` and bounded UI summaries without assigning one genre or claiming mechanics are verified.
+- Added reusable, place-guarded Admin Commands to combined utilities and reviewed-action GUIs: `fly`, `noclip`, `tp`, `goto`, movement settings, coordinates, reset/rejoin, help, GUI controls, and `stopall`. GUI, command bar, autocomplete/history, and supported chat entry share local state and cleanup; no arbitrary evaluation or server remote invocation is generated.
+- Bubble hatch requests now report exact missing evidence for egg selection, cost/affordability, inventory capacity, result observation, mode selection, rate limiting, permitted action contracts, failure behavior, and live validation. No auto/multi-hatch command is generated from the current manifest-only evidence.
+- Final local gate at implementation commit `45b302e`: **1,389 Python tests passed** with pinned official Luau 0.744 and no skips; receiver checks passed; **3 Node/Luau parser tests passed** including representative command output; Python compilation and `git diff --check` passed.
+- Evidence boundary: universal commands are local client utilities and do not confer server administrator authority. Static wiring checks are not live Roblox verification. Game restrictions may override local movement. The Bubble manifest still lacks numbered multipart evidence, linked confirmations, completed workflows, receiver retrieval, and an approved gameplay action contract.
+- No Cloudflare deployment, production credential, production receiver configuration, arbitrary remote payload, or live Roblox session was changed or used.
+- Next priorities: add controlled runtime simulation for command state/cleanup and character respawn behavior; improve capability-specific command proposal metadata without promoting unsupported actions; continue closing the manifest-to-numbered-report retrieval gap when authorized receiver configuration becomes available.
+
 ## Update — 2026-11-02 — Integrated request handoff and overlay provenance
 
 - Pushed `5b4f3e2a7484dcb48b4071862ef89b33a5d6312e` (`Integrate capability requests into inspector workflow`) and `a79c5ff6f017a155ed00f83a0766adcaa226e391` (`Preserve dynamic overlay source provenance`) to `origin/openhands-development`.
@@ -65,16 +77,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — integrated request handoff and overlay provenance_
+_Last updated: 2026-11-02 — composable gameplay understanding and generated Admin Commands_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `a79c5ff` (`Preserve dynamic overlay source provenance`)
-- Implementation head: full SHA `a79c5ff6f017a155ed00f83a0766adcaa226e391`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **37 commits ahead, 0 behind**
-- Implementation-head CI: 14 of **18** workflows succeeded and 4 were running at the latest check; none failed and final CI is pending
+- Latest implementation commit: `45b302e` (`Add generated admin command framework`)
+- Implementation head: full SHA `45b302e6f710ad15fb58675920e3ed31c4270440`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **41 commits ahead, 0 behind**
+- Implementation-head CI: newly queued after push; final result pending. The immediately preceding gameplay-understanding head `bd998987` completed all **18** workflows successfully.
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
