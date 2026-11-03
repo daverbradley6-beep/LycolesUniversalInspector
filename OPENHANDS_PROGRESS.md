@@ -1,5 +1,17 @@
 # OpenHands Development Progress
 
+
+## Update — 2026-11-02 — Reusable ProximityPrompt interaction contract
+
+- Committed `4af0878` (`Generate reusable prompt interaction trials`) on `openhands-development`. This renames the egg-only generator to `tools/generate_prompt_interactions.py` and preserves the legacy egg manifest/command surface as explicit compatibility aliases.
+- `action-capabilities.json` now aggregates all observed `ProximityPrompt.Triggered` events, preserves bounded target/outcome identities and prompt prerequisites, ranks targets by requested-capability alignment and gameplay-objective usefulness, and rejects malformed, ambiguous, unavailable, or outcome-free evidence. Temporal relationships remain non-causal.
+- Release and standalone generation conditionally emit canonical `LycolesPromptInteractions.lua`, include it in the combined generated utility, and register `;interactions`, `;interaction`, `;interactionstart`, and `;interactionstop` with shared Admin Commands. Compatible `;egg*` commands remain. Generated trials select an evidence-backed target, move to its observed prompt hierarchy, require an enabled prompt and executor-provided `fireproximityprompt`, monitor the observed increased/decreased/changed scalar direction, and stop after three failures. No discovered remote is invoked.
+- Regression coverage includes the real Rainbow Egg evidence, a non-egg daily-reward prompt, request alignment, component identity propagation, forged target/outcome rejection, unavailable identities, canonical release artifacts, combined Admin wiring, official-Luau parsing, and controlled generic command execution.
+- Auto and Multi game modes are still non-executable. Auto lacks a validated GUI replay primitive, an observable persistent Auto-enabled state transition, and an unattended hatch outcome. Multi lacks a distinct prompt with resolved outcome identity, a validated GUI replay primitive, and one activation with observed hatch delta greater than one. `minimumLiveObservations` lists the precise evidence needed for each mode.
+- Exact local gate at `4af0878`: **1,417 Python tests passed** with pinned official Luau 0.744; receiver tests passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed. Controlled execution is simulation only; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
+- The two user-supplied local files remain unmodified and untracked. The supplied Bubble Gum report is still manifest-only; no numbered multipart evidence or verified receiver retrieval is available, and no Cloudflare configuration was changed.
+- Next priorities after push/CI: strengthen outcome selection when multiple useful scalar signals compete, add bounded live-feedback ingestion for prompt trial results, and evaluate safe replay contracts for GUI controls without promoting name or timing evidence.
+
 ## Update — 2026-11-02 — Evidence-bounded gameplay action generation
 
 - Pushed `265228e` (`Generate evidence-bounded egg automation trials`), `c2e5974` (`Resolve generated actions by component identity`), `549914a` (`Resolve observed outcomes by component identity`), and `a144062` (`Classify temporal action outcome relationships`) to `origin/openhands-development`; this preserves prior commits `60eeb1d`, `00ff823`, and `4d78cea`.
