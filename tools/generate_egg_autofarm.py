@@ -23,6 +23,23 @@ def _identity_lua(value):
     if value[-1]["className"]!="ProximityPrompt":raise ValueError("Malformed correlated egg target")
     return "{"+",".join(segments)+"}"
 
+def _state_identity_lua(value):
+    if value is None:return "nil"
+    if not isinstance(value,list) or not 2<=len(value)<=7:raise ValueError("Malformed correlated egg target")
+    segments=[]
+    for segment in value:
+        if not isinstance(segment,dict):raise ValueError("Malformed correlated egg target")
+        name=segment.get("name");class_name=segment.get("className");ordinal=segment.get("ordinal")
+        if (not isinstance(name,str) or not 1<=len(name)<=100 or not isinstance(class_name,str)
+                or not 1<=len(class_name)<=100 or type(ordinal) is not int or not 1<=ordinal<=10000):
+            raise ValueError("Malformed correlated egg target")
+        segments.append("{name="+_quote(name)+",className="+_quote(class_name)+",ordinal="+str(ordinal)+"}")
+    if value[0]["name"] not in ("leaderstats","Data") or value[-1]["className"] not in (
+            "IntValue","NumberValue","BoolValue"):
+        raise ValueError("Malformed correlated egg target")
+    return "{"+",".join(segments)+"}"
+
+
 
 def render(discovery):
     if not isinstance(discovery,dict) or discovery.get("schemaVersion")!="111.action-capabilities.1":
@@ -46,13 +63,19 @@ def render(discovery):
                 or any(item.get(key) is not False for key in
                     ("causalityProven","runtimeVerified","gameplayVerified"))):
             raise ValueError("Malformed correlated egg target")
+        outcome_identities=item.get("outcomeIdentities",{})
+        if not isinstance(outcome_identities,dict) or any(key not in keys for key in outcome_identities):
+            raise ValueError("Malformed correlated egg target")
+        for value in outcome_identities.values():_state_identity_lua(value)
         metadata=json.dumps(item.get("promptMetadata",{}),ensure_ascii=False).lower()
         multi=any(token in (label+" "+metadata).lower() for token in ("multi","triple","x3","3 egg","three"))
-        targets.append((label,path,keys[0],multi,_identity_lua(item.get("pathIdentity"))))
+        targets.append((label,path,keys[0],multi,_identity_lua(item.get("pathIdentity")),
+            _state_identity_lua(outcome_identities.get(keys[0]))))
     if not targets:return None
     target_rows="\n".join("    {label="+_quote(label)+",path="+_quote(path)+
         ",outcome="+_quote(outcome)+",multi="+("true" if multi else "false")+
-        ",identity="+identity+"}," for label,path,outcome,multi,identity in targets)
+        ",identity="+identity+",outcomeIdentity="+outcome_identity+"},"
+        for label,path,outcome,multi,identity,outcome_identity in targets)
     source=r'''-- Evidence-bounded egg autofarm trial; counter changes are observed, not causal proof.
 do
 assert(game.PlaceId == __PLACE_ID__, "Incorrect Roblox place")
@@ -124,13 +147,28 @@ local function resolve(target)
     end
     return current,nil
 end
-local function readOutcome(key)
-    local parts=split(key)
-    local current=parts[1]=="leaderstats" and player:FindFirstChild("leaderstats")
-        or parts[1]=="Data" and player:FindFirstChild("Data") or nil
-    if not current then return nil end
-    for index=2,#parts do current=current:FindFirstChild(parts[index]) if not current then return nil end end
-    if not current:IsA("ValueBase") then return nil end
+local function readOutcome(target)
+    local current=nil
+    if target.outcomeIdentity then
+        current=player:FindFirstChild(target.outcomeIdentity[1].name)
+        for index=2,#target.outcomeIdentity do
+            if not current then return nil end
+            local expected=target.outcomeIdentity[index] local count=0 local found=nil
+            for _,child in ipairs(current:GetChildren()) do
+                if child.Name==expected.name and child.ClassName==expected.className then
+                    count=count+1 if count==expected.ordinal then found=child break end
+                end
+            end
+            current=found
+        end
+    else
+        local parts=split(target.outcome)
+        current=parts[1]=="leaderstats" and player:FindFirstChild("leaderstats")
+            or parts[1]=="Data" and player:FindFirstChild("Data") or nil
+        if not current then return nil end
+        for index=2,#parts do current=current:FindFirstChild(parts[index]) if not current then return nil end end
+    end
+    if not current or not current:IsA("ValueBase") then return nil end
     local ok,value=pcall(function() return current.Value end)
     return ok and value or nil
 end
@@ -179,11 +217,11 @@ local function activateOnce()
     if type(fireproximityprompt)~="function" then return false,"fireproximityprompt unavailable in this environment" end
     local moved,moveError=teleportTo(prompt)
     if not moved then return false,moveError end
-    local before=readOutcome(target.outcome)
+    local before=readOutcome(target)
     local ok,fireError=pcall(function() fireproximityprompt(prompt) end)
     if not ok then return false,"Prompt activation failed: "..tostring(fireError) end
     task.wait(1.5)
-    local after=readOutcome(target.outcome)
+    local after=readOutcome(target)
     if type(before)=="number" and type(after)=="number" and after>before then
         failures=0
         status.Text="Observed "..target.outcome.." increase "..tostring(before).." → "..tostring(after)

@@ -88,6 +88,8 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
         self.assertIn('local function interactionPathIdentity(obj,root,label)',SRC)
         self.assertIn('pathIdentity=interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('local function stateValueIdentity(obj,root)',SRC)
+        self.assertIn('stateIdentityStatus=identity and "component-resolved" or "unavailable"',SRC)
         self.assertIn('keyboardKeyCode=obj.KeyboardKeyCode.Name',SRC)
         self.assertIn('gamepadKeyCode=obj.GamepadKeyCode.Name',SRC)
         self.assertIn('anchorPosition=anchor and anchor:IsA("BasePart")',SRC)

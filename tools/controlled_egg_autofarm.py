@@ -34,7 +34,7 @@ local anchor=newInstance("Part","Anchor");anchor.CFrame=CFrame.new(20,4,30);anch
 local promptFolder=newInstance("Folder","Prompt");promptFolder.Parent=egg
 local prompt=newInstance("ProximityPrompt","ProximityPrompt");prompt.MaxActivationDistance=10;prompt.Parent=promptFolder
 local leaderstats=newInstance("Folder","leaderstats");leaderstats.Parent=player
-local hatches=newInstance("IntValue","🥚 Hatches");hatches.Value=285;hatches.Parent=leaderstats
+local hatches=newInstance("IntValue","🥚.Hatches");hatches.Value=285;hatches.Parent=leaderstats
 _G.__promptCalls=0
 function fireproximityprompt(target)
     assert(target==prompt,"unexpected prompt target")
@@ -57,7 +57,7 @@ local eggGui=playerGui:FindFirstChild("LycolesEggAutofarm")
 assert(eggGui~=nil,"egg GUI missing")
 local observed=false
 for _,item in ipairs(eggGui:GetDescendants()) do
-    if item:IsA("TextLabel") and string.find(item.Text or "","Observed leaderstats.🥚 Hatches increase",1,true) then observed=true end
+    if item:IsA("TextLabel") and string.find(item.Text or "","Observed leaderstats.🥚.Hatches increase",1,true) then observed=true end
 end
 assert(observed,"outcome status was not displayed")
 player.Chatted:Fire(";eggmode multi")
@@ -83,7 +83,10 @@ def discovery(place_id):
                 {"name":"Prompt","className":"Folder","ordinal":1},
                 {"name":"ProximityPrompt","className":"ProximityPrompt","ordinal":1}],
             "controlType":"ProximityPrompt.Triggered","observedTriggers":1,
-            "incrementObservations":1,"outcomeKeys":["leaderstats.🥚 Hatches"],
+            "incrementObservations":1,"outcomeKeys":["leaderstats.🥚.Hatches"],
+            "outcomeIdentities":{"leaderstats.🥚.Hatches":[
+                {"name":"leaderstats","className":"Folder","ordinal":1},
+                {"name":"🥚.Hatches","className":"IntValue","ordinal":1}]},
             "evidenceTier":"temporal-state-increment-observed","causalityProven":False,
             "runtimeVerified":False,"gameplayVerified":False}]}}
 

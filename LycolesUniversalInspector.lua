@@ -214,8 +214,31 @@ local function compareNearbyGuiState(before, after)
     table.sort(changes,function(a,b) return a.path < b.path end)
     return changes
 end
+local function stateValueIdentity(obj,root)
+    local identity,current={},obj
+    while current and current~=root and #identity<6 do
+        local ordinal=1 local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(root.Name) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>180 then return nil end
+    return identity
+end
+
 local function safeInteractionState()
-    local state, count = {}, 0
+    local state,identities,count = {},{},0
     local roots = {}
     for _, name in ipairs({"leaderstats", "Data"}) do
         local root = player:FindFirstChild(name)
@@ -240,8 +263,11 @@ local function safeInteractionState()
                         or low:find("userid",1,true)) then
                         local v = obj.Value
                         if type(v) == "boolean" or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
-                            state[key] = v
-                            count = count + 1
+                            if state[key]==nil then
+                                state[key]=v identities[key]=stateValueIdentity(obj,root) count=count+1
+                            else
+                                identities[key]=nil
+                            end
                         end
                     end
                 end
@@ -254,11 +280,11 @@ local function safeInteractionState()
         local ok,value=pcall(function() return obj.Value end)
         if ok and (type(value)=="boolean" or (type(value)=="number"
             and value==value and math.abs(value)<=1e12)) then
-            state[candidate.path]=value
-            count=count+1
+            if state[candidate.path]==nil then state[candidate.path]=value count=count+1 end
+            identities[candidate.path]=nil
         end
     end
-    return state
+    return state,identities
 end
 -- v5.5: stable, unique relative paths and change-only inventory evidence.
 local function inventoryGuiPath(obj,gui)
@@ -1243,13 +1269,14 @@ local function interactionPathIdentity(obj,root,label)
                 if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
             end
         end
-        table.insert(identity,1,{name=tostring(current.Name):sub(1,100),
-            className=tostring(current.ClassName):sub(1,100),ordinal=ordinal})
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
         current=parent
     end
-    if current~=root then return nil end
-    table.insert(identity,1,{name=tostring(label):sub(1,100),
-        className=tostring(root.ClassName):sub(1,100),ordinal=1})
+    local rootName=tostring(label) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
     local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
     if #table.concat(names,".")>400 then return nil end
     return identity
@@ -1974,7 +2001,7 @@ local function observeInteractionObject(obj, root, label)
         }
         interactionHistory[#interactionHistory+1] = historyItem
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
-        local before = safeInteractionState()
+        local before,beforeStateIdentities=safeInteractionState()
         local beforeGui = safeNearbyGuiState(obj)
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
@@ -2023,22 +2050,28 @@ local function observeInteractionObject(obj, root, label)
             task.delay(delaySeconds, function()
                 if not alive then return end
                 local ok,err=pcall(function()
-                    local after=safeInteractionState()
+                    local after,afterStateIdentities=safeInteractionState()
                     local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
                     local changes={}
                     for key,value in pairs(before) do
                         if after[key]~=nil and after[key]~=value and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,before=value,after=after[key]}
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(after) do
                         if before[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="added",after=value}
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(before) do
                         if after[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="removed",before=value}
+                            local identity=beforeStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     local distance=nil

@@ -39,6 +39,19 @@ def _path_identity(value):
     return result
 
 
+def _state_identity(change):
+    status=change.get("stateIdentityStatus");value=change.get("stateIdentity")
+    if status is None and value is None:return None
+    identity=_path_identity(value)
+    if (status!="component-resolved" or identity is None
+            or identity[0]["name"] not in ("leaderstats","Data")
+            or not isinstance(change.get("key"),str)
+            or ".".join(segment["name"] for segment in identity)!=change["key"]):
+        if status=="unavailable" and value is None:return False
+        raise ValueError("Malformed state path identity")
+    return identity
+
+
 
 def _label(path,metadata):
     interaction=metadata.get("interaction") if isinstance(metadata,dict) else None
@@ -79,13 +92,15 @@ def analyze(plan):
                 or ".".join(segment["name"] for segment in identity)!=path)):
             raise ValueError("Malformed interaction path identity")
         changes=_event_changes(event)
+        changes_with_identity=[(change,_state_identity(change)) for change in changes]
         observed_actions.append({"path":path,"pathIdentity":identity,"controlType":control,
             "featureCandidate":event.get("featureCandidate"),
             "actionCandidate":(event.get("workflow") or {}).get("action")
                 if isinstance(event.get("workflow"),dict) else None,
             "stateChanges":changes,"outcomeVerified":False})
         lower=path.lower()
-        hatch_changes=[change for change in changes if isinstance(change.get("key"),str)
+        hatch_changes=[(change,state_identity) for change,state_identity in changes_with_identity
+            if state_identity is not False and isinstance(change.get("key"),str)
             and ("hatch" in change["key"].lower() or "egg" in change["key"].lower())
             and _increased(change)]
         if control=="ProximityPrompt.Triggered" and ("egg" in lower or "hatch" in lower):
@@ -93,7 +108,7 @@ def analyze(plan):
             target=egg_targets.setdefault(path,{"path":path,
                 "label":_label(path,{"interaction":event_metadata} if event_metadata else by_path.get(path,{})),
                 "controlType":control,"observedTriggers":0,"incrementObservations":0,
-                "outcomeKeys":[],"evidenceTier":"interaction-observed",
+                "outcomeKeys":[],"outcomeIdentities":{},"evidenceTier":"interaction-observed",
                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
             if event_metadata:target["promptMetadata"]=event_metadata
             if identity:target["pathIdentity"]=identity
@@ -102,13 +117,15 @@ def analyze(plan):
                 target["incrementObservations"]+=1
                 target["evidenceTier"]="temporal-state-increment-observed"
                 target["outcomeKeys"]=sorted(set(target["outcomeKeys"]+
-                    [change["key"] for change in hatch_changes]))
+                    [change["key"] for change,_ in hatch_changes]))
+                for change,state_identity in hatch_changes:
+                    if state_identity:target["outcomeIdentities"][change["key"]]=state_identity
     for path,item in by_path.items():
         lower=path.lower()
         if item.get("class")=="ProximityPrompt" and ("egg" in lower or "hatch" in lower):
             target=egg_targets.setdefault(path,{"path":path,"label":_label(path,item),
                 "controlType":"ProximityPrompt","observedTriggers":0,"incrementObservations":0,
-                "outcomeKeys":[],"evidenceTier":"object-discovered",
+                "outcomeKeys":[],"outcomeIdentities":{},"evidenceTier":"object-discovered",
                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
             interaction=item.get("interaction")
             if isinstance(interaction,dict):target["promptMetadata"]=interaction
