@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Display-only generated-result import
+
+- Pushed `00ff82355bb04ade7aedf1d1bb52c4b66f2827ee` (`Load validated generated results for display`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
+- Release and standalone generation now emit deterministic, place-bound `Lycoles-PLACE-generated-result.json` artifacts containing generated code, scan/request identity, capabilities, structural validation details, unsupported behavior, and strictly false authenticity/runtime/gameplay/execution claims.
+- The Generated Script tab adds `LOAD RESULT`. It reads only the current-place filename, bounds file/code size, requires schema/place/guard/false-claim consistency, and displays code in a non-editable control. It never evaluates imported code and explicitly reports package authenticity, runtime, execution, and gameplay as unverified.
+- The embedded SHA-256 remains an offline artifact field; the in-game loader does not claim it can authenticate or recompute the package.
+- Final local gate: **1,399 Python tests passed** with actual pinned Luau enabled; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed. Focused packaging/loading coverage passed all **44** tests.
+- All **18** workflows for unified-handoff implementation commit `60eeb1d` succeeded. For `00ff823`, 10 workflows succeeded, 6 were running, and 2 queued at the latest check; none failed.
+- Next priorities: finish CI monitoring, improve imported result presentation for capabilities/evidence/validation/unsupported behavior, and design any explicit execution control only behind stronger local integrity and user-confirmation gates. Gameplay remains unverified.
+
 ## Update — 2026-11-02 — Unified evidence handoff status
 
 - Pushed `60eeb1d3baaf14a735ea01c207b8009a80134f1a` (`Surface evidence handoff in generated script tab`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
@@ -118,16 +128,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priority: define a fail-closed, provenance-bearing generated-result import format for the in-game Generated Script tab; validated code display and any explicit execution control must remain distinct from gameplay verification.
 
-_Last updated: 2026-11-02 — unified evidence handoff status_
+_Last updated: 2026-11-02 — display-only generated-result import_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `60eeb1d` (`Surface evidence handoff in generated script tab`)
-- Implementation head: full SHA `60eeb1d3baaf14a735ea01c207b8009a80134f1a`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **49 commits ahead, 0 behind**
-- Implementation-head CI: 2 of **18** workflows running and 16 queued at the latest check; none failed and final CI is pending. All **18** workflows for preceding complete-export commit `781c06f` succeeded.
+- Latest implementation commit: `00ff823` (`Load validated generated results for display`)
+- Implementation head: full SHA `00ff82355bb04ade7aedf1d1bb52c4b66f2827ee`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **51 commits ahead, 0 behind**
+- Implementation-head CI: 10 of **18** workflows succeeded, 6 were running, and 2 queued at the latest check; none failed and final CI is pending. All **18** workflows for preceding unified-handoff commit `60eeb1d` succeeded.
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
