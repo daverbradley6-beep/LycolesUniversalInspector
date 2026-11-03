@@ -41,6 +41,16 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('type(ack.sha256) == "string"',SRC)
         self.assertIn("acknowledgedPartDigests = digests",SRC)
         self.assertIn("sha256=ack.sha256",SRC)
+    def test_local_export_writes_numbered_parts_and_manifest(self):
+        self.assertIn('local save = button("SAVE REPORT", 260)',SRC)
+        self.assertIn('for i,body in ipairs(pendingParts) do',SRC)
+        self.assertIn('prefix.."_part-"..string.format("%04d",i)..".json"',SRC)
+        self.assertIn('prefix.."_manifest.json"',SRC)
+        self.assertIn('pendingManifest.localExport={',SRC)
+        self.assertIn('exportedParts=exported,expectedParts=#pendingParts',SRC)
+        self.assertIn('localPartContentDigestsComputed=false',SRC)
+        self.assertIn('Saved complete report:',SRC)
+
     def test_two_tab_generation_request_ui(self):
         self.assertIn('Name = "InspectorTab"',SRC)
         self.assertIn('Name = "GeneratedScriptTab"',SRC)

@@ -621,7 +621,7 @@ end)
 
 local scan = button("SCAN", 12)
 local copy = button("COPY JSON", 136)
-local save = button("SAVE JSON", 260)
+local save = button("SAVE REPORT", 260)
 local close = button("CLOSE", 384)
 local watchToggle = create("TextButton", {
     Text = "WATCH: ON", Size = UDim2.fromOffset(116, 28),
@@ -2863,23 +2863,38 @@ copy.MouseButton1Click:Connect(function()
 end)
 
 save.MouseButton1Click:Connect(function()
-    if not last then
+    if not last or not pendingManifest or not pendingParts or #pendingParts==0 then
         status.Text = "Scan not finished"
         return
     end
-
     if type(writefile) ~= "function" then
         status.Text = "File saving unavailable"
         return
     end
 
-    local ok = pcall(
-        writefile,
-        "Lycoles_" .. tostring(game.PlaceId) .. ".json",
-        last
-    )
-
-    status.Text = ok and "Saved JSON" or "Save failed"
+    local safeScanId=tostring(pendingManifest.scanId or "unknown"):gsub("[^%w%-]","")
+    local prefix="Lycoles_"..tostring(game.PlaceId).."_"..safeScanId
+    local exported=0
+    local firstError=nil
+    for i,body in ipairs(pendingParts) do
+        local ok,err=pcall(writefile,prefix.."_part-"..string.format("%04d",i)..".json",body)
+        if ok then exported=exported+1 elseif not firstError then firstError=tostring(err) end
+    end
+    pendingManifest.localExport={
+        attempted=true,status=exported==#pendingParts and "complete" or "failed",
+        exportedParts=exported,expectedParts=#pendingParts,
+        filenamePrefix=prefix,localPartContentDigestsComputed=false,
+        note="Raw numbered part bytes are preserved; compare offline SHA-256 with receiver acknowledgement digests when available"
+    }
+    refreshLocalManifest("local-export")
+    local manifestOk,manifestError=pcall(writefile,prefix.."_manifest.json",last)
+    if not manifestOk and not firstError then firstError=tostring(manifestError) end
+    if exported==#pendingParts and manifestOk then
+        status.Text="Saved complete report: "..exported.." part(s) + manifest"
+    else
+        status.Text="Report save incomplete: "..exported.."/"..#pendingParts
+        if firstError then warn("Lycoles local report export failed",firstError) end
+    end
 end)
 
 close.MouseButton1Click:Connect(_G.LycolesInspectorClose)
