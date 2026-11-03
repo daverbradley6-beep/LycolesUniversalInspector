@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Discover evidence-bounded executable client action candidates from a compiled scan."""
 import json
+import math
 import re
 
 SCHEMA="111.action-capabilities.1"
@@ -131,6 +132,40 @@ def _rank_outcomes(signals,request,context):
     return ranked
 
 
+def _prompt_metadata(value):
+    if not isinstance(value,dict):return {}
+    allowed={"actionText","objectText","enabled","holdDuration","maxActivationDistance",
+        "keyboardKeyCode","gamepadKeyCode","anchorPath","anchorPosition"}
+    if any(key not in allowed for key in value):
+        raise ValueError("Malformed prompt prerequisite metadata")
+    result={}
+    for key in ("actionText","objectText","keyboardKeyCode","gamepadKeyCode","anchorPath"):
+        item=value.get(key)
+        if item is not None:
+            if not isinstance(item,str) or not SAFE_PATH.fullmatch(item):
+                raise ValueError("Malformed prompt prerequisite metadata")
+            result[key]=item
+    enabled=value.get("enabled")
+    if enabled is not None:
+        if type(enabled) is not bool:raise ValueError("Malformed prompt prerequisite metadata")
+        result["enabled"]=enabled
+    for key in ("holdDuration","maxActivationDistance"):
+        item=value.get(key)
+        if item is not None:
+            if type(item) not in (int,float) or not math.isfinite(item) or item<0:
+                raise ValueError("Malformed prompt prerequisite metadata")
+            result[key]=item
+    position=value.get("anchorPosition")
+    if position is not None:
+        if (not isinstance(position,dict) or set(position)!={"x","y","z"}
+                or any(type(position[key]) not in (int,float) or not math.isfinite(position[key])
+                    for key in ("x","y","z"))):
+            raise ValueError("Malformed prompt prerequisite metadata")
+        result["anchorPosition"]={key:position[key] for key in ("x","y","z")}
+    return result
+
+
+
 
 
 def _label(path,metadata):
@@ -201,7 +236,8 @@ def analyze(plan):
             "guiOutcomeSignals":gui_signals,"replayContractAvailable":False,
             "causalityProven":False,"outcomeVerified":False})
         if control=="ProximityPrompt.Triggered":
-            event_metadata=event.get("controlMetadata") if isinstance(event.get("controlMetadata"),dict) else {}
+            raw_metadata=event.get("controlMetadata")
+            event_metadata=_prompt_metadata(raw_metadata) if isinstance(raw_metadata,dict) else {}
             label=_label(path,{"interaction":event_metadata} if event_metadata else by_path.get(path,{}))
             target=prompt_targets.setdefault(path,{"path":path,"label":label,"controlType":control,
                 "pathIdentity":identity,"identityMode":"component" if identity else "legacy-flat-path",
@@ -212,10 +248,17 @@ def analyze(plan):
                 "evidenceTier":"interaction-observed","trialGenerationReady":False,
                 "prerequisites":{"executorFireProximityPrompt":True,"characterRoot":True,
                     "targetAnchor":True,"promptEnabledAtRuntime":True},
+                "prerequisiteEvidence":{"metadataSnapshots":[],"metadataDriftObserved":False},
                 "temporalCorrelationOnly":True,"causalityProven":False,
                 "runtimeVerified":False,"gameplayVerified":False})
             if identity:target["pathIdentity"]=identity;target["identityMode"]="component"
-            if event_metadata:target["promptMetadata"]=event_metadata
+            if event_metadata:
+                snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
+                if event_metadata not in snapshots:
+                    if len(snapshots)>=8:raise ValueError("Excessive prompt prerequisite metadata drift")
+                    snapshots.append(event_metadata)
+                target["prerequisiteEvidence"]["metadataDriftObserved"]=len(snapshots)>1
+                target["promptMetadata"]=snapshots[0]
             target["observedTriggers"]+=1
             target["evidenceTier"]=tier
             seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}

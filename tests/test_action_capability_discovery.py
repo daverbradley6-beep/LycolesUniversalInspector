@@ -96,7 +96,11 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
             "requestedCapability":"Automatically claim daily reward",
             "actionableObjects":[],"observedInteractionHistory":[{
                 "path":"Workspace.Rewards.Daily.ClaimPrompt","controlType":"ProximityPrompt.Triggered",
-                "featureCandidate":"rewards","pathIdentity":[
+                "featureCandidate":"rewards","controlMetadata":{"actionText":"Claim","objectText":"Daily Reward",
+                    "enabled":True,"holdDuration":0.5,"maxActivationDistance":12,
+                    "keyboardKeyCode":"E","gamepadKeyCode":"ButtonX",
+                    "anchorPath":"Workspace.Rewards.Daily","anchorPosition":{"x":1,"y":2,"z":3}},
+                "pathIdentity":[
                     {"name":"Workspace","className":"Workspace","ordinal":1},
                     {"name":"Rewards","className":"Folder","ordinal":1},
                     {"name":"Daily","className":"Part","ordinal":1},
@@ -116,9 +120,14 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertTrue(prompt["targets"][0]["objective"]["requestAligned"])
         self.assertEqual(prompt["targets"][0]["selectedOutcome"]["key"],"Data.DailyClaims")
         self.assertTrue(prompt["targets"][0]["selectedOutcome"]["selection"]["selectedForTrial"])
+        evidence=prompt["targets"][0]["prerequisiteEvidence"]
+        self.assertFalse(evidence["metadataDriftObserved"])
+        self.assertEqual(evidence["metadataSnapshots"][0]["maxActivationDistance"],12)
+        self.assertEqual(evidence["metadataSnapshots"][0]["anchorPosition"],{"x":1,"y":2,"z":3})
+
 
         source=generator.render(result)
-        self.assertIn('label="Daily"',source)
+        self.assertIn('label="Daily Reward"',source)
         self.assertIn('feature="rewards"',source)
         self.assertIn("egg=false",source)
         self.assertIn('outcome="Data.DailyClaims"',source)
@@ -137,6 +146,37 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         result=discovery.analyze(plan);target=result["promptInteractions"]["targets"][0]
         target["selectedOutcome"]=target["outcomeSignals"][1]
         with self.assertRaisesRegex(ValueError,"Malformed correlated prompt outcome"):
+            generator.render(result)
+
+
+
+
+    def test_malformed_prompt_prerequisite_metadata_fails_closed(self):
+        plan=self.real_plan()
+        event=next(item for item in plan["observedInteractionHistory"]
+            if item.get("controlType")=="ProximityPrompt.Triggered")
+        event["controlMetadata"]={"holdDuration":-1,"enabled":True}
+        with self.assertRaisesRegex(ValueError,"Malformed prompt prerequisite metadata"):
+            discovery.analyze(plan)
+
+    def test_prompt_prerequisite_metadata_drift_is_preserved_without_overwrite(self):
+        events=[]
+        for enabled in (True,False):
+            events.append({"path":"Workspace.Reward.Prompt","controlType":"ProximityPrompt.Triggered",
+                "controlMetadata":{"actionText":"Claim","objectText":"Reward","enabled":enabled,
+                    "holdDuration":0,"maxActivationDistance":10},
+                "stateChanges":[{"key":"Data.Rewards","before":1,"after":2}]})
+        result=discovery.analyze({"integrity":{"scanComplete":True,"placeId":123},
+            "actionableObjects":[],"observedInteractionHistory":events})
+        evidence=result["promptInteractions"]["targets"][0]["prerequisiteEvidence"]
+        self.assertTrue(evidence["metadataDriftObserved"])
+        self.assertEqual([item["enabled"] for item in evidence["metadataSnapshots"]],[True,False])
+
+    def test_generator_rejects_forged_prompt_prerequisite_evidence(self):
+        plan=self.real_plan();result=discovery.analyze(plan)
+        target=result["promptInteractions"]["targets"][0]
+        target["prerequisiteEvidence"]["metadataDriftObserved"]=True
+        with self.assertRaisesRegex(ValueError,"Malformed prompt prerequisite evidence"):
             generator.render(result)
 
 

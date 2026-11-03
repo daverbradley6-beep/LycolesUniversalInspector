@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate place-bound ProximityPrompt trials from correlated observable evidence."""
 import json
+import math
 
 
 def _quote(value):
@@ -40,6 +41,29 @@ def _state_identity_lua(value):
     return "{"+",".join(segments)+"}"
 
 
+def _prompt_snapshot(value):
+    if not isinstance(value,dict):raise ValueError("Malformed prompt prerequisite evidence")
+    allowed={"actionText","objectText","enabled","holdDuration","maxActivationDistance",
+        "keyboardKeyCode","gamepadKeyCode","anchorPath","anchorPosition"}
+    if any(key not in allowed for key in value):raise ValueError("Malformed prompt prerequisite evidence")
+    for key in ("actionText","objectText","keyboardKeyCode","gamepadKeyCode","anchorPath"):
+        if key in value and not isinstance(value[key],str):
+            raise ValueError("Malformed prompt prerequisite evidence")
+    if "enabled" in value and type(value["enabled"]) is not bool:
+        raise ValueError("Malformed prompt prerequisite evidence")
+    for key in ("holdDuration","maxActivationDistance"):
+        if key in value and (type(value[key]) not in (int,float)
+                or not math.isfinite(value[key]) or value[key]<0):
+            raise ValueError("Malformed prompt prerequisite evidence")
+    position=value.get("anchorPosition")
+    if position is not None and (not isinstance(position,dict) or set(position)!={"x","y","z"}
+            or any(type(position[key]) not in (int,float) or not math.isfinite(position[key])
+                for key in ("x","y","z"))):
+        raise ValueError("Malformed prompt prerequisite evidence")
+    return value
+
+
+
 
 def render(discovery):
     if not isinstance(discovery,dict) or discovery.get("schemaVersion")!="111.action-capabilities.1":
@@ -74,9 +98,25 @@ def render(discovery):
                     or signal.get("generationResolvable") is not True
                     or not isinstance(selection,dict) or selection.get("selectedForTrial") is not True):
                 raise ValueError("Malformed correlated prompt outcome")
+            prerequisite_evidence=item.get("prerequisiteEvidence")
+            if not isinstance(prerequisite_evidence,dict):
+                raise ValueError("Malformed prompt prerequisite evidence")
+            snapshots=prerequisite_evidence.get("metadataSnapshots")
+            drift=prerequisite_evidence.get("metadataDriftObserved")
+            if (not isinstance(snapshots,list) or len(snapshots)>8 or type(drift) is not bool
+                    or drift!=(len(snapshots)>1)
+                    or len({json.dumps(snapshot,sort_keys=True,ensure_ascii=False)
+                        for snapshot in snapshots})!=len(snapshots)):
+                raise ValueError("Malformed prompt prerequisite evidence")
+            for snapshot in snapshots:_prompt_snapshot(snapshot)
+            if ((snapshots and item.get("promptMetadata")!=snapshots[0])
+                    or (not snapshots and "promptMetadata" in item)):
+                raise ValueError("Malformed prompt prerequisite evidence")
+
             metadata=json.dumps(item.get("promptMetadata",{}),ensure_ascii=False).lower()
             haystack=(label+" "+path+" "+metadata).lower()
             is_egg="egg" in haystack or "hatch" in haystack
+
             multi=is_egg and any(token in haystack for token in ("multi","triple","x3","3 egg","three"))
             objective=item.get("objective") if isinstance(item.get("objective"),dict) else {}
             score=objective.get("score",0)
