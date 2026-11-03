@@ -6,7 +6,7 @@
 - Add a reusable Admin Commands section and `;` command bar with autocomplete, history, GUI/chat entry, shared state, feedback, and safe cleanup for local movement/session utilities.
 - Bundle the command framework into generated utilities and reviewed-action GUIs; no arbitrary server remote calls, server-admin authority, or game-specific action mechanics are introduced.
 - Report exact hatch automation gaps including egg selection, affordability, inventory capacity, mode selection, rate limiting, permitted action contracts, failure behavior, and live validation rather than fabricating payloads.
-- Keep command wiring statically validated but not live Roblox verified; game-specific automation remains blocked until the required client-visible observations and explicit contracts exist.
+- Execute actual generated command Luau against bounded Roblox client stubs to verify shared state, GUI submission, cleanup, character-respawn continuity, deterministic reporting, and place guarding. This is simulated evidence, not live Roblox or gameplay verification; game-specific automation remains blocked until required observations and explicit contracts exist.
 
 ## v30.3.0 — Integrated capability request handoff
 
