@@ -14,18 +14,49 @@ def _increased(change):
 
 
 def _event_changes(event):
-    result=[];seen=set()
-    for change in event.get("stateChanges") or []:
-        if isinstance(change,dict):
+    result=[];seen=set();collections=[event.get("stateChanges") or []]
+    windows=event.get("observationWindows") or []
+    if not isinstance(windows,list) or len(windows)>10:raise ValueError("Malformed observation windows")
+    for window in windows:
+        if not isinstance(window,dict):raise ValueError("Malformed observation windows")
+        collections.append(window.get("stateChanges") or [])
+    if any(not isinstance(values,list) or len(values)>100 for values in collections):
+        raise ValueError("Malformed state transition evidence")
+    for values in collections:
+        for change in values:
+            if not isinstance(change,dict):raise ValueError("Malformed state transition evidence")
             identity=json.dumps(change,sort_keys=True,ensure_ascii=False)
             if identity not in seen:seen.add(identity);result.append(change)
-    for window in event.get("observationWindows") or []:
-        if not isinstance(window,dict):continue
-        for change in window.get("stateChanges") or []:
-            if isinstance(change,dict):
-                identity=json.dumps(change,sort_keys=True,ensure_ascii=False)
-                if identity not in seen:seen.add(identity);result.append(change)
+            if len(result)>200:raise ValueError("Excessive state transition evidence")
     return result
+
+def _event_gui_changes(event):
+    result=[];seen=set();collections=[event.get("guiStateChanges") or []]
+    windows=event.get("observationWindows") or []
+    if not isinstance(windows,list) or len(windows)>10:raise ValueError("Malformed observation windows")
+    for window in windows:
+        if not isinstance(window,dict):raise ValueError("Malformed observation windows")
+        collections.append(window.get("guiChanges") or [])
+    if any(not isinstance(values,list) or len(values)>100 for values in collections):
+        raise ValueError("Malformed GUI transition evidence")
+    for values in collections:
+        for change in values:
+            if not isinstance(change,dict):raise ValueError("Malformed GUI transition evidence")
+            path=change.get("path")
+            if not isinstance(path,str) or not SAFE_PATH.fullmatch(path):
+                raise ValueError("Malformed GUI transition evidence")
+            identity=json.dumps(change,sort_keys=True,ensure_ascii=False)
+            if identity not in seen:seen.add(identity);result.append(change)
+            if len(result)>200:raise ValueError("Excessive GUI transition evidence")
+    return result
+
+
+def _evidence_tier(state_changes,gui_changes):
+    if state_changes and gui_changes:return "interaction-with-temporal-state-and-gui-change"
+    if state_changes:return "interaction-with-temporal-state-change"
+    if gui_changes:return "interaction-with-temporal-gui-change"
+    return "interaction-observed"
+
 
 def _path_identity(value):
     if not isinstance(value,list) or not 1<=len(value)<=21:return None
@@ -91,13 +122,32 @@ def analyze(plan):
         if ("pathIdentity" in event and (identity is None
                 or ".".join(segment["name"] for segment in identity)!=path)):
             raise ValueError("Malformed interaction path identity")
-        changes=_event_changes(event)
+        changes=_event_changes(event);gui_changes=_event_gui_changes(event)
         changes_with_identity=[(change,_state_identity(change)) for change in changes]
+        state_signals=[]
+        for change,state_identity in changes_with_identity:
+            key=change.get("key")
+            if not isinstance(key,str) or not SAFE_PATH.fullmatch(key):
+                raise ValueError("Malformed state transition evidence")
+            direction=change.get("transition") or ("increased" if _increased(change) else
+                "decreased" if type(change.get("before")) in (int,float)
+                    and type(change.get("after")) in (int,float) and change["after"]<change["before"]
+                else "changed")
+            state_signals.append({"key":key,"change":direction,
+                "stateIdentity":state_identity if isinstance(state_identity,list) else None,
+                "generationResolvable":state_identity is not False})
+        gui_signals=[{"path":change["path"],"change":change.get("transition") or
+            ("visibility-changed" if change.get("beforeVisible")!=change.get("afterVisible")
+                else "active-changed")} for change in gui_changes]
+        tier=_evidence_tier(state_signals,gui_signals)
         observed_actions.append({"path":path,"pathIdentity":identity,"controlType":control,
             "featureCandidate":event.get("featureCandidate"),
             "actionCandidate":(event.get("workflow") or {}).get("action")
                 if isinstance(event.get("workflow"),dict) else None,
-            "stateChanges":changes,"outcomeVerified":False})
+            "evidenceTier":tier,"observableOutcomeCandidate":bool(state_signals or gui_signals),
+            "stateChanges":changes,"stateOutcomeSignals":state_signals,
+            "guiOutcomeSignals":gui_signals,"replayContractAvailable":False,
+            "causalityProven":False,"outcomeVerified":False})
         lower=path.lower()
         hatch_changes=[(change,state_identity) for change,state_identity in changes_with_identity
             if state_identity is not False and isinstance(change.get("key"),str)
@@ -166,9 +216,11 @@ def analyze(plan):
         "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
     family_for={"ProximityPrompt":"world-interaction","ClickDetector":"world-interaction",
         "TextButton":"gui-control","ImageButton":"gui-control","Tool":"tool-action"}
-    families={name:{"discovered":0,"observed":0,"examples":[]} for name in
-        ("world-interaction","gui-control","tool-action")}
+    families={name:{"discovered":0,"observed":0,"observedWithTemporalOutcomeCandidate":0,
+        "examples":[]} for name in ("world-interaction","gui-control","tool-action")}
     observed_paths={item["path"] for item in observed_actions}
+    outcome_candidate_paths={item["path"] for item in observed_actions
+        if item["observableOutcomeCandidate"]}
     combat_candidates=[]
     combat_terms=("weapon","gun","ammo","reload","shoot","rifle","pistol","sniper")
     for path,item in sorted(by_path.items()):
@@ -176,6 +228,7 @@ def analyze(plan):
         if not family:continue
         summary=families[family];summary["discovered"]+=1
         if path in observed_paths:summary["observed"]+=1
+        if path in outcome_candidate_paths:summary["observedWithTemporalOutcomeCandidate"]+=1
         if len(summary["examples"])<50:
             summary["examples"].append({"path":path,"class":item["class"],
                 "evidenceTier":"interaction-observed" if path in observed_paths else "object-discovered"})
@@ -183,10 +236,27 @@ def analyze(plan):
             combat_candidates.append({"path":path,"class":item["class"],
                 "evidenceTier":"interaction-observed" if path in observed_paths else "name-based-candidate-only",
                 "replayContractAvailable":False})
-    state_signal_keys=sorted({change["key"] for item in observed_actions for change in item["stateChanges"]
-        if isinstance(change.get("key"),str)})
+    state_signal_keys=sorted({signal["key"] for item in observed_actions
+        for signal in item["stateOutcomeSignals"]})
+    relationships=[{"path":item["path"],"controlType":item["controlType"],
+        "featureCandidate":item["featureCandidate"],"actionCandidate":item["actionCandidate"],
+        "evidenceTier":item["evidenceTier"],"stateSignals":item["stateOutcomeSignals"],
+        "guiSignals":item["guiOutcomeSignals"],"temporalCorrelationOnly":True,
+        "causalityProven":False,"replayContractAvailable":False}
+        for item in observed_actions if item["observableOutcomeCandidate"]]
+    relationships.sort(key=lambda item:(item["path"],item["controlType"],
+        json.dumps(item["stateSignals"],sort_keys=True,ensure_ascii=False),
+        json.dumps(item["guiSignals"],sort_keys=True,ensure_ascii=False)))
+    candidate_count=len(relationships)
     generic={"families":families,"stateSignalKeys":state_signal_keys[:500],
         "stateSignalKeysTruncated":len(state_signal_keys)>500,"combatCandidates":combat_candidates,
+        "temporalActionOutcomeCandidates":relationships[:500],
+        "temporalActionOutcomeCandidatesTruncated":candidate_count>500,
+        "generationReadiness":{"temporalCandidateCount":candidate_count,
+            "replayContractCount":0,"generationReadyCount":0,
+            "blockers":["temporal correlation does not establish causality",
+                "no generic replay contract has been validated"] if candidate_count else
+                ["no temporal action/outcome candidates observed"]},
         "note":"Action surfaces are composable candidates; names and temporal changes do not establish semantics or replay permission."}
 
     return {"schemaVersion":SCHEMA,"placeId":integrity["placeId"],

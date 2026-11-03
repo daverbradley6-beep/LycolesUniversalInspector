@@ -6,7 +6,7 @@
 - Generate a place-bound egg autofarm trial with egg selection, automatic teleport to the observed prompt, a single start/stop toggle, three-failure shutdown, and before/after hatch-counter reporting.
 - Keep Multi mode unavailable unless a distinct multi-hatch prompt also has an observed hatch/egg counter increment; observed Auto/Multi GUI controls remain non-executable candidates until a permitted replay mechanism is established.
 - Register `;eggs`, `;egg`, `;eggmode`, `;eggstart`, and `;eggstop` in the shared top-centre Admin Commands system, including categorized command rows and `;stopall` cleanup.
-- Add composable world-interaction, GUI-control, Tool-action, state-signal, and combat candidate families for non-simulator games without inferring replay contracts from names.
+- Add composable world-interaction, GUI-control, Tool-action, state-signal, and combat candidate families for non-simulator games. Bounded action-to-state/GUI relationships carry explicit evidence tiers and generation blockers without inferring causality or replay contracts from names or timing.
 - Parse generated egg and combined Admin Luau, then execute target resolution, teleport, prompt activation, hatch-counter observation, unavailable Multi mode, and `;stopall` against bounded official-Luau stubs. This is simulated execution; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
 
 ## v30.4.0 — Composable gameplay understanding and local utilities

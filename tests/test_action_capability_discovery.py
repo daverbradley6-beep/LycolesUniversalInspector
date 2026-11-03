@@ -109,6 +109,25 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertFalse(result["eggHatching"]["automaticSingleTrialReady"])
         self.assertIsNone(generator.render(result))
 
+    def test_generic_temporal_relationships_preserve_evidence_tiers_without_replay(self):
+        result=discovery.analyze(self.real_plan())
+        generic=result["genericCapabilities"]
+        relationships=generic["temporalActionOutcomeCandidates"]
+        self.assertEqual(generic["generationReadiness"]["temporalCandidateCount"],8)
+        self.assertEqual(generic["generationReadiness"]["generationReadyCount"],0)
+        season=next(item for item in relationships if "Season.Frame" in item["path"])
+        self.assertEqual(season["evidenceTier"],"interaction-with-temporal-gui-change")
+        shop=next(item for item in relationships if "GumShop.Frame.Items" in item["path"])
+        self.assertEqual(shop["evidenceTier"],"interaction-with-temporal-state-and-gui-change")
+        self.assertTrue(all(item["temporalCorrelationOnly"] for item in relationships))
+        self.assertTrue(all(not item["causalityProven"] and not item["replayContractAvailable"]
+            for item in relationships))
+
+    def test_malformed_generic_observation_windows_fail_closed(self):
+        plan=self.real_plan();plan["observedInteractionHistory"][0]["observationWindows"]="invalid"
+        with self.assertRaisesRegex(ValueError,"Malformed observation windows"):
+            discovery.analyze(plan)
+
     def test_generic_tool_actions_support_fps_discovery_without_replay_claims(self):
         plan=self.real_plan()
         plan["actionableObjects"]=[{"path":"LocalPlayer.Backpack.Assault Rifle","class":"Tool",
