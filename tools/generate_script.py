@@ -347,7 +347,7 @@ def main():
         utility_lua=render(plan,understanding)
         admin_generator=load_local_module("lycoles_admin_commands",
                                           "generate_admin_commands.py")
-        admin_lua=admin_generator.render(plan["integrity"]["placeId"])
+        admin_lua=admin_generator.render(plan["integrity"]["placeId"],understanding)
         lua=utility_lua+"\n"+admin_lua
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
         script=out/"LycolesGeneratedUtility.lua"

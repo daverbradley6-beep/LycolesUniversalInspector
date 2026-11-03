@@ -71,10 +71,12 @@ class ReleaseBuilderTests(unittest.TestCase):
             combined=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
             self.assertEqual(first["adminCommandFramework"]["commands"],
                 ["fly","unfly","noclip","clip","tp","goto","speed","jump",
-                 "coords","reset","rejoin","cmds","help","stopall","hidegui"])
+                 "coords","systems","readiness","reset","rejoin","cmds","help","stopall","hidegui"])
             self.assertFalse(first["adminCommandFramework"]["runtimeVerified"])
             self.assertIn("Admin Commands",first["implementedClientControls"])
             self.assertIn("Lycoles universal local utility commands",admin)
+            self.assertIn("System candidates (unverified)",admin)
+            self.assertIn("Request readiness: no capability requested",admin)
             self.assertIn(admin,combined)
             self.assertNotIn("FireServer(",admin)
             self.assertNotIn("InvokeServer(",admin)

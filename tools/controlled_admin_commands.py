@@ -177,6 +177,14 @@ local replacementRoot=replacement:FindFirstChild("HumanoidRootPart")
 assert(root:FindFirstChild("LycolesFlyVelocity")==nil,"old fly body not removed")
 assert(replacementRoot:FindFirstChild("LycolesFlyVelocity")~=nil,"fly did not resume after respawn")
 command("unfly");assert(replacementRoot:FindFirstChild("LycolesFlyVelocity")==nil,"unfly cleanup failed")
+command("systems")
+local systemsWorked=false
+for _,item in ipairs(gui:GetDescendants()) do if item:IsA("TextLabel") and string.find(item.Text or "","System candidates:",1,true)==1 then systemsWorked=true end end
+assert(systemsWorked,"systems summary command failed")
+command("readiness")
+local readinessWorked=false
+for _,item in ipairs(gui:GetDescendants()) do if item:IsA("TextLabel") and string.find(item.Text or "","Request readiness:",1,true)==1 then readinessWorked=true end end
+assert(readinessWorked,"readiness summary command failed")
 local guiToggleWorked=false
 for _,item in ipairs(gui:GetDescendants()) do
     if item:IsA("TextButton") and item.Name=="noclip" then

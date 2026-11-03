@@ -1,15 +1,51 @@
 #!/usr/bin/env python3
 """Generate a reusable local Roblox command bar and Admin Commands GUI."""
 import argparse
+import json
 import pathlib
 
 COMMANDS=("fly","unfly","noclip","clip","tp","goto","speed","jump",
-          "coords","reset","rejoin","cmds","help","stopall","hidegui")
+          "coords","systems","readiness","reset","rejoin","cmds","help","stopall","hidegui")
 
 
-def render(place_id):
+def evidence_summaries(document):
+    unavailable=("System candidates: no v110 gameplay-understanding artifact supplied",
+                 "Request readiness: no v110 gameplay-understanding artifact supplied")
+    if not isinstance(document,dict) or document.get("schemaVersion")!="110.gameplay-understanding.1":
+        return unavailable
+    raw_systems=document.get("systems")
+    if not isinstance(raw_systems,list):raise ValueError("Invalid gameplay systems")
+    systems=[]
+    for item in raw_systems[:6]:
+        if not isinstance(item,dict):raise ValueError("Invalid gameplay system")
+        label=item.get("label");tier=item.get("evidenceTier")
+        if not isinstance(label,str) or not 1<=len(label)<=160:raise ValueError("Invalid system label")
+        if not isinstance(tier,str) or not 1<=len(tier)<=80:raise ValueError("Invalid evidence tier")
+        systems.append(label+" ["+tier+"]")
+    systems_text="System candidates (unverified): "+(", ".join(systems) if systems else "none")
+    request=document.get("requestedCapabilityAssessment")
+    if request is None:return systems_text,"Request readiness: no capability requested"
+    if not isinstance(request,dict):raise ValueError("Invalid capability assessment")
+    status=request.get("status")
+    if not isinstance(status,str) or not 1<=len(status)<=100:raise ValueError("Invalid readiness status")
+    raw_blockers=request.get("blockers")
+    if not isinstance(raw_blockers,list):raise ValueError("Invalid readiness blockers")
+    blockers=[]
+    for value in raw_blockers[:8]:
+        if not isinstance(value,str) or not 1<=len(value)<=120:raise ValueError("Invalid readiness blocker")
+        blockers.append(value)
+    request_text="Request readiness: "+status+"; implementation ready: false"
+    if blockers:request_text+="; blockers: "+", ".join(blockers)
+    return systems_text,request_text
+
+
+def render(place_id,gameplay_understanding=None):
     if type(place_id) is not int or not 1<=place_id<=2**53:
         raise ValueError("Invalid place ID")
+    systems_summary,readiness_summary=evidence_summaries(gameplay_understanding)
+    tokens=("__LYCOLES_SYSTEMS_SUMMARY_110__","__LYCOLES_READINESS_SUMMARY_110__")
+    if any(token in systems_summary or token in readiness_summary for token in tokens):
+        raise ValueError("Invalid gameplay summary text")
     return r'''-- Lycoles universal local utility commands; not server administrator privileges.
 do
 assert(game.PlaceId == PLACE_ID, "Incorrect Roblox place")
@@ -22,6 +58,9 @@ assert(player, "LocalPlayer unavailable")
 if type(_G.LycolesAdminClose) == "function" then pcall(_G.LycolesAdminClose) end
 local PREFIX = ";"
 local connections = {}
+local SYSTEMS_SUMMARY=__LYCOLES_SYSTEMS_SUMMARY_110__
+local READINESS_SUMMARY=__LYCOLES_READINESS_SUMMARY_110__
+
 local alive = true
 local featureState = {fly=false,noclip=false,speed=nil,jump=nil,hidden=false}
 local originalCollision = setmetatable({}, {__mode="k"})
@@ -234,6 +273,10 @@ register("coords",{category="Information",description="Show local character coor
         local p=root.Position
         return true,string.format("X %.2f  Y %.2f  Z %.2f",p.X,p.Y,p.Z)
     end})
+register("systems",{category="Information",description="Show unverified client-evidence system candidates",arguments="",availability=available,
+    run=function() return true,SYSTEMS_SUMMARY end})
+register("readiness",{category="Information",description="Show fail-closed requested-capability readiness",arguments="",availability=available,
+    run=function() return true,READINESS_SUMMARY end})
 register("reset",{category="Session",description="Request local character reset",arguments="",availability=available,
     run=function()
         local _,humanoid=characterParts()
@@ -417,7 +460,9 @@ end
 table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesAdminClose))
 setFeedback(true,"Ready. Press RightBracket or use ;cmds in chat where supported.")
 end
-'''.replace("PLACE_ID",str(place_id))
+'''.replace("PLACE_ID",str(place_id)).replace(
+        "__LYCOLES_SYSTEMS_SUMMARY_110__",json.dumps(systems_summary,ensure_ascii=True)).replace(
+        "__LYCOLES_READINESS_SUMMARY_110__",json.dumps(readiness_summary,ensure_ascii=True))
 
 
 def main():

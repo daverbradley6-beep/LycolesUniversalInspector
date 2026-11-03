@@ -133,7 +133,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
     utility_lua=generator.render(plan,gameplay_understanding)
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
-    admin_lua=admin_generator.render(place)
+    admin_lua=admin_generator.render(place,gameplay_understanding)
     lua=utility_lua+"\n"+admin_lua
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)

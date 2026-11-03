@@ -13,7 +13,7 @@ class AdminCommandGeneratorTests(unittest.TestCase):
     def test_universal_command_inventory_and_help(self):
         source=module.render(85896571713843)
         for command in ("fly","unfly","noclip","clip","tp","goto","speed","jump",
-                        "coords","reset","rejoin","cmds","help","stopall","hidegui"):
+                        "coords","systems","readiness","reset","rejoin","cmds","help","stopall","hidegui"):
             self.assertIn('register("'+command+'"',source)
         self.assertIn("Admin Commands",source)
         self.assertIn("description",source)
@@ -41,6 +41,27 @@ class AdminCommandGeneratorTests(unittest.TestCase):
         self.assertIn("setNoclipEnabled",source)
         self.assertIn("stopAll",source)
         self.assertIn("refreshCommandRows",source)
+
+    def test_evidence_commands_present_unverified_systems_and_blockers(self):
+        understanding={"schemaVersion":"110.gameplay-understanding.1","systems":[
+            {"label":'Pets\";error(\"owned\")--',"evidenceTier":"structural_candidate"}],
+            "requestedCapabilityAssessment":{"status":"blocked_pending_action_contract",
+                "blockers":["permitted_action_contract","hatch_result_observation"]}}
+        source=module.render(85896571713843,understanding)
+        self.assertIn("System candidates (unverified)",source)
+        self.assertIn("structural_candidate",source)
+        self.assertIn("blocked_pending_action_contract",source)
+        self.assertIn("hatch_result_observation",source)
+        self.assertNotIn('error(\"owned\")',source)
+        self.assertIn('error(\\\"owned\\\")',source)
+        with self.assertRaises(ValueError):
+            module.render(123,{"schemaVersion":"110.gameplay-understanding.1","systems":[
+                {"label":"__LYCOLES_READINESS_SUMMARY_110__","evidenceTier":"structural_candidate"}]})
+        with self.assertRaises(ValueError):
+            module.render(123,{"schemaVersion":"110.gameplay-understanding.1","systems":None})
+        with self.assertRaises(ValueError):
+            module.render(123,{"schemaVersion":"110.gameplay-understanding.1","systems":[
+                {"label":"x"*161,"evidenceTier":"structural_candidate"}]})
 
     def test_cleanup_restores_character_state(self):
         source=module.render(123)

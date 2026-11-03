@@ -107,11 +107,15 @@ class GeneratorTests(unittest.TestCase):
             manifest=json.loads((output/"release-manifest.json").read_text())
             gameplay=json.loads((output/"gameplay-understanding.json").read_text())
             combined=(output/"LycolesGeneratedUtility.lua").read_text()
+            commands=(output/"LycolesAdminCommands.lua").read_text()
             self.assertEqual(manifest["gameplayUnderstanding"]["schemaVersion"],
                              "110.gameplay-understanding.1")
             self.assertIn("egg_selection_observation",
                           gameplay["requestedCapabilityAssessment"]["blockers"])
             self.assertIn("Request missing:",combined)
+            self.assertIn("Request readiness: "+
+                          gameplay["requestedCapabilityAssessment"]["status"],commands)
+            self.assertIn("egg_selection_observation",commands)
             self.assertIn('panel.Name="AdminCommands"',combined)
 
 if __name__=="__main__":unittest.main()
