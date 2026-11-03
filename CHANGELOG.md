@@ -1,3 +1,13 @@
+## v30.4.0 — Composable gameplay understanding and local utilities
+
+- Classify bubble generation, capacity progression, selling, and upgrades with feature-consistent, direction-aware client-state evidence while preserving non-causal and unverified outcome status.
+- Add deterministic v110 gameplay understanding for concurrent systems, resources, observed actions, relationships, loop candidates, objective candidates, automation opportunities, and request blockers without forcing a single genre.
+- Emit digest-linked `gameplay-understanding.json` in deterministic releases and display bounded system/request summaries in generated Features panels.
+- Add a reusable Admin Commands section and `;` command bar with autocomplete, history, GUI/chat entry, shared state, feedback, and safe cleanup for local movement/session utilities.
+- Bundle the command framework into generated utilities and reviewed-action GUIs; no arbitrary server remote calls, server-admin authority, or game-specific action mechanics are introduced.
+- Report exact hatch automation gaps including egg selection, affordability, inventory capacity, mode selection, rate limiting, permitted action contracts, failure behavior, and live validation rather than fabricating payloads.
+- Keep command wiring statically validated but not live Roblox verified; game-specific automation remains blocked until the required client-visible observations and explicit contracts exist.
+
 ## v30.3.0 — Integrated capability request handoff
 
 - Add principal Inspector and Generated Script tabs to the in-game panel while reusing the existing scan, export, and transport controls.

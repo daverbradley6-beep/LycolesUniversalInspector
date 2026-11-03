@@ -8,6 +8,7 @@ remote invocations or claim to replay server-controlled gameplay actions.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
@@ -15,6 +16,15 @@ import sys
 import unicodedata
 
 ALLOWED_FEATURES = ("live_stats", "ui_catalog", "prompt_catalog", "performance")
+
+
+def load_local_module(name,filename):
+    path=pathlib.Path(__file__).with_name(filename)
+    spec=importlib.util.spec_from_file_location(name,path)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+
 def validate(plan):
     if not isinstance(plan,dict): raise ValueError("Plan must be an object")
     integrity=plan.get("integrity")
@@ -144,8 +154,14 @@ def gameplay_understanding_lines(plan,understanding):
                 or assessment.get("runtimeVerified") is not False
                 or assessment.get("gameplayVerified") is not False):
             raise ValueError("Invalid requested capability assessment")
+        missing=assessment.get("blockers")
+        if (not isinstance(missing,list) or len(missing)>64
+                or any(not isinstance(item,str) or len(item)>160 for item in missing)):
+            raise ValueError("Invalid requested capability blockers")
         lines.append("Request readiness: "+str(assessment.get("status")))
         lines.append("Request evidence: "+str(assessment.get("evidenceTier")))
+        if missing:
+            lines.append("Request missing: "+", ".join(missing[:8]))
     for system in systems[:8]:
         label=system.get("label") if isinstance(system,dict) else None
         tier=system.get("evidenceTier") if isinstance(system,dict) else None
@@ -326,14 +342,26 @@ def main():
         raw=pathlib.Path(args.plan).read_bytes()
         if len(raw)>5_000_000: raise ValueError("Plan too large")
         plan=json.loads(raw)
-        lua=render(plan)
+        understanding=load_local_module("lycoles_gameplay_understanding",
+                                        "understand_gameplay.py").analyze(plan)
+        utility_lua=render(plan,understanding)
+        admin_generator=load_local_module("lycoles_admin_commands",
+                                          "generate_admin_commands.py")
+        admin_lua=admin_generator.render(plan["integrity"]["placeId"])
+        lua=utility_lua+"\n"+admin_lua
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
         script=out/"LycolesGeneratedUtility.lua"
         script.write_text(lua,encoding="utf-8")
+        (out/"LycolesAdminCommands.lua").write_text(admin_lua,encoding="utf-8")
+        (out/"gameplay-understanding.json").write_text(
+            json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
         manifest={"schemaVersion":"9.0","placeId":plan["integrity"]["placeId"],
           "sourcePlanSHA256":hashlib.sha256(raw).hexdigest(),
           "generatedLuaSHA256":hashlib.sha256(lua.encode()).hexdigest(),
-          "implementedFeatures":list(ALLOWED_FEATURES),
+          "implementedFeatures":list(ALLOWED_FEATURES)+["Admin Commands"],
+          "adminCommands":list(admin_generator.COMMANDS),
+          "gameplayUnderstanding":{"artifact":"gameplay-understanding.json",
+            "schemaVersion":understanding["schemaVersion"],"summary":understanding["summary"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,
           "sourceFeatureCandidates":len(plan["features"]),
           "releaseStatus":"CLIENT_DIAGNOSTIC_ONLY_UNTESTED"}

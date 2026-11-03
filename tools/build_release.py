@@ -131,7 +131,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     if actions_gui_lua is not None:
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
-    lua=generator.render(plan,gameplay_understanding)
+    utility_lua=generator.render(plan,gameplay_understanding)
+    admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
+    admin_lua=admin_generator.render(place)
+    lua=utility_lua+"\n"+admin_lua
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
@@ -166,8 +169,13 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
-        "implementedClientControls":["Stats","Menus","Prompts","Features"],
+        "implementedClientControls":["Stats","Menus","Prompts","Features","Admin Commands"],
         "implementedGameplayAutomation":[],
+        "adminCommandFramework":{"artifact":"LycolesAdminCommands.lua",
+            "commands":list(admin_generator.COMMANDS),"prefix":";",
+            "keyboardShortcut":"RightBracket","chatCommandSupport":"where-player-chat-events-are-supported",
+            "sharedFeatureState":True,"staticValidationPassed":True,"runtimeVerified":False,
+            "sha256":sha(admin_lua.encode("utf-8"))},
         "sourceProvenance":source_provenance,
         "validation":validation,
         "runtimeVerified":False,
@@ -188,6 +196,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "source-provenance.json":(json.dumps(source_provenance,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
+      "LycolesAdminCommands.lua":admin_lua.encode("utf-8"),
       "LycolesGeneratedUtility.lua":lua.encode(),
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
@@ -198,6 +207,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
           "Gameplay understanding is evidence-ranked and does not verify objectives, causality, replayability, or actions.\n"
+          "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
+          "Command wiring is statically checked but not verified in the live Roblox engine.\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
           "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"

@@ -4,7 +4,7 @@ Current inspector release: **v30.4.0**
 
 Current integrated offline pipeline: **v108**
 
-The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v109 tools are staged, independently tested inspection-to-client-observer components; v109 analyzes local manifest readiness without changing the inspector's multipart wire format.
+The repository has two version tracks. `LycolesUniversalInspector.lua` and the deterministic multipart release builder use the v30 release line. The newer v100–v110 tools are staged, independently tested inspection-to-client-observer components; v109 analyzes local manifest readiness and v110 composes evidence-ranked gameplay understanding without changing the inspector's multipart wire format.
 
 ## Current capabilities
 
@@ -14,6 +14,8 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - Passive observation of normal user interactions and bounded before/after client-state evidence from leaderstats, Data, and privacy-filtered LocalPlayer numeric/boolean ValueBase candidates. v30.1 distinguishes generic temporal changes from feature-consistent observable outcome candidates; neither proves causality, server authority, or gameplay success.
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, reproducible release archives, and normalized source-provenance status. Generated utility UI exposes retrieval integrity and its explicit trust limits without claiming authenticity or gameplay verification.
 - v109 manifest readiness analysis explains upload ambiguity, interaction evidence, outcome-candidate lower bounds, missing multipart data, and generation blockers without treating the local manifest as a full report.
+- v110 composes multiple concurrent gameplay-system candidates, observed resources/actions, temporal relationships, loop candidates, objective candidates, automation opportunities, and request blockers. It deliberately reports no single genre and no verified gameplay mechanics.
+- Generated utilities include a reusable **Admin Commands** section and `;` command bar for local client utilities (`fly`, `noclip`, `tp`, `goto`, `speed`, `jump`, `coords`, `reset`, `rejoin`, `stopall`, and help/GUI controls). GUI and command controls share state and cleanup; game restrictions may override local effects, and no server administrator privilege is implied.
 - v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
@@ -140,8 +142,7 @@ python3 tools/generate_script.py build/capability-plan.json --output build/gener
 python3 -m unittest discover -s tests -v
 ```
 
-Outputs: `LycolesGeneratedUtility.lua` and `release-manifest.json`. The generated Lua contains only safe client-side diagnostics and lists gameplay systems as unimplemented candidates. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
-
+Outputs: `LycolesGeneratedUtility.lua`, standalone `LycolesAdminCommands.lua`, `gameplay-understanding.json`, and `release-manifest.json`. The combined utility contains safe client-side diagnostics and local utility commands, and lists gameplay systems as unimplemented candidates. Command wiring is statically checked but not live Roblox verified. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
 
 ## v10 one-command release build
 

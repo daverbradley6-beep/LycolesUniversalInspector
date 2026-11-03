@@ -393,6 +393,11 @@ def _request(plan,systems,resources,actions,opportunities):
     for action in matched_actions:blockers.update(ACTION_BLOCKERS.get(action,()))
     for opportunity in opportunities:
         if opportunity["id"] in matched_systems:blockers.update(opportunity["blockers"])
+    if words.intersection({"hatch","egg","eggs"}):
+        blockers.update({"egg_selection_observation","affordability_and_cost_observation",
+                         "inventory_capacity_observation","hatch_result_observation"})
+    if words.intersection({"auto","automatic","multi","multiple"}):
+        blockers.update({"mode_selection_observation","rate_limit_contract"})
     if not matched_systems and not matched_actions and not matched_resources:
         status="unsupported_by_current_evidence";blockers.add("matching_client_visible_evidence")
     elif matched_actions:

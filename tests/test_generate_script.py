@@ -1,5 +1,6 @@
 """Run with: python3 -m unittest discover -s tests -v"""
-import importlib.util, pathlib, unittest
+import importlib.util, json, pathlib, sys, tempfile, unittest
+from unittest import mock
 source=pathlib.Path(__file__).resolve().parents[1]/"tools"/"generate_script.py"
 spec=importlib.util.spec_from_file_location("generator",source)
 generator=importlib.util.module_from_spec(spec)
@@ -35,6 +36,16 @@ class GeneratorTests(unittest.TestCase):
     def test_forged_gameplay_understanding_is_blocked(self):
         gameplay=self.gameplay();gameplay["claims"]["gameplayVerified"]=True
         with self.assertRaisesRegex(ValueError,"gameplay understanding claims"):
+            generator.render(self.plan(),gameplay)
+    def test_requested_capability_blockers_are_displayed(self):
+        gameplay=self.gameplay();gameplay["requestedCapabilityAssessment"]={
+            "implementationReady":False,"runtimeVerified":False,"gameplayVerified":False,
+            "status":"blocked-needs-observation","evidenceTier":"correlated_observation",
+            "blockers":["permitted_action_contract","egg_selection_observation"]}
+        result=generator.render(self.plan(),gameplay)
+        self.assertIn("Request missing: permitted_action_contract, egg_selection_observation",result)
+        gameplay["requestedCapabilityAssessment"]["blockers"]=[42]
+        with self.assertRaisesRegex(ValueError,"capability blockers"):
             generator.render(self.plan(),gameplay)
 
     def test_requested_capability_is_displayed_as_unverified(self):
@@ -85,4 +96,22 @@ class GeneratorTests(unittest.TestCase):
         result=generator.render(plan)
         self.assertIn("abc",result)
         self.assertNotIn("FireServer(",result)
+    def test_standalone_generation_emits_gameplay_and_commands(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp);plan_path=root/"plan.json";output=root/"out"
+            plan=self.plan();plan["requestedCapability"]="Automatically hatch selected egg"
+            plan_path.write_text(json.dumps(plan),encoding="utf-8")
+            with mock.patch.object(sys,"argv",["generate_script.py",str(plan_path),
+                                                "--output",str(output)]):
+                self.assertEqual(generator.main(),0)
+            manifest=json.loads((output/"release-manifest.json").read_text())
+            gameplay=json.loads((output/"gameplay-understanding.json").read_text())
+            combined=(output/"LycolesGeneratedUtility.lua").read_text()
+            self.assertEqual(manifest["gameplayUnderstanding"]["schemaVersion"],
+                             "110.gameplay-understanding.1")
+            self.assertIn("egg_selection_observation",
+                          gameplay["requestedCapabilityAssessment"]["blockers"])
+            self.assertIn("Request missing:",combined)
+            self.assertIn('panel.Name="AdminCommands"',combined)
+
 if __name__=="__main__":unittest.main()

@@ -64,6 +64,10 @@ Each generated feature must define:
 
 Generate complete functional read-only/client-local behavior when evidence supports it. Fail closed instead of fabricating game-specific functionality when evidence is insufficient.
 
+Current v110 gameplay-understanding contract: `tools/understand_gameplay.py` composes concurrent systems, observable resources, action candidates, temporal relationships, loop/objective candidates, automation opportunities, and request blockers. It must not assign one genre, infer causality from chronology, invent action mechanisms, promote user request text into evidence, or mark implementation/runtime/gameplay/action outcomes verified. Path-bound resource IDs prevent terminal-name collisions. Explicitly absent features stay excluded.
+
+Current generated command contract: every complete generated utility and reviewed-actions GUI includes the same place-guarded Admin Commands framework. GUI and `;` command entry share one local state and cleanup path. Universal commands are client-local utilities, not server administrator privileges; game restrictions may override them. `stopall`/close must restore tracked collision and humanoid state. Game-specific commands may be added only with sufficient observed capability evidence and explicit action contracts. Never add inferred remote calls.
+
 ## Validation without target-game Studio access
 
 Use layered validation:

@@ -66,6 +66,18 @@ class ReleaseBuilderTests(unittest.TestCase):
                 self.assertIn("review-contracts-template.json",archive.namelist())
                 self.assertIn("source-provenance.json",archive.namelist())
                 self.assertIn("gameplay-understanding.json",archive.namelist())
+                self.assertIn("LycolesAdminCommands.lua",archive.namelist())
+            admin=(base/"out"/"LycolesAdminCommands.lua").read_text()
+            combined=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertEqual(first["adminCommandFramework"]["commands"],
+                ["fly","unfly","noclip","clip","tp","goto","speed","jump",
+                 "coords","reset","rejoin","cmds","help","stopall","hidegui"])
+            self.assertFalse(first["adminCommandFramework"]["runtimeVerified"])
+            self.assertIn("Admin Commands",first["implementedClientControls"])
+            self.assertIn("Lycoles universal local utility commands",admin)
+            self.assertIn(admin,combined)
+            self.assertNotIn("FireServer(",admin)
+            self.assertNotIn("InvokeServer(",admin)
             gameplay=json.loads((base/"out"/"gameplay-understanding.json").read_text())
             generated=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
             self.assertEqual(gameplay["model"],"composable_capabilities")
@@ -83,6 +95,17 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(provenance["actionOutcomesVerified"])
             builder.build(parts,base/"out")
             self.assertEqual(original,z.read_bytes())
+    def test_request_blockers_reach_generated_utility(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            make_parts(parts,request="Automatically hatch selected egg in multi mode")
+            manifest=builder.build(parts,base/"out")
+            blockers=manifest["gameplayUnderstanding"]["requestedCapabilityAssessment"]["blockers"]
+            self.assertIn("egg_selection_observation",blockers)
+            self.assertIn("mode_selection_observation",blockers)
+            generated=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("Request missing:",generated)
+            self.assertIn("egg_selection_observation",generated)
     def test_dynamic_overlay_provenance_remains_separate_from_baseline(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
