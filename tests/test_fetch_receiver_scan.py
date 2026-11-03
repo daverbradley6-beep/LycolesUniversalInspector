@@ -22,13 +22,17 @@ def load_module(path, name):
 
 FETCHER = load_module(ROOT / "tools" / "fetch_receiver_scan.py", "fetch_receiver_scan")
 COMPILER = load_module(ROOT / "tools" / "compile_scan.py", "compile_receiver_scan")
+GENERATOR = load_module(ROOT / "tools" / "generate_script.py", "generate_receiver_script")
+DIAGNOSTICS = load_module(ROOT / "tools" / "diagnose_receiver_access.py", "receiver_access_diagnostics")
+
+
 
 
 class ReceiverServer:
     def __init__(self, *, incomplete=False, mismatch=False, redirect=False,
                  object_count_mismatch=False, malformed_length=False, transient=False,
                  duplicate_object=False, digest_mismatch=False, missing_digest=False,
-                 fail_part=None):
+                 legacy_integrity_complete=True, fail_part=None):
         base = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -67,6 +71,7 @@ class ReceiverServer:
         self.malformed_length = malformed_length
         self.digest_mismatch = digest_mismatch
         self.missing_digest = missing_digest
+        self.legacy_integrity_complete = legacy_integrity_complete
         self.transient = transient
         self.fail_part = fail_part
         self.transient_failures = 0
@@ -98,6 +103,20 @@ class ReceiverServer:
                 prefix = "/reports/read-secret/receiverscan01/"
                 if self.path == prefix + "metadata":
                     payload = {"metadata": owner.metadata}
+                elif self.path == prefix + "integrity":
+                    object_count = sum(len(part["objects"]) for part in owner.parts.values())
+                    payload = {
+                        "scanId": "receiverscan01", "placeId": 3623096087,
+                        "partCount": 2,
+                        "receivedParts": 2 if owner.legacy_integrity_complete else 1,
+                        "missingParts": [] if owner.legacy_integrity_complete else [2],
+                        "indexedObjects": object_count, "uniqueObjectKeys": object_count,
+                        "duplicateObjectKeys": 0, "identityErrors": [],
+                        "expectedObjects": object_count,
+                        "complete": owner.legacy_integrity_complete,
+                        "integrityStatus": ("verified" if owner.legacy_integrity_complete
+                                            else "incomplete"),
+                    }
                 elif self.path.startswith(prefix + "part-"):
                     index = int(self.path.rsplit("-", 1)[1])
                     if owner.incomplete and index == 2:
@@ -138,6 +157,34 @@ class ReceiverServer:
 
 
 class ReceiverImportTests(unittest.TestCase):
+    def test_access_diagnostic_names_missing_configuration(self):
+        result = DIAGNOSTICS.diagnose(
+            None, None, ["receiverscan01"])
+        self.assertEqual(result["status"], "blocked-before-network")
+        self.assertEqual(result["missingConfiguration"],
+                         ["LYCOLES_RECEIVER_ORIGIN", "LYCOLES_READ_KEY"])
+        self.assertFalse(result["credentialsExposed"])
+
+    def test_access_diagnostic_detects_v12_contract(self):
+        with ReceiverServer() as receiver:
+            result = DIAGNOSTICS.diagnose(
+                receiver.server.base_url, "read-secret", ["receiverscan01"],
+                allow_http=True)
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["checks"][0]["deploymentContract"],
+                         "v12-persisted-digests")
+
+    def test_access_diagnostic_detects_v11_contract(self):
+        with ReceiverServer(missing_digest=True) as receiver:
+            result = DIAGNOSTICS.diagnose(
+                receiver.server.base_url, "read-secret", ["receiverscan01"],
+                allow_http=True, check_integrity=True)
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["checks"][0]["deploymentContract"],
+                         "v11-no-persisted-digests")
+        self.assertTrue(result["checks"][0]["receiverReportedComplete"])
+
+
     def test_complete_scan_imports_and_compiles(self):
         with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:
             output = pathlib.Path(temp) / "scan"
@@ -213,6 +260,54 @@ class ReceiverImportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "content digest is missing"):
                 FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
                                    "receiverscan01", output, allow_http=True)
+            self.assertFalse(output.exists())
+
+
+    def test_explicit_legacy_v11_imports_without_stored_digest_claim(self):
+        with ReceiverServer(missing_digest=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            result = FETCHER.fetch_scan(
+                receiver.server.base_url, "read-secret", "receiverscan01", output,
+                allow_http=True, allow_legacy_v11=True)
+            self.assertEqual(result["schemaVersion"], "30.2.receiver-import-legacy.1")
+            self.assertTrue(result["receiverIntegrityVerified"])
+            self.assertFalse(result["receiverStoredPayloadDigestsVerified"])
+            plan = COMPILER.compile_scan(output)
+            provenance = plan["sourceProvenance"]
+            self.assertEqual(provenance["inputMode"], "receiver-import-legacy-v11")
+            self.assertTrue(provenance["receiverIntegrityVerified"])
+            self.assertFalse(provenance["receiverStoredPayloadDigestsVerified"])
+            lines = GENERATOR.source_provenance_lines({"sourceProvenance": provenance})
+            self.assertIn("Baseline input: legacy v11 receiver import", lines)
+            self.assertIn("Receiver payload digests: unavailable", lines)
+            self.assertIn("Receiver retrieval integrity: verified", lines)
+            release = pathlib.Path(temp) / "legacy-release"
+            release_run = subprocess.run(
+                [sys.executable, str(ROOT / "tools" / "build_release.py"), str(output),
+                 "--output", str(release)], text=True, capture_output=True, timeout=30)
+            self.assertEqual(release_run.returncode, 0, release_run.stderr)
+            provenance_artifact = json.loads((release / "source-provenance.json").read_text())
+            self.assertEqual(provenance_artifact["inputMode"], "receiver-import-legacy-v11")
+            self.assertFalse(provenance_artifact["receiverStoredPayloadDigestsVerified"])
+
+
+    def test_legacy_v11_requires_complete_receiver_integrity(self):
+        with ReceiverServer(missing_digest=True, legacy_integrity_complete=False) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "legacy receiver integrity"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    allow_http=True, allow_legacy_v11=True)
+            self.assertFalse(output.exists())
+
+    def test_legacy_v11_rejects_resume_checkpoint(self):
+        with ReceiverServer(missing_digest=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "does not support resume"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url, "read-secret", "receiverscan01", output,
+                    allow_http=True, allow_legacy_v11=True,
+                    resume=pathlib.Path(temp) / "resume")
             self.assertFalse(output.exists())
 
     def test_matching_acknowledgement_digests_are_preserved(self):

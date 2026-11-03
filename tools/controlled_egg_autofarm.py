@@ -27,6 +27,11 @@ end
 workspace=newInstance("Workspace","Workspace");workspace.CurrentCamera=camera;services.Workspace=workspace
 local replicatedStorage=newInstance("ReplicatedStorage","ReplicatedStorage");services.ReplicatedStorage=replicatedStorage
 function game:FindFirstChild(name) if name=="Workspace" then return workspace elseif name=="ReplicatedStorage" then return replicatedStorage end end
+local httpService={}
+function httpService:GenerateGUID(_wrap) return "controlled-session-0001" end
+function httpService:JSONEncode(_value) return "{\"controlled\":true}" end
+services.HttpService=httpService
+
 local rendered=newInstance("Folder","Rendered");rendered.Parent=workspace
 local chunker=newInstance("Folder","Chunker");chunker.Parent=rendered
 local egg=newInstance("Model","Rainbow.Egg");egg.Parent=chunker

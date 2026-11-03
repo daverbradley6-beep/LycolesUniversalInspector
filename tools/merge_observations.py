@@ -13,22 +13,24 @@ _UNVERIFIED_PROVENANCE=("resumeCheckpointAuthenticated","receiverResponseAuthent
 def _observation_provenance(observation,integrity):
     provenance=observation.get("sourceProvenance")
     mode=provenance.get("inputMode") if isinstance(provenance,dict) else None
-    receiver=mode=="receiver-import"
+    receiver=mode in ("receiver-import","receiver-import-legacy-v11")
+    digest_receiver=mode=="receiver-import"
     digest_verified=provenance.get("receiverStoredPayloadDigestsVerified") if provenance else None
     integrity_verified=provenance.get("receiverIntegrityVerified") if provenance else None
     acknowledgement=provenance.get("receiverAcknowledgementDigestEquivalent") if provenance else None
     revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun") if provenance else None
     if (not isinstance(provenance,dict)
             or provenance.get("schemaVersion")!="30.2.source-provenance.1"
-            or mode not in ("local-multipart","receiver-import")
+            or mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11")
             or provenance.get("scanId")!=integrity.get("scanId")
             or provenance.get("placeId")!=integrity.get("placeId")
             or provenance.get("partCount")!=integrity.get("parts")
             or any(provenance.get(field) is not False for field in _UNVERIFIED_PROVENANCE)
-            or type(digest_verified) is not bool or digest_verified is not receiver
+            or type(digest_verified) is not bool or digest_verified is not digest_receiver
             or type(integrity_verified) is not bool or integrity_verified is not receiver
             or type(acknowledgement) is not bool or type(revalidated) is not bool
-            or (not receiver and (acknowledgement or revalidated))):
+            or (mode!="receiver-import" and revalidated)
+            or (not receiver and acknowledgement)):
         raise ValueError("Invalid observation source provenance")
     return copy.deepcopy(provenance)
 

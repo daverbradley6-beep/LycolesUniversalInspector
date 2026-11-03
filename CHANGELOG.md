@@ -9,6 +9,10 @@
 - Register generic `;interactions`, `;interaction`, `;interactionstart`, and `;interactionstop` plus compatible `;egg*` aliases in shared Admin Commands, including categorized rows and `;stopall` cleanup.
 - Add composable world-interaction, GUI-control, Tool-action, state-signal, and combat candidate families for non-simulator games. Bounded action-to-state/GUI relationships carry explicit evidence tiers and generation blockers without inferring causality or replay contracts from names or timing.
 - Parse generated prompt and combined Admin Luau, then execute generic command dispatch, identity resolution, teleport, prompt activation, hatch-counter observation, unavailable Multi mode, and `;stopall` against bounded official-Luau stubs. This is simulated execution; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
+- Add explicit fail-closed legacy receiver v11 retrieval for confirmed historical scans: require complete receiver integrity before part retrieval, compute exact local response digests, reject resume, preserve a distinct provenance schema, and never claim receiver-stored digest, response authenticity, local-payload equivalence, runtime, or gameplay verification. Strict v12 digest verification remains the default.
+- Add credential-safe multi-scan receiver diagnostics that name missing configuration without printing values and distinguish v12 persisted-digest deployments from explicit v11 compatibility candidates.
+- Add discovery-digest-bound, 100-entry prompt trial feedback export through `;interactionfeedback` and a strict offline evaluator that rejects unknown targets, unselected outcomes, forged directional changes, excess fields, and positive verification claims. Accepted records remain operator-supplied client correlation rather than causal, server-authoritative, runtime-verified, or gameplay-verified evidence.
+
 
 ## v30.4.0 — Composable gameplay understanding and local utilities
 

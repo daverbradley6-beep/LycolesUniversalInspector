@@ -58,7 +58,7 @@ def _read_key(value):
     return value
 
 
-def _read_json_once(opener, url, timeout, require_digest=False):
+def _read_json_once(opener, url, timeout, require_digest=False, return_raw=False):
     request = urllib.request.Request(url, headers={"Accept": "application/json",
                                                    "User-Agent": "Lycoles-receiver-import/30.2"})
     response = opener.open(request, timeout=timeout)
@@ -92,14 +92,14 @@ def _read_json_once(opener, url, timeout, require_digest=False):
         raise ValueError("receiver returned invalid JSON") from None
     if not isinstance(document, dict):
         raise ValueError("receiver JSON must be an object")
-    return (document, digest, raw) if require_digest else document
+    return (document, digest, raw) if require_digest or return_raw else document
 
 
-def _read_json(opener, url, timeout, require_digest=False):
+def _read_json(opener, url, timeout, require_digest=False, return_raw=False):
     transient_statuses = {408, 425, 429, 500, 502, 503, 504}
     for attempt in range(3):
         try:
-            return _read_json_once(opener, url, timeout, require_digest)
+            return _read_json_once(opener, url, timeout, require_digest, return_raw)
         except urllib.error.HTTPError as exc:
             status = exc.code
             exc.close()
@@ -130,6 +130,32 @@ def _validate_metadata(document, scan_id):
     place_id = _positive_integer(metadata.get("placeId"), "receiver place ID")
     part_count = _positive_integer(metadata.get("partCount"), "receiver part count", MAX_PARTS)
     return metadata, place_id, part_count
+
+
+def _validate_legacy_integrity(document, scan_id, place_id, part_count):
+    if (not isinstance(document, dict) or document.get("scanId") != scan_id
+            or document.get("placeId") != place_id
+            or document.get("partCount") != part_count
+            or document.get("receivedParts") != part_count
+            or document.get("missingParts") != []
+            or document.get("identityErrors") != []
+            or document.get("duplicateObjectKeys") != 0
+            or document.get("complete") is not True
+            or document.get("integrityStatus") != "verified"):
+        raise ValueError("legacy receiver integrity is incomplete or inconsistent")
+    indexed = _positive_integer(document.get("indexedObjects"), "legacy indexed objects",
+                                MAX_OBJECTS, allow_zero=True)
+    unique = _positive_integer(document.get("uniqueObjectKeys"), "legacy unique objects",
+                               MAX_OBJECTS, allow_zero=True)
+    expected = _positive_integer(document.get("expectedObjects"), "legacy expected objects",
+                                 MAX_OBJECTS, allow_zero=True)
+    if indexed != unique or indexed != expected:
+        raise ValueError("legacy receiver object accounting mismatch")
+    return {key: document.get(key) for key in (
+        "scanId", "placeId", "partCount", "receivedParts", "missingParts",
+        "indexedObjects", "uniqueObjectKeys", "duplicateObjectKeys", "identityErrors",
+        "expectedObjects", "complete", "integrityStatus")}
+
 
 
 def _read_bounded_file(path, label):
@@ -346,13 +372,18 @@ def _resume_directory(path, output):
 
 
 def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
-               local_manifest=None, resume=None, allow_http=False):
+               local_manifest=None, resume=None, allow_http=False,
+               allow_legacy_v11=False):
     origin = _receiver_origin(endpoint, allow_http)
     read_key = _read_key(read_key)
     scan_id = _identifier(scan_id, "receiver scan ID")
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 1 <= timeout <= 120:
         raise ValueError("invalid receiver timeout")
     workers = _positive_integer(workers, "worker count", MAX_WORKERS)
+    if type(allow_legacy_v11) is not bool:
+        raise ValueError("invalid legacy receiver option")
+    if allow_legacy_v11 and resume is not None:
+        raise ValueError("legacy receiver retrieval does not support resume checkpoints")
     output = pathlib.Path(output)
     if output.exists() or output.is_symlink():
         raise ValueError("output path already exists")
@@ -361,6 +392,9 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
     root = "/reports/" + urllib.parse.quote(read_key, safe="") + "/" + scan_id
     metadata_document = _read_json(opener, origin + root + "/metadata", timeout)
     metadata, place_id, part_count = _validate_metadata(metadata_document, scan_id)
+    legacy_integrity = (_validate_legacy_integrity(
+        _read_json(opener, origin + root + "/integrity", timeout),
+        scan_id, place_id, part_count) if allow_legacy_v11 else None)
     metadata_digest = _canonical_digest(metadata)
     acknowledgement_digests = _acknowledged_digests(
         local_manifest, scan_id, place_id, part_count)
@@ -413,7 +447,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
 
         def retrieve(index):
             part, digest, raw = _read_json(
-                opener, origin + root + f"/part-{index}", timeout, require_digest=True)
+                opener, origin + root + f"/part-{index}", timeout,
+                require_digest=not allow_legacy_v11, return_raw=allow_legacy_v11)
             return index, part, digest, raw
 
         missing_indexes = [
@@ -458,35 +493,60 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             "integrityStatus": "verified-after-retrieval",
             "verificationMethod": "complete receiver part retrieval plus local multipart compilation",
         }
-        import_manifest = {
-            "schemaVersion": "30.2.receiver-import.2",
-            "scanId": scan_id,
-            "placeId": place_id,
-            "partCount": part_count,
-            "expectedParts": part_count,
-            "objectCount": total_objects,
-            "metadata": metadata,
-            "receiverIntegrity": integrity,
-            "receiverPartContentDigests": receiver_part_digests,
-            "resumableRetrievalEnabled": resume_directory is not None,
-            "resumedPartCount": len(resumed_parts),
-            "downloadedPartCount": downloaded_part_count,
-            "resumeCheckpointAuthenticated": False,
-            "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts,
-            "receiverStoredPayloadDigestsVerified": True,
-            "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
-            "receiverIntegrityVerified": True,
-            "receiverResponseAuthenticityVerified": False,
-            "localPayloadEquivalent": False,
-            "note": "Downloaded bytes matched receiver-stored upload digests; resumed bytes matched an unauthenticated local checkpoint of prior verification; all parts passed current identity, uniqueness, accounting, and compiler checks; ACK equivalence remains separate from local payload equivalence and response authenticity",
-        }
+        if allow_legacy_v11:
+            import_manifest = {
+                "schemaVersion": "30.2.receiver-import-legacy.1",
+                "scanId": scan_id,
+                "placeId": place_id,
+                "partCount": part_count,
+                "expectedParts": part_count,
+                "objectCount": total_objects,
+                "metadata": metadata,
+                "receiverIntegrity": integrity,
+                "receiverReportedIntegrity": legacy_integrity,
+                "retrievedPartContentDigests": receiver_part_digests,
+                "resumableRetrievalEnabled": False,
+                "resumedPartCount": 0,
+                "downloadedPartCount": downloaded_part_count,
+                "resumeCheckpointAuthenticated": False,
+                "receiverStoredPayloadDigestsRevalidatedThisRun": False,
+                "receiverStoredPayloadDigestsVerified": False,
+                "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
+                "receiverIntegrityVerified": True,
+                "receiverResponseAuthenticityVerified": False,
+                "localPayloadEquivalent": False,
+                "note": "Explicit legacy v11 import: receiver-reported integrity and complete local retrieval/compilation passed, but the deployment supplied no persisted per-part digest headers; retrieved-byte digests are local observations, not receiver-stored proof",
+            }
+        else:
+            import_manifest = {
+                "schemaVersion": "30.2.receiver-import.2",
+                "scanId": scan_id,
+                "placeId": place_id,
+                "partCount": part_count,
+                "expectedParts": part_count,
+                "objectCount": total_objects,
+                "metadata": metadata,
+                "receiverIntegrity": integrity,
+                "receiverPartContentDigests": receiver_part_digests,
+                "resumableRetrievalEnabled": resume_directory is not None,
+                "resumedPartCount": len(resumed_parts),
+                "downloadedPartCount": downloaded_part_count,
+                "resumeCheckpointAuthenticated": False,
+                "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts,
+                "receiverStoredPayloadDigestsVerified": True,
+                "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
+                "receiverIntegrityVerified": True,
+                "receiverResponseAuthenticityVerified": False,
+                "localPayloadEquivalent": False,
+                "note": "Downloaded bytes matched receiver-stored upload digests; resumed bytes matched an unauthenticated local checkpoint of prior verification; all parts passed current identity, uniqueness, accounting, and compiler checks; ACK equivalence remains separate from local payload equivalence and response authenticity",
+            }
         _write_json(staging / "receiver-manifest.json", import_manifest)
         plan = _compile_scan(staging)
         if output.exists() or output.is_symlink():
             raise ValueError("output path was created during import")
         staging.replace(output)
     return {
-        "schemaVersion": "30.2.receiver-import.2",
+        "schemaVersion": import_manifest["schemaVersion"],
         "scanId": scan_id,
         "placeId": place_id,
         "partCount": part_count,
@@ -496,8 +556,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
         "resumedPartCount": len(resumed_parts),
         "downloadedPartCount": downloaded_part_count,
         "resumeCheckpointAuthenticated": False,
-        "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts,
-        "receiverStoredPayloadDigestsVerified": True,
+        "receiverStoredPayloadDigestsRevalidatedThisRun": not resumed_parts and not allow_legacy_v11,
+        "receiverStoredPayloadDigestsVerified": not allow_legacy_v11,
         "receiverAcknowledgementDigestEquivalent": acknowledgement_equivalent,
         "receiverIntegrityVerified": True,
         "receiverResponseAuthenticityVerified": False,
@@ -517,6 +577,8 @@ def main():
                         help="persistent directory for verified part resume checkpoints")
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--allow-legacy-v11", action="store_true",
+                        help="explicitly accept v11 parts without persisted digest headers after complete /integrity validation")
     args = parser.parse_args()
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -525,7 +587,8 @@ def main():
     try:
         result = fetch_scan(args.endpoint, read_key, args.scan_id, args.output,
                             timeout=args.timeout, workers=args.workers,
-                            local_manifest=args.local_manifest, resume=args.resume)
+                            local_manifest=args.local_manifest, resume=args.resume,
+                            allow_legacy_v11=args.allow_legacy_v11)
     except (ValueError, OSError) as exc:
         print("IMPORT BLOCKED:", exc, file=sys.stderr)
         return 2

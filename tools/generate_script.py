@@ -49,8 +49,9 @@ def _validate_source_provenance(provenance):
     if not isinstance(provenance,dict):
         raise ValueError("Malformed source provenance")
     mode=provenance.get("inputMode")
-    receiver=mode=="receiver-import"
-    if mode not in ("local-multipart","receiver-import"):
+    receiver=mode in ("receiver-import","receiver-import-legacy-v11")
+    digest_receiver=mode=="receiver-import"
+    if mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11"):
         raise ValueError("Unsupported source provenance mode")
     false_claims=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
                   "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
@@ -64,8 +65,9 @@ def _validate_source_provenance(provenance):
     revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun")
     if (type(digest_verified) is not bool or type(integrity_verified) is not bool
             or type(acknowledgement_equivalent) is not bool or type(revalidated) is not bool
-            or digest_verified is not receiver or integrity_verified is not receiver
-            or (not receiver and (acknowledgement_equivalent or revalidated))):
+            or digest_verified is not digest_receiver or integrity_verified is not receiver
+            or (mode!="receiver-import" and revalidated)
+            or (not receiver and acknowledgement_equivalent)):
         raise ValueError("Inconsistent source provenance")
     return receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated
 
@@ -83,14 +85,18 @@ def source_provenance_lines(plan):
     else:
         receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated=(
             _validate_source_provenance(provenance))
+        mode=provenance["inputMode"]
+        baseline=("legacy v11 receiver import" if mode=="receiver-import-legacy-v11"
+                  else "receiver import" if receiver else "local multipart")
         lines=[
-            "Baseline input: "+("receiver import" if receiver else "local multipart"),
+            "Baseline input: "+baseline,
             "Receiver payload digests: "+("verified" if digest_verified else "unavailable"),
             "Receiver retrieval integrity: "+("verified" if integrity_verified else "unavailable"),
             "Inspector ACK digest equivalence: "+(
                 "verified" if acknowledgement_equivalent else "not established"),
             "Receiver digests rechecked this run: "+(
-                "yes" if revalidated else "no (cached checkpoint used)" if receiver else "not applicable"),
+                "yes" if revalidated else "unavailable on legacy v11" if mode=="receiver-import-legacy-v11"
+                else "no (cached checkpoint used)" if receiver else "not applicable"),
             "Resume checkpoint authentication: unavailable",
             "Response authenticity: unverified",
             "Original local payload equivalence: unverified",

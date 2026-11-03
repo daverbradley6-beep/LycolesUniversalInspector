@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate place-bound ProximityPrompt trials from correlated observable evidence."""
+import hashlib
 import json
 import math
 
@@ -142,10 +143,19 @@ def render(discovery):
         ",feature="+_quote(feature)+",objectiveScore="+str(score)+
         ",identity="+identity+",outcomeIdentity="+outcome_identity+"},"
         for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity in targets)
+    scan_id=discovery.get("scanId")
+    if scan_id is None:
+        scan_id="UNAVAILABLE"
+    elif not isinstance(scan_id,str) or not 1<=len(scan_id)<=128:
+        raise ValueError("Malformed action capability scan identity")
+    discovery_digest=hashlib.sha256(json.dumps(
+        discovery,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode("utf-8")).hexdigest()
+
     source=r'''-- Evidence-bounded ProximityPrompt trials; outcome changes are observed, not causal proof.
 do
 assert(game.PlaceId == __PLACE_ID__, "Incorrect Roblox place")
 local Players=game:GetService("Players")
+local HttpService=game:GetService("HttpService")
 local player=Players.LocalPlayer
 assert(player,"LocalPlayer unavailable")
 if type(_G.LycolesPromptClose)=="function" then pcall(_G.LycolesPromptClose)
@@ -158,6 +168,21 @@ local selected=1
 local mode="auto"
 local failures=0
 local connections={}
+local feedbackSequence=0
+local feedback={schemaVersion="112.prompt-trial-feedback.1",placeId=__PLACE_ID__,scanId=__SCAN_ID__,
+    discoverySHA256=__DISCOVERY_DIGEST__,sessionId=HttpService:GenerateGUID(false),entries={},
+    claims={sourceAuthenticityVerified=false,causalityProven=false,serverAuthorityVerified=false,
+        runtimeVerified=false,gameplayVerified=false,actionOutcomesVerified=false}}
+_G.LycolesPromptTrialFeedback=feedback
+local function recordFeedback(target,before,after,observed,resultStatus,message)
+    feedbackSequence=feedbackSequence+1
+    table.insert(feedback.entries,{sequence=feedbackSequence,targetPath=target and target.path or "",
+        outcomeKey=target and target.outcome or "",expected=target and target.expected or "changed",
+        before=before,after=after,observedExpectedChange=observed==true,status=resultStatus,
+        message=tostring(message or ""):sub(1,240),observedAtUnix=os.time()})
+    if #feedback.entries>100 then table.remove(feedback.entries,1) end
+end
+
 local gui=Instance.new("ScreenGui")
 gui.Name="LycolesPromptInteractions"
 gui.ResetOnSpawn=false
@@ -280,15 +305,23 @@ end
 local function activateOnce()
     local target=currentTarget()
     if not target then return false,"No evidence-backed target for mode" end
+    local function failed(resultStatus,message,before,after)
+        recordFeedback(target,before,after,false,resultStatus,message)
+        return false,message
+    end
     local prompt,err=resolve(target)
-    if not prompt or not prompt:IsA("ProximityPrompt") then return false,err or "Target is not a ProximityPrompt" end
-    if not prompt.Enabled then return false,"Observed prompt is currently disabled" end
-    if type(fireproximityprompt)~="function" then return false,"fireproximityprompt unavailable in this environment" end
+    if not prompt or not prompt:IsA("ProximityPrompt") then
+        return failed("target-unresolved",err or "Target is not a ProximityPrompt")
+    end
+    if not prompt.Enabled then return failed("prompt-disabled","Observed prompt is currently disabled") end
+    if type(fireproximityprompt)~="function" then
+        return failed("activation-unavailable","fireproximityprompt unavailable in this environment")
+    end
     local moved,moveError=teleportTo(prompt)
-    if not moved then return false,moveError end
+    if not moved then return failed("teleport-failed",moveError) end
     local before=readOutcome(target)
     local ok,fireError=pcall(function() fireproximityprompt(prompt) end)
-    if not ok then return false,"Prompt activation failed: "..tostring(fireError) end
+    if not ok then return failed("activation-failed","Prompt activation failed: "..tostring(fireError),before) end
     task.wait(1.5)
     local after=readOutcome(target)
     local observed=target.expected=="increased" and type(before)=="number" and type(after)=="number" and after>before
@@ -296,11 +329,12 @@ local function activateOnce()
         or target.expected=="changed" and before~=nil and after~=nil and after~=before
     if observed then
         failures=0
+        recordFeedback(target,before,after,true,"expected-change-observed","Observed bounded scalar direction")
         status.Text="Observed "..target.outcome.." "..target.expected.." "..tostring(before).." → "..tostring(after)
             ..". This is runtime correlation, not server-authority or causal proof."
         return true,nil
     end
-    return false,"No expected "..target.expected.." outcome observed"
+    return failed("expected-change-not-observed","No expected "..target.expected.." outcome observed",before,after)
 end
 local function start()
     if running then return true,"Prompt trial already running" end
@@ -356,6 +390,9 @@ _G.LycolesGameCommands={
     interactionstart={category="Game: Interactions",description="Start selected prompt trial",arguments="",availability=function() return type(fireproximityprompt)=="function","fireproximityprompt unavailable" end,run=function() return start() end},
     interactionstop={category="Game: Interactions",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,
         run=function() stop("Stopped by command") return true,"Prompt trial stopped" end},
+    interactionfeedback={category="Game: Interactions",description="Export bounded prompt trial feedback JSON",arguments="",availability=function() return true,"available" end,
+        run=function() local ok,payload=pcall(function() return HttpService:JSONEncode(feedback) end) return ok,ok and payload or "Feedback JSON encoding failed" end},
+
     eggs={category="Game: Eggs",description="List evidence-backed egg targets",arguments="",availability=function() return true,"available" end,
         run=function() return true,listTargets(true) end},
     egg={category="Game: Eggs",description="Select an evidence-backed egg",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,
@@ -371,10 +408,12 @@ _G.LycolesPromptClose=function()
     alive=false running=false
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     if gui then gui:Destroy() end
-    _G.LycolesGameCommands=nil _G.LycolesGameStopAll=nil _G.LycolesPromptClose=nil _G.LycolesEggClose=nil
+    _G.LycolesGameCommands=nil _G.LycolesGameStopAll=nil _G.LycolesPromptTrialFeedback=nil
+    _G.LycolesPromptClose=nil _G.LycolesEggClose=nil
 end
 _G.LycolesEggClose=_G.LycolesPromptClose
 update()
 end
 '''
-    return source.replace("__PLACE_ID__",str(place)).replace("__TARGETS__",target_rows)
+    return (source.replace("__PLACE_ID__",str(place)).replace("__TARGETS__",target_rows)
+        .replace("__SCAN_ID__",_quote(scan_id)).replace("__DISCOVERY_DIGEST__",_quote(discovery_digest)))

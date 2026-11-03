@@ -1,6 +1,19 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Historical receiver recovery and bounded live feedback
+
+- Implemented explicit `--allow-legacy-v11` retrieval for confirmed scans stored by the historical Worker. Legacy mode first requires complete receiver integrity and exact identity/uniqueness/object accounting, downloads every numbered part without resume, computes local SHA-256 over exact response bytes, reruns compiler validation, and publishes atomically.
+- Added exact legacy receiver-import and normalized source-provenance field contracts. Compiler, release generation, generated provenance text, and dynamic observation overlays accept legacy mode only when receiver integrity is true, stored-payload-digest/revalidation claims are false, every current part matches its locally recorded response digest, and all unsupported trust/runtime/gameplay claims remain false. Strict v12 behavior is unchanged and remains the default.
+- Added `tools/diagnose_receiver_access.py` to probe configured known scan IDs without downloading full reports or printing endpoint/read-key values. It reports missing configuration before network access and distinguishes v12 persisted-digest deployments from v11 compatibility candidates; optional integrity checks are explicit.
+- Current environment remains blocked before network access for scans `05BA4679-6286-4814-9282-A6DC33EE7C44` and `035BC180-0B76-486B-88F0-1E8FC3CA6925`: both `LYCOLES_RECEIVER_ORIGIN` and `LYCOLES_READ_KEY` are absent. No production receiver request, deployment, credential change, or payload recovery has been attempted.
+- Generated prompt trials now retain at most 100 structured attempt records bound to the exact `action-capabilities.json` SHA-256 and expose them through `;interactionfeedback`. `tools/evaluate_prompt_trial_feedback.py` requires matching place/scan/discovery identity, selected evidence-backed target/outcome contracts, bounded scalar values, and independently recomputed directionality. It rejects forged changes and every positive authenticity/causality/authority/runtime/gameplay/outcome-verification claim.
+- Accepted prompt feedback remains operator-supplied client correlation. It does not establish causal effects, server authority, Roblox runtime correctness, gameplay verification, or action-outcome verification. GUI Auto/Multi replay remains blocked pending a validated exact control identity, persistent enabled-state observation, unattended outcome evidence, and a reviewed replay primitive.
+- Added regression coverage for strict-default v12 behavior, explicit v11 success through full release generation, incomplete v11 integrity rejection, no legacy resume, credential-safe diagnostics, discovery-bound feedback generation, identity/outcome mismatch rejection, and false directional-claim rejection.
+- Complete local gate passed: **1,431 Python tests** with pinned official Luau 0.744, receiver integrity checks, **3 Node/Luau parser tests**, Python compilation, and `git diff --check`. Controlled prompt execution remains simulation only. After access is securely supplied, run diagnostics for both confirmed scan IDs, use strict v12 import where supported or explicit v11 mode where diagnosed, build releases, inspect generation readiness, and compare recovered evidence with the manifest-only fixture.
+
+
+
 ## Update — 2026-11-02 — Reusable ProximityPrompt interaction contract
 
 - Committed `4af0878` (`Generate reusable prompt interaction trials`) on `openhands-development`. This renames the egg-only generator to `tools/generate_prompt_interactions.py` and preserves the legacy egg manifest/command surface as explicit compatibility aliases.
