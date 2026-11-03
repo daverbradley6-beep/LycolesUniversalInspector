@@ -104,18 +104,41 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                 "stateChanges":[{"key":"Data.DailyClaims","before":2,"after":3,
                     "stateIdentityStatus":"component-resolved","stateIdentity":[
                         {"name":"Data","className":"Folder","ordinal":1},
-                        {"name":"DailyClaims","className":"IntValue","ordinal":1}]}]}]}
+                        {"name":"DailyClaims","className":"IntValue","ordinal":1}]},
+                    {"key":"Data.Gems","before":100,"after":90,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"Gems","className":"IntValue","ordinal":1}]}]}]}
         result=discovery.analyze(plan)
         prompt=result["promptInteractions"]
         self.assertEqual(prompt["trialReadyTargets"],1)
         self.assertEqual(prompt["selectedTargetPath"],"Workspace.Rewards.Daily.ClaimPrompt")
         self.assertTrue(prompt["targets"][0]["objective"]["requestAligned"])
+        self.assertEqual(prompt["targets"][0]["selectedOutcome"]["key"],"Data.DailyClaims")
+        self.assertTrue(prompt["targets"][0]["selectedOutcome"]["selection"]["selectedForTrial"])
+
         source=generator.render(result)
         self.assertIn('label="Daily"',source)
         self.assertIn('feature="rewards"',source)
         self.assertIn("egg=false",source)
+        self.assertIn('outcome="Data.DailyClaims"',source)
+        self.assertNotIn('outcome="Data.Gems"',source)
+
         self.assertIn("interactionstart=",source)
         self.assertNotIn("FireServer(",source)
+
+    def test_generator_rejects_unselected_competing_outcome(self):
+        plan={"integrity":{"scanComplete":True,"placeId":123},
+            "requestedCapability":"claim reward","actionableObjects":[],
+            "observedInteractionHistory":[{"path":"Workspace.Reward.Prompt",
+                "controlType":"ProximityPrompt.Triggered","stateChanges":[
+                    {"key":"Data.Rewards","before":1,"after":2},
+                    {"key":"Data.Currency","before":10,"after":9}]}]}
+        result=discovery.analyze(plan);target=result["promptInteractions"]["targets"][0]
+        target["selectedOutcome"]=target["outcomeSignals"][1]
+        with self.assertRaisesRegex(ValueError,"Malformed correlated prompt outcome"):
+            generator.render(result)
+
 
 
     def test_unavailable_new_state_identity_blocks_trial_readiness(self):

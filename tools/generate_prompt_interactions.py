@@ -59,17 +59,20 @@ def render(discovery):
         for item in prompt_contract.get("targets",[]):
             if not isinstance(item,dict) or item.get("trialGenerationReady") is not True:continue
             path=item.get("path");label=item.get("label");signals=item.get("outcomeSignals")
+            signal=item.get("selectedOutcome")
             if (not isinstance(path,str) or not isinstance(label,str) or not isinstance(signals,list)
-                    or not signals or item.get("controlType")!="ProximityPrompt.Triggered"
+                    or not signals or not isinstance(signal,dict) or signal not in signals
+                    or item.get("controlType")!="ProximityPrompt.Triggered"
                     or type(item.get("observedTriggers")) is not int or item["observedTriggers"]<1
                     or item.get("temporalCorrelationOnly") is not True
                     or any(item.get(key) is not False for key in
                         ("causalityProven","runtimeVerified","gameplayVerified"))):
                 raise ValueError("Malformed correlated prompt target")
-            signal=signals[0]
-            if (not isinstance(signal,dict) or not isinstance(signal.get("key"),str)
+            selection=signal.get("selection")
+            if (not isinstance(signal.get("key"),str)
                     or signal.get("change") not in ("increased","decreased","changed")
-                    or signal.get("generationResolvable") is not True):
+                    or signal.get("generationResolvable") is not True
+                    or not isinstance(selection,dict) or selection.get("selectedForTrial") is not True):
                 raise ValueError("Malformed correlated prompt outcome")
             metadata=json.dumps(item.get("promptMetadata",{}),ensure_ascii=False).lower()
             haystack=(label+" "+path+" "+metadata).lower()

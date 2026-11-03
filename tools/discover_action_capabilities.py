@@ -111,6 +111,27 @@ def _prompt_objective(path,feature,action,label,request,state_signals):
         "objectiveVerified":False}
 
 
+def _rank_outcomes(signals,request,context):
+    request_tokens=_tokens(request or "");context_tokens=_tokens(context)
+    ranked=[]
+    for source in signals:
+        signal=dict(source);key=signal["key"];key_tokens=_tokens(key);lower=key.lower()
+        request_matches=sorted(key_tokens & request_tokens)
+        context_matches=sorted(key_tokens & context_tokens)
+        score=min(9,len(request_matches)*3)+min(3,len(context_matches))
+        score+=2*sum(term in lower for term in _USEFUL_TERMS)
+        score-=3*sum(term in lower for term in _NAVIGATION_TERMS)
+        score+={"increased":2,"changed":1,"decreased":0}.get(signal["change"],0)
+        signal["selection"]={"score":score,"requestMatchedTerms":request_matches,
+            "contextMatchedTerms":context_matches,"selectedForTrial":False,
+            "outcomeVerified":False}
+        ranked.append(signal)
+    ranked.sort(key=lambda item:(-item["selection"]["score"],item["key"],item["change"]))
+    if ranked:ranked[0]["selection"]["selectedForTrial"]=True
+    return ranked
+
+
+
 
 def _label(path,metadata):
     interaction=metadata.get("interaction") if isinstance(metadata,dict) else None
@@ -232,7 +253,10 @@ def analyze(plan):
                     if state_identity:target["outcomeIdentities"][change["key"]]=state_identity
     prompt_list=[]
     for target in prompt_targets.values():
-        target["outcomeSignals"].sort(key=lambda item:(item["key"],item["change"]))
+        context=" ".join(str(value or "") for value in (target["path"],
+            target.get("featureCandidate"),target.get("actionCandidate"),target["label"]))
+        target["outcomeSignals"]=_rank_outcomes(target["outcomeSignals"],request,context)
+        target["selectedOutcome"]=target["outcomeSignals"][0] if target["outcomeSignals"] else None
         target["guiOutcomeSignals"].sort(key=lambda item:(item["path"],item["change"]))
         target["objective"]=_prompt_objective(target["path"],target.get("featureCandidate"),
             target.get("actionCandidate"),target["label"],request,target["outcomeSignals"])
