@@ -50,6 +50,29 @@ def make_parts(directory,missing=False,event=None,transport=None,request=None,
         (directory/"manifest.json").write_text(json.dumps(manifest))
 
 class ReleaseBuilderTests(unittest.TestCase):
+    def test_correlated_egg_prompt_generates_executable_trial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            event={"featureCandidate":"pets","path":"Workspace.Rendered.Chunker.Rainbow Egg.Prompt.ProximityPrompt",
+                "controlType":"ProximityPrompt.Triggered","evidenceLevel":"temporal-state-change-observed",
+                "outcomeVerified":False,"stateChanges":[{"key":"leaderstats.🥚 Hatches","before":285,"after":286}]}
+            make_parts(parts,event=event)
+            first=json.loads((parts/"1.json").read_text())
+            first["featureEvidence"]={"pets":{}}
+            first["objects"][0]={"path":event["path"],"class":"ProximityPrompt","scanOrdinal":1,
+                "interaction":{"actionText":"Hatch","objectText":"Rainbow Egg","holdDuration":0,
+                    "maxActivationDistance":10}}
+            (parts/"1.json").write_text(json.dumps(first))
+            manifest=builder.build(parts,base/"out")
+            self.assertTrue(manifest["eggAutofarmTrial"]["generated"])
+            self.assertFalse(manifest["eggAutofarmTrial"]["gameplayVerified"])
+            source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("fireproximityprompt(prompt)",source)
+            self.assertIn('_G.LycolesGameCommands={',source)
+            self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
+            self.assertTrue((base/"out"/"LycolesEggAutofarm.lua").exists())
+
+
     def test_build_and_reproducibility(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()

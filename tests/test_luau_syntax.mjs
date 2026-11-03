@@ -43,6 +43,7 @@ from release_pipeline_v104 import build, luau
 from integrated_pipeline_v106 import generate as integrated
 from integrated_pipeline_v107 import generate as identity_integrated
 from generate_admin_commands import render as admin_commands
+from generate_egg_autofarm import render as egg_autofarm
 place=85896571713843
 inspection={'placeId':place,'objects':[
  {'path':['PlayerGui','HUD','Coins'],'className':'TextLabel'},
@@ -57,6 +58,16 @@ contract={'placeId':place,'contracts':[{'id':'inspect','approved':True,'executio
 (out/'v82.luau').write_text(runner(contract,place)[0],encoding='utf-8')
 (out/'v104.luau').write_text(luau(build(inspection,place)),encoding='utf-8')
 (out/'admin.luau').write_text(admin_commands(place),encoding='utf-8')
+egg=egg_autofarm({'schemaVersion':'111.action-capabilities.1','placeId':place,
+ 'claims':{'sourceAuthenticityVerified':False,'causalityProven':False,'serverAuthorityVerified':False,
+  'runtimeVerified':False,'gameplayVerified':False,'actionOutcomesVerified':False},
+ 'eggHatching':{'automaticSingleTrialReady':True,'targets':[{
+  'label':'Rainbow Egg','path':'Workspace.Rendered.Rainbow Egg.Prompt.ProximityPrompt',
+  'controlType':'ProximityPrompt.Triggered','evidenceTier':'temporal-state-increment-observed',
+  'observedTriggers':1,'incrementObservations':1,'outcomeKeys':['leaderstats.🥚 Hatches'],
+  'causalityProven':False,'runtimeVerified':False,'gameplayVerified':False} ]}})
+(out/'egg.luau').write_text(egg,encoding='utf-8')
+(out/'egg-admin.luau').write_text(egg+'\n'+admin_commands(place),encoding='utf-8')
 integrated(inspection,place,out/'v106')
 identity_integrated({'placeId':place,'observations':[
  {'path':['Workspace','Stats','Coins'],'pathIdentity':[
@@ -77,6 +88,9 @@ identity_integrated({'placeId':place,'observations':[
     path.join(output, "v82.luau"),
     path.join(output, "v104.luau"),
     path.join(output, "admin.luau"),
+    path.join(output, "egg.luau"),
+    path.join(output, "egg-admin.luau"),
+
     path.join(output, "v106", "LycolesFunctionalObserver.client.lua"),
     path.join(output, "v107", "LycolesFunctionalObserver.client.lua"),
   ];

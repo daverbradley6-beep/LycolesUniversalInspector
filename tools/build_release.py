@@ -132,9 +132,15 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
     utility_lua=generator.render(plan,gameplay_understanding)
+    action_discovery_builder=load_module("discover_action_capabilities.py","lycoles_action_discovery")
+    action_discovery=action_discovery_builder.analyze(plan)
+    action_discovery_bytes=(json.dumps(
+        action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    egg_generator=load_module("generate_egg_autofarm.py","lycoles_egg_autofarm")
+    egg_autofarm_lua=egg_generator.render(action_discovery)
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
     admin_lua=admin_generator.render(place,gameplay_understanding)
-    lua=utility_lua+"\n"+admin_lua
+    lua=utility_lua+"\n"+(egg_autofarm_lua+"\n" if egg_autofarm_lua else "")+admin_lua
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     output.mkdir(parents=True,exist_ok=True)
@@ -147,6 +153,15 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "sha256":sha(gameplay_understanding_bytes),
             "summary":gameplay_understanding["summary"],
             "requestedCapabilityAssessment":gameplay_understanding["requestedCapabilityAssessment"]},
+        "actionCapabilities":{"artifact":"action-capabilities.json",
+            "schemaVersion":action_discovery["schemaVersion"],
+            "sha256":sha(action_discovery_bytes),
+            "eggTargets":len(action_discovery["eggHatching"]["targets"]),
+            "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+        "eggAutofarmTrial":{"artifact":"LycolesEggAutofarm.lua" if egg_autofarm_lua else None,
+            "generated":egg_autofarm_lua is not None,"runtimeVerified":False,
+            "gameplayVerified":False,"multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"]},
+
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),
@@ -200,6 +215,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "gameplay-understanding.json":gameplay_understanding_bytes,
+      "action-capabilities.json":action_discovery_bytes,
+
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
       "evidence-overlay-provenance.json":overlay_provenance_bytes,
@@ -225,6 +242,9 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
       ).encode()
     }
+    if egg_autofarm_lua is not None:
+        files["LycolesEggAutofarm.lua"]=egg_autofarm_lua.encode("utf-8")
+
     if audit_evaluation is not None:
         files["action-audit-evaluation.json"]=(json.dumps(audit_evaluation,indent=2,sort_keys=True)+"\n").encode()
     if feedback is not None:

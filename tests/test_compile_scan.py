@@ -23,6 +23,19 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(result["integrity"]["objects"],2)
             self.assertEqual(result["features"][0]["status"],"interaction-observed")
             self.assertFalse(result["releaseGate"]["gameplayAutomationApproved"])
+    def test_actionable_objects_retain_bounded_prompt_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path)
+            first=json.loads((path/"1.json").read_text())
+            first["objects"][0]={"path":"Workspace.Egg.Prompt","class":"ProximityPrompt",
+                "scanOrdinal":1,"interaction":{"actionText":"Hatch","objectText":"Rainbow Egg",
+                "holdDuration":0,"maxActivationDistance":10}}
+            (path/"1.json").write_text(json.dumps(first))
+            result=compiler.compile_scan(path)
+            self.assertEqual(result["actionableObjectCount"],1)
+            self.assertFalse(result["actionableObjectsTruncated"])
+            self.assertEqual(result["actionableObjects"][0]["interaction"]["objectText"],"Rainbow Egg")
+
     def test_missing_part(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path,missing=True)

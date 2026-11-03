@@ -84,6 +84,15 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('package authenticity, runtime, execution, and gameplay remain unverified',SRC)
         self.assertNotIn('loadstring(code)',SRC)
 
+    def test_interactions_capture_replay_relevant_control_metadata(self):
+        self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
+        self.assertIn('keyboardKeyCode=obj.KeyboardKeyCode.Name',SRC)
+        self.assertIn('gamepadKeyCode=obj.GamepadKeyCode.Name',SRC)
+        self.assertIn('anchorPosition=anchor and anchor:IsA("BasePart")',SRC)
+        self.assertIn('signal, controlType = obj.Activated, "Tool.Activated"',SRC)
+        self.assertIn('combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}',SRC)
+        self.assertIn('controlMetadata=interactionDescriptor(obj,root,label)',SRC)
+
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)

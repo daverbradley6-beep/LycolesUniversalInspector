@@ -63,6 +63,13 @@ class AdminCommandGeneratorTests(unittest.TestCase):
             module.render(123,{"schemaVersion":"110.gameplay-understanding.1","systems":[
                 {"label":"x"*161,"evidenceTier":"structural_candidate"}]})
 
+    def test_bounded_game_specific_command_extensions(self):
+        source=module.render(85896571713843)
+        self.assertIn('if type(_G.LycolesGameCommands)=="table" then',source)
+        self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
+        self.assertIn('if type(_G.LycolesGameStopAll)=="function"',source)
+        self.assertIn('if not categories[category] then categories[category]={}',source)
+
     def test_cleanup_restores_character_state(self):
         source=module.render(123)
         self.assertIn("originalCollision",source)

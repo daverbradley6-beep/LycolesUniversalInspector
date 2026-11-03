@@ -345,10 +345,15 @@ def main():
         understanding=load_local_module("lycoles_gameplay_understanding",
                                         "understand_gameplay.py").analyze(plan)
         utility_lua=render(plan,understanding)
+        discovery_builder=load_local_module("lycoles_action_discovery",
+                                             "discover_action_capabilities.py")
+        action_discovery=discovery_builder.analyze(plan)
+        egg_generator=load_local_module("lycoles_egg_autofarm","generate_egg_autofarm.py")
+        egg_autofarm_lua=egg_generator.render(action_discovery)
         admin_generator=load_local_module("lycoles_admin_commands",
                                           "generate_admin_commands.py")
         admin_lua=admin_generator.render(plan["integrity"]["placeId"],understanding)
-        lua=utility_lua+"\n"+admin_lua
+        lua=utility_lua+"\n"+(egg_autofarm_lua+"\n" if egg_autofarm_lua else "")+admin_lua
         result_builder=load_local_module("lycoles_generated_result","generated_result.py")
         generated_result=result_builder.build(plan["integrity"]["placeId"],
             plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
@@ -361,6 +366,11 @@ def main():
         (out/"LycolesAdminCommands.lua").write_text(admin_lua,encoding="utf-8")
         (out/"gameplay-understanding.json").write_text(
             json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        (out/"action-capabilities.json").write_text(json.dumps(
+            action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        if egg_autofarm_lua is not None:
+            (out/"LycolesEggAutofarm.lua").write_text(egg_autofarm_lua,encoding="utf-8")
+
         result_name="Lycoles-"+str(plan["integrity"]["placeId"])+"-generated-result.json"
         (out/result_name).write_text(json.dumps(
             generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
@@ -372,6 +382,12 @@ def main():
           "adminCommands":list(admin_generator.COMMANDS),
           "generatedResult":{"artifact":result_name,"schemaVersion":generated_result["schemaVersion"],
             "displayOnly":True,"executionAuthorized":False},
+          "actionCapabilities":{"artifact":"action-capabilities.json",
+            "schemaVersion":action_discovery["schemaVersion"],
+            "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+          "eggAutofarmTrial":{"generated":egg_autofarm_lua is not None,
+            "runtimeVerified":False,"gameplayVerified":False,
+            "multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"]},
           "gameplayUnderstanding":{"artifact":"gameplay-understanding.json",
             "schemaVersion":understanding["schemaVersion"],"summary":understanding["summary"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,

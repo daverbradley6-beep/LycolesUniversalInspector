@@ -297,8 +297,12 @@ register("help",{category="Information",description="Show command description an
         if not command then return false,"Usage: ;help [command]" end
         return true,PREFIX..name.." "..command.arguments.." — "..command.description
     end})
-register("stopall",{category="Session",description="Stop Lycoles movement utilities and restore state",arguments="",availability=available,
-    run=function() stopAll() return true,"Lycoles local utilities stopped" end})
+register("stopall",{category="Session",description="Stop all Lycoles movement and game utilities",arguments="",availability=available,
+    run=function()
+        stopAll()
+        if type(_G.LycolesGameStopAll)=="function" then pcall(_G.LycolesGameStopAll) end
+        return true,"Lycoles local utilities stopped"
+    end})
 register("hidegui",{category="Interface",description="Toggle generated utility panels; command bar remains available",arguments="",availability=available,
     run=function()
         featureState.hidden=not featureState.hidden
@@ -310,6 +314,18 @@ register("hidegui",{category="Interface",description="Toggle generated utility p
         refreshCommandRows()
         return true,featureState.hidden and "Generated GUI hidden" or "Generated GUI visible"
     end})
+if type(_G.LycolesGameCommands)=="table" then
+    for name,definition in pairs(_G.LycolesGameCommands) do
+        if type(name)=="string" and name:match("^[a-z][a-z0-9]*$") and #name<=24
+            and type(definition)=="table" and type(definition.category)=="string"
+            and definition.category:match("^Game[:%w%s%-]+$") and #definition.category<=40
+            and type(definition.description)=="string" and #definition.description<=120
+            and type(definition.arguments)=="string" and #definition.arguments<=80
+            and type(definition.availability)=="function" and type(definition.run)=="function" then
+            register(name,definition)
+        end
+    end
+end
 table.sort(commandNames)
 local function execute(raw)
     raw=tostring(raw or ""):match("^%s*(.-)%s*$")
@@ -359,8 +375,18 @@ refreshCommandRows=function()
     end
 end
 local categories={Movement={},Information={},Session={},Interface={}}
-for _,name in ipairs(commandNames) do table.insert(categories[commands[name].category],name) end
-for _,category in ipairs({"Movement","Information","Session","Interface"}) do
+local categoryNames={"Movement","Information","Session","Interface"}
+for _,name in ipairs(commandNames) do
+    local category=commands[name].category
+    if not categories[category] then categories[category]={} table.insert(categoryNames,category) end
+    table.insert(categories[category],name)
+end
+table.sort(categoryNames,function(a,b)
+    local ag=a:sub(1,5)=="Game:" local bg=b:sub(1,5)=="Game:"
+    if ag~=bg then return not ag end
+    return a<b
+end)
+for _,category in ipairs(categoryNames) do
     local header=Instance.new("TextLabel")
     header.Size=UDim2.new(1,-8,0,30)
     header.BackgroundColor3=Color3.fromRGB(38,46,58)

@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.4.0
+-- Lycoles Universal Inspector v30.5.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.4.0"
+local VERSION = "30.5.0"
 
 local endpoint = ""
 local autoSend = true
@@ -118,7 +118,7 @@ local FEATURE_TERMS = {
  rebirth={"rebirth"}, pets={"pet","hatch","egg"},
  shops={"shop","purchase","store","sell","upgrade"}, travel={"teleport","portal"},
  bosses={"boss","arena"}, quests={"quest","mission"},
- combat={"combat","attack","damage"}, inventory={"inventory","equip"},
+ combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
 }
 -- Readiness is evidence-based: discovery never implies a working feature.
@@ -1871,6 +1871,37 @@ local function relevantActionEvidence(feature, workflow, changes)
         serverVerified=false,causalVerification=false,confidence="temporal-observation"}
 end
 
+local function interactionDescriptor(obj,root,label)
+    if obj:IsA("ProximityPrompt") then
+        local anchor=obj.Parent
+        for _=1,5 do
+            if not anchor or anchor:IsA("BasePart") then break end
+            anchor=anchor.Parent
+        end
+        return {actionText=tostring(obj.ActionText):sub(1,120),
+            objectText=tostring(obj.ObjectText):sub(1,120),enabled=obj.Enabled,
+            holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance,
+            keyboardKeyCode=obj.KeyboardKeyCode.Name,gamepadKeyCode=obj.GamepadKeyCode.Name,
+            anchorPath=anchor and watchPath(anchor,root,label) or nil,
+            anchorPosition=anchor and anchor:IsA("BasePart") and watchVec(anchor.Position) or nil}
+    end
+    if obj:IsA("GuiButton") then
+        local text="" local interactable=nil
+        pcall(function() text=obj.Text end)
+        pcall(function() interactable=obj.Interactable end)
+        return {text=tostring(text):sub(1,100):gsub("[%c]"," "),
+            active=obj.Active,visible=obj.Visible,interactable=interactable}
+    end
+    if obj:IsA("ClickDetector") then
+        return {maxActivationDistance=obj.MaxActivationDistance}
+    end
+    if obj:IsA("Tool") then
+        return {tooltip=tostring(obj.ToolTip):sub(1,120),requiresHandle=obj.RequiresHandle,
+            canBeDropped=obj.CanBeDropped}
+    end
+    return nil
+end
+
 local function observeInteractionObject(obj, root, label)
     if interactionObserved[obj] then return end
     local path = watchPath(obj, root, label)
@@ -1882,6 +1913,8 @@ local function observeInteractionObject(obj, root, label)
         signal, controlType = obj.Triggered, "ProximityPrompt.Triggered"
     elseif obj:IsA("ClickDetector") then
         signal, controlType = obj.MouseClick, "ClickDetector.MouseClick"
+    elseif obj:IsA("Tool") then
+        signal, controlType = obj.Activated, "Tool.Activated"
     end
     if not signal then return end
     interactionObserved[obj] = true
@@ -1912,6 +1945,7 @@ local function observeInteractionObject(obj, root, label)
             attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
+            controlMetadata=interactionDescriptor(obj,root,label),
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
@@ -1952,6 +1986,7 @@ local function observeInteractionObject(obj, root, label)
             featureCandidate = feature, featureMatchCount = matchCount,
             attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
+            controlMetadata=historyItem.controlMetadata,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }

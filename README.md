@@ -1,6 +1,6 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.4.0**
+Current inspector release: **v30.5.0**
 
 Current integrated offline pipeline: **v108**
 
@@ -16,6 +16,7 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 - v109 manifest readiness analysis explains upload ambiguity, interaction evidence, outcome-candidate lower bounds, missing multipart data, and generation blockers without treating the local manifest as a full report.
 - v110 composes multiple concurrent gameplay-system candidates, observed resources/actions, temporal relationships, loop candidates, objective candidates, automation opportunities, and request blockers. It deliberately reports no single genre and no verified gameplay mechanics.
 - Generated utilities include a reusable **Admin Commands** section and `;` command bar for local client utilities (`fly`, `noclip`, `tp`, `goto`, `speed`, `jump`, `coords`, evidence-backed `systems`/`readiness`, `reset`, `rejoin`, `stopall`, and help/GUI controls). GUI and command controls share state and cleanup. Actual generated Luau is exercised in bounded client stubs for state changes, cleanup, respawn continuity, and place guarding; this remains simulated evidence, game restrictions may override local effects, and no server administrator privilege is implied.
+- v30.5 retains bounded actionable prompt/GUI/Tool metadata and compiles composable action surfaces. A ProximityPrompt interaction followed by an increased hatch/egg state key can produce a place-bound egg runtime trial with target selection, automatic teleport, one start/stop toggle, fail-closed outcome monitoring, and shared `;egg*` Admin Commands. It uses executor-provided `fireproximityprompt` only when available, never invokes discovered remotes, and remains explicitly unverified until permitted live execution records the expected outcome. Multi mode is withheld unless a distinct multi-hatch target has equivalent observed state evidence. The generated single-target loop is executed in bounded official-Luau stubs for resolution, teleport, activation, outcome observation, and cleanup; this remains simulation rather than Roblox runtime or gameplay verification.
 - v107 full-path class/ordinal identity, fail-closed legacy migration, generated read-only Luau observer controls, strict artifact verification, and deterministic synthetic resolver modeling.
 - Versioned per-feature contracts linking canonical observation digests to observed facts, bounded inferences, runtime checks, success/failure conditions, verification status, and explicit unknowns.
 - A pinned, bounded snapshot of Roblox's public Studio API dump verifies every emitted class member and supported read property, while separately listing globals outside the dump.
@@ -40,7 +41,7 @@ The Python tools currently use only the standard library. The Node suite exercis
 python3 tools/build_release.py ./scan-parts --output ./build
 ```
 
-The builder rejects incomplete or inconsistent multipart input and keeps executable output limited to explicitly reviewed, supported, client-local read operations. Complete v30.1 parts preserve validated observable outcome candidates and feature-state/GUI correlation counts in `capability-plan.json`, `workflow-specs.json`, `release-manifest.json`, and `implementation-review.md`; those correlations never establish causality, outcome verification, replayability, server authority, or automatic execution. `source-provenance.json` records whether the baseline was a direct local multipart directory or a validated receiver import. Imported part bytes are rechecked against the receiver-manifest digests before those statuses reach `capability-plan.json`, the release manifest, bundled README, or generated Features panel. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
+The builder rejects incomplete or inconsistent multipart input. Read-only operations still require reviewed supported contracts; v30.5 can additionally emit a narrowly bounded ProximityPrompt egg trial only when an exact observed prompt path has a temporal hatch/egg counter increment, and reports that trial as runtime/gameplay unverified. Complete v30.1 parts preserve validated observable outcome candidates and feature-state/GUI correlation counts in `capability-plan.json`, `workflow-specs.json`, `release-manifest.json`, and `implementation-review.md`; those correlations never establish causality, outcome verification, replayability, server authority, or automatic execution. `source-provenance.json` records whether the baseline was a direct local multipart directory or a validated receiver import. Imported part bytes are rechecked against the receiver-manifest digests before those statuses reach `capability-plan.json`, the release manifest, bundled README, or generated Features panel. See `CHANGELOG.md` for v30 provenance and per-feature verification details.
 
 ### Retrieve verified receiver parts
 
@@ -142,7 +143,7 @@ python3 tools/generate_script.py build/capability-plan.json --output build/gener
 python3 -m unittest discover -s tests -v
 ```
 
-Outputs: `LycolesGeneratedUtility.lua`, standalone `LycolesAdminCommands.lua`, `gameplay-understanding.json`, and `release-manifest.json`. The combined utility contains safe client-side diagnostics and local utility commands, and lists gameplay systems as unimplemented candidates. Command wiring is statically checked but not live Roblox verified. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
+Outputs: `LycolesGeneratedUtility.lua`, standalone `LycolesAdminCommands.lua`, `gameplay-understanding.json`, `action-capabilities.json`, and `release-manifest.json`; `LycolesEggAutofarm.lua` is added only for a correlated egg prompt target. The combined utility contains client-side diagnostics, shared local commands, and any gated runtime trial. Command wiring and Luau syntax are checked but not live Roblox verified. This is a working generation stage, **not** a system that can infer or implement arbitrary server-authoritative gameplay features from read-only scans.
 
 ## v10 one-command release build
 

@@ -259,6 +259,16 @@ def compile_scan(directory):
     counts=collections.Counter(str(o.get("class","Unknown")) for o in objects)
     paths=collections.Counter((str(o.get("path","")),str(o.get("scanOrdinal",""))) for o in objects)
     if any(not o.get("path") for o in objects): fail("Object missing path")
+    actionable_classes={"ProximityPrompt","ClickDetector","TextButton","ImageButton","Tool"}
+    actionable=[]
+    actionable_total=0
+    for obj in objects:
+        if obj.get("class") not in actionable_classes:continue
+        actionable_total+=1
+        if len(actionable)>=20_000:continue
+        actionable.append({key:obj[key] for key in (
+            "path","class","scanOrdinal","interaction","guiControl","position","size","tool")
+            if key in obj})
     duplicate_count=sum(v-1 for v in paths.values())
     if duplicate_count:
         fail(f"Duplicate object identities: {duplicate_count}")
@@ -311,6 +321,8 @@ def compile_scan(directory):
               "snapshotId":metadata.get("snapshotId")},
           "interactionDiagnostics":metadata.get("interactionDiagnostics") or {},
           "observedInteractionHistory":history,
+          "actionableObjects":actionable,"actionableObjectCount":actionable_total,
+          "actionableObjectsTruncated":actionable_total>len(actionable),
           "releaseGate":{"gameplayAutomationApproved":False,
                          "reason":"Passive inspection cannot establish replayable server-authoritative actions",
                          "nextStep":"Review feature contracts and validate supported operations in a permitted environment"}}
