@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Evidence-backed command readiness
+
+- Pushed `17a9f5c6f3c4cfaaab97354d15a746fde1678385` (`Expose evidence readiness in generated commands`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
+- Added informational `;systems` and `;readiness` commands to generated Admin Commands. Release and standalone generation pass their deterministic v110 artifact so users can inspect up to six explicitly unverified system candidates and up to eight requested-capability blockers from the same command surface.
+- Missing v110 input remains explicit; missing capability requests report that no request was supplied. Readiness always reports `implementation ready: false`, does not expose user request text as evidence, and introduces no gameplay action or remote invocation.
+- Embedded labels, tiers, statuses, and blockers are type/length bounded and JSON-escaped. Malformed shapes, oversized values, and internal substitution sentinels fail closed.
+- The bounded actual-Luau simulator now executes both informational commands in addition to movement, cleanup, respawn, GUI submission, and place-guard checks.
+- Final local gate: **1,393 Python tests passed** with actual pinned Luau enabled; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed. A post-hardening focused integration gate passed all **32** relevant tests.
+- All **18** GitHub workflows for controlled-runtime implementation commit `42093cd` completed successfully. CI for `17a9f5c` was 4 running and 14 queued at the latest check, with no failures.
+- Next priorities: verify final `17a9f5c` CI, then add per-part content hashes at inspector upload/receiver storage to establish exact local-to-receiver payload equivalence before connecting imported evidence to unified in-game result presentation.
+
 ## Update — 2026-11-02 — Controlled Admin Commands execution
 
 - Pushed `42093cd07e8702b91bf5d132b1ea62706326337c` (`Validate generated commands in bounded Luau`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
@@ -87,16 +98,16 @@
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
 - Next priorities: add per-part content hashes at inspector upload/receiver storage to establish payload equivalence; add resumable large-report retrieval; then connect imported evidence to the unified Inspector/Generated Script GUI without weakening reviewed-action gates.
 
-_Last updated: 2026-11-02 — controlled Admin Commands execution_
+_Last updated: 2026-11-02 — evidence-backed command readiness_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `42093cd` (`Validate generated commands in bounded Luau`)
-- Implementation head: full SHA `42093cd07e8702b91bf5d132b1ea62706326337c`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **43 commits ahead, 0 behind**
-- Implementation-head CI: 4 of **18** workflows running and 14 queued at the latest check; none failed and final CI is pending.
+- Latest implementation commit: `17a9f5c` (`Expose evidence readiness in generated commands`)
+- Implementation head: full SHA `17a9f5c6f3c4cfaaab97354d15a746fde1678385`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **45 commits ahead, 0 behind**
+- Implementation-head CI: 4 of **18** workflows running and 14 queued at the latest check; none failed and final CI is pending. All **18** workflows for preceding controlled-runtime commit `42093cd` succeeded.
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
