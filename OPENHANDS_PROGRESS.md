@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Unified evidence handoff status
+
+- Pushed `60eeb1d3baaf14a735ea01c207b8009a80134f1a` (`Surface evidence handoff in generated script tab`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
+- The in-game Generated Script tab now tracks the current scan ID and numbered-part count through scan completion, upload blocking/start/completion, and local report export. This connects the existing Inspector and Generated Script tabs without attempting in-game gameplay generation.
+- Capability request text is explicitly labeled `Request (not evidence)`. Local export status/counts, receiver ACK counts, pending offline compilation/static validation, unverified receiver integrity, and unverified gameplay remain visible as distinct states.
+- The summary also appears for ordinary scans without a capability request, so users can determine whether a complete evidence package exists before offline generation. It does not claim downstream report availability, authenticity, server authority, or action success.
+- Final local gate: **1,395 Python tests passed** with actual pinned Luau enabled; receiver checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed. Focused handoff/transport coverage passed all **30** tests.
+- All **18** GitHub workflows for complete-export implementation commit `781c06f` completed successfully. CI for `60eeb1d` was 2 running and 16 queued at the latest check, with no failures.
+- Next priorities: verify final `60eeb1d` CI, then define a fail-closed, provenance-bearing format for loading offline generated/validated results into the Generated Script tab; execution must remain explicit and unavailable unless validation and place identity pass.
+
 ## Update — 2026-11-02 — Complete local multipart report export
 
 - Pushed `781c06fb31b032a4d7aec764e29de9147c2dc952` (`Export complete multipart inspection reports`) to `origin/openhands-development`; exact local/remote SHA equality was confirmed.
@@ -106,18 +116,18 @@
 - Final gate: **1,349 Python tests passed** with the pinned official Luau runtime; Worker checks passed; **3 Node/Luau parser tests passed**; Python compilation and `git diff --check` passed.
 - Evidence boundary: retrieval integrity means every receiver part was downloaded and passed local structure/accounting/compiler checks. It does not establish byte equivalence with an earlier local payload, saved-response authenticity, causality, server authority, replayability, action success, or live gameplay verification.
 - The checked-in Worker now exposes `/metadata`, but repository changes do not deploy Cloudflare infrastructure. Older deployments return 404 until an authorized operator updates the Worker. No production credentials or infrastructure were changed.
-- Next priority: connect complete local/receiver evidence handoff status to the unified Inspector/Generated Script GUI without weakening offline compilation, source-provenance, or reviewed-action gates.
+- Next priority: define a fail-closed, provenance-bearing generated-result import format for the in-game Generated Script tab; validated code display and any explicit execution control must remain distinct from gameplay verification.
 
-_Last updated: 2026-11-02 — complete local multipart report export_
+_Last updated: 2026-11-02 — unified evidence handoff status_
 
 ## Repository State
 
 - Workspace: `/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441`
 - Branch: `openhands-development`
-- Latest implementation commit: `781c06f` (`Export complete multipart inspection reports`)
-- Implementation head: full SHA `781c06fb31b032a4d7aec764e29de9147c2dc952`, confirmed on `origin/openhands-development`
-- Implementation snapshot relative to `origin/main`: **47 commits ahead, 0 behind**
-- Implementation-head CI: 3 of **18** workflows running and 15 queued at the latest check; none failed and final CI is pending. All **18** workflows for preceding evidence-command commit `17a9f5c` succeeded.
+- Latest implementation commit: `60eeb1d` (`Surface evidence handoff in generated script tab`)
+- Implementation head: full SHA `60eeb1d3baaf14a735ea01c207b8009a80134f1a`, confirmed on `origin/openhands-development`
+- Implementation snapshot relative to `origin/main`: **49 commits ahead, 0 behind**
+- Implementation-head CI: 2 of **18** workflows running and 16 queued at the latest check; none failed and final CI is pending. All **18** workflows for preceding complete-export commit `781c06f` succeeded.
 - The supplied recovery handover and raw live manifest remain local, untracked inputs; only the sanitized regression fixture is committed
 - Follow-up progress-only commits intentionally do not embed their own self-referential SHA
 - Remote policy: push only `openhands-development`; never modify or merge `main`
