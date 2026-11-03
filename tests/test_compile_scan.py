@@ -36,6 +36,27 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertFalse(result["actionableObjectsTruncated"])
             self.assertEqual(result["actionableObjects"][0]["interaction"]["objectText"],"Rainbow Egg")
 
+    def test_interaction_path_identity_is_validated_and_preserved(self):
+        identity=[{"name":"Workspace","className":"Workspace","ordinal":1},
+            {"name":"Egg.With.Dot","className":"Model","ordinal":2},
+            {"name":"Prompt","className":"ProximityPrompt","ordinal":1}]
+        event={"path":"Workspace.Egg.With.Dot.Prompt","pathIdentity":identity,
+            "controlType":"ProximityPrompt.Triggered","featureCandidate":"pets",
+            "evidenceLevel":"interaction-observed","outcomeVerified":False}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path,event=event)
+            result=compiler.compile_scan(path)
+            self.assertEqual(result["observedInteractionHistory"][0]["pathIdentity"],identity)
+            event["pathIdentity"][1]["ordinal"]=0
+            self.parts(path,event=event)
+            with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
+                compiler.compile_scan(path)
+            event["pathIdentity"][1].update(name="Other",ordinal=2)
+            self.parts(path,event=event)
+            with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
+                compiler.compile_scan(path)
+
+
     def test_missing_part(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path,missing=True)

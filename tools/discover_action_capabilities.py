@@ -27,6 +27,18 @@ def _event_changes(event):
                 if identity not in seen:seen.add(identity);result.append(change)
     return result
 
+def _path_identity(value):
+    if not isinstance(value,list) or not 1<=len(value)<=21:return None
+    result=[]
+    for segment in value:
+        if not isinstance(segment,dict):return None
+        name=segment.get("name");class_name=segment.get("className");ordinal=segment.get("ordinal")
+        if (not isinstance(name,str) or not 1<=len(name)<=100 or not isinstance(class_name,str)
+                or not 1<=len(class_name)<=100 or type(ordinal) is not int or not 1<=ordinal<=10000):return None
+        result.append({"name":name,"className":class_name,"ordinal":ordinal})
+    return result
+
+
 
 def _label(path,metadata):
     interaction=metadata.get("interaction") if isinstance(metadata,dict) else None
@@ -62,8 +74,12 @@ def analyze(plan):
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
         path=event.get("path");control=event.get("controlType")
         if not isinstance(path,str) or not SAFE_PATH.fullmatch(path) or not isinstance(control,str):continue
+        identity=_path_identity(event.get("pathIdentity")) if "pathIdentity" in event else None
+        if ("pathIdentity" in event and (identity is None
+                or ".".join(segment["name"] for segment in identity)!=path)):
+            raise ValueError("Malformed interaction path identity")
         changes=_event_changes(event)
-        observed_actions.append({"path":path,"controlType":control,
+        observed_actions.append({"path":path,"pathIdentity":identity,"controlType":control,
             "featureCandidate":event.get("featureCandidate"),
             "actionCandidate":(event.get("workflow") or {}).get("action")
                 if isinstance(event.get("workflow"),dict) else None,
@@ -80,6 +96,7 @@ def analyze(plan):
                 "outcomeKeys":[],"evidenceTier":"interaction-observed",
                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
             if event_metadata:target["promptMetadata"]=event_metadata
+            if identity:target["pathIdentity"]=identity
             target["observedTriggers"]+=1
             if hatch_changes:
                 target["incrementObservations"]+=1

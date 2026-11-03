@@ -29,7 +29,7 @@ local replicatedStorage=newInstance("ReplicatedStorage","ReplicatedStorage");ser
 function game:FindFirstChild(name) if name=="Workspace" then return workspace elseif name=="ReplicatedStorage" then return replicatedStorage end end
 local rendered=newInstance("Folder","Rendered");rendered.Parent=workspace
 local chunker=newInstance("Folder","Chunker");chunker.Parent=rendered
-local egg=newInstance("Model","Rainbow Egg");egg.Parent=chunker
+local egg=newInstance("Model","Rainbow.Egg");egg.Parent=chunker
 local anchor=newInstance("Part","Anchor");anchor.CFrame=CFrame.new(20,4,30);anchor.Parent=egg
 local promptFolder=newInstance("Folder","Prompt");promptFolder.Parent=egg
 local prompt=newInstance("ProximityPrompt","ProximityPrompt");prompt.MaxActivationDistance=10;prompt.Parent=promptFolder
@@ -74,7 +74,14 @@ def discovery(place_id):
             "serverAuthorityVerified":False,"runtimeVerified":False,
             "gameplayVerified":False,"actionOutcomesVerified":False},
         "eggHatching":{"automaticSingleTrialReady":True,"targets":[{
-            "label":"Rainbow Egg","path":"Workspace.Rendered.Chunker.Rainbow Egg.Prompt.ProximityPrompt",
+            "label":"Rainbow.Egg","path":"Workspace.Rendered.Chunker.Rainbow.Egg.Prompt.ProximityPrompt",
+            "pathIdentity":[
+                {"name":"Workspace","className":"Workspace","ordinal":1},
+                {"name":"Rendered","className":"Folder","ordinal":1},
+                {"name":"Chunker","className":"Folder","ordinal":1},
+                {"name":"Rainbow.Egg","className":"Model","ordinal":1},
+                {"name":"Prompt","className":"Folder","ordinal":1},
+                {"name":"ProximityPrompt","className":"ProximityPrompt","ordinal":1}],
             "controlType":"ProximityPrompt.Triggered","observedTriggers":1,
             "incrementObservations":1,"outcomeKeys":["leaderstats.🥚 Hatches"],
             "evidenceTier":"temporal-state-increment-observed","causalityProven":False,

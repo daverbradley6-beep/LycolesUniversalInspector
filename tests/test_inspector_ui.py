@@ -86,6 +86,8 @@ class InspectorUITests(unittest.TestCase):
 
     def test_interactions_capture_replay_relevant_control_metadata(self):
         self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
+        self.assertIn('local function interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('pathIdentity=interactionPathIdentity(obj,root,label)',SRC)
         self.assertIn('keyboardKeyCode=obj.KeyboardKeyCode.Name',SRC)
         self.assertIn('gamepadKeyCode=obj.GamepadKeyCode.Name',SRC)
         self.assertIn('anchorPosition=anchor and anchor:IsA("BasePart")',SRC)

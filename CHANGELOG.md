@@ -1,7 +1,7 @@
 ## v30.5.0 — Actionable gameplay discovery and egg autofarm trials
 
 - Preserve bounded prompt, GUI-control, ClickDetector, and Tool metadata from complete multipart scans for downstream action discovery without retaining the full object inventory in generated plans.
-- Capture prompt labels, keys, activation distance, hold duration, nearest anchor, GUI button labels, and passive `Tool.Activated` events in interaction evidence.
+- Capture prompt labels, keys, activation distance, hold duration, nearest anchor, GUI button labels, passive `Tool.Activated` events, and bounded class/name/sibling-ordinal component identities in interaction evidence.
 - Discover the live Bubble Gum Simulator INFINITY Rainbow Egg prompt and its temporal `🥚 Hatches` increment as an evidence-backed runtime trial target; causality, runtime success, and gameplay success remain false.
 - Generate a place-bound egg autofarm trial with egg selection, automatic teleport to the observed prompt, a single start/stop toggle, three-failure shutdown, and before/after hatch-counter reporting.
 - Keep Multi mode unavailable unless a distinct multi-hatch prompt also has an observed hatch/egg counter increment; observed Auto/Multi GUI controls remain non-executable candidates until a permitted replay mechanism is established.

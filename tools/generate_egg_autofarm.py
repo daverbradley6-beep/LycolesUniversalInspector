@@ -7,6 +7,23 @@ def _quote(value):
     return json.dumps(str(value),ensure_ascii=False)
 
 
+def _identity_lua(value):
+    if value is None:return "nil"
+    if not isinstance(value,list) or not 2<=len(value)<=21:raise ValueError("Malformed correlated egg target")
+    segments=[]
+    for segment in value:
+        if not isinstance(segment,dict):raise ValueError("Malformed correlated egg target")
+        name=segment.get("name");class_name=segment.get("className");ordinal=segment.get("ordinal")
+        if (not isinstance(name,str) or not 1<=len(name)<=100 or not isinstance(class_name,str)
+                or not 1<=len(class_name)<=100 or type(ordinal) is not int or not 1<=ordinal<=10000):
+            raise ValueError("Malformed correlated egg target")
+        segments.append("{name="+_quote(name)+",className="+_quote(class_name)+",ordinal="+str(ordinal)+"}")
+    if value[0]["name"] not in ("Workspace","LocalPlayer","ReplicatedStorage","Players"):
+        raise ValueError("Malformed correlated egg target")
+    if value[-1]["className"]!="ProximityPrompt":raise ValueError("Malformed correlated egg target")
+    return "{"+",".join(segments)+"}"
+
+
 def render(discovery):
     if not isinstance(discovery,dict) or discovery.get("schemaVersion")!="111.action-capabilities.1":
         raise ValueError("Action capability discovery required")
@@ -31,11 +48,11 @@ def render(discovery):
             raise ValueError("Malformed correlated egg target")
         metadata=json.dumps(item.get("promptMetadata",{}),ensure_ascii=False).lower()
         multi=any(token in (label+" "+metadata).lower() for token in ("multi","triple","x3","3 egg","three"))
-        targets.append((label,path,keys[0],multi))
+        targets.append((label,path,keys[0],multi,_identity_lua(item.get("pathIdentity"))))
     if not targets:return None
     target_rows="\n".join("    {label="+_quote(label)+",path="+_quote(path)+
-        ",outcome="+_quote(outcome)+",multi="+("true" if multi else "false")+"},"
-        for label,path,outcome,multi in targets)
+        ",outcome="+_quote(outcome)+",multi="+("true" if multi else "false")+
+        ",identity="+identity+"}," for label,path,outcome,multi,identity in targets)
     source=r'''-- Evidence-bounded egg autofarm trial; counter changes are observed, not causal proof.
 do
 assert(game.PlaceId == __PLACE_ID__, "Incorrect Roblox place")
@@ -80,10 +97,25 @@ status.TextWrapped=true status.Text="Stopped. Runtime and gameplay remain unveri
 local function split(path)
     local result={} for value in string.gmatch(path,"[^%.]+") do table.insert(result,value) end return result
 end
-local function resolve(path)
-    local parts=split(path)
+local function resolve(target)
     local roots={Workspace=workspace,LocalPlayer=player,
         ReplicatedStorage=game:GetService("ReplicatedStorage"),Players=Players}
+    if target.identity then
+        local current=roots[target.identity[1].name]
+        if not current then return nil,"Unsupported root "..tostring(target.identity[1].name) end
+        for index=2,#target.identity do
+            local expected=target.identity[index] local count=0 local found=nil
+            for _,child in ipairs(current:GetChildren()) do
+                if child.Name==expected.name and child.ClassName==expected.className then
+                    count=count+1 if count==expected.ordinal then found=child break end
+                end
+            end
+            if not found then return nil,"Missing identity segment "..expected.name end
+            current=found
+        end
+        return current,nil
+    end
+    local parts=split(target.path)
     local current=roots[parts[1]]
     if not current then return nil,"Unsupported root "..tostring(parts[1]) end
     for index=2,#parts do
@@ -142,7 +174,7 @@ end
 local function activateOnce()
     local target=currentTarget()
     if not target then return false,"No evidence-backed target for mode" end
-    local prompt,err=resolve(target.path)
+    local prompt,err=resolve(target)
     if not prompt or not prompt:IsA("ProximityPrompt") then return false,err or "Target is not a ProximityPrompt" end
     if type(fireproximityprompt)~="function" then return false,"fireproximityprompt unavailable in this environment" end
     local moved,moveError=teleportTo(prompt)

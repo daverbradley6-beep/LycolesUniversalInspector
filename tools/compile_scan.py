@@ -74,6 +74,18 @@ _RECEIVER_MARKERS={
     "receiverResponseAuthenticityVerified","localPayloadEquivalent",
 }
 
+def bounded_path_identity(value):
+    if not isinstance(value,list) or not 1<=len(value)<=21:return None
+    result=[]
+    for segment in value:
+        if not isinstance(segment,dict):return None
+        name=segment.get("name");class_name=segment.get("className");ordinal=segment.get("ordinal")
+        if (not isinstance(name,str) or not 1<=len(name)<=100 or not isinstance(class_name,str)
+                or not 1<=len(class_name)<=100 or type(ordinal) is not int or not 1<=ordinal<=10000):return None
+        result.append({"name":name,"className":class_name,"ordinal":ordinal})
+    return result
+
+
 
 def _local_source_provenance(scan_id,place_id,part_count):
     return {
@@ -246,6 +258,13 @@ def compile_scan(directory):
         history=(metadata.get("interactionDiagnostics") or {}).get("recentInteractions") or []
     if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
     if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
+    for event in history:
+        if "pathIdentity" in event:
+            identity=bounded_path_identity(event["pathIdentity"])
+            if (identity is None or not isinstance(event.get("path"),str)
+                    or ".".join(segment["name"] for segment in identity)!=event["path"]):
+                fail("Malformed interaction path identity")
+            event["pathIdentity"]=identity
     history_evidence=[(event,_correlation_evidence(event)) for event in history]
     feature_evidence=metadata.get("featureEvidence") or {}
     readiness=metadata.get("featureReadiness") or {}

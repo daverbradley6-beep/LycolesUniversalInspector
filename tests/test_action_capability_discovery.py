@@ -48,6 +48,25 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Malformed correlated egg target"):
             generator.render(result)
 
+    def test_component_identity_reaches_generated_resolver(self):
+        plan=self.real_plan()
+        event=next(item for item in plan["observedInteractionHistory"]
+            if item.get("controlType")=="ProximityPrompt.Triggered")
+        event["path"]="Workspace.Rendered.Chunker.Rainbow.Egg.Prompt.ProximityPrompt"
+        event["pathIdentity"]=[{"name":"Workspace","className":"Workspace","ordinal":1},
+            {"name":"Rendered","className":"Folder","ordinal":1},
+            {"name":"Chunker","className":"Folder","ordinal":1},
+            {"name":"Rainbow.Egg","className":"Model","ordinal":2},
+            {"name":"Prompt","className":"Folder","ordinal":1},
+            {"name":"ProximityPrompt","className":"ProximityPrompt","ordinal":1}]
+        result=discovery.analyze(plan)
+        target=next(item for item in result["eggHatching"]["targets"] if item.get("pathIdentity"))
+        self.assertEqual(target["pathIdentity"][3]["name"],"Rainbow.Egg")
+        source=generator.render(result)
+        self.assertIn('name="Rainbow.Egg",className="Model",ordinal=2',source)
+        self.assertIn("for _,child in ipairs(current:GetChildren())",source)
+
+
     def test_name_only_prompt_does_not_generate_execution(self):
         plan=self.real_plan();plan["observedInteractionHistory"]=[]
         plan["actionableObjects"]=[{"path":"Workspace.Eggs.Basic Egg.Prompt",

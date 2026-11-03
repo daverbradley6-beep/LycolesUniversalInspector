@@ -1232,6 +1232,30 @@ local function watchPath(obj, root, label)
     if current ~= root then return nil end
     return label .. "." .. table.concat(names, ".")
 end
+local function interactionPathIdentity(obj,root,label)
+    local identity,current={},obj
+    while current and current~=root and #identity<20 do
+        local ordinal=1
+        local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        table.insert(identity,1,{name=tostring(current.Name):sub(1,100),
+            className=tostring(current.ClassName):sub(1,100),ordinal=ordinal})
+        current=parent
+    end
+    if current~=root then return nil end
+    table.insert(identity,1,{name=tostring(label):sub(1,100),
+        className=tostring(root.ClassName):sub(1,100),ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>400 then return nil end
+    return identity
+end
+
+
 
 local function watchVec(v)
     return {x = math.floor(v.X * 100) / 100,
@@ -1941,8 +1965,8 @@ local function observeInteractionObject(obj, root, label)
             attributedInteractionCount=attributedInteractionCount+1
         end
         local historyItem = {
-            path=path:sub(1,400), featureCandidate=feature,
-            attribution=attributionSource, controlType=controlType,
+            path=path:sub(1,400), pathIdentity=interactionPathIdentity(obj,root,label),
+            featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
             controlMetadata=interactionDescriptor(obj,root,label),
@@ -1982,7 +2006,7 @@ local function observeInteractionObject(obj, root, label)
         observationSequence = observationSequence + 1
         changeCount = changeCount + 1
         changeQueue[#changeQueue + 1] = {
-            path = path:sub(1,400), class = obj.ClassName,
+            path = path:sub(1,400), pathIdentity=historyItem.pathIdentity, class = obj.ClassName,
             featureCandidate = feature, featureMatchCount = matchCount,
             attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
