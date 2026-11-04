@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Integrated generated workflow feedback
+
+- Completed implementation commit `9063889` (`Integrate workflow feedback results`) and released inspector patch **v30.5.2** on `openhands-development`.
+- Fixed an end-to-end compatibility gap: the Python result packager accepted `mixed-action-workflow-trial`, but the in-game Generated Script loader rejected that capability kind and would attempt to display absent single-action fields. The inspector now validates and displays exact mixed workflows.
+- Schema 113 loading now fail-closes on inconsistent workflow selection, selected capability identity, execution mode, 64-step bound, step kinds/paths, request terms/score, operator-start semantics, or positive runtime/gameplay/causality/action-outcome claims.
+- Digest-bound guided feedback is accepted through 64 steps only when its candidate matches the selected generated workflow. Summary and per-step counts, statuses, scalar types, sequence order, conflicts, and all-negative claims are validated before display. The Generated Script tab shows the workflow and up to four deterministic per-step status/error summaries; feedback remains explicitly informational-only.
+- Full local gate passed: **1,522 Python tests** with pinned official Luau 0.744 enabled; receiver integrity and Luau parser suite passed (**3/3**); Python compilation, credential-pattern, and whitespace gates passed.
+- No imported code is executed. No live Roblox session, package authenticity, runtime behavior, gameplay, causality, server authority, or action outcome was verified.
+- Next priority: improve the inspector’s workflow feedback export/import ergonomics and evaluate item 6 interaction-attribution gaps using synthetic multipart evidence while preserving strict observational boundaries.
+
 ## Update — 2026-11-02 — Flexible bounded workflow execution
 
 - Completed implementation commit `9ad5185` (`Extend bounded workflow execution`) on `openhands-development`.
