@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Exact GUI reveal followup episodes
+
+- Completed implementation commit `4c5c777` (`Add evidence-backed GUI reveal followups`) and released inspector **v30.6.7** on `openhands-development`.
+- Bounded GUI snapshots now resolve class/name/sibling-ordinal PlayerGui identity only for actual transitions, sort transitions deterministically before truncation, preserve identity on visible/appeared/disappeared records, and disclose reveal-queue evictions.
+- A later normal user activation can carry a same-session, source-relative, at-most-15-second review episode only when its exact component identity is the revealed component or an exact descendant. Source transition, source/target paths and identities, observation window, timing, and all-negative verification claims are independently reconstructed by the workflow planner.
+- Validated episodes propagate into generated workflow artifacts, standalone generated-result summaries, and deterministic release manifests. They remain completely separate from transaction IDs and workflow candidates; exact GUI containment plus timing does not establish causality, execution readiness, runtime success, gameplay success, or server authority.
+- Regressions cover exact containment, missing-transition/name-only rejection, cross-session rejection, expiration, forged claims, queue bounds/loss diagnostics, deterministic truncation, and manifest propagation.
+- Full local gate passed: **1,547 Python tests** (**17 skipped**), receiver and Luau parser checks (**3/3**), pinned official Luau 0.744 compilation of all **7 tracked Luau sources**, v30.6.7 metadata consistency, and whitespace checks.
+- No live Roblox execution or production receiver/configuration change was performed. The supplied Bubble Gum manifest lacks multipart interaction records and cannot be retroactively evaluated for these new exact identities.
+- Next priority: add an explicit operator-armed, short, bounded workflow-recording session so user intent—not temporal proximity—can assign a shared transaction ID to ordered normal interactions. Keep ordering distinct from causality and require existing exact action/state contracts before any guided workflow becomes generation-ready.
+
 ## Update — 2026-11-02 — Session-relative interaction timing diagnostics
 
 - Completed implementation commit `3079078` (`Add session-relative interaction timing diagnostics`) and released inspector **v30.6.6** on `openhands-development`.
