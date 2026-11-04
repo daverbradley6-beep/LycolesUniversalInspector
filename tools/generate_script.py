@@ -238,6 +238,28 @@ def generation_readiness_lines(plan,readiness):
         if not isinstance(identifier,str) or status_value!="unavailable":
             raise ValueError("Malformed unavailable requested behavior")
         lines.append("Unavailable: "+identifier)
+    correlation=readiness.get("guidedWorkflowFeedbackCorrelation")
+    if correlation is not None:
+        correlation_claims=correlation.get("claims") if isinstance(correlation,dict) else None
+        if (not isinstance(correlation,dict) or type(correlation.get("available")) is not bool
+                or not isinstance(correlation_claims,dict)
+                or any(correlation_claims.get(field) is not False for field in false_claims)):
+            raise ValueError("Malformed guided feedback correlation")
+        if correlation["available"]:
+            summary=correlation.get("summary")
+            if (correlation.get("readinessImpact")!="informational-only"
+                    or not isinstance(summary,dict)
+                    or any(type(summary.get(field)) is not int or summary[field]<0 for field in
+                        ("sessions","completeClientObservationSequences","stepsWithStatusConflict"))
+                    or type(correlation.get("completeSequenceRecurrenceObserved")) is not bool):
+                raise ValueError("Malformed guided feedback correlation")
+            lines.extend(["Guided feedback sessions: "+str(summary["sessions"]),
+                "Complete client-observation sequences: "+str(
+                    summary["completeClientObservationSequences"]),
+                "Guided feedback status conflicts: "+str(summary["stepsWithStatusConflict"]),
+                "Repeated client-observation sequence: "+str(
+                    correlation["completeSequenceRecurrenceObserved"]).lower(),
+                "Feedback readiness impact: informational-only"])
     return lines
 
 
@@ -437,7 +459,8 @@ def main():
 
         readiness_builder=load_local_module("lycoles_generation_readiness",
                                              "assess_generation_readiness.py")
-        generation_readiness=readiness_builder.assess(plan,understanding,action_discovery)
+        generation_readiness=readiness_builder.assess(
+            plan,understanding,action_discovery,generated_workflows)
         utility_lua=render(plan,understanding,generation_readiness)
         prompt_generator=load_local_module("lycoles_prompt_interactions","generate_prompt_interactions.py")
         prompt_interactions_lua=prompt_generator.render(action_discovery)

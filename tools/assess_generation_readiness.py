@@ -175,8 +175,48 @@ def _discovery_only(actions):
                 "reason":"Names and observed activation do not establish a generic replay operation."})
     return values
 
-def assess(plan,gameplay,actions):
+
+def _guided_feedback_correlation(plan,actions,workflow_plan,feedback_documents):
+    if workflow_plan is None:
+        if feedback_documents not in (None,[]):
+            raise ValueError("guided feedback requires the exact generated workflow plan")
+        return {"available":False,"reason":"No guided workflow plan was supplied",
+            "readinessImpact":"none","claims":dict(_FALSE_CLAIMS)}
+    expected=_load("plan_generated_workflows.py","readiness_workflow_planner").plan(plan,actions)
+    if workflow_plan!=expected:
+        raise ValueError("generated workflow plan does not match validated evidence")
+    if feedback_documents in (None,[]):
+        return {"available":False,"reason":"No digest-bound guided feedback was supplied",
+            "workflowCandidates":expected["summary"]["workflowCandidates"],
+            "readinessImpact":"none","claims":dict(_FALSE_CLAIMS)}
+    aggregate=_load("aggregate_guided_workflow_feedback.py",
+        "readiness_guided_feedback_aggregate").aggregate(workflow_plan,feedback_documents)
+    steps=[{"stepSequence":step["stepSequence"],"targetPath":step["targetPath"],
+        "outcomeKey":step["outcomeKey"],"expected":step["expected"],
+        "attempts":step["attempts"],"sessionsObserved":step["sessionsObserved"],
+        "activationEventsObserved":step["activationEventsObserved"],
+        "expectedChangesObserved":step["expectedChangesObserved"],
+        "sessionsWithExpectedChange":step["sessionsWithExpectedChange"],
+        "statuses":dict(step["statuses"]),
+        "statusConflictObserved":step["statusConflictObserved"],
+        "statusConflictAcrossSessions":step["statusConflictAcrossSessions"],
+        "observedScalarTypes":list(step["observedScalarTypes"]),
+        "scalarTypeConflictObserved":step["scalarTypeConflictObserved"],
+        "expectedDirectionAcrossMultipleSessions":step[
+            "expectedDirectionAcrossMultipleSessions"]} for step in aggregate["steps"]]
+    return {"available":True,"schemaVersion":aggregate["schemaVersion"],
+        "workflowPlanSHA256":aggregate["workflowPlanSHA256"],
+        "candidateId":aggregate["candidateId"],"summary":dict(aggregate["summary"]),
+        "steps":steps,"completeSequenceRecurrenceObserved":aggregate[
+            "completeSequenceRecurrenceObserved"],"readinessImpact":"informational-only",
+        "claims":dict(_FALSE_CLAIMS),
+        "note":"Repeated digest-bound client observations remain non-causal and do not make implementation ready."}
+
+
+def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=None):
     integrity,request=_validate_sources(plan,gameplay,actions)
+    guided_correlation=_guided_feedback_correlation(
+        plan,actions,workflow_plan,guided_feedback_documents)
     target=_selected_prompt(actions);tool_target=_selected_tool(actions);gui_target=_selected_gui(actions)
     is_egg=_is_egg_target(actions,target)
     generated=[];generated_sources=[]
@@ -230,16 +270,21 @@ def assess(plan,gameplay,actions):
         "generatedCapabilities":generated,
         "unavailableRequestedBehavior":unavailable,
         "discoveryOnlyCapabilities":discovery_only,
+        "guidedWorkflowFeedbackCorrelation":guided_correlation,
         "summary":{"generatedCapabilities":len(generated),
             "requestMatchedGeneratedCapabilities":len(matched_generated),
             "unavailableRequestedBehavior":len(unavailable),
-            "discoveryOnlyCapabilityFamilies":len(discovery_only)},
+            "discoveryOnlyCapabilityFamilies":len(discovery_only),
+            "guidedFeedbackSessions":guided_correlation.get("summary",{}).get("sessions",0),
+            "guidedFeedbackStatusConflicts":guided_correlation.get("summary",{}).get(
+                "stepsWithStatusConflict",0)},
         "claims":dict(_FALSE_CLAIMS),
         "limitations":["Generation readiness describes emitted code, not successful gameplay",
             "Prompt and Tool outcomes remain temporal correlations without causal proof",
             "Executor-provided prompt activation is checked only at runtime",
             "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
             "Guided GUI trials highlight exact controls but require normal user activation because GuiButton has no public automatic Activate method",
+            "Repeated guided feedback reports client-observed correlation only and cannot establish causality or implementation readiness",
             "Remaining generic candidates stay unavailable without exact action contracts"]}
     return result
 

@@ -14,6 +14,84 @@ def _bounded_text(value,limit):
             and all(unicodedata.category(character)!="Cc" for character in value))
 
 
+
+def _validate_feedback_correlation(correlation):
+    if correlation is None:return
+    if not isinstance(correlation,dict) or type(correlation.get("available")) is not bool:
+        raise ValueError("Invalid guided feedback correlation")
+    claims=correlation.get("claims")
+    if (not isinstance(claims,dict)
+            or any(claims.get(field) is not False for field in _FALSE_CLAIMS)):
+        raise ValueError("Invalid guided feedback correlation claims")
+    if correlation["available"] is False:
+        if (correlation.get("readinessImpact")!="none"
+                or not _bounded_text(correlation.get("reason"),160)):
+            raise ValueError("Invalid unavailable guided feedback correlation")
+        return
+    if (correlation.get("schemaVersion")!="116.guided-workflow-feedback-aggregate.1"
+            or correlation.get("readinessImpact")!="informational-only"
+            or not isinstance(correlation.get("workflowPlanSHA256"),str)
+            or len(correlation["workflowPlanSHA256"])!=64
+            or any(character not in "0123456789abcdef"
+                for character in correlation["workflowPlanSHA256"])
+            or not _bounded_text(correlation.get("candidateId"),160)
+            or type(correlation.get("completeSequenceRecurrenceObserved")) is not bool):
+        raise ValueError("Invalid available guided feedback correlation")
+    summary=correlation.get("summary");steps=correlation.get("steps")
+    summary_fields=("sessions","runs","submittedEntries","activationEventsObserved",
+        "expectedChangesObserved","completeClientObservationSequences",
+        "sessionsWithCompleteClientObservationSequence","stepsWithStatusConflict")
+    if (not isinstance(summary,dict) or any(type(summary.get(field)) is not int
+            or not 0<=summary[field]<=1_000_000 for field in summary_fields)
+            or not isinstance(steps,list) or not 1<=len(steps)<=40
+            or correlation["completeSequenceRecurrenceObserved"]
+                is not (summary["sessionsWithCompleteClientObservationSequence"]>=2)):
+        raise ValueError("Invalid guided feedback correlation summary")
+    allowed_statuses={"expected-change-observed","outcome-not-observed","activation-timeout",
+        "control-or-state-unavailable","metadata-drift","state-unreadable"}
+    step_attempts=step_activations=step_changes=step_conflicts=0
+    for index,step in enumerate(steps,1):
+        statuses=step.get("statuses") if isinstance(step,dict) else None
+        counts=("attempts","sessionsObserved","activationEventsObserved",
+            "expectedChangesObserved","sessionsWithExpectedChange")
+        if (not isinstance(step,dict) or step.get("stepSequence")!=index
+                or not _bounded_text(step.get("targetPath"),512)
+                or not _bounded_text(step.get("outcomeKey"),256)
+                or step.get("expected") not in ("increased","decreased","changed")
+                or not isinstance(statuses,dict)
+                or any(status not in allowed_statuses or type(count) is not int or count<1
+                    for status,count in statuses.items())
+                or any(type(step.get(field)) is not int or not 0<=step[field]<=1_000_000
+                    for field in counts)
+                or sum(statuses.values())!=step["attempts"]
+                or not step["expectedChangesObserved"]<=step["activationEventsObserved"]<=step["attempts"]
+                or step["sessionsWithExpectedChange"]>step["sessionsObserved"]
+                or not isinstance(step.get("observedScalarTypes"),list)
+                or any(kind not in ("boolean","number","string")
+                    for kind in step["observedScalarTypes"])
+                or step["observedScalarTypes"]!=sorted(set(step["observedScalarTypes"]))
+                or any(type(step.get(field)) is not bool for field in
+                    ("statusConflictObserved","statusConflictAcrossSessions",
+                     "scalarTypeConflictObserved","expectedDirectionAcrossMultipleSessions"))
+                or step["statusConflictObserved"] is not (len(statuses)>1)
+                or step["scalarTypeConflictObserved"] is not (len(step["observedScalarTypes"])>1)
+                or step["expectedDirectionAcrossMultipleSessions"]
+                    is not (step["sessionsWithExpectedChange"]>=2)):
+            raise ValueError("Invalid guided feedback correlation step")
+        step_attempts+=step["attempts"];step_activations+=step["activationEventsObserved"]
+        step_changes+=step["expectedChangesObserved"]
+        step_conflicts+=step["statusConflictObserved"]
+    if (summary["sessions"]<1
+            or summary["sessionsWithCompleteClientObservationSequence"]>summary["sessions"]
+            or summary["completeClientObservationSequences"]>summary["runs"]
+            or summary["expectedChangesObserved"]>summary["activationEventsObserved"]
+            or summary["activationEventsObserved"]>summary["submittedEntries"]
+            or (step_attempts,step_activations,step_changes,step_conflicts)!=(
+                summary["submittedEntries"],summary["activationEventsObserved"],
+                summary["expectedChangesObserved"],summary["stepsWithStatusConflict"])):
+        raise ValueError("Inconsistent guided feedback correlation summary")
+
+
 def _validate_generation_readiness(place_id,scan_id,requested_capability,readiness):
     if (not isinstance(readiness,dict)
             or readiness.get("schemaVersion")!="113.generation-readiness.1"
@@ -23,6 +101,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
     if (not isinstance(claims,dict)
             or any(claims.get(field) is not False for field in _FALSE_CLAIMS)):
         raise ValueError("Invalid generation-readiness claims")
+    _validate_feedback_correlation(readiness.get("guidedWorkflowFeedbackCorrelation"))
     request=readiness.get("request")
     if (not isinstance(request,dict) or request.get("request")!=requested_capability
             or request.get("status") not in ("no-capability-requested","generated-bounded-subset",

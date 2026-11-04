@@ -103,6 +103,19 @@ class GeneratedResultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"guided GUI"):
             self.build(generation_readiness=forged)
 
+    def test_guided_feedback_correlation_claims_fail_closed(self):
+        readiness=self.readiness();readiness["guidedWorkflowFeedbackCorrelation"]={
+            "available":False,"reason":"No digest-bound guided feedback was supplied",
+            "readinessImpact":"none","claims":{"sourceAuthenticityVerified":False,
+                "causalityProven":False,"serverAuthorityVerified":False,
+                "runtimeVerified":False,"gameplayVerified":False,
+                "actionOutcomesVerified":False}}
+        result=self.build(generation_readiness=readiness)
+        self.assertFalse(result["generationReadiness"][
+            "guidedWorkflowFeedbackCorrelation"]["available"])
+        readiness["guidedWorkflowFeedbackCorrelation"]["claims"]["runtimeVerified"]=True
+        with self.assertRaisesRegex(ValueError,"correlation claims"):
+            self.build(generation_readiness=readiness)
 
     def test_deterministic(self):
         self.assertEqual(self.build(),self.build())

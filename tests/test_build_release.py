@@ -239,6 +239,7 @@ class ReleaseBuilderTests(unittest.TestCase):
                 self.assertIn("generated-workflow-plan.json",archive.namelist())
                 self.assertIn("LycolesGuidedWorkflow.lua",archive.namelist())
                 self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
+                self.assertNotIn("guided-workflow-feedback-aggregate.json",archive.namelist())
 
             feedback_entries=[]
             for sequence,item in enumerate(workflow["workflowCandidates"][0]["steps"],1):
@@ -259,11 +260,42 @@ class ReleaseBuilderTests(unittest.TestCase):
             guided_feedback_path.write_text(json.dumps(guided_feedback))
             manifest=builder.build(parts,base/"out",guided_feedback_path=guided_feedback_path)
             evaluated=json.loads((base/"out"/"guided-workflow-evaluation.json").read_text())
+            aggregate=json.loads((base/"out"/"guided-workflow-feedback-aggregate.json").read_text())
             self.assertEqual(evaluated["summary"]["completeClientObservationSequences"],1)
             self.assertFalse(evaluated["runtimeVerified"])
+            self.assertEqual(aggregate["summary"]["sessions"],1)
             self.assertEqual(manifest["guidedWorkflowFeedback"]["summary"],evaluated["summary"])
+            self.assertEqual(manifest["guidedWorkflowFeedback"]["aggregateSummary"],
+                aggregate["summary"])
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertIn("guided-workflow-evaluation.json",archive.namelist())
+                self.assertIn("guided-workflow-feedback-aggregate.json",archive.namelist())
+
+            second_feedback=json.loads(json.dumps(guided_feedback))
+            second_feedback["sessionId"]="release-guided-session-2"
+            second_feedback_path=base/"guided-feedback-2.json"
+            second_feedback_path.write_text(json.dumps(second_feedback))
+            manifest=builder.build(parts,base/"out",guided_feedback_paths=[
+                guided_feedback_path,second_feedback_path])
+            aggregate=json.loads((base/"out"/"guided-workflow-feedback-aggregate.json").read_text())
+            self.assertEqual(aggregate["summary"]["sessions"],2)
+            self.assertTrue(aggregate["completeSequenceRecurrenceObserved"])
+            readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
+            correlation=readiness["guidedWorkflowFeedbackCorrelation"]
+            self.assertEqual(correlation["summary"]["sessions"],2)
+            self.assertTrue(correlation["completeSequenceRecurrenceObserved"])
+            self.assertEqual(correlation["readinessImpact"],"informational-only")
+            self.assertFalse(readiness["request"]["implementationReady"])
+            utility=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("Guided feedback sessions: 2",utility)
+            self.assertIn("Feedback readiness impact: informational-only",utility)
+            self.assertIn("Runtime and gameplay verification: false",utility)
+            self.assertTrue(manifest["guidedWorkflowFeedback"][
+                "completeSequenceRecurrenceObserved"])
+            self.assertFalse((base/"out"/"guided-workflow-evaluation.json").exists())
+            with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
+                self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
+                self.assertIn("guided-workflow-feedback-aggregate.json",archive.namelist())
 
             unlinked=[dict(item) for item in events]
             unlinked[1].pop("transactionId")
@@ -273,9 +305,11 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertFalse((base/"out"/"LycolesGuidedWorkflow.lua").exists())
             self.assertFalse((base/"out"/"guided-workflow-evaluation.json").exists())
+            self.assertFalse((base/"out"/"guided-workflow-feedback-aggregate.json").exists())
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertNotIn("LycolesGuidedWorkflow.lua",archive.namelist())
                 self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
+                self.assertNotIn("guided-workflow-feedback-aggregate.json",archive.namelist())
 
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib

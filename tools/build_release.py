@@ -61,7 +61,8 @@ def build_manifest_readiness(manifest_path,output):
 
 
 def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
-          audit_path=None,prompt_feedback_path=None,guided_feedback_path=None):
+          audit_path=None,prompt_feedback_path=None,guided_feedback_path=None,
+          guided_feedback_paths=None):
     parts_path=pathlib.Path(parts_dir)
     if parts_path.is_file():
         return build_manifest_readiness(parts_path,output)
@@ -108,21 +109,38 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         if guided_workflow_lua is not None else None)
     guided_feedback=None
     guided_feedback_bytes=None
+    guided_feedback_aggregate=None
+    guided_feedback_aggregate_bytes=None
+    guided_documents=[]
+    if (guided_feedback_paths is not None
+            and (not isinstance(guided_feedback_paths,(list,tuple))
+                or any(not isinstance(path,(str,pathlib.Path)) for path in guided_feedback_paths))):
+        raise TypeError("guided feedback paths must be a list or tuple of paths")
+    guided_paths=list(guided_feedback_paths or [])
     if guided_feedback_path is not None:
-        guided_feedback_evaluator=load_module(
-            "evaluate_guided_workflow_feedback.py","lycoles_guided_feedback")
-        guided_feedback_document=json.loads(
-            pathlib.Path(guided_feedback_path).read_text(encoding="utf-8"))
-        guided_feedback=guided_feedback_evaluator.evaluate(
-            generated_workflows,guided_feedback_document)
-        guided_feedback_bytes=(json.dumps(
-            guided_feedback,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+        guided_paths.insert(0,guided_feedback_path)
+    if guided_paths:
+        guided_documents=[json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+            for path in guided_paths]
+        guided_feedback_aggregator=load_module(
+            "aggregate_guided_workflow_feedback.py","lycoles_guided_feedback_aggregate")
+        guided_feedback_aggregate=guided_feedback_aggregator.aggregate(
+            generated_workflows,guided_documents)
+        guided_feedback_aggregate_bytes=(json.dumps(guided_feedback_aggregate,
+            indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+        if len(guided_documents)==1:
+            guided_feedback_evaluator=load_module(
+                "evaluate_guided_workflow_feedback.py","lycoles_guided_feedback")
+            guided_feedback=guided_feedback_evaluator.evaluate(
+                generated_workflows,guided_documents[0])
+            guided_feedback_bytes=(json.dumps(guided_feedback,indent=2,
+                sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
 
     readiness_builder=load_module(
         "assess_generation_readiness.py","lycoles_generation_readiness")
-    generation_readiness=readiness_builder.assess(
-        plan,gameplay_understanding,action_discovery)
+    generation_readiness=readiness_builder.assess(plan,gameplay_understanding,
+        action_discovery,generated_workflows,guided_documents if guided_paths else None)
     generation_readiness_bytes=(json.dumps(
         generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
@@ -200,6 +218,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         (output/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
     if guided_feedback_bytes is None:
         (output/"guided-workflow-evaluation.json").unlink(missing_ok=True)
+    if guided_feedback_aggregate_bytes is None:
+        (output/"guided-workflow-feedback-aggregate.json").unlink(missing_ok=True)
 
     output.mkdir(parents=True,exist_ok=True)
     manifest={
@@ -236,10 +256,18 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "generated":guided_workflow_lua is not None,"automaticActivation":False,
             "manualActivationRequired":guided_workflow_lua is not None,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
-        "guidedWorkflowFeedback":{"artifact":"guided-workflow-evaluation.json"
-                if guided_feedback is not None else None,
+        "guidedWorkflowFeedback":{"sessionCount":len(guided_paths),
+            "artifact":"guided-workflow-evaluation.json" if guided_feedback is not None else None,
             "sha256":sha(guided_feedback_bytes) if guided_feedback_bytes else None,
             "summary":guided_feedback["summary"] if guided_feedback is not None else None,
+            "aggregateArtifact":"guided-workflow-feedback-aggregate.json"
+                if guided_feedback_aggregate is not None else None,
+            "aggregateSHA256":sha(guided_feedback_aggregate_bytes)
+                if guided_feedback_aggregate_bytes else None,
+            "aggregateSummary":guided_feedback_aggregate["summary"]
+                if guided_feedback_aggregate is not None else None,
+            "completeSequenceRecurrenceObserved":guided_feedback_aggregate[
+                "completeSequenceRecurrenceObserved"] if guided_feedback_aggregate is not None else False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
         "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
             "artifact":"generation-readiness.json",
@@ -375,6 +403,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         files["prompt-trial-evaluation.json"]=prompt_feedback_bytes
     if guided_feedback_bytes is not None:
         files["guided-workflow-evaluation.json"]=guided_feedback_bytes
+    if guided_feedback_aggregate_bytes is not None:
+        files["guided-workflow-feedback-aggregate.json"]=guided_feedback_aggregate_bytes
     if verification_lua is not None:
         files["LycolesManualVerification.lua"]=verification_lua.encode("utf-8")
     if actions_gui_lua is not None:
@@ -403,13 +433,13 @@ def main():
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
     parser.add_argument("--prompt-feedback",default=None,
         help="Optional generated prompt trial feedback (v112 schema)")
-    parser.add_argument("--guided-feedback",default=None,
-        help="Optional generated guided workflow feedback (v115 schema)")
+    parser.add_argument("--guided-feedback",action="append",default=[],
+        help="Generated guided workflow feedback (v115 schema); repeatable")
     parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
     args=parser.parse_args()
     try:
         result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
-            args.audit,args.prompt_feedback,args.guided_feedback)
+            args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback)
         if result.get("schemaVersion")=="109.manifest-readiness.1":
             print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)
             return 2

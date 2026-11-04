@@ -14,6 +14,8 @@ def load(name,filename):
 understanding=load("readiness_gameplay","understand_gameplay.py")
 discovery=load("readiness_actions","discover_action_capabilities.py")
 readiness=load("generation_readiness","assess_generation_readiness.py")
+workflow_fixtures=load("readiness_workflow_fixtures","../tests/test_generated_workflow_planning.py")
+feedback_evaluator=load("readiness_guided_feedback","evaluate_guided_workflow_feedback.py")
 
 def feature(name,interactions=0,candidates=0):
     return {"feature":name,"interactionEvents":interactions,"observedEvents":interactions,
@@ -39,6 +41,23 @@ def egg_plan(request="Automatically hatch the selected egg in multi mode"):
 def assess(plan):
     gameplay=understanding.analyze(plan);actions=discovery.analyze(plan)
     return readiness.assess(plan,gameplay,actions)
+
+
+def guided_feedback(workflow,session_id):
+    candidate=workflow["workflowCandidates"][0];entries=[]
+    for sequence,step in enumerate(candidate["steps"],1):
+        outcome=step["selectedOutcome"]
+        entries.append({"sequence":sequence,"runId":1,"stepSequence":sequence,
+            "targetPath":step["targetPath"],"outcomeKey":outcome["key"],
+            "expected":outcome["change"],"before":outcome["observedBefore"],
+            "after":outcome["observedAfter"],"activationObserved":True,
+            "observedExpectedChange":True,"status":"expected-change-observed",
+            "message":"Selected client-visible direction observed",
+            "observedAtUnix":1793635200+sequence})
+    return {"schemaVersion":feedback_evaluator.SCHEMA,"placeId":workflow["placeId"],
+        "scanId":workflow["scanId"],"workflowPlanSHA256":feedback_evaluator.digest(workflow),
+        "candidateId":candidate["id"],"sessionId":session_id,"entries":entries,
+        "claims":{key:False for key in feedback_evaluator.FALSE_CLAIMS}}
 
 
 class GenerationReadinessTests(unittest.TestCase):
@@ -179,6 +198,34 @@ class GenerationReadinessTests(unittest.TestCase):
     def test_exact_determinism(self):
         value=egg_plan()
         self.assertEqual(assess(value),assess(copy.deepcopy(value)))
+
+    def test_guided_feedback_recurrence_is_informational_only(self):
+        value=workflow_fixtures.plan();gameplay=understanding.analyze(value)
+        actions=discovery.analyze(value);workflow=workflow_fixtures.planner.plan(value,actions)
+        result=readiness.assess(value,gameplay,actions,workflow,[
+            guided_feedback(workflow,"session-a"),guided_feedback(workflow,"session-b")])
+        correlation=result["guidedWorkflowFeedbackCorrelation"]
+        self.assertTrue(correlation["available"])
+        self.assertEqual(correlation["summary"]["sessions"],2)
+        self.assertTrue(correlation["completeSequenceRecurrenceObserved"])
+        self.assertTrue(all(step["expectedDirectionAcrossMultipleSessions"]
+            for step in correlation["steps"]))
+        self.assertEqual(correlation["readinessImpact"],"informational-only")
+        self.assertFalse(result["request"]["implementationReady"])
+        self.assertFalse(result["claims"]["runtimeVerified"])
+        self.assertFalse(result["claims"]["actionOutcomesVerified"])
+
+    def test_guided_feedback_and_workflow_drift_fail_closed(self):
+        value=workflow_fixtures.plan();gameplay=understanding.analyze(value)
+        actions=discovery.analyze(value);workflow=workflow_fixtures.planner.plan(value,actions)
+        feedback=guided_feedback(workflow,"session-a")
+        feedback["workflowPlanSHA256"]="0"*64
+        with self.assertRaisesRegex(ValueError,"identity mismatch"):
+            readiness.assess(value,gameplay,actions,workflow,[feedback])
+        forged=copy.deepcopy(workflow);forged["workflowCandidates"][0]["steps"][0][
+            "targetPath"]="PlayerGui.Forged"
+        with self.assertRaisesRegex(ValueError,"workflow plan"):
+            readiness.assess(value,gameplay,actions,forged,[])
 
 
 if __name__=="__main__":unittest.main()
