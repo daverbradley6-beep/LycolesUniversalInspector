@@ -76,6 +76,9 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertFalse(transport["uploadFailed"])
         self.assertTrue(transport["reportGenerated"])
         self.assertEqual(transport["manifestSnapshotPhase"], "legacy-unspecified")
+        self.assertEqual(transport["uploadAttemptStatus"], "unknown-legacy")
+        self.assertEqual(transport["receiverReportStatus"], "unknown-legacy")
+        self.assertEqual(transport["downstreamAvailabilityStatus"], "not-validated")
         self.assertFalse(transport["receiverIntegrityVerified"])
         self.assertFalse(transport["downstreamReportAvailable"])
 
@@ -127,7 +130,10 @@ class ManifestReadinessTests(unittest.TestCase):
             "reportGenerated": True,
             "manifestSnapshotPhase": "post-upload",
             "uploadAttempted": True,
+            "uploadAttemptStatus": "attempted",
             "uploadStatus": "acknowledged",
+            "receiverReportStatus": "acknowledged-awaiting-integrity",
+            "downstreamAvailabilityStatus": "not-validated",
             "acknowledgedParts": manifest["expectedParts"],
             "expectedParts": manifest["expectedParts"],
             "lastError": None,
@@ -137,8 +143,45 @@ class ManifestReadinessTests(unittest.TestCase):
         result = MODULE.analyze(manifest)
         self.assertTrue(result["transport"]["uploadAttempted"])
         self.assertEqual(result["transport"]["uploadStatus"], "acknowledged")
+        self.assertEqual(result["transport"]["uploadAttemptStatus"],"attempted")
+        self.assertEqual(result["transport"]["receiverReportStatus"],
+                         "acknowledged-awaiting-integrity")
+        self.assertEqual(result["transport"]["downstreamAvailabilityStatus"],
+                         "not-validated")
+
         self.assertFalse(result["transport"]["uploadFailed"])
         self.assertFalse(result["transport"]["downstreamReportAvailable"])
+    def test_configuration_block_after_complete_ack_preserves_receiver_progress(self):
+        manifest=copy.deepcopy(self.manifest);expected=manifest["expectedParts"]
+        manifest["reportTransport"]={"reportGenerated":True,
+            "manifestSnapshotPhase":"upload-blocked","uploadAttempted":True,
+            "uploadAttemptStatus":"attempted-previously-currently-blocked",
+            "uploadStatus":"configuration-error",
+            "receiverReportStatus":"acknowledged-awaiting-integrity",
+            "downstreamAvailabilityStatus":"not-validated",
+            "acknowledgedParts":expected,"expectedParts":expected,
+            "lastError":"invalid receiver endpoint","receiverIntegrityVerified":False,
+            "downstreamReportAvailable":False}
+        result=MODULE.analyze(manifest);transport=result["transport"]
+        self.assertEqual(transport["receiverReportStatus"],
+                         "acknowledged-awaiting-integrity")
+        self.assertTrue(transport["lifecycleStages"]["uploadAcknowledged"])
+        self.assertEqual(result["generationReadiness"]["recommendedRecovery"],
+                         "verify_receiver_integrity_or_save_numbered_parts")
+
+    def test_inconsistent_explicit_lifecycle_stage_is_rejected(self):
+        manifest=copy.deepcopy(self.manifest);expected=manifest["expectedParts"]
+        manifest["reportTransport"]={"reportGenerated":True,
+            "manifestSnapshotPhase":"pre-upload","uploadAttempted":False,
+            "uploadAttemptStatus":"attempted","uploadStatus":"not-attempted",
+            "receiverReportStatus":"unavailable",
+            "downstreamAvailabilityStatus":"not-validated",
+            "acknowledgedParts":0,"expectedParts":expected,"lastError":None,
+            "receiverIntegrityVerified":False,"downstreamReportAvailable":False}
+        with self.assertRaisesRegex(ValueError,"inconsistent uploadAttemptStatus"):
+            MODULE.analyze(manifest)
+
+
 
     def test_v301_transport_lifecycle_matrix(self):
         for case in self.transport_cases:
@@ -158,6 +201,13 @@ class ManifestReadinessTests(unittest.TestCase):
                 self.assertFalse(transport["receiverIntegrityVerified"])
                 self.assertFalse(transport["downstreamReportAvailable"])
                 self.assertTrue(transport["receiverIntegrityLookupAvailable"])
+                expected_stages=MODULE._transport_stage_labels(
+                    transport["uploadStatus"],transport["uploadAttempted"],
+                    transport["acknowledgedParts"],transport["expectedParts"],False,False)
+                self.assertEqual((transport["uploadAttemptStatus"],
+                    transport["receiverReportStatus"],transport["downstreamAvailabilityStatus"]),
+                    expected_stages)
+
                 self.assertEqual(
                     transport["receiverIntegrityPath"],
                     f"/reports/READ_KEY/{self.transport_scan_id}/integrity",

@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.0
+-- Lycoles Universal Inspector v30.6.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.0"
+local VERSION = "30.6.1"
 
 local endpoint = ""
 local autoSend = true
@@ -29,6 +29,28 @@ local uploadState = {
     attempted=false,status="not-attempted",acknowledgedParts=0,
     expectedParts=0,lastError=nil
 }
+local function uploadAttemptStage()
+    if uploadState.status=="configuration-error" then
+        return uploadState.attempted and "attempted-previously-currently-blocked"
+            or "blocked-before-attempt"
+    end
+    if uploadState.attempted then return "attempted" end
+    return "not-attempted"
+end
+local function receiverReportStatus()
+    if uploadState.expectedParts>0
+        and uploadState.acknowledgedParts==uploadState.expectedParts then
+        return "acknowledged-awaiting-integrity"
+    end
+    if uploadState.status=="uploading" then return "upload-in-progress" end
+    if uploadState.acknowledgedParts>0 then return "partially-acknowledged" end
+    if uploadState.status=="failed" or uploadState.status=="incomplete" then
+        return "upload-incomplete"
+    end
+    if uploadState.status=="configuration-error" then return "configuration-blocked" end
+    return "unavailable"
+end
+
 local refreshLocalManifest = nil
 local function uploadSnapshot(phase)
     local digests = {}
@@ -44,7 +66,10 @@ local function uploadSnapshot(phase)
         reportGenerated = pendingParts ~= nil or uploadState.expectedParts > 0,
         manifestSnapshotPhase = phase,
         uploadAttempted = uploadState.attempted,
+        uploadAttemptStatus = uploadAttemptStage(),
         uploadStatus = uploadState.status,
+        receiverReportStatus = receiverReportStatus(),
+        downstreamAvailabilityStatus = "not-validated",
         acknowledgedParts = uploadState.acknowledgedParts,
         expectedParts = uploadState.expectedParts,
         acknowledgedPartDigests = digests,
@@ -850,13 +875,28 @@ local function refreshGeneratedHandoff(phase)
             ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0)
             .." parts; manifest "..manifestState
     end
+    local attemptLine="Upload: "..uploadAttemptStage()
+    if uploadState.attempted then
+        attemptLine=attemptLine.."; status "..tostring(uploadState.status)
+    elseif uploadState.status=="configuration-error" then
+        attemptLine=attemptLine.."; "..tostring(uploadState.lastError or "configuration unavailable")
+    end
+    local downstreamLine="Downstream: not validated; save complete local parts or upload"
+    if type(exported)=="table" and exported.status=="complete"
+        and exported.manifestSaved==true then
+        downstreamLine="Downstream: local files claimed complete; import and validate offline"
+    elseif receiverReportStatus()=="acknowledged-awaiting-integrity" then
+        downstreamLine="Downstream: receiver integrity verification required"
+    end
     generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
         .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
         ..tostring(uploadState.expectedParts).." numbered parts"
         .."\n"..exportLine
-        .."\nReceiver: "..tostring(uploadState.status).."; ACK "
+        .."\n"..attemptLine
+        .."\nReceiver: "..receiverReportStatus().."; ACK "
         ..tostring(uploadState.acknowledgedParts).."/"..tostring(uploadState.expectedParts)
         .."; integrity unverified"
+        .."\n"..downstreamLine
         .."\nGeneration: offline compilation/validation pending; gameplay unverified"
 end
 local function boundedResultText(value,limit)

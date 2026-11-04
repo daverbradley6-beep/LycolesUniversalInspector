@@ -64,6 +64,32 @@ def _object_accounting(manifest):
     }
 
 
+
+def _transport_stage_labels(status, attempted, acknowledged, expected, integrity, available):
+    if status=="configuration-error":
+        attempt_status=("attempted-previously-currently-blocked" if attempted
+            else "blocked-before-attempt")
+    else:
+        attempt_status="attempted" if attempted else "not-attempted"
+    if integrity:
+        receiver_status="integrity-verified"
+    elif expected>0 and acknowledged==expected:
+        receiver_status="acknowledged-awaiting-integrity"
+    elif status=="uploading":
+        receiver_status="upload-in-progress"
+    elif acknowledged>0:
+        receiver_status="partially-acknowledged"
+    elif status in {"failed","incomplete"}:
+        receiver_status="upload-incomplete"
+    elif status=="configuration-error":
+        receiver_status="configuration-blocked"
+    else:
+        receiver_status="unavailable"
+    downstream_status=("available" if available else
+        ("receiver-integrity-verified-not-available" if integrity else "not-validated"))
+    return attempt_status,receiver_status,downstream_status
+
+
 def _transport(manifest):
     expected = _integer(manifest.get("expectedParts", manifest.get("partCount")), "expected parts", minimum=1)
     part_count = _integer(manifest.get("partCount"), "part count", minimum=1)
@@ -78,7 +104,10 @@ def _transport(manifest):
             "reportGenerated": True,
             "manifestSnapshotPhase": "legacy-unspecified",
             "uploadAttempted": None,
+            "uploadAttemptStatus": "unknown-legacy",
             "uploadStatus": "unknown_legacy_manifest_snapshot",
+            "receiverReportStatus": "unknown-legacy",
+            "downstreamAvailabilityStatus": "not-validated",
             "acknowledgedParts": None,
             "expectedParts": expected,
             "acknowledgedDigestParts": None,
@@ -148,11 +177,21 @@ def _transport(manifest):
         raise ValueError("invalid receiver verification status")
     if available and not integrity:
         raise ValueError("downstream availability requires receiver integrity verification")
+    attempt_status,receiver_status,downstream_status=_transport_stage_labels(
+        status,attempted,acknowledged,expected,integrity,available)
+    for field,actual in (("uploadAttemptStatus",attempt_status),
+            ("receiverReportStatus",receiver_status),
+            ("downstreamAvailabilityStatus",downstream_status)):
+        if field in transport and transport[field]!=actual:
+            raise ValueError(f"inconsistent {field}")
     return {
         "reportGenerated": generated,
         "manifestSnapshotPhase": phase,
         "uploadAttempted": attempted,
+        "uploadAttemptStatus": attempt_status,
         "uploadStatus": status,
+        "receiverReportStatus": receiver_status,
+        "downstreamAvailabilityStatus": downstream_status,
         "acknowledgedParts": acknowledged,
         "expectedParts": expected,
         "acknowledgedDigestParts": digest_count,
@@ -288,8 +327,11 @@ def analyze(manifest):
         "localExportAttempted": local_export["attempted"],
         "completeLocalNumberedPartsClaimed": local_export["completeNumberedPartsClaimed"],
         "uploadAttempted": transport["uploadAttempted"],
-        "uploadAcknowledged": transport["uploadStatus"] == "acknowledged",
+        "uploadAttemptStatus": transport["uploadAttemptStatus"],
+        "uploadAcknowledged": transport["acknowledgedParts"]==transport["expectedParts"],
+        "receiverReportStatus": transport["receiverReportStatus"],
         "receiverIntegrityVerified": transport["receiverIntegrityVerified"],
+        "downstreamAvailabilityStatus": transport["downstreamAvailabilityStatus"],
         "downstreamReportAvailable": transport["downstreamReportAvailable"],
     }
     diagnostics = _mapping(manifest.get("interactionDiagnostics"), "interaction diagnostics")
@@ -336,7 +378,8 @@ def analyze(manifest):
     if local_export["completeNumberedPartsClaimed"]:
         recovery = "provide_complete_local_numbered_parts"
         next_artifact = "complete locally exported numbered parts plus their matching manifest"
-    elif transport["uploadStatus"] == "acknowledged":
+    elif transport["receiverReportStatus"] in {
+            "acknowledged-awaiting-integrity","integrity-verified"}:
         recovery = "verify_receiver_integrity_or_save_numbered_parts"
         next_artifact = "verified receiver integrity result or complete local numbered parts"
     elif transport["uploadFailed"]:

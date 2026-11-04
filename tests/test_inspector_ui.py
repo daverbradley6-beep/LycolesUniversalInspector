@@ -74,6 +74,13 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('Local export: not attempted',SRC)
         self.assertIn('; integrity unverified',SRC)
         self.assertIn('offline compilation/validation pending; gameplay unverified',SRC)
+        self.assertIn('uploadAttemptStatus = uploadAttemptStage()',SRC)
+        self.assertIn('receiverReportStatus = receiverReportStatus()',SRC)
+        self.assertIn('downstreamAvailabilityStatus = "not-validated"',SRC)
+        self.assertIn('Upload: "..uploadAttemptStage()',SRC)
+        self.assertIn('Downstream: local files claimed complete; import and validate offline',SRC)
+        self.assertIn('Downstream: receiver integrity verification required',SRC)
+
         for phase in ('Scan complete','Upload blocked','Upload started','Upload finished',
                       'Local export finished'):
             self.assertIn(f'refreshGeneratedHandoff("{phase}")',SRC)

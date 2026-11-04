@@ -1,3 +1,11 @@
+## v30.6.1 — Explicit downstream handoff stages
+
+- Separate report generation, local export, upload-attempt, receiver acknowledgement/integrity, and downstream availability status in the Generated Script handoff instead of compressing them into one receiver line.
+- Distinguish not attempted, blocked before an attempt, previously attempted but currently configuration-blocked, in progress, partially acknowledged, incomplete, fully acknowledged but awaiting integrity, and downstream not validated states without exposing receiver configuration.
+- Preserve complete receiver ACK accounting across a later configuration-blocked retry and continue recommending integrity verification rather than incorrectly treating the report as never uploaded.
+- Derive and validate the same lifecycle labels in v109 manifest readiness; older manifests remain explicitly unknown, and local-write/receiver-ACK claims still do not establish downstream availability, receiver integrity, source authenticity, runtime behavior, or gameplay verification.
+
+
 ## v30.6.0 — Pre-activation evidence capture
 
 - Capture bounded LocalPlayer scalar state, nearby GUI state, and character position from supported pre-activation signals for GUI buttons, ProximityPrompts, and newly equipped Tools, reducing the prior blind spot where synchronous changes could occur before an `Activated`/`Triggered` callback baseline.
