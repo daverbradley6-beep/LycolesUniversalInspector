@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.5.2
+-- Lycoles Universal Inspector v30.6.0
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.5.2"
+local VERSION = "30.6.0"
 
 local endpoint = ""
 local autoSend = true
@@ -72,6 +72,7 @@ local watchSkippedCharacters = 0
 local watchUploaded = 0
 local changeQueue = {}
 local changeCount = 0
+local pendingObservationEvents = 0
 local observed = setmetatable({}, {__mode = "k"})
 local stateSnapshotCandidates = {}
 local stateSnapshotCandidateSeen = setmetatable({}, {__mode = "k"})
@@ -106,7 +107,7 @@ local pendingActions = {}
 local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil, preActivationListenersAttached=0, preActivationCaptures=0, preActivationBaselinesUsed=0, callbackBaselinesUsed=0, stalePreActivationCaptures=0, preActivationCaptureFailures=0}
 local sessionId = HttpService:GenerateGUID(false)
 local snapshotId = nil
 local observationSequence = 0
@@ -2323,10 +2324,55 @@ local function observeInteractionObject(obj, root, label)
     interactionObserved[obj] = true
     interactionObservedCount = interactionObservedCount + 1
     observerStats.listenersAttached = observerStats.listenersAttached + 1
+    local preActivationCapture=nil
+    local function capturePreActivation(source,maxAge)
+        local ok,state,identities,guiState,position=pcall(function()
+            local values,valueIdentities=safeInteractionState()
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            return values,valueIdentities,safeNearbyGuiState(obj),rootPart and rootPart.Position or nil
+        end)
+        if not ok then
+            observerStats.preActivationCaptureFailures=observerStats.preActivationCaptureFailures+1
+            return
+        end
+        preActivationCapture={clock=os.clock(),source=source,maxAge=maxAge,
+            state=state,stateIdentities=identities,guiState=guiState,position=position}
+        observerStats.preActivationCaptures=observerStats.preActivationCaptures+1
+    end
+    local function registerPreActivation(preSignal,source,maxAge,filter)
+        local ok,preConnection=pcall(function()
+            return preSignal:Connect(function(input)
+                if not alive or not interactionObserveEnabled then return end
+                if filter and not filter(input) then return end
+                capturePreActivation(source,maxAge)
+            end)
+        end)
+        if ok then
+            table.insert(watchConnections,preConnection)
+            observerStats.preActivationListenersAttached=
+                observerStats.preActivationListenersAttached+1
+        else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    end
+    if obj:IsA("GuiButton") then
+        registerPreActivation(obj.InputBegan,"GuiButton.InputBegan",2,function(input)
+            return input.UserInputType==Enum.UserInputType.MouseButton1
+                or input.UserInputType==Enum.UserInputType.Touch
+                or input.KeyCode==Enum.KeyCode.ButtonA
+                or input.KeyCode==Enum.KeyCode.Return
+                or input.KeyCode==Enum.KeyCode.Space
+        end)
+    elseif obj:IsA("ProximityPrompt") then
+        registerPreActivation(obj.PromptButtonHoldBegan,"ProximityPrompt.PromptButtonHoldBegan",
+            math.max(2,obj.HoldDuration+1))
+    elseif obj:IsA("Tool") then
+        registerPreActivation(obj.Equipped,"Tool.Equipped",5)
+    end
+
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
-        autoEvidenceLastInteraction = os.clock()
+        local activationClock=os.clock()
+        autoEvidenceLastInteraction = activationClock
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
@@ -2343,18 +2389,40 @@ local function observeInteractionObject(obj, root, label)
             unattributedInteractionCount=unattributedInteractionCount-1
             attributedInteractionCount=attributedInteractionCount+1
         end
+        local captured=preActivationCapture
+        preActivationCapture=nil
+        local captureAge=captured and activationClock-captured.clock or nil
+        local before,beforeStateIdentities,beforeGui,beforePosition,baselineSource
+        if captured and captureAge>=0 and captureAge<=captured.maxAge then
+            before=captured.state;beforeStateIdentities=captured.stateIdentities
+            beforeGui=captured.guiState;beforePosition=captured.position
+            baselineSource=captured.source
+            observerStats.preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed+1
+        else
+            if captured then
+                observerStats.stalePreActivationCaptures=observerStats.stalePreActivationCaptures+1
+            end
+            before,beforeStateIdentities=safeInteractionState()
+            beforeGui=safeNearbyGuiState(obj)
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            beforePosition=rootPart and rootPart.Position or nil
+            baselineSource="activation-callback-fallback"
+            observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
+        end
         local historyItem = {
             path=path:sub(1,400), pathIdentity=interactionPathIdentity(obj,root,label),
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
-            controlMetadata=interactionDescriptor(obj,root,label),
+            controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
+            baselineTiming=baselineSource=="activation-callback-fallback"
+                and "activation-callback" or "pre-activation",
+            baselineAgeSeconds=captureAge and math.floor(captureAge*1000+0.5)/1000 or nil,
+            preActivationBaselineAvailable=baselineSource~="activation-callback-fallback",
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
         if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
-        local before,beforeStateIdentities=safeInteractionState()
-        local beforeGui = safeNearbyGuiState(obj)
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
@@ -2373,9 +2441,6 @@ local function observeInteractionObject(obj, root, label)
             end
         end
         local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
-        local beforePosition = nil
-        local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if rootPart then beforePosition=rootPart.Position end
         if feature then
             local item = featureInteractions[feature] or {
                 count=0,stateChanges=0,temporalStateChanges=0,outcomeCandidates=0}
@@ -2389,17 +2454,20 @@ local function observeInteractionObject(obj, root, label)
             featureCandidate = feature, featureMatchCount = matchCount,
             attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
-            controlMetadata=historyItem.controlMetadata,
+            controlMetadata=historyItem.controlMetadata,baselineSource=baselineSource,
+            baselineTiming=historyItem.baselineTiming,
+            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
         }
-        local interactionSequence = observationSequence
         local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
         historyItem.transactionId=transactionId
         local seenStateKeys={}
         local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+            pendingObservationEvents=pendingObservationEvents+1
             task.delay(delaySeconds, function()
+                pendingObservationEvents=math.max(0,pendingObservationEvents-1)
                 if not alive then return end
                 local ok,err=pcall(function()
                     local after,afterStateIdentities=safeInteractionState()
@@ -2495,6 +2563,8 @@ local function observeInteractionObject(obj, root, label)
                     local window={seconds=delaySeconds,stateChanges=freshState,
                         stateChangeCount=#freshState,guiChanges=freshGui,
                         guiChangeCount=#freshGui,travelDistanceStuds=distance,
+                        baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                        preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
                         featureStateEvidence=featureStateEvidence,
                         featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
@@ -2557,6 +2627,8 @@ local function observeInteractionObject(obj, root, label)
                         changeQueue[#changeQueue+1]={
                             path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
                             featureCandidate=feature,sequence=historyItem.sequence,
+                            baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
                             observationWindowSeconds=delaySeconds,changes=transactionFresh,
                             guiChanges=freshGui,travelDistanceStuds=distance,
                             featureStateEvidence=featureStateEvidence,
@@ -3117,9 +3189,27 @@ local function inspect(requestType, featureRequest)
                 observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
+                preActivationListenersAttached=observerStats.preActivationListenersAttached,
+                preActivationCaptures=observerStats.preActivationCaptures,
+                preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed,
+                callbackBaselinesUsed=observerStats.callbackBaselinesUsed,
+                stalePreActivationCaptures=observerStats.stalePreActivationCaptures,
+                preActivationCaptureFailures=observerStats.preActivationCaptureFailures,
+                baselineTimingPolicy="pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback",
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=0, cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
+                pendingObservationEvents=pendingObservationEvents,
+                observationWindowsExpected=interactionEventCount*#OBSERVATION_WINDOWS,
+                observationWindowsCompleted=workflowStats.multiWindowSamples,
+                observationWindowsFailed=workflowStats.observationFailures,
+                observationWindowAccountingValid=
+                    workflowStats.multiWindowSamples+workflowStats.observationFailures
+                        +pendingObservationEvents==interactionEventCount*#OBSERVATION_WINDOWS,
+                evidenceLossPossible=pendingObservationEvents>0
+                    or workflowStats.observationFailures>0
+                    or observerStats.preActivationCaptureFailures>0
+                    or observerStats.callbackBaselinesUsed>0,
+                cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,

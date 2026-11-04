@@ -74,6 +74,56 @@ class ScanCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
                 compiler.compile_scan(path)
 
+    def test_pre_activation_baselines_and_pending_windows_are_preserved(self):
+        event={"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated",
+            "featureCandidate":"shops","evidenceLevel":"interaction-observed",
+            "outcomeVerified":False,"baselineSource":"GuiButton.InputBegan",
+            "baselineTiming":"pre-activation","baselineAgeSeconds":0.02,
+            "preActivationBaselineAvailable":True}
+        diagnostics={"callbacksFired":1,"preActivationListenersAttached":1,
+            "preActivationCaptures":1,"preActivationBaselinesUsed":1,
+            "callbackBaselinesUsed":0,"stalePreActivationCaptures":0,
+            "preActivationCaptureFailures":0,"pendingObservationEvents":1,
+            "observationWindowsExpected":3,"observationWindowsCompleted":2,
+            "observationWindowsFailed":0,"observationWindowAccountingValid":True,
+            "evidenceLossPossible":True,"observationWindowsSeconds":[0.35,1.25,3.0],
+            "baselineTimingPolicy":"pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path,event=event)
+            first=json.loads((path/"1.json").read_text());first["interactionDiagnostics"]=diagnostics
+            (path/"1.json").write_text(json.dumps(first))
+            result=compiler.compile_scan(path)
+            feature=next(item for item in result["features"] if item["feature"]=="shops")
+            self.assertEqual(feature["preActivationBaselineEvents"],1)
+            self.assertTrue(result["interactionObservationSummary"]["evidenceLossPossible"])
+            self.assertEqual(result["interactionObservationSummary"]["pendingObservationEvents"],1)
+            event["preActivationBaselineAvailable"]=False
+            self.parts(path,event=event)
+            with self.assertRaisesRegex(ValueError,"baseline timing"):
+                compiler.compile_scan(path)
+            event["preActivationBaselineAvailable"]=True;self.parts(path,event=event)
+            first=json.loads((path/"1.json").read_text())
+            diagnostics["evidenceLossPossible"]=False;first["interactionDiagnostics"]=diagnostics
+            (path/"1.json").write_text(json.dumps(first))
+            with self.assertRaisesRegex(ValueError,"observation diagnostics"):
+                compiler.compile_scan(path)
+
+    def test_callback_baseline_discloses_possible_synchronous_loss(self):
+        diagnostics={"callbacksFired":1,"preActivationListenersAttached":0,
+            "preActivationCaptures":0,"preActivationBaselinesUsed":0,
+            "callbackBaselinesUsed":1,"stalePreActivationCaptures":0,
+            "preActivationCaptureFailures":0,"pendingObservationEvents":0,
+            "observationWindowsExpected":3,"observationWindowsCompleted":3,
+            "observationWindowsFailed":0,"observationWindowAccountingValid":True,
+            "evidenceLossPossible":True,"observationWindowsSeconds":[0.35,1.25,3.0],
+            "baselineTimingPolicy":"pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback"}
+        summary=compiler._interaction_observation_summary(diagnostics)
+        self.assertTrue(summary["evidenceLossPossible"])
+        self.assertIn("callback-time baselines may miss synchronous activation changes",
+            summary["limitations"])
+
+
+
     def test_duplicate_part_with_different_raw_bytes_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)

@@ -1,3 +1,11 @@
+## v30.6.0 — Pre-activation evidence capture
+
+- Capture bounded LocalPlayer scalar state, nearby GUI state, and character position from supported pre-activation signals for GUI buttons, ProximityPrompts, and newly equipped Tools, reducing the prior blind spot where synchronous changes could occur before an `Activated`/`Triggered` callback baseline.
+- Label every interaction and observation window with pre-activation or activation-callback baseline timing; unsupported, absent, failed, or stale captures use an explicit callback fallback and never imply complete observation.
+- Track attached pre-activation listeners, captures, used/fallback/stale baselines, capture failures, pending/completed/failed observation windows, exact window accounting, and possible evidence loss instead of reporting pending windows as a constant zero.
+- Validate baseline and observation-accounting claims in offline scan compilation, preserve per-feature and per-workflow coverage, reject inconsistent claims, and state exact limitations while keeping causality, server authority, runtime success, and gameplay verification false.
+
+
 ## v30.5.2 — Integrated workflow result feedback
 
 - Accepts exact `mixed-action-workflow-trial` capabilities in display-only generated results with selected-candidate identity, bounded step-kind/path, execution-mode, and all-negative verification checks.

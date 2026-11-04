@@ -39,6 +39,23 @@ def _state_changes(item):
         changes.append({"key":key,"before":before,"after":after})
     return changes
 
+_BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
+    "Tool.Equipped","activation-callback-fallback"}
+
+def _baseline(item):
+    fields=("baselineSource","baselineTiming","baselineAgeSeconds",
+        "preActivationBaselineAvailable")
+    if not any(field in item for field in fields):return "unknown",False
+    source=item.get("baselineSource");timing=item.get("baselineTiming")
+    available=item.get("preActivationBaselineAvailable");age=item.get("baselineAgeSeconds")
+    expected="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    if (source not in _BASELINE_SOURCES or timing!=expected or type(available) is not bool
+            or available!=(timing=="pre-activation") or (age is not None and
+            (type(age) not in (int,float) or type(age) is bool or not 0<=age<=3600))):
+        raise ValueError("Malformed interaction baseline timing")
+    return timing,available
+
+
 def compile_sequences(plan):
     integrity=plan.get("integrity") or {}
     if integrity.get("scanComplete") is not True or type(integrity.get("placeId")) is not int:
@@ -57,16 +74,20 @@ def compile_sequences(plan):
         # Never merge unlinked events simply because their feature names match.
         key=(feature,str(tid) if type(tid) in (int,str) and len(str(tid))<=80 else "event-"+str(len(groups)))
         steps=groups.setdefault(key,[])
-        changes=_state_changes(item)
+        changes=_state_changes(item);baseline_timing,baseline_available=_baseline(item)
         steps.append({"path":_event_path(item),"controlType":item.get("controlType") if _safe(item.get("controlType")) else None,
           "sequence":item.get("sequence") if type(item.get("sequence")) is int else (item.get("eventIndex") if type(item.get("eventIndex")) is int else None),
           "stateChanges":changes,"clientStateCorroborated":item.get("clientStateCorroborated") is True,
+          "baselineTiming":baseline_timing,"preActivationBaselineAvailable":baseline_available,
           "outcomeVerified":item.get("outcomeVerified") is True})
     workflows=[]
     for (feature,tid),steps in sorted(groups.items()):
         steps.sort(key=lambda s:(s["sequence"] is None,s["sequence"] or 0))
         workflows.append({"feature":feature,"transaction":tid,"steps":steps,
           "observedStateChanges":sum(len(s["stateChanges"]) for s in steps),
+          "preActivationBaselineSteps":sum(s["baselineTiming"]=="pre-activation" for s in steps),
+          "activationCallbackBaselineSteps":sum(s["baselineTiming"]=="activation-callback" for s in steps),
+          "unknownBaselineTimingSteps":sum(s["baselineTiming"]=="unknown" for s in steps),
           "clientCorroborated":any(s["clientStateCorroborated"] for s in steps),
           "serverVerified":False,"automaticallyExecutable":False,
           "requiredNextStep":"Review actual supported action interface and test a permitted implementation"})

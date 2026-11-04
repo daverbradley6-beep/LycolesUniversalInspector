@@ -59,6 +59,86 @@ def _correlation_evidence(event):
         fail("Observable outcome candidate evidence claims verification or is malformed")
     return {"candidate":True,"state":"state-change" in kinds,"gui":"gui-change" in kinds}
 
+_BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
+    "Tool.Equipped","activation-callback-fallback"}
+
+
+def _baseline_evidence(event):
+    fields=("baselineSource","baselineTiming","baselineAgeSeconds",
+        "preActivationBaselineAvailable")
+    if not any(field in event for field in fields):
+        return {"timing":"unknown","preActivationBaselineAvailable":False}
+    source=event.get("baselineSource");timing=event.get("baselineTiming")
+    available=event.get("preActivationBaselineAvailable");age=event.get("baselineAgeSeconds")
+    expected_timing="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    if (source not in _BASELINE_SOURCES or timing!=expected_timing
+            or type(available) is not bool or available!=(timing=="pre-activation")
+            or (age is not None and (type(age) not in (int,float) or type(age) is bool
+                or not 0<=age<=3600))):
+        fail("Malformed interaction baseline timing")
+    return {"timing":timing,"preActivationBaselineAvailable":available}
+
+
+def _interaction_observation_summary(diagnostics):
+    if diagnostics in (None,{}):
+        return {"available":False,"evidenceLossPossible":None,
+            "limitations":["interaction baseline/window accounting unavailable in this report version"]}
+    if not isinstance(diagnostics,dict):fail("Malformed interaction diagnostics")
+    marker_fields=("observationWindowsExpected","preActivationCaptures",
+        "baselineTimingPolicy")
+    if not any(field in diagnostics for field in marker_fields):
+        return {"available":False,"evidenceLossPossible":None,
+            "limitations":["interaction baseline/window accounting unavailable in this report version"]}
+    count_fields=("callbacksFired","preActivationListenersAttached","preActivationCaptures",
+        "preActivationBaselinesUsed","callbackBaselinesUsed","stalePreActivationCaptures",
+        "preActivationCaptureFailures","pendingObservationEvents","observationWindowsExpected",
+        "observationWindowsCompleted","observationWindowsFailed")
+    if any(type(diagnostics.get(field)) is not int or not 0<=diagnostics[field]<=10_000_000
+            for field in count_fields):
+        fail("Malformed interaction observation counts")
+    expected=diagnostics["observationWindowsExpected"]
+    windows=diagnostics.get("observationWindowsSeconds")
+    if windows!=[0.35,1.25,3.0] or expected!=diagnostics["callbacksFired"]*len(windows):
+        fail("Inconsistent interaction observation window schedule")
+    accounted=diagnostics["observationWindowsCompleted"]+diagnostics[
+        "observationWindowsFailed"]+diagnostics["pendingObservationEvents"]
+    actual_accounting=accounted==expected
+    actual_loss=(diagnostics["pendingObservationEvents"]>0
+        or diagnostics["observationWindowsFailed"]>0
+        or diagnostics["preActivationCaptureFailures"]>0
+        or diagnostics["callbackBaselinesUsed"]>0)
+    if (diagnostics["preActivationBaselinesUsed"]+diagnostics["callbackBaselinesUsed"]
+            !=diagnostics["callbacksFired"]
+            or diagnostics["preActivationBaselinesUsed"]>diagnostics["preActivationCaptures"]
+            or diagnostics["stalePreActivationCaptures"]>diagnostics["callbackBaselinesUsed"]
+            or (diagnostics["preActivationCaptures"]>0
+                and diagnostics["preActivationListenersAttached"]==0)
+            or diagnostics.get("observationWindowAccountingValid") is not actual_accounting
+            or diagnostics.get("evidenceLossPossible") is not actual_loss
+            or diagnostics.get("baselineTimingPolicy")!=
+                "pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback"):
+        fail("Inconsistent interaction observation diagnostics")
+    limitations=[]
+    if diagnostics["callbackBaselinesUsed"]:limitations.append(
+        "callback-time baselines may miss synchronous activation changes")
+    if diagnostics["preActivationCaptureFailures"]:limitations.append(
+        "one or more pre-activation captures failed")
+    if diagnostics["observationWindowsFailed"]:limitations.append(
+        "one or more delayed observation windows failed")
+    if diagnostics["pendingObservationEvents"]:limitations.append(
+        "one or more delayed observation windows were pending at export")
+    return {"available":True,"callbacksFired":diagnostics["callbacksFired"],
+        "preActivationBaselinesUsed":diagnostics["preActivationBaselinesUsed"],
+        "callbackBaselinesUsed":diagnostics["callbackBaselinesUsed"],
+        "pendingObservationEvents":diagnostics["pendingObservationEvents"],
+        "observationWindowsExpected":expected,
+        "observationWindowsCompleted":diagnostics["observationWindowsCompleted"],
+        "observationWindowsFailed":diagnostics["observationWindowsFailed"],
+        "observationWindowAccountingValid":actual_accounting,
+        "evidenceLossPossible":actual_loss,"limitations":limitations}
+
+
+
 _RECEIVER_PROVENANCE_FIELDS={
     "schemaVersion","scanId","placeId","partCount","expectedParts","objectCount",
     "metadata","receiverIntegrity","receiverPartContentDigests",
@@ -347,11 +427,13 @@ def compile_scan(directory):
     if any(manifest.get("objectCount") is not None
            and manifest.get("objectCount")!=len(objects) for manifest in local_manifests):
         fail("Local manifest object count mismatch")
+    interaction_diagnostics=metadata.get("interactionDiagnostics") or {}
+    interaction_observation_summary=_interaction_observation_summary(interaction_diagnostics)
     history=[]
     for p in ordered:
         history.extend(p.get("interactionHistoryChunk") or [])
     if not history:
-        history=(metadata.get("interactionDiagnostics") or {}).get("recentInteractions") or []
+        history=interaction_diagnostics.get("recentInteractions") or []
     if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
     if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
     for event in history:
@@ -361,7 +443,10 @@ def compile_scan(directory):
                     or ".".join(segment["name"] for segment in identity)!=event["path"]):
                 fail("Malformed interaction path identity")
             event["pathIdentity"]=identity
-    history_evidence=[(event,_correlation_evidence(event)) for event in history]
+    history_evidence=[]
+    for event in history:
+        evidence=_correlation_evidence(event);evidence.update(_baseline_evidence(event))
+        history_evidence.append((event,evidence))
     feature_evidence=metadata.get("featureEvidence") or {}
     readiness=metadata.get("featureReadiness") or {}
     # Evidence is descriptive, never an authorization to invoke arbitrary remotes.
@@ -413,12 +498,18 @@ def compile_scan(directory):
         candidates=sum(item["candidate"] for item in correlations)
         state_correlations=sum(item["state"] for item in correlations)
         gui_correlations=sum(item["gui"] for item in correlations)
+        pre_activation=sum(item["timing"]=="pre-activation" for item in correlations)
+        callback_baselines=sum(item["timing"]=="activation-callback" for item in correlations)
+        unknown_baselines=sum(item["timing"]=="unknown" for item in correlations)
         features.append({
             "feature":name,"interactionEvents":len(events),
             "observedEvents":observed,"verifiedClientOutcomes":outcomes,
             "clientCorroboratedEvents":corroborated,"temporalTransitionEvents":transitions,
             "observableOutcomeCandidates":candidates,
             "featureStateCorrelations":state_correlations,"featureGuiCorrelations":gui_correlations,
+            "preActivationBaselineEvents":pre_activation,
+            "activationCallbackBaselineEvents":callback_baselines,
+            "unknownBaselineTimingEvents":unknown_baselines,
             "status":"client-outcome-observed" if outcomes else
                 ("observable-outcome-candidate-unverified" if candidates else
                  ("interaction-observed" if observed else "discovered")),
@@ -442,7 +533,8 @@ def compile_scan(directory):
               "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),
               "scanMode":metadata["scanStats"].get("mode"),
               "snapshotId":metadata.get("snapshotId")},
-          "interactionDiagnostics":metadata.get("interactionDiagnostics") or {},
+          "interactionDiagnostics":interaction_diagnostics,
+          "interactionObservationSummary":interaction_observation_summary,
           "observedInteractionHistory":history,
           "actionableObjects":actionable,"actionableObjectCount":actionable_total,
           "actionableObjectsTruncated":actionable_total>len(actionable),

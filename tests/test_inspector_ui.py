@@ -130,6 +130,19 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('effectiveVisible=visible',SRC)
         self.assertIn('return guiControlSnapshot(obj)',SRC)
 
+    def test_interaction_baselines_capture_pre_activation_state_when_supported(self):
+        self.assertIn('registerPreActivation(obj.InputBegan,"GuiButton.InputBegan",2',SRC)
+        self.assertIn('obj.PromptButtonHoldBegan,"ProximityPrompt.PromptButtonHoldBegan"',SRC)
+        self.assertIn('registerPreActivation(obj.Equipped,"Tool.Equipped",5)',SRC)
+        self.assertIn('baselineSource="activation-callback-fallback"',SRC)
+        self.assertIn('preActivationBaselineAvailable=baselineSource~="activation-callback-fallback"',SRC)
+        self.assertIn('preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed',SRC)
+        self.assertIn('callbackBaselinesUsed=observerStats.callbackBaselinesUsed',SRC)
+        self.assertIn('pendingObservationEvents=pendingObservationEvents+1',SRC)
+        self.assertIn('pendingObservationEvents=math.max(0,pendingObservationEvents-1)',SRC)
+        self.assertIn('observationWindowAccountingValid=',SRC)
+        self.assertIn('evidenceLossPossible=pendingObservationEvents>0',SRC)
+        self.assertNotIn('pendingObservationEvents=0, cumulativeChangeEvents',SRC)
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

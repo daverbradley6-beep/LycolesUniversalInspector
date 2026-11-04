@@ -19,6 +19,19 @@ class SequenceTests(unittest.TestCase):
         self.assertEqual(result["workflows"][0]["observedStateChanges"],1)
         self.assertFalse(result["workflows"][0]["automaticallyExecutable"])
         self.assertFalse(result["workflows"][0]["serverVerified"])
+    def test_baseline_timing_is_preserved_and_validated(self):
+        plan=self.plan();first,second=plan["observedInteractionHistory"]
+        first.update(baselineSource="GuiButton.InputBegan",baselineTiming="pre-activation",
+            baselineAgeSeconds=0.01,preActivationBaselineAvailable=True)
+        second.update(baselineSource="activation-callback-fallback",
+            baselineTiming="activation-callback",preActivationBaselineAvailable=False)
+        workflow=m.compile_sequences(plan)["workflows"][0]
+        self.assertEqual(workflow["preActivationBaselineSteps"],1)
+        self.assertEqual(workflow["activationCallbackBaselineSteps"],1)
+        second["preActivationBaselineAvailable"]=True
+        with self.assertRaisesRegex(ValueError,"baseline timing"):
+            m.compile_sequences(plan)
+
     def test_unlinked_events_separate(self):
         p=self.plan()
         for event in p["observedInteractionHistory"]:event.pop("transactionId")
