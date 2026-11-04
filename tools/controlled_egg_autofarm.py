@@ -60,11 +60,31 @@ assert(test.hatches.Value==286,"hatch outcome was not observed")
 assert(root.CFrame~=beforeCFrame,"automatic teleport was not attempted")
 local promptGui=playerGui:FindFirstChild("LycolesPromptInteractions")
 assert(promptGui~=nil,"prompt interaction GUI missing")
-local observed=false
+local observed=false local dropdown=false
 for _,item in ipairs(promptGui:GetDescendants()) do
     if item:IsA("TextLabel") and string.find(item.Text or "","Observed leaderstats.🥚.Hatches increased",1,true) then observed=true end
+    if item.Name=="TargetDropdown" and item:IsA("ScrollingFrame") then dropdown=true end
 end
 assert(observed,"outcome status was not displayed")
+assert(dropdown,"target dropdown was not generated")
+assert(type(_G.LycolesPromptState)=="table","shared prompt state missing")
+assert(_G.LycolesPromptState.selectedLabel=="Rainbow.Egg","shared selection not synchronized")
+assert(_G.LycolesPromptState.running==false,"shared running state not synchronized")
+local adminGui=playerGui:FindFirstChild("LycolesAdminCommands")
+local commandRow=nil
+for _,item in ipairs(adminGui and adminGui:GetDescendants() or {}) do
+    if item.Name=="interactionstart" then commandRow=item break end
+end
+assert(commandRow and string.find(commandRow.Text or "","State: stopped | Rainbow.Egg | auto",1,true),
+    "admin command state not synchronized")
+test.prompt.Enabled=false
+player.Chatted:Fire(";interactionstart")
+assert(_G.__promptCalls==1,"disabled prompt unexpectedly activated")
+assert(_G.LycolesPromptState.failures==3 and _G.LycolesPromptState.running==false,
+    "failure boundary not synchronized")
+assert(string.find(commandRow.Text or "","failures 3/3",1,true),
+    "admin failure state not synchronized")
+test.prompt.Enabled=true
 player.Chatted:Fire(";eggmode multi")
 assert(_G.__promptCalls==1,"unobserved multi mode activated a prompt")
 player.Chatted:Fire(";stopall")
@@ -106,7 +126,8 @@ def execute(place_id,luau_binary,timeout_seconds=2.0):
     return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
         "simulatedEnvironment":True,"promptActivationObserved":True,
         "teleportAttemptObserved":True,"counterIncrementObserved":True,
-        "failureBoundaryObserved":True,"robloxRuntimeVerified":False,
+        "failureBoundaryObserved":True,"targetDropdownVerified":True,
+        "sharedCommandStateVerified":True,"robloxRuntimeVerified":False,
         "serverAuthorityVerified":False,"causalityProven":False,"gameplayVerified":False,
         "transcript":stdout.strip()}
 

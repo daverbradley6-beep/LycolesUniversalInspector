@@ -45,7 +45,9 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                       "root.CFrame=anchor.CFrame","before=readOutcome", "after=readOutcome",
                       "Stopped after 3 uncorroborated attempts","_G.LycolesGameCommands",
                       "interactionstart=","interactionstop=","interaction=",
-                      "eggstart=","eggstop=","eggmode="):
+                      "eggstart=","eggstop=","eggmode=","targetDropdown",
+                      "_G.LycolesPromptState","_G.LycolesGameStateChanged",
+                      "state=commandState"):
             self.assertIn(token,source)
         self.assertNotIn("FireServer(",source)
         self.assertNotIn("InvokeServer(",source)

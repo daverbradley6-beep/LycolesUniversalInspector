@@ -177,10 +177,67 @@ def gameplay_understanding_lines(plan,understanding):
     return lines
 
 
+
+def generation_readiness_lines(plan,readiness):
+    if readiness is None:
+        return ["Generation readiness: unavailable",
+                "No generated gameplay capability is live-verified"]
+    integrity=plan["integrity"]
+    claims=readiness.get("claims") if isinstance(readiness,dict) else None
+    false_claims=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
+                  "runtimeVerified","gameplayVerified","actionOutcomesVerified")
+    if (not isinstance(readiness,dict)
+            or readiness.get("schemaVersion")!="113.generation-readiness.1"
+            or readiness.get("placeId")!=integrity.get("placeId")
+            or readiness.get("scanId")!=integrity.get("scanId")
+            or not isinstance(claims,dict)
+            or any(claims.get(field) is not False for field in false_claims)):
+        raise ValueError("Invalid generation readiness claims")
+    request=readiness.get("request")
+    generated=readiness.get("generatedCapabilities")
+    unavailable=readiness.get("unavailableRequestedBehavior")
+    if (not isinstance(request,dict) or not isinstance(generated,list) or len(generated)>64
+            or not isinstance(unavailable,list) or len(unavailable)>16
+            or request.get("fullRequestImplemented") is not False
+            or request.get("runtimeVerified") is not False
+            or request.get("gameplayVerified") is not False):
+        raise ValueError("Malformed generation readiness")
+    status=request.get("status")
+    if not isinstance(status,str) or not 1<=len(status)<=100:
+        raise ValueError("Malformed generation readiness status")
+    lines=["Generation request: "+status,
+           "Generated bounded capabilities: "+str(len(generated)),
+           "Full requested capability implemented: false",
+           "Runtime and gameplay verification: false"]
+    subset=request.get("supportedSubset")
+    if not isinstance(subset,list) or len(subset)>16:
+        raise ValueError("Malformed generated capability subset")
+    for item in subset[:5]:
+        if not isinstance(item,str) or not 1<=len(item)<=160:
+            raise ValueError("Malformed generated capability subset")
+        lines.append("Generated subset: "+item)
+    for capability in generated[:5]:
+        if not isinstance(capability,dict):raise ValueError("Malformed generated capability")
+        label=capability.get("targetLabel");kind=capability.get("kind")
+        if (not isinstance(label,str) or not 1<=len(label)<=120
+                or kind!="proximity-prompt-trial"
+                or capability.get("runtimeVerified") is not False
+                or capability.get("gameplayVerified") is not False):
+            raise ValueError("Malformed generated capability")
+        lines.append("Generated trial: "+label+" ["+kind+"]")
+    for item in unavailable:
+        identifier=item.get("id") if isinstance(item,dict) else None
+        status_value=item.get("status") if isinstance(item,dict) else None
+        if not isinstance(identifier,str) or status_value!="unavailable":
+            raise ValueError("Malformed unavailable requested behavior")
+        lines.append("Unavailable: "+identifier)
+    return lines
+
+
 def lua_quote(value):
     return json.dumps(str(value),ensure_ascii=True)
 
-def render(plan,gameplay_understanding=None):
+def render(plan,gameplay_understanding=None,generation_readiness=None):
     place=validate(plan)
     names=sorted({f["feature"] for f in plan["features"]})
     feature_list="\n".join("    "+lua_quote(name)+"," for name in names)
@@ -188,6 +245,9 @@ def render(plan,gameplay_understanding=None):
         "    "+lua_quote(line)+"," for line in source_provenance_lines(plan))
     gameplay_list="\n".join("    "+lua_quote(line)+"," for line in
                              gameplay_understanding_lines(plan,gameplay_understanding))
+    generation_list="\n".join("    "+lua_quote(line)+"," for line in
+                               generation_readiness_lines(plan,generation_readiness))
+
     request=plan.get("requestedCapability")
     request_lines=(["Requested capability: "+request,
                     "Request status: evidence review only; gameplay is unverified"]
@@ -299,9 +359,12 @@ button("Features",function()
     local candidates=FEATURE_NAMES
     local provenance=SOURCE_PROVENANCE_LINES
     local gameplay=GAMEPLAY_UNDERSTANDING_LINES
+    local generation=GENERATION_READINESS_LINES
     local request=REQUEST_STATUS_LINES
-    local lines={"Discovered: "..tostring(#candidates),"These are candidates, not implemented gameplay actions.",""}
+    local lines={"Discovered: "..tostring(#candidates),"These are candidates, not verified gameplay mechanics.",""}
     for _,line in ipairs(request) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for _,line in ipairs(generation) do lines[#lines+1]=line end
     lines[#lines+1]=""
     for _,line in ipairs(gameplay) do lines[#lines+1]=line end
     lines[#lines+1]=""
@@ -338,6 +401,7 @@ show("Ready",{"Validated scan inventory loaded.","Client diagnostic features onl
         "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
         "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
         "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(
+        "GENERATION_READINESS_LINES", "{\n"+generation_list+"\n}").replace(
         "REQUEST_STATUS_LINES", "{\n"+request_list+"\n}")
 
 def main():
@@ -350,15 +414,19 @@ def main():
         plan=json.loads(raw)
         understanding=load_local_module("lycoles_gameplay_understanding",
                                         "understand_gameplay.py").analyze(plan)
-        utility_lua=render(plan,understanding)
         discovery_builder=load_local_module("lycoles_action_discovery",
                                              "discover_action_capabilities.py")
         action_discovery=discovery_builder.analyze(plan)
+        readiness_builder=load_local_module("lycoles_generation_readiness",
+                                             "assess_generation_readiness.py")
+        generation_readiness=readiness_builder.assess(plan,understanding,action_discovery)
+        utility_lua=render(plan,understanding,generation_readiness)
         prompt_generator=load_local_module("lycoles_prompt_interactions","generate_prompt_interactions.py")
         prompt_interactions_lua=prompt_generator.render(action_discovery)
         admin_generator=load_local_module("lycoles_admin_commands",
                                           "generate_admin_commands.py")
-        admin_lua=admin_generator.render(plan["integrity"]["placeId"],understanding)
+        admin_lua=admin_generator.render(
+            plan["integrity"]["placeId"],understanding,generation_readiness)
         lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
         result_builder=load_local_module("lycoles_generated_result","generated_result.py")
         generated_result=result_builder.build(plan["integrity"]["placeId"],
@@ -367,6 +435,8 @@ def main():
             list(ALLOWED_FEATURES)+["Admin Commands"]+
                 (["Prompt Interactions"] if prompt_interactions_lua else []))
 
+        generation_readiness_bytes=(json.dumps(
+            generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
         script=out/"LycolesGeneratedUtility.lua"
         script.write_text(lua,encoding="utf-8")
@@ -375,6 +445,7 @@ def main():
             json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
         (out/"action-capabilities.json").write_text(json.dumps(
             action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        (out/"generation-readiness.json").write_bytes(generation_readiness_bytes)
         if prompt_interactions_lua is not None:
             (out/"LycolesPromptInteractions.lua").write_text(prompt_interactions_lua,encoding="utf-8")
 
@@ -404,6 +475,11 @@ def main():
             "compatibilityAlias":True},
           "gameplayUnderstanding":{"artifact":"gameplay-understanding.json",
             "schemaVersion":understanding["schemaVersion"],"summary":understanding["summary"]},
+          "generationReadiness":{"artifact":"generation-readiness.json",
+            "schemaVersion":generation_readiness["schemaVersion"],
+            "sha256":hashlib.sha256(generation_readiness_bytes).hexdigest(),
+            "summary":generation_readiness["summary"],
+            "request":generation_readiness["request"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,
           "sourceFeatureCandidates":len(plan["features"]),
           "releaseStatus":"GENERATED_PROMPT_TRIAL_STATIC_CHECKED_NOT_LIVE_TESTED"

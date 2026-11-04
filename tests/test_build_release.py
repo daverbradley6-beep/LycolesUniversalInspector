@@ -1,5 +1,6 @@
 """End-to-end offline build tests. Run: python3 -m unittest discover -s tests -v"""
 import importlib.util
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -56,7 +57,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             event={"featureCandidate":"pets","path":"Workspace.Rendered.Chunker.Rainbow Egg.Prompt.ProximityPrompt",
                 "controlType":"ProximityPrompt.Triggered","evidenceLevel":"temporal-state-change-observed",
                 "outcomeVerified":False,"stateChanges":[{"key":"leaderstats.🥚 Hatches","before":285,"after":286}]}
-            make_parts(parts,event=event)
+            make_parts(parts,event=event,
+                request="Automatically hatch the selected egg in multi mode")
             first=json.loads((parts/"1.json").read_text())
             first["featureEvidence"]={"pets":{}}
             first["objects"][0]={"path":event["path"],"class":"ProximityPrompt","scanOrdinal":1,
@@ -69,6 +71,20 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(manifest["promptInteractionTrial"]["gameplayVerified"])
             self.assertTrue(manifest["eggAutofarmTrial"]["compatibilityAlias"])
             source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
+            self.assertEqual(readiness["request"]["status"],"generated-bounded-subset")
+            self.assertTrue(readiness["request"]["generatedSubsetAvailable"])
+            self.assertFalse(readiness["request"]["fullRequestImplemented"])
+            self.assertEqual(readiness["generatedCapabilities"][0]["targetLabel"],"Rainbow Egg")
+            self.assertEqual([item["id"] for item in readiness["unavailableRequestedBehavior"]],
+                ["auto-game-mode","multi-game-mode"])
+            self.assertEqual(manifest["generationReadiness"]["summary"],readiness["summary"])
+            self.assertRegex(manifest["generationReadiness"]["sha256"],r"^[a-f0-9]{64}$")
+            self.assertEqual(manifest["generationReadiness"]["sha256"],
+                hashlib.sha256((base/"out"/"generation-readiness.json").read_bytes()).hexdigest())
+            self.assertIn("Generation request: generated-bounded-subset",source)
+            self.assertIn("Unavailable: multi-game-mode",source)
+
             self.assertIn("fireproximityprompt(prompt)",source)
             self.assertIn("interactionstart=",source)
             self.assertIn("interactionstop=",source)
@@ -136,6 +152,7 @@ class ReleaseBuilderTests(unittest.TestCase):
                 self.assertIn("review-contracts-template.json",archive.namelist())
                 self.assertIn("source-provenance.json",archive.namelist())
                 self.assertIn("gameplay-understanding.json",archive.namelist())
+                self.assertIn("generation-readiness.json",archive.namelist())
                 self.assertIn("LycolesAdminCommands.lua",archive.namelist())
                 result_name="Lycoles-3623096087-generated-result.json"
                 self.assertIn(result_name,archive.namelist())
@@ -152,7 +169,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("Admin Commands",first["implementedClientControls"])
             self.assertIn("Lycoles universal local utility commands",admin)
             self.assertIn("System candidates (unverified)",admin)
-            self.assertIn("Request readiness: no capability requested",admin)
+            self.assertIn("Generation readiness: no-capability-requested",admin)
+            self.assertIn("bounded generated: 0",admin)
             self.assertIn(admin,combined)
             self.assertNotIn("FireServer(",admin)
             self.assertNotIn("InvokeServer(",admin)

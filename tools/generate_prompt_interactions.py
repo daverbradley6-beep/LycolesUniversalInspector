@@ -168,6 +168,8 @@ local selected=1
 local mode="auto"
 local failures=0
 local connections={}
+local sharedState={running=false,selectedIndex=1,selectedLabel="",mode="auto",failures=0}
+_G.LycolesPromptState=sharedState
 local feedbackSequence=0
 local feedback={schemaVersion="112.prompt-trial-feedback.1",placeId=__PLACE_ID__,scanId=__SCAN_ID__,
     discoverySHA256=__DISCOVERY_DIGEST__,sessionId=HttpService:GenerateGUID(false),entries={},
@@ -188,8 +190,8 @@ gui.Name="LycolesPromptInteractions"
 gui.ResetOnSpawn=false
 gui.Parent=player:WaitForChild("PlayerGui")
 local panel=Instance.new("Frame")
-panel.Size=UDim2.fromOffset(360,220)
-panel.Position=UDim2.new(.5,-180,.5,-110)
+panel.Size=UDim2.fromOffset(400,360)
+panel.Position=UDim2.new(.5,-200,.5,-180)
 panel.BackgroundColor3=Color3.fromRGB(24,30,39)
 panel.Parent=gui
 local title=Instance.new("TextLabel")
@@ -199,14 +201,24 @@ title.Text="Prompt Interactions | evidence-bounded trial" title.Parent=panel
 local targetButton=Instance.new("TextButton")
 targetButton.Size=UDim2.new(1,-20,0,38) targetButton.Position=UDim2.fromOffset(10,45)
 targetButton.Parent=panel
+local targetDropdown=Instance.new("ScrollingFrame")
+targetDropdown.Name="TargetDropdown"
+targetDropdown.Size=UDim2.new(1,-20,0,120) targetDropdown.Position=UDim2.fromOffset(10,88)
+targetDropdown.BackgroundColor3=Color3.fromRGB(31,38,49)
+targetDropdown.AutomaticCanvasSize=Enum.AutomaticSize.Y targetDropdown.CanvasSize=UDim2.new()
+targetDropdown.ScrollBarThickness=6 targetDropdown.Visible=false targetDropdown.Parent=panel
+local targetLayout=Instance.new("UIListLayout")
+targetLayout.Padding=UDim.new(0,4) targetLayout.Parent=targetDropdown
+local targetRows={}
+
 local modeButton=Instance.new("TextButton")
-modeButton.Size=UDim2.new(.5,-15,0,38) modeButton.Position=UDim2.fromOffset(10,90)
+modeButton.Size=UDim2.new(.5,-15,0,38) modeButton.Position=UDim2.fromOffset(10,216)
 modeButton.Parent=panel
 local toggle=Instance.new("TextButton")
-toggle.Size=UDim2.new(.5,-15,0,38) toggle.Position=UDim2.new(.5,5,0,90)
+toggle.Size=UDim2.new(.5,-15,0,38) toggle.Position=UDim2.new(.5,5,0,216)
 toggle.Parent=panel
 local status=Instance.new("TextLabel")
-status.Size=UDim2.new(1,-20,0,76) status.Position=UDim2.fromOffset(10,136)
+status.Size=UDim2.new(1,-20,0,88) status.Position=UDim2.fromOffset(10,262)
 status.BackgroundColor3=Color3.fromRGB(34,41,52) status.TextColor3=Color3.fromRGB(220,228,236)
 status.TextWrapped=true status.Text="Stopped. Runtime and gameplay remain unverified." status.Parent=panel
 local function split(path)
@@ -293,11 +305,30 @@ local function currentTarget()
 end
 local function update()
     local target=currentTarget() or targets[selected]
-    targetButton.Text="Interaction: "..target.label.." ["..target.feature.."]  (click to change)"
+    targetButton.Text="Interaction: "..target.label.." ["..target.feature.."]  ▾"
     if target.egg then modeButton.Text=mode=="multi" and "Mode: MULTI" or "Mode: AUTO SINGLE"
     else modeButton.Text="Mode: REPEAT TRIAL" end
     toggle.Text=running and "STOP" or "START"
+    if running then targetDropdown.Visible=false end
+    sharedState.running=running sharedState.selectedIndex=selected
+    sharedState.selectedLabel=target.label sharedState.mode=mode sharedState.failures=failures
+    for index,row in pairs(targetRows) do
+        row.BackgroundColor3=index==selected and Color3.fromRGB(61,107,139) or Color3.fromRGB(42,51,64)
+    end
+    if type(_G.LycolesGameStateChanged)=="function" then pcall(_G.LycolesGameStateChanged) end
 end
+for index,target in ipairs(targets) do
+    local row=Instance.new("TextButton")
+    row.Name="Target"..tostring(index) row.Size=UDim2.new(1,-8,0,34)
+    row.Text=target.label.." ["..target.feature.."]"
+    row.TextColor3=Color3.new(1,1,1) row.TextXAlignment=Enum.TextXAlignment.Left
+    row.Parent=targetDropdown targetRows[index]=row
+    table.insert(connections,row.MouseButton1Click:Connect(function()
+        if running then return end selected=index mode="auto" targetDropdown.Visible=false update()
+        status.Text="Selected "..target.label..". Runtime and gameplay remain unverified."
+    end))
+end
+
 local function stop(reason)
     running=false update()
     if reason then status.Text=reason end
@@ -328,7 +359,7 @@ local function activateOnce()
         or target.expected=="decreased" and type(before)=="number" and type(after)=="number" and after<before
         or target.expected=="changed" and before~=nil and after~=nil and after~=before
     if observed then
-        failures=0
+        failures=0 update()
         recordFeedback(target,before,after,true,"expected-change-observed","Observed bounded scalar direction")
         status.Text="Observed "..target.outcome.." "..target.expected.." "..tostring(before).." → "..tostring(after)
             ..". This is runtime correlation, not server-authority or causal proof."
@@ -345,7 +376,8 @@ local function start()
         while alive and running do
             local ok,message=activateOnce()
             if not ok then
-                failures=failures+1 status.Text=message.." (attempt "..tostring(failures).."/3)"
+                failures=failures+1 update()
+                status.Text=message.." (attempt "..tostring(failures).."/3)"
                 if failures>=3 then stop("Stopped after 3 uncorroborated attempts. "..message) break end
             end
             task.wait(.4)
@@ -357,7 +389,7 @@ local function hasMulti()
     for _,target in ipairs(targets) do if target.multi then return true end end return false
 end
 table.insert(connections,targetButton.MouseButton1Click:Connect(function()
-    if running then return end selected=selected%#targets+1 mode="auto" update()
+    if running then return end targetDropdown.Visible=not targetDropdown.Visible update()
 end))
 table.insert(connections,modeButton.MouseButton1Click:Connect(function()
     if running then return end
@@ -382,25 +414,30 @@ local function selectTarget(words,eggsOnly,usage)
     end
     return false,eggsOnly and "Egg target not found" or "Interaction target not found"
 end
+local function commandState()
+    local target=currentTarget() or targets[selected]
+    return (running and "running" or "stopped").." | "..target.label.." | "..mode
+        .." | failures "..tostring(failures).."/3"
+end
 _G.LycolesGameCommands={
-    interactions={category="Game: Interactions",description="List evidence-backed prompt targets",arguments="",availability=function() return true,"available" end,
+    interactions={category="Game: Interactions",description="List evidence-backed prompt targets",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() return true,listTargets(false) end},
-    interaction={category="Game: Interactions",description="Select an evidence-backed prompt target",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,
+    interaction={category="Game: Interactions",description="Select an evidence-backed prompt target",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,state=commandState,
         run=function(words) return selectTarget(words,false,"Usage: ;interaction [name]") end},
-    interactionstart={category="Game: Interactions",description="Start selected prompt trial",arguments="",availability=function() return type(fireproximityprompt)=="function","fireproximityprompt unavailable" end,run=function() return start() end},
-    interactionstop={category="Game: Interactions",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,
+    interactionstart={category="Game: Interactions",description="Start selected prompt trial",arguments="",availability=function() return type(fireproximityprompt)=="function","fireproximityprompt unavailable" end,state=commandState,run=function() return start() end},
+    interactionstop={category="Game: Interactions",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() stop("Stopped by command") return true,"Prompt trial stopped" end},
-    interactionfeedback={category="Game: Interactions",description="Export bounded prompt trial feedback JSON",arguments="",availability=function() return true,"available" end,
+    interactionfeedback={category="Game: Interactions",description="Export bounded prompt trial feedback JSON",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() local ok,payload=pcall(function() return HttpService:JSONEncode(feedback) end) return ok,ok and payload or "Feedback JSON encoding failed" end},
 
-    eggs={category="Game: Eggs",description="List evidence-backed egg targets",arguments="",availability=function() return true,"available" end,
+    eggs={category="Game: Eggs",description="List evidence-backed egg targets",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() return true,listTargets(true) end},
-    egg={category="Game: Eggs",description="Select an evidence-backed egg",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,
+    egg={category="Game: Eggs",description="Select an evidence-backed egg",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,state=commandState,
         run=function(words) return selectTarget(words,true,"Usage: ;egg [name]") end},
-    eggmode={category="Game: Eggs",description="Select auto-single or observed multi target",arguments="[auto|multi]",availability=function() return not running,running and "stop prompt trial first" or "available" end,
+    eggmode={category="Game: Eggs",description="Select auto-single or observed multi target",arguments="[auto|multi]",availability=function() return not running,running and "stop prompt trial first" or "available" end,state=commandState,
         run=function(words) local value=(words[1] or ""):lower() if value~="auto" and value~="multi" then return false,"Usage: ;eggmode [auto|multi]" end if not targets[selected].egg then return false,"Selected target is not an egg interaction" end if value=="multi" and not hasMulti() then return false,"No observed multi-hatch target" end mode=value update() return true,"Egg mode "..value end},
-    eggstart={category="Game: Eggs",description="Start selected egg prompt trial",arguments="",availability=function() return targets[selected].egg and type(fireproximityprompt)=="function",targets[selected].egg and "fireproximityprompt unavailable" or "select an egg target" end,run=function() return start() end},
-    eggstop={category="Game: Eggs",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,
+    eggstart={category="Game: Eggs",description="Start selected egg prompt trial",arguments="",availability=function() return targets[selected].egg and type(fireproximityprompt)=="function",targets[selected].egg and "fireproximityprompt unavailable" or "select an egg target" end,state=commandState,run=function() return start() end},
+    eggstop={category="Game: Eggs",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() stop("Stopped by command") return true,"Prompt trial stopped" end},
 }
 _G.LycolesGameStopAll=function() stop("Stopped by ;stopall") end
@@ -409,6 +446,8 @@ _G.LycolesPromptClose=function()
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     if gui then gui:Destroy() end
     _G.LycolesGameCommands=nil _G.LycolesGameStopAll=nil _G.LycolesPromptTrialFeedback=nil
+    _G.LycolesPromptState=nil
+    if type(_G.LycolesGameStateChanged)=="function" then pcall(_G.LycolesGameStateChanged) end
     _G.LycolesPromptClose=nil _G.LycolesEggClose=nil
 end
 _G.LycolesEggClose=_G.LycolesPromptClose

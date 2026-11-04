@@ -23,6 +23,8 @@ class ControlledEggAutofarmTests(unittest.TestCase):
         self.assertTrue(result["teleportAttemptObserved"])
         self.assertTrue(result["counterIncrementObserved"])
         self.assertTrue(result["failureBoundaryObserved"])
+        self.assertTrue(result["targetDropdownVerified"])
+        self.assertTrue(result["sharedCommandStateVerified"])
         self.assertFalse(result["robloxRuntimeVerified"])
         self.assertFalse(result["serverAuthorityVerified"])
         self.assertFalse(result["causalityProven"])

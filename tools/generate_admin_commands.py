@@ -8,7 +8,7 @@ COMMANDS=("fly","unfly","noclip","clip","tp","goto","speed","jump",
           "coords","systems","readiness","reset","rejoin","cmds","help","stopall","hidegui")
 
 
-def evidence_summaries(document):
+def evidence_summaries(document,generation_readiness=None):
     unavailable=("System candidates: no v110 gameplay-understanding artifact supplied",
                  "Request readiness: no v110 gameplay-understanding artifact supplied")
     if not isinstance(document,dict) or document.get("schemaVersion")!="110.gameplay-understanding.1":
@@ -24,25 +24,57 @@ def evidence_summaries(document):
         systems.append(label+" ["+tier+"]")
     systems_text="System candidates (unverified): "+(", ".join(systems) if systems else "none")
     request=document.get("requestedCapabilityAssessment")
-    if request is None:return systems_text,"Request readiness: no capability requested"
-    if not isinstance(request,dict):raise ValueError("Invalid capability assessment")
-    status=request.get("status")
-    if not isinstance(status,str) or not 1<=len(status)<=100:raise ValueError("Invalid readiness status")
-    raw_blockers=request.get("blockers")
-    if not isinstance(raw_blockers,list):raise ValueError("Invalid readiness blockers")
-    blockers=[]
-    for value in raw_blockers[:8]:
-        if not isinstance(value,str) or not 1<=len(value)<=120:raise ValueError("Invalid readiness blocker")
-        blockers.append(value)
-    request_text="Request readiness: "+status+"; implementation ready: false"
-    if blockers:request_text+="; blockers: "+", ".join(blockers)
+    if request is None:
+        request_text="Request readiness: no capability requested"
+    else:
+        if not isinstance(request,dict):raise ValueError("Invalid capability assessment")
+        status=request.get("status")
+        if not isinstance(status,str) or not 1<=len(status)<=100:raise ValueError("Invalid readiness status")
+        raw_blockers=request.get("blockers")
+        if not isinstance(raw_blockers,list):raise ValueError("Invalid readiness blockers")
+        blockers=[]
+        for value in raw_blockers[:8]:
+            if not isinstance(value,str) or not 1<=len(value)<=120:raise ValueError("Invalid readiness blocker")
+            blockers.append(value)
+        request_text="Request readiness: "+status+"; implementation ready: false"
+        if blockers:request_text+="; blockers: "+", ".join(blockers)
+    if generation_readiness is not None:
+        claims=generation_readiness.get("claims") if isinstance(generation_readiness,dict) else None
+        false_claims=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
+                      "runtimeVerified","gameplayVerified","actionOutcomesVerified")
+        generated=generation_readiness.get("generatedCapabilities") if isinstance(generation_readiness,dict) else None
+        unavailable_behaviors=(generation_readiness.get("unavailableRequestedBehavior")
+                               if isinstance(generation_readiness,dict) else None)
+        generation_request=generation_readiness.get("request") if isinstance(generation_readiness,dict) else None
+        if (not isinstance(generation_readiness,dict)
+                or generation_readiness.get("schemaVersion")!="113.generation-readiness.1"
+                or not isinstance(claims,dict)
+                or any(claims.get(field) is not False for field in false_claims)
+                or not isinstance(generated,list) or len(generated)>64
+                or not isinstance(unavailable_behaviors,list) or len(unavailable_behaviors)>16
+                or not isinstance(generation_request,dict)
+                or generation_request.get("fullRequestImplemented") is not False):
+            raise ValueError("Invalid generation readiness")
+        generation_status=generation_request.get("status")
+        if not isinstance(generation_status,str) or not 1<=len(generation_status)<=100:
+            raise ValueError("Invalid generation readiness")
+        unavailable_ids=[]
+        for item in unavailable_behaviors:
+            identifier=item.get("id") if isinstance(item,dict) else None
+            if not isinstance(identifier,str) or not 1<=len(identifier)<=80:
+                raise ValueError("Invalid unavailable behavior")
+            unavailable_ids.append(identifier)
+        request_text=("Generation readiness: "+generation_status+"; bounded generated: "
+            +str(len(generated))+"; full request implemented: false; runtime/gameplay verified: false")
+        if unavailable_ids:request_text+="; unavailable: "+", ".join(unavailable_ids)
     return systems_text,request_text
 
 
-def render(place_id,gameplay_understanding=None):
+def render(place_id,gameplay_understanding=None,generation_readiness=None):
     if type(place_id) is not int or not 1<=place_id<=2**53:
         raise ValueError("Invalid place ID")
-    systems_summary,readiness_summary=evidence_summaries(gameplay_understanding)
+    systems_summary,readiness_summary=evidence_summaries(
+        gameplay_understanding,generation_readiness)
     tokens=("__LYCOLES_SYSTEMS_SUMMARY_110__","__LYCOLES_READINESS_SUMMARY_110__")
     if any(token in systems_summary or token in readiness_summary for token in tokens):
         raise ValueError("Invalid gameplay summary text")
@@ -205,6 +237,12 @@ local function currentState(name)
     if name=="speed" then return featureState.speed and tostring(featureState.speed) or "default" end
     if name=="jump" then return featureState.jump and tostring(featureState.jump) or "default" end
     if name=="hidegui" then return featureState.hidden and "hidden" or "visible" end
+    local command=commands[name]
+    if command and type(command.state)=="function" then
+        local ok,value=pcall(command.state)
+        if ok and type(value)=="string" and #value<=160 then return value end
+        return "state unavailable"
+    end
     return "ready"
 end
 local function numeric(value,minimum,maximum)
@@ -321,7 +359,8 @@ if type(_G.LycolesGameCommands)=="table" then
             and definition.category:match("^Game[:%w%s%-]+$") and #definition.category<=40
             and type(definition.description)=="string" and #definition.description<=120
             and type(definition.arguments)=="string" and #definition.arguments<=80
-            and type(definition.availability)=="function" and type(definition.run)=="function" then
+            and type(definition.availability)=="function" and type(definition.run)=="function"
+            and (definition.state==nil or type(definition.state)=="function") then
             register(name,definition)
         end
     end
@@ -409,6 +448,7 @@ for _,category in ipairs(categoryNames) do
     end
 end
 refreshCommandRows()
+_G.LycolesGameStateChanged=refreshCommandRows
 table.insert(connections,commandInput:GetPropertyChangedSignal("Text"):Connect(updateAutocomplete))
 table.insert(connections,commandInput.FocusLost:Connect(function(enterPressed)
     if enterPressed then submit(commandInput.Text) end
@@ -480,6 +520,7 @@ _G.LycolesAdminClose=function()
     alive=false
     stopAll()
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
+    if _G.LycolesGameStateChanged==refreshCommandRows then _G.LycolesGameStateChanged=nil end
     gui:Destroy()
     _G.LycolesAdminClose=nil
 end

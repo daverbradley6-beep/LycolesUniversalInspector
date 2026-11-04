@@ -88,6 +88,17 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     gameplay_understanding_bytes=(json.dumps(
         gameplay_understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
+    action_discovery_builder=load_module("discover_action_capabilities.py","lycoles_action_discovery")
+    action_discovery=action_discovery_builder.analyze(plan)
+    action_discovery_bytes=(json.dumps(
+        action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    readiness_builder=load_module(
+        "assess_generation_readiness.py","lycoles_generation_readiness")
+    generation_readiness=readiness_builder.assess(
+        plan,gameplay_understanding,action_discovery)
+    generation_readiness_bytes=(json.dumps(
+        generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
     sequence_compiler=load_module("compile_interaction_sequences.py","lycoles_sequences")
@@ -132,11 +143,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     if actions_gui_lua is not None:
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
-    utility_lua=generator.render(plan,gameplay_understanding)
-    action_discovery_builder=load_module("discover_action_capabilities.py","lycoles_action_discovery")
-    action_discovery=action_discovery_builder.analyze(plan)
-    action_discovery_bytes=(json.dumps(
-        action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    utility_lua=generator.render(plan,gameplay_understanding,generation_readiness)
     prompt_generator=load_module("generate_prompt_interactions.py","lycoles_prompt_interactions")
     prompt_interactions_lua=prompt_generator.render(action_discovery)
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
@@ -152,7 +159,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         prompt_feedback_bytes=(json.dumps(
             prompt_feedback,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
-    admin_lua=admin_generator.render(place,gameplay_understanding)
+    admin_lua=admin_generator.render(
+        place,gameplay_understanding,generation_readiness)
     lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
@@ -173,6 +181,13 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
             "eggTargets":len(action_discovery["eggHatching"]["targets"]),
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+        "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
+            "artifact":"generation-readiness.json",
+            "sha256":sha(generation_readiness_bytes),
+            "summary":generation_readiness["summary"],
+            "request":generation_readiness["request"],
+            "runtimeVerified":False,"gameplayVerified":False,
+            "causalityProven":False,"actionOutcomesVerified":False},
         "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_interactions_lua else None,
             "generated":prompt_interactions_lua is not None,"automaticMovement":prompt_interactions_lua is not None,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
@@ -242,6 +257,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "gameplay-understanding.json":gameplay_understanding_bytes,
+      "generation-readiness.json":generation_readiness_bytes,
+
       "action-capabilities.json":action_discovery_bytes,
 
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
@@ -261,7 +278,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
-          "Gameplay understanding is evidence-ranked and does not verify objectives, causality, replayability, or actions.\n"
+          "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
+          "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"
           "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"

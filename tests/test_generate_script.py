@@ -106,6 +106,7 @@ class GeneratorTests(unittest.TestCase):
                 self.assertEqual(generator.main(),0)
             manifest=json.loads((output/"release-manifest.json").read_text())
             gameplay=json.loads((output/"gameplay-understanding.json").read_text())
+            readiness=json.loads((output/"generation-readiness.json").read_text())
             combined=(output/"LycolesGeneratedUtility.lua").read_text()
             commands=(output/"LycolesAdminCommands.lua").read_text()
             generated_result=json.loads((output/(
@@ -118,10 +119,18 @@ class GeneratorTests(unittest.TestCase):
                              "110.gameplay-understanding.1")
             self.assertIn("egg_selection_observation",
                           gameplay["requestedCapabilityAssessment"]["blockers"])
+            self.assertEqual(manifest["generationReadiness"]["schemaVersion"],
+                             "113.generation-readiness.1")
+            self.assertEqual(manifest["generationReadiness"]["sha256"],
+                generator.hashlib.sha256((output/"generation-readiness.json").read_bytes()).hexdigest())
+
+            self.assertEqual(readiness["request"]["status"],
+                             "evidence-only-no-replay-contract")
+            self.assertEqual(readiness["generatedCapabilities"],[])
             self.assertIn("Request missing:",combined)
-            self.assertIn("Request readiness: "+
-                          gameplay["requestedCapabilityAssessment"]["status"],commands)
-            self.assertIn("egg_selection_observation",commands)
+            self.assertIn("Generation request: evidence-only-no-replay-contract",combined)
+            self.assertIn("Generation readiness: evidence-only-no-replay-contract",commands)
+            self.assertIn("full request implemented: false",commands)
             self.assertIn('panel.Name="AdminCommands"',combined)
 
 if __name__=="__main__":unittest.main()

@@ -63,11 +63,35 @@ class AdminCommandGeneratorTests(unittest.TestCase):
             module.render(123,{"schemaVersion":"110.gameplay-understanding.1","systems":[
                 {"label":"x"*161,"evidenceTier":"structural_candidate"}]})
 
+
+    def test_generation_readiness_distinguishes_subset_from_full_request(self):
+        understanding={"schemaVersion":"110.gameplay-understanding.1","systems":[],
+            "requestedCapabilityAssessment":{"status":"blocked_pending_action_contract",
+                "blockers":["mode_selection_observation"]}}
+        readiness={"schemaVersion":"113.generation-readiness.1",
+            "generatedCapabilities":[{"id":"prompt-interaction-trial"}],
+            "unavailableRequestedBehavior":[{"id":"multi-game-mode"}],
+            "request":{"status":"generated-bounded-subset","fullRequestImplemented":False},
+            "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
+                "serverAuthorityVerified":False,"runtimeVerified":False,
+                "gameplayVerified":False,"actionOutcomesVerified":False}}
+        source=module.render(123,understanding,readiness)
+        self.assertIn("Generation readiness: generated-bounded-subset",source)
+        self.assertIn("bounded generated: 1",source)
+        self.assertIn("full request implemented: false",source)
+        self.assertIn("unavailable: multi-game-mode",source)
+        forged=dict(readiness);forged["claims"]=dict(readiness["claims"],runtimeVerified=True)
+        with self.assertRaisesRegex(ValueError,"generation readiness"):
+            module.render(123,understanding,forged)
+
     def test_bounded_game_specific_command_extensions(self):
         source=module.render(85896571713843)
         self.assertIn('if type(_G.LycolesGameCommands)=="table" then',source)
         self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
         self.assertIn('if type(_G.LycolesGameStopAll)=="function"',source)
+        self.assertIn('type(definition.state)=="function"',source)
+        self.assertIn('_G.LycolesGameStateChanged=refreshCommandRows',source)
+        self.assertIn('if _G.LycolesGameStateChanged==refreshCommandRows then',source)
         self.assertIn('if not categories[category] then categories[category]={}',source)
 
     def test_cleanup_restores_character_state(self):
