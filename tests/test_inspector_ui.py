@@ -182,6 +182,18 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('table.sort(changes,guiChangeLess)',SRC)
         self.assertIn('while #changes>MAX_GUI_CHANGES do table.remove(changes) end',SRC)
 
+    def test_explicit_workflow_recording_is_bounded_and_order_only(self):
+        self.assertIn('local WORKFLOW_RECORDING_SECONDS = 60',SRC)
+        self.assertIn('local MAX_WORKFLOW_RECORDING_EVENTS = 8',SRC)
+        self.assertIn('Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF"',SRC)
+        self.assertIn('workflowRecording.id="user-recorded-"..HttpService:GenerateGUID(false)',SRC)
+        self.assertIn('task.delay(WORKFLOW_RECORDING_SECONDS,function()',SRC)
+        self.assertIn('linkageSource="explicit-user-armed-recording",explicitUserArmed=true',SRC)
+        self.assertIn('establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false',SRC)
+        self.assertIn('transactionOrder=explicitRecording and explicitRecording.order or nil',SRC)
+        self.assertIn('workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof"',SRC)
+        self.assertIn('stopWorkflowRecording("scan-started")',SRC)
+
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)

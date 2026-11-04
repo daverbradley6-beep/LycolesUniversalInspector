@@ -256,12 +256,15 @@ def _workflow_selection(workflow_plan,selected):
         "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
         "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
         "unlinkedEvents","executionReadyWorkflows")
+    explicit_recordings=summary.get("explicitRecordingTransactions",0)
     planning_status=summary.get("planningStatus")
     if (planning_status not in ("execution-ready-candidates","review-only-candidates",
             "no-multi-step-generation-ready-contract","singleton-transactions-only",
             "no-explicit-linkage","no-interaction-events")
             or any(type(summary.get(field)) is not int or not 0<=summary[field]<=10_000_000
                 for field in diagnostic_fields)
+            or type(explicit_recordings) is not int
+            or not 0<=explicit_recordings<=summary.get("transactionGroups",-1)
             or summary["transactionGroups"]!=summary["singletonTransactions"]+summary[
                 "multiEventTransactions"]
             or summary["linkedTransactions"]!=summary["multiEventTransactions"]
@@ -280,6 +283,7 @@ def _workflow_selection(workflow_plan,selected):
     if planning_status!=expected_status:
         raise ValueError("generated workflow plan has inconsistent planning diagnostics")
     diagnostics={"status":planning_status,**{field:summary[field] for field in diagnostic_fields},
+        "explicitRecordingTransactions":explicit_recordings,
         "readinessImpact":"limitations-only","causalityProven":False,
         "runtimeVerified":False,"gameplayVerified":False}
     return {"available":True,"totalCandidates":len(candidates),"shownCandidates":len(values),

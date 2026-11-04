@@ -1,3 +1,11 @@
+## v30.6.8 — Explicit bounded workflow recording
+
+- Add an Inspector-tab control that lets the operator explicitly arm one workflow recording for at most 60 seconds or eight normal observed interactions.
+- Assign a shared random transaction identity and consecutive order only to interactions observed while armed; stop on timeout, capacity, observer disable, inspector close, manual stop, or scan start.
+- Preserve explicit user intent, session timing, limits, and mandatory false causality/runtime/gameplay claims on every recorded event, with bounded lifecycle diagnostics in the report.
+- Validate every explicit recording fail-closed before workflow planning, including exact order, common session/start time, duration, limits, provenance, and all-negative claims.
+- Treat explicit recording as evidence of intended interaction order only. It does not prove causality, successful runtime activation, gameplay outcome, or server authority, and exact action/state contracts remain required for generation readiness.
+
 ## v30.6.7 — Observed GUI reveal followup diagnostics
 
 - Preserve exact class/name/sibling-ordinal PlayerGui identity only for GUI nodes whose visibility actually changes, avoiding per-node identity work during every bounded snapshot; sort before deterministic truncation and disclose bounded reveal-queue evictions.

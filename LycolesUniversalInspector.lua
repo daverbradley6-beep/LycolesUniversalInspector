@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.7
+-- Lycoles Universal Inspector v30.6.8
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.7"
+local VERSION = "30.6.8"
 
 local endpoint = ""
 local autoSend = true
@@ -133,11 +133,74 @@ local pendingGuiReveals = {}
 local MAX_PENDING_GUI_REVEALS = 100
 local GUI_REVEAL_FOLLOWUP_SECONDS = 15
 local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
-local scanInvocationCount = 0
-local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil, preActivationListenersAttached=0, preActivationCaptures=0, preActivationBaselinesUsed=0, callbackBaselinesUsed=0, stalePreActivationCaptures=0, preActivationCaptureFailures=0}
 local sessionId = HttpService:GenerateGUID(false)
 local sessionStartedClock = os.clock()
+local WORKFLOW_RECORDING_SECONDS = 60
+local MAX_WORKFLOW_RECORDING_EVENTS = 8
+local workflowRecording = {active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0}
+local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
+    recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil}
+local refreshWorkflowRecorder = nil
+local function stopWorkflowRecording(reason)
+    if not workflowRecording.active then return end
+    workflowRecording.active=false
+    workflowRecording.id=nil
+    workflowRecording.startedClock=nil
+    workflowRecording.startedElapsed=nil
+    workflowRecordingStats.lastRecordedEventCount=workflowRecording.eventCount
+    workflowRecording.eventCount=0
+    workflowRecordingStats.stopped=workflowRecordingStats.stopped+1
+    workflowRecordingStats.lastStopReason=reason
+    if reason=="duration-limit" then
+        workflowRecordingStats.durationExpired=workflowRecordingStats.durationExpired+1
+    elseif reason=="event-limit" then
+        workflowRecordingStats.capacityReached=workflowRecordingStats.capacityReached+1
+    end
+    if refreshWorkflowRecorder then refreshWorkflowRecorder(reason) end
+end
+local function startWorkflowRecording()
+    if workflowRecording.active then return false end
+    local startedClock=os.clock()
+    workflowRecording.active=true
+    workflowRecording.id="user-recorded-"..HttpService:GenerateGUID(false)
+    workflowRecording.startedClock=startedClock
+    workflowRecording.startedElapsed=math.floor((startedClock-sessionStartedClock)*1000+0.5)/1000
+    workflowRecording.eventCount=0
+    workflowRecordingStats.started=workflowRecordingStats.started+1
+    local recordingId=workflowRecording.id
+    task.delay(WORKFLOW_RECORDING_SECONDS,function()
+        if alive and workflowRecording.active and workflowRecording.id==recordingId then
+            stopWorkflowRecording("duration-limit")
+        end
+    end)
+    if refreshWorkflowRecorder then refreshWorkflowRecorder("started") end
+    return true
+end
+local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
+    if not workflowRecording.active then return nil end
+    if activationClock-workflowRecording.startedClock>WORKFLOW_RECORDING_SECONDS then
+        stopWorkflowRecording("duration-limit")
+        return nil
+    end
+    workflowRecording.eventCount=workflowRecording.eventCount+1
+    workflowRecordingStats.recordedEvents=workflowRecordingStats.recordedEvents+1
+    local result={recordingId=workflowRecording.id,order=workflowRecording.eventCount,
+        startedElapsedSeconds=workflowRecording.startedElapsed,
+        maxDurationSeconds=WORKFLOW_RECORDING_SECONDS,
+        maxEvents=MAX_WORKFLOW_RECORDING_EVENTS,
+        linkageSource="explicit-user-armed-recording",explicitUserArmed=true,
+        establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false}
+    if workflowRecording.eventCount>=MAX_WORKFLOW_RECORDING_EVENTS then
+        stopWorkflowRecording("event-limit")
+    elseif refreshWorkflowRecorder then
+        refreshWorkflowRecorder("event-recorded")
+    end
+    return result
+end
+
+local scanInvocationCount = 0
+local scanRequestType = "startup-baseline"
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,preActivationCaptureFailures=0}
 local snapshotId = nil
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
@@ -1456,6 +1519,7 @@ end)
 
 
 _G.LycolesInspectorClose = function()
+    stopWorkflowRecording("inspector-closed")
     alive = false
     uploadGeneration = uploadGeneration + 1
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
@@ -2674,11 +2738,19 @@ local function observeInteractionObject(obj, root, label)
         local targetPathIdentity=interactionPathIdentity(obj,root,label)
         local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
             observationSequence+1,sessionElapsedSeconds)
+        local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
+        local transactionId=explicitRecording and explicitRecording.recordingId
+            or (workflow and workflow.linkedSequence) or (observationSequence+1)
         local historyItem = {
             path=path:sub(1,400), pathIdentity=targetPathIdentity,
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
+            transactionId=transactionId,
+            transactionOrder=explicitRecording and explicitRecording.order or nil,
+            transactionLinkSource=explicitRecording and explicitRecording.linkageSource or
+                (workflow and "observed-confirmation-link" or "singleton-event"),
+            explicitWorkflowRecording=explicitRecording,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
             guiRevealFollowup=guiRevealFollowup,
             controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
@@ -2726,10 +2798,10 @@ local function observeInteractionObject(obj, root, label)
             preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             evidence = "manual-user-interaction", sessionId = sessionId,
-            sessionElapsedSeconds=sessionElapsedSeconds,snapshotId = snapshotId, sequence = observationSequence
+            sessionElapsedSeconds=sessionElapsedSeconds,snapshotId = snapshotId, sequence = observationSequence,
+            transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
+            transactionLinkSource=historyItem.transactionLinkSource
         }
-        local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
-        historyItem.transactionId=transactionId
         local seenStateKeys={}
         local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
@@ -3143,6 +3215,7 @@ interactionToggle.MouseButton1Click:Connect(function()
             end
         end)
     else
+        stopWorkflowRecording("observer-disabled")
         observerStats.deactivationCount = observerStats.deactivationCount + 1
         observerStats.lastDisabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastDisabledReason = "manual-toggle"
@@ -3171,6 +3244,7 @@ local function inspect(requestType, featureRequest)
         end
     end
 
+    stopWorkflowRecording("scan-started")
     scanInvocationCount = scanInvocationCount + 1
     scanRequestType = requestType == "startup-baseline" and "startup-baseline"
         or (requestType == "auto-evidence" and "auto-evidence"
@@ -3483,6 +3557,11 @@ local function inspect(requestType, featureRequest)
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
                 pendingGuiRevealCount=#pendingGuiReveals,
+                workflowRecordingActive=workflowRecording.active,
+                workflowRecordingStats=workflowRecordingStats,
+                workflowRecordingLimits={maxDurationSeconds=WORKFLOW_RECORDING_SECONDS,
+                    maxEvents=MAX_WORKFLOW_RECORDING_EVENTS},
+                workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof",
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
                 guiRevealFollowupPolicy="visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only",
@@ -3637,11 +3716,46 @@ autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
 autoEvidenceToggle.Parent = panel
 -- Keep evidence control below INTERACT and outside the report viewport.
 autoEvidenceToggle.ZIndex = 4
+local workflowRecordToggle = create("TextButton", {
+    Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF",
+    Size=UDim2.fromOffset(120,26),Position=UDim2.fromOffset(380,201),
+    TextSize=10,TextColor3=Color3.fromRGB(245,245,245),
+    BackgroundColor3=Color3.fromRGB(85,85,105),ZIndex=4
+},panel)
+refreshWorkflowRecorder=function(reason)
+    if workflowRecording.active then
+        workflowRecordToggle.Text="RECORD: "..workflowRecording.eventCount.."/"..MAX_WORKFLOW_RECORDING_EVENTS
+        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(145,90,45)
+        if reason=="started" then
+            status.Text="Workflow recording armed for 60 seconds or 8 interactions"
+        end
+    else
+        workflowRecordToggle.Text="RECORD FLOW: OFF"
+        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(85,85,105)
+        if reason=="operator-stopped" then
+            status.Text="Workflow recording stopped; ordering recorded without causal proof"
+        elseif reason=="event-limit" then
+            status.Text="Workflow recording reached the 8-interaction limit"
+        elseif reason=="duration-limit" then
+            status.Text="Workflow recording reached the 60-second limit"
+        end
+    end
+end
+workflowRecordToggle.MouseButton1Click:Connect(function()
+    if workflowRecording.active then
+        stopWorkflowRecording("operator-stopped")
+    elseif not interactionObserveEnabled or not observerStats.sweepCompleted then
+        status.Text="Workflow recording unavailable until interaction observer is ready"
+    else
+        startWorkflowRecording()
+    end
+end)
+
 local evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
-    Text = "After interaction: up to 4 full rescans",
-    Position = UDim2.fromOffset(379, 201),
-    Size = UDim2.fromOffset(121, 55),
+    Text = "Auto rescans: 0/4",
+    Position = UDim2.fromOffset(379, 232),
+    Size = UDim2.fromOffset(121, 26),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
     TextSize = 10,

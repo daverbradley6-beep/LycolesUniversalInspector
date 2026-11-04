@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Explicit bounded workflow recording (v30.6.8)
+
+- Completed and verified the v30.6.8 recorder release work preserved from pause: operator-armed workflow recording bounded to 60 seconds and eight events, explicit shared transaction ordering metadata, lifecycle stop reasons, and non-causal/non-verified claims.
+- Interaction records now carry explicit recording provenance when armed, while observer-only events remain singleton/observed linkage; scan start, observer disable, and inspector close stop active recording.
+- Workflow planner now fail-closes malformed explicit recording metadata, tracks `explicitRecordingTransactions`, and emits linkage source (`explicit-user-armed-recording` vs `observed-shared-transaction`) without relaxing exact per-step contracts.
+- Readiness/result/guided-workflow validators were updated for compatibility with the new diagnostics/provenance and retain strict negative verification claims.
+- Added/updated regression coverage in `tests/test_generated_workflow_planning.py` and `tests/test_inspector_ui.py` including forged linkage-source rejection.
+- Full local release gate passed after these edits: **1,549 Python tests**, Node receiver/Luau parser tests (**3/3**), and whitespace checks (`git diff --check`) with no failures.
+
+
 ## Pause checkpoint — 2026-11-02 — Uncommitted v30.6.8 workflow recorder
 
 - Autonomous development was explicitly paused. The last fully verified implementation remains **v30.6.7**, commit `4c5c777`, with handover commit `b2775ee` pushed to `openhands-development`.

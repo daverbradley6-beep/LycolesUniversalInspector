@@ -113,6 +113,39 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"step contract"):
             generator.validate(forged)
 
+    def test_explicit_user_recording_establishes_order_without_causality(self):
+        value=plan();transaction="user-recorded-12345678"
+        for order,item in enumerate(value["observedInteractionHistory"],1):
+            item.update(transactionId=transaction,transactionOrder=order,
+                transactionLinkSource="explicit-user-armed-recording",sessionId="session",
+                sessionElapsedSeconds=10.0+order,
+                explicitWorkflowRecording={"recordingId":transaction,"order":order,
+                    "startedElapsedSeconds":10.0,"maxDurationSeconds":60,"maxEvents":8,
+                    "linkageSource":"explicit-user-armed-recording","explicitUserArmed":True,
+                    "establishesOrdering":True,"causalityProven":False,
+                    "runtimeVerified":False,"gameplayVerified":False})
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertEqual(result["summary"]["explicitRecordingTransactions"],1)
+        self.assertEqual(candidate["linkageSource"],"explicit-user-armed-recording")
+        self.assertTrue(candidate["exactOrderObserved"])
+        self.assertFalse(candidate["causalityProven"])
+        forged_plan=copy.deepcopy(result)
+        forged_plan["workflowCandidates"][0]["linkageSource"]="observed-shared-transaction"
+        with self.assertRaisesRegex(ValueError,"linkage source"):
+            generator.validate(forged_plan)
+        forged=copy.deepcopy(value)
+        forged["observedInteractionHistory"][1]["transactionOrder"]=1
+        with self.assertRaisesRegex(ValueError,"explicit workflow recording"):
+            self.analyze(forged)
+        cross_session=copy.deepcopy(value)
+        cross_session["observedInteractionHistory"][1]["sessionId"]="other"
+        with self.assertRaisesRegex(ValueError,"explicit workflow recording"):
+            self.analyze(cross_session)
+        expired=copy.deepcopy(value)
+        expired["observedInteractionHistory"][1]["sessionElapsedSeconds"]=70.001
+        with self.assertRaisesRegex(ValueError,"explicit workflow recording"):
+            self.analyze(expired)
+
 
     def test_session_timing_is_review_only_and_does_not_create_linkage(self):
         value=plan();first,second=value["observedInteractionHistory"]

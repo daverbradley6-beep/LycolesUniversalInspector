@@ -294,6 +294,41 @@ def _gui_reveal_followups(history):
         "usedForWorkflowLinkage":False,"causalityProven":False}
 
 
+def _explicit_recording(events,transaction):
+    marked=any(event.get("transactionLinkSource")=="explicit-user-armed-recording"
+        or event.get("explicitWorkflowRecording") is not None
+        or transaction.startswith("user-recorded-") for event in events)
+    if not marked:return False
+    if not transaction.startswith("user-recorded-") or len(events)>8:
+        raise ValueError("Malformed explicit workflow recording")
+    ordered=sorted(events,key=lambda item:item.get("sequence",0))
+    session=ordered[0].get("sessionId");started=None
+    for order,event in enumerate(ordered,1):
+        record=event.get("explicitWorkflowRecording")
+        elapsed=event.get("sessionElapsedSeconds")
+        if (event.get("transactionLinkSource")!="explicit-user-armed-recording"
+                or event.get("transactionOrder")!=order or not isinstance(record,dict)
+                or record.get("recordingId")!=transaction or record.get("order")!=order
+                or record.get("linkageSource")!="explicit-user-armed-recording"
+                or record.get("explicitUserArmed") is not True
+                or record.get("establishesOrdering") is not True
+                or record.get("causalityProven") is not False
+                or record.get("runtimeVerified") is not False
+                or record.get("gameplayVerified") is not False
+                or record.get("maxDurationSeconds")!=60 or record.get("maxEvents")!=8
+                or event.get("sessionId")!=session or not _text(session,128)
+                or type(elapsed) not in (int,float) or type(elapsed) is bool
+                or not math.isfinite(elapsed)):
+            raise ValueError("Malformed explicit workflow recording")
+        item_started=record.get("startedElapsedSeconds")
+        if (type(item_started) not in (int,float) or type(item_started) is bool
+                or not math.isfinite(item_started) or item_started<0
+                or elapsed<item_started or elapsed-item_started>60):
+            raise ValueError("Malformed explicit workflow recording")
+        if started is None:started=item_started
+        elif item_started!=started:raise ValueError("Malformed explicit workflow recording")
+    return True
+
 
 def plan(plan_document,actions):
     integrity=plan_document.get("integrity") if isinstance(plan_document,dict) else None
@@ -324,9 +359,12 @@ def plan(plan_document,actions):
     temporal_adjacency=_temporal_adjacency(history)
     gui_reveal_followups=_gui_reveal_followups(history)
     candidates=[];insufficient_contracts=0;partially_mapped=0;over_step_bound=0
+    explicit_recording_transactions=0
     singleton_transactions=sum(len(events)==1 for events in groups.values())
     multi_event_transactions=sum(len(events)>1 for events in groups.values())
     for transaction,events in sorted(groups.items()):
+        explicit_recording=_explicit_recording(events,transaction)
+        if explicit_recording:explicit_recording_transactions+=1
         sequences=[event["sequence"] for event in events]
         if len(set(sequences))!=len(sequences):
             raise ValueError("Duplicate sequence in linked transaction")
@@ -361,7 +399,10 @@ def plan(plan_document,actions):
             else "review-only")
         candidates.append({"id":hashlib.sha256((transaction+"\0"+"\0".join(
                 step["targetPath"] for step in steps)).encode()).hexdigest()[:20],
-            "transactionId":transaction,"steps":steps,"stepCount":len(steps),
+            "transactionId":transaction,
+            "linkageSource":"explicit-user-armed-recording" if explicit_recording
+                else "observed-shared-transaction",
+            "steps":steps,"stepCount":len(steps),
             "unmappedLinkedEvents":len(events)-len(mapped),"exactOrderObserved":True,
             "allStepsGenerationReady":len(mapped)==len(events),
             "stateContinuityLinks":_continuity(steps),"operatorStartRequired":True,
@@ -387,6 +428,7 @@ def plan(plan_document,actions):
             "linkedTransactions":multi_event_transactions,
             "singletonTransactions":singleton_transactions,
             "multiEventTransactions":multi_event_transactions,
+            "explicitRecordingTransactions":explicit_recording_transactions,
             "transactionsWithInsufficientGenerationReadySteps":insufficient_contracts,
             "partiallyMappedTransactions":partially_mapped,
             "transactionsOverStepBound":over_step_bound,
@@ -404,6 +446,7 @@ def plan(plan_document,actions):
         "guiRevealFollowups":gui_reveal_followups,
         "claims":false_claims,"limitations":[
             "Only explicit shared transaction IDs and recorded sequence values establish ordering",
+            "User-armed recording establishes intended order only, not causality or gameplay success",
             "Session-relative temporal adjacency is review evidence and never creates workflow linkage",
             "Observed GUI reveal and descendant followup evidence remains review-only and unlinked",
             "A transaction ID present on only one event does not establish cross-event linkage",

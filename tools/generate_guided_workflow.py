@@ -175,7 +175,13 @@ def validate(document):
         if not isinstance(item,dict):raise ValueError("Malformed workflow candidate")
         if item.get("guidedTrialGenerationReady") is not True:continue
         steps=item.get("steps")
-        if (not _text(item.get("id"),80) or not _text(item.get("transactionId"),128)
+        linkage=item.get("linkageSource","observed-shared-transaction")
+        transaction=item.get("transactionId")
+        if (linkage not in ("observed-shared-transaction","explicit-user-armed-recording")
+                or str(transaction).startswith("user-recorded-") !=
+                    (linkage=="explicit-user-armed-recording")):
+            raise ValueError("Malformed guided workflow linkage source")
+        if (not _text(item.get("id"),80) or not _text(transaction,128)
                 or not isinstance(steps,list) or not 2<=len(steps)<=64
                 or item.get("stepCount")!=len(steps) or item.get("unmappedLinkedEvents")!=0
                 or item.get("exactOrderObserved") is not True

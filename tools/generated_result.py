@@ -113,9 +113,13 @@ def _validate_workflow_selection(selection):
         statuses={"execution-ready-candidates","review-only-candidates",
             "no-multi-step-generation-ready-contract","singleton-transactions-only",
             "no-explicit-linkage","no-interaction-events"}
+        explicit_recordings=diagnostics.get("explicitRecordingTransactions",0) if isinstance(
+            diagnostics,dict) else None
         if (not isinstance(diagnostics,dict) or diagnostics.get("status") not in statuses
                 or any(type(diagnostics.get(field)) is not int
                     or not 0<=diagnostics[field]<=10_000_000 for field in fields)
+                or type(explicit_recordings) is not int
+                or not 0<=explicit_recordings<=diagnostics.get("transactionGroups",-1)
                 or diagnostics["transactionGroups"]!=diagnostics["singletonTransactions"]+
                     diagnostics["multiEventTransactions"]
                 or diagnostics["linkedTransactions"]!=diagnostics["multiEventTransactions"]
