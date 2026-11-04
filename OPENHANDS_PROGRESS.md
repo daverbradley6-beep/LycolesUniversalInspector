@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Linked workflows integrated into the primary generated utility
+
+- Completed implementation commit `df1a944` (`Integrate linked workflows into generated utility`) and released inspector **v30.6.5** on `openhands-development`.
+- Both standalone generation and deterministic release builds now embed an eligible evidence-linked workflow trial directly in `LycolesGeneratedUtility.lua`, alongside the existing diagnostic, Prompt/Tool/GUI interaction, and Admin Command controls.
+- `LycolesGuidedWorkflow.lua` remains a byte-identical standalone review artifact. This preserves focused review/export while allowing the operator to launch all supported generated controls from one primary Luau script.
+- Generated-result/manifest control inventories add `Linked Workflow Trial` only when eligible, and `guidedWorkflowTrial.integratedInGeneratedUtility` states the integration explicitly. No-workflow builds report false and do not claim the control.
+- Integration tests prove the complete standalone workflow source is contained in the primary utility and that manifests agree. Gameplay automation remains empty; runtime, gameplay, causality, server authority, and action outcomes remain unverified.
+- Full local gate passed: **1,541 Python tests**, receiver and Luau parser checks (**3/3**), pinned official Luau 0.744 compilation of **7 files**, version consistency, whitespace, and credential-pattern checks.
+- Next priority: add session-relative activation timing to inspected evidence and conservative workflow-planning diagnostics so useful adjacency can be reviewed without becoming causal proof.
+
+
 ## Update — 2026-11-02 — Bounded state-dependent workflow repetition
 
 - Completed implementation commit `1d3dda8` (`Add bounded state-dependent workflow repetition`) and released inspector **v30.6.4** on `openhands-development`.
