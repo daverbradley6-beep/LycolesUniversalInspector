@@ -8,6 +8,7 @@
 - Generated utilities distinguish locally computed digest coverage from receiver payload-digest and retrieval-integrity status.
 - Implementation commit: `0777765` (`Bind local compilation to exact part bytes`).
 - Verification: focused compiler/receiver/generator/overlay/release tests passed; full Python suite **1504 passed, 17 skipped**; receiver checks and checked-in/representative generated Luau parsing passed through `npm test`; Python compilation, diff checks, and credential-pattern checks passed.
+- GitHub Actions: all **19/19** workflows observed for exact pushed head `ff8025a36bc93d547ec60ff1c80d1912ace884f0` completed successfully.
 - No Roblox runtime or gameplay test was performed or claimed. No receiver deployment, credentials, production infrastructure, or user-provided untracked files were changed.
 
 ## Update — 2026-11-02 — Self-consistent local report recovery
