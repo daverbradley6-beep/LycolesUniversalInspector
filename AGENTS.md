@@ -70,6 +70,7 @@ Current dynamic-overlay provenance contract: each complete observation scan must
 ## Generated features
 
 - v30.6.3 workflow planning distinguishes all transaction groups from genuine shared multi-event links: a transaction ID present on one event is a singleton, not a linked workflow. Planning diagnostics/status are recomputed, cross-field validated, propagated as limitations-only readiness evidence, and displayed without changing causality/runtime/gameplay claims.
+- v30.6.4 generated linked workflows offer operator-armed repetition capped at five sequences and 400 feedback records. Sequence one requires exact observed entry values; later sequences use the prior observed value keyed by the exact resolved state instance. STOP/CLOSE, identity/metadata/state drift, activation failure, or missing selected outcome terminates immediately.
 
 Each generated feature must define:
 

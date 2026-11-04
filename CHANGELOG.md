@@ -1,3 +1,11 @@
+## v30.6.4 — Bounded state-dependent workflow repetition
+
+- Add an explicit repeat toggle to generated linked-workflow trials, bounded to five complete sequences and the existing 400-record feedback limit.
+- Require the first sequence to match every exact observed entry-state prerequisite; later sequences proceed only when each selected state still equals the prior observed outcome for that same state identity.
+- Preserve immediate STOP/CLOSE cancellation, per-sequence feedback run identities, exact action order, metadata checks, and stop-on-first-unavailable/drift/failure/unobserved-outcome behavior.
+- Verify five ordered two-step repetitions in the controlled official-Luau environment without upgrading live Roblox runtime, gameplay, causality, server-authority, or action-outcome claims.
+
+
 ## v30.6.3 — Explicit workflow-link planning diagnostics
 
 - Distinguish transaction groups, genuine shared multi-event transaction IDs, singleton per-event IDs, absent linkage, insufficient exact action contracts, partial mappings, and over-bound sequences in workflow planning.

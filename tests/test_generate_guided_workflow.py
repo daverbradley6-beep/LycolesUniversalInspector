@@ -96,7 +96,7 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         self.assertIn('button.Activated:Connect(function() activated=true end)',source)
         self.assertIn('for index,step in ipairs(steps) do',source)
         self.assertIn('requiredBefore=0',source)
-        self.assertIn('before~=step.outcome.requiredBefore',source)
+        self.assertIn('before~=requiredBefore',source)
         self.assertIn('local maxRunAttempts=5',source)
         self.assertIn('runAttempts>=maxRunAttempts',source)
         self.assertIn('activate highlighted',source)
@@ -105,6 +105,19 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         self.assertNotIn("virtualinput",source.lower())
         self.assertNotIn("button:Activate",source)
         self.assertNotIn("FireServer(",source)
+
+    def test_generates_operator_armed_bounded_repeat_with_continuity_guard(self):
+        source=generator.render(document())
+        self.assertIn('makeButton("RepeatGuidedWorkflow","REPEAT: OFF"',source)
+        self.assertIn('local maxRunAttempts=5',source)
+        self.assertIn('while running do',source)
+        self.assertIn('local requiredBefore=firstSequence and step.outcome.requiredBefore',source)
+        self.assertIn('or continuity[state]',source)
+        self.assertIn('continuity[state]=after',source)
+        self.assertIn('Stopped at the bounded five-sequence limit',source)
+        self.assertIn('repeatRequested=not repeatRequested',source)
+        self.assertIn('STOP cancels immediately',source)
+
 
     def test_generates_mixed_gui_tool_prompt_execution(self):
         source=generator.render(mixed_document())

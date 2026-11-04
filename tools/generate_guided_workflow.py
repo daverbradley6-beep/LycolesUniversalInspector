@@ -268,7 +268,9 @@ def validate_source(source,place_id):
         "pcall(function() tool:Activate() end)",
         "type(fireproximityprompt)~=\"function\"",
         "pcall(function() fireproximityprompt(prompt) end)",
-        "for index,step in ipairs(steps) do","before~=step.outcome.requiredBefore",
+        "for index,step in ipairs(steps) do",
+        "firstSequence and step.outcome.requiredBefore or continuity[state]",
+        "before~=requiredBefore","continuity[state]=after",
         "runAttempts>=maxRunAttempts","local maxRunAttempts=5",
         "normal user activation",
         "No GUI event is synthesized","115.guided-workflow-feedback.1",
@@ -315,6 +317,7 @@ local running=false
 local runId=0
 local runAttempts=0
 local maxRunAttempts=5
+local repeatRequested=false
 local activeConnection=nil
 local activeStroke=nil
 local status=nil
@@ -511,22 +514,23 @@ end
 
 local gui=Instance.new("ScreenGui");gui.Name="LycolesGuidedWorkflow";gui.ResetOnSpawn=false
 gui.Parent=player:WaitForChild("PlayerGui")
-local frame=Instance.new("Frame");frame.Size=UDim2.fromOffset(460,230);frame.Position=UDim2.new(.5,-230,.5,-115)
+local frame=Instance.new("Frame");frame.Size=UDim2.fromOffset(460,276);frame.Position=UDim2.new(.5,-230,.5,-138)
 frame.BackgroundColor3=Color3.fromRGB(18,22,32);frame.Active=true;frame.Draggable=true;frame.Parent=gui
 local title=Instance.new("TextLabel");title.Size=UDim2.new(1,-20,0,34);title.Position=UDim2.fromOffset(10,8)
 title.BackgroundTransparency=1;title.TextColor3=Color3.fromRGB(235,240,255);title.Text={_lua("Guided workflow ("+candidate["id"]+")")};title.Parent=frame
-status=Instance.new("TextLabel");status.Size=UDim2.new(1,-20,0,72);status.Position=UDim2.fromOffset(10,44)
+status=Instance.new("TextLabel");status.Size=UDim2.new(1,-20,0,96);status.Position=UDim2.fromOffset(10,44)
 status.BackgroundTransparency=1;status.TextWrapped=true;status.TextColor3=Color3.fromRGB(205,214,235)
-status.Text="Ready. Start the bounded sequence; activate highlighted GUI controls normally.";status.Parent=frame
+status.Text="Ready. The first sequence requires exact observed entry state. Optional repeat uses only observed continuity.";status.Parent=frame
 local function makeButton(name,text,x)
-  local button=Instance.new("TextButton");button.Name=name;button.Size=UDim2.fromOffset(135,38)
-  button.Position=UDim2.fromOffset(x,134);button.Text=text;button.Parent=frame;return button
+  local button=Instance.new("TextButton");button.Name=name;button.Size=UDim2.fromOffset(102,38)
+  button.Position=UDim2.fromOffset(x,158);button.Text=text;button.Parent=frame;return button
 end
 local startButton=makeButton("StartGuidedWorkflow","START",10)
-local stopButton=makeButton("StopGuidedWorkflow","STOP",162)
-local closeButton=makeButton("CloseGuidedWorkflow","CLOSE",314)
+local repeatButton=makeButton("RepeatGuidedWorkflow","REPEAT: OFF",122)
+local stopButton=makeButton("StopGuidedWorkflow","STOP",234)
+local closeButton=makeButton("CloseGuidedWorkflow","CLOSE",346)
 local feedbackButton=Instance.new("TextButton");feedbackButton.Name="ExportGuidedWorkflowFeedback"
-feedbackButton.Size=UDim2.new(1,-20,0,34);feedbackButton.Position=UDim2.fromOffset(10,184)
+feedbackButton.Size=UDim2.new(1,-20,0,34);feedbackButton.Position=UDim2.fromOffset(10,222)
 feedbackButton.Text="PRINT DIGEST-BOUND FEEDBACK JSON";feedbackButton.Parent=frame
 feedbackButton.Activated:Connect(function()
   local ok,payload=pcall(function() return HttpService:JSONEncode(feedback) end)
@@ -542,60 +546,86 @@ local function runWorkflow()
   if runAttempts>=maxRunAttempts then
     finish("Stopped: bounded retry limit reached for this session.");return
   end
-  if #feedback.entries+#steps>400 then
-    finish("Stopped: feedback record limit reached; export before rerunning.");return
-  end
-  runAttempts=runAttempts+1
-  running=true;runId=runId+1;local thisRun=runId
-  for index,step in ipairs(steps) do
-    if not running or runId~=thisRun then return end
-    local state=resolveState(step.outcome.identity)
-    if not state then
-      recordFeedback(thisRun,index,step,nil,nil,false,false,"control-or-state-unavailable",
-        "Exact selected state identity unavailable")
-      finish("Stopped: selected state identity unavailable at step "..index);return
-    end
-    local ok,before=pcall(function() return state.Value end)
-    if not ok or type(before)~="number" and type(before)~="string" and type(before)~="boolean" then
-      recordFeedback(thisRun,index,step,nil,nil,false,false,"state-unreadable",
-        "Selected client-visible state is not readable scalar")
-      finish("Stopped: selected state is not readable scalar at step "..index);return
-    end
-    if before~=step.outcome.requiredBefore then
-      recordFeedback(thisRun,index,step,nil,nil,false,false,"metadata-drift",
-        "Selected entry-state prerequisite changed")
-      finish("Stopped: state prerequisite drifted at step "..index);return
-    end
-    local activated,failureStatus,failureMessage=activateStep(step,index,#steps)
-    if not running or runId~=thisRun then return end
-    if not activated then
-      local sampled=failureStatus=="activation-timeout"
-      recordFeedback(thisRun,index,step,sampled and before or nil,sampled and before or nil,
-        false,false,failureStatus,failureMessage)
-      if failureStatus=="metadata-drift" then
-        finish("Stopped: control prerequisites drifted at step "..index)
-      else finish("Stopped at step "..index..": "..failureMessage) end
+  running=true
+  local continuity={{}}
+  local firstSequence=true
+  while running do
+    if runAttempts>=maxRunAttempts then
+      finish("Stopped at the bounded five-sequence limit; causality and gameplay remain unverified.")
       return
     end
-    status.Text="Step "..index..": activation attempted; watching selected client-visible outcome."
-    local observed=false;local after=before;local deadline=os.clock()+outcomeTimeoutSeconds
-    while running and runId==thisRun and os.clock()<deadline do
-      local read,current=pcall(function() return state.Value end)
-      if read then after=current end
-      if read and outcomeReached(step.outcome.change,before,current) then observed=true;break end
-      task.wait(.05)
+    if #feedback.entries+#steps>400 then
+      finish("Stopped: feedback record limit reached; export before rerunning.");return
     end
-    if not observed then
-      recordFeedback(thisRun,index,step,before,after,true,false,"outcome-not-observed",
-        "Selected client-visible direction was not observed within the bounded window")
-      finish("Stopped: selected outcome not observed at step "..index);return
+    runAttempts=runAttempts+1
+    runId=runId+1;local thisRun=runId
+    for index,step in ipairs(steps) do
+      if not running or runId~=thisRun then return end
+      local state=resolveState(step.outcome.identity)
+      if not state then
+        recordFeedback(thisRun,index,step,nil,nil,false,false,"control-or-state-unavailable",
+          "Exact selected state identity unavailable")
+        finish("Stopped: selected state identity unavailable at step "..index);return
+      end
+      local ok,before=pcall(function() return state.Value end)
+      if not ok or type(before)~="number" and type(before)~="string" and type(before)~="boolean" then
+        recordFeedback(thisRun,index,step,nil,nil,false,false,"state-unreadable",
+          "Selected client-visible state is not readable scalar")
+        finish("Stopped: selected state is not readable scalar at step "..index);return
+      end
+      local requiredBefore=firstSequence and step.outcome.requiredBefore or continuity[state]
+      if requiredBefore==nil or before~=requiredBefore then
+        recordFeedback(thisRun,index,step,nil,nil,false,false,"metadata-drift",
+          firstSequence and "Selected entry-state prerequisite changed"
+            or "Selected state no longer matches the previous observed outcome")
+        finish("Stopped: state prerequisite drifted at step "..index);return
+      end
+      local activated,failureStatus,failureMessage=activateStep(step,index,#steps)
+      if not running or runId~=thisRun then return end
+      if not activated then
+        local sampled=failureStatus=="activation-timeout"
+        recordFeedback(thisRun,index,step,sampled and before or nil,sampled and before or nil,
+          false,false,failureStatus,failureMessage)
+        if failureStatus=="metadata-drift" then
+          finish("Stopped: control prerequisites drifted at step "..index)
+        else finish("Stopped at step "..index..": "..failureMessage) end
+        return
+      end
+      status.Text="Sequence "..runAttempts..", step "..index
+        ..": activation attempted; watching selected client-visible outcome."
+      local observed=false;local after=before;local deadline=os.clock()+outcomeTimeoutSeconds
+      while running and runId==thisRun and os.clock()<deadline do
+        local read,current=pcall(function() return state.Value end)
+        if read then after=current end
+        if read and outcomeReached(step.outcome.change,before,current) then observed=true;break end
+        task.wait(.05)
+      end
+      if not observed then
+        recordFeedback(thisRun,index,step,before,after,true,false,"outcome-not-observed",
+          "Selected client-visible direction was not observed within the bounded window")
+        finish("Stopped: selected outcome not observed at step "..index);return
+      end
+      continuity[state]=after
+      recordFeedback(thisRun,index,step,before,after,true,true,"expected-change-observed",
+        "Selected client-visible direction observed after the bounded step activation")
     end
-    recordFeedback(thisRun,index,step,before,after,true,true,"expected-change-observed",
-      "Selected client-visible direction observed after the bounded step activation")
+    firstSequence=false
+    if not repeatRequested then
+      finish("Candidate completed with client-visible observations; causality and gameplay remain unverified.")
+      return
+    end
+    status.Text="Sequence "..runAttempts.." observed; continuing bounded repeat with state continuity."
+    task.wait(.4)
   end
-  finish("Candidate completed with client-visible observations; causality and gameplay remain unverified.")
 end
 startButton.Activated:Connect(function() task.spawn(runWorkflow) end)
+repeatButton.Activated:Connect(function()
+  if running then return end
+  repeatRequested=not repeatRequested
+  repeatButton.Text=repeatRequested and "REPEAT: ON" or "REPEAT: OFF"
+  status.Text=repeatRequested and "Bounded repeat armed: at most five sequences; STOP cancels immediately."
+    or "Single-sequence mode armed; exact observed entry state remains required."
+end)
 stopButton.Activated:Connect(function() runId=runId+1;finish("Stopped by user; no verification claim.") end)
 closeButton.Activated:Connect(function() runId=runId+1;running=false;clearActive();gui:Destroy() end)
 '''

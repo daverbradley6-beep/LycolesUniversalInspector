@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"tools"))
 from controlled_guided_workflow import (canonical,execute,execute_cancel_recovery,execute_mixed,
-    execute_three_kind)
+    execute_repeat,execute_three_kind)
 
 PLACE=85896571713843
 DEFAULTS=(ROOT/"build"/"luau-0.744"/"luau",Path("/tmp/luau-0.744/luau"))
@@ -69,6 +69,16 @@ class ControlledGuidedWorkflowTests(unittest.TestCase):
         self.assertFalse(result["robloxRuntimeVerified"])
         self.assertFalse(result["gameplayVerified"])
 
+    def test_bounded_repeat_uses_observed_continuity_and_stops_at_five_sequences(self):
+        result=execute_repeat(PLACE,LUAU)
+        self.assertTrue(result["luauExecuted"])
+        self.assertEqual(result["boundedSequencesObserved"],5)
+        self.assertEqual(result["orderedStepsObserved"],10)
+        self.assertEqual(result["feedbackRecordsObserved"],10)
+        self.assertTrue(result["stateContinuityRequired"])
+        self.assertTrue(result["retryLimitRejected"])
+        self.assertFalse(result["robloxRuntimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
 
     def test_execution_report_is_deterministic(self):
         self.assertEqual(canonical(execute(PLACE,LUAU)),canonical(execute(PLACE,LUAU)))

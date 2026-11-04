@@ -194,6 +194,39 @@ assert(playerGui:FindFirstChild("LycolesGuidedWorkflow")==nil,"recovered workflo
 print("LYCOLES_GUIDED_CANCEL_RECOVERY|PASS|5|8")
 '''
 
+REPEAT_DRIVER=r'''
+local guide=playerGui:FindFirstChild("LycolesGuidedWorkflow")
+assert(guide,"guided workflow UI missing")
+local controls={}
+for _,item in ipairs(guide:GetDescendants()) do controls[item.Name]=item end
+assert(controls.RepeatGuidedWorkflow,"bounded repeat control missing")
+controls.RepeatGuidedWorkflow.Activated:Fire()
+assert(controls.RepeatGuidedWorkflow.Text=="REPEAT: ON","bounded repeat did not arm")
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==10 and _G.__workflowTest.stage.Value==10,
+    "bounded repeat did not execute exactly five two-step sequences")
+assert(table.concat(_G.__workflowOrder,",")==
+    "Select,Confirm,Select,Confirm,Select,Confirm,Select,Confirm,Select,Confirm",
+    "bounded repeat order drifted")
+local feedback=_G.LycolesGuidedWorkflowFeedback
+assert(#feedback.entries==10,"bounded repeat feedback count drifted")
+for index,entry in ipairs(feedback.entries) do
+    assert(entry.runId==math.ceil(index/2),"bounded repeat run identity drifted")
+    assert(entry.stepSequence==(index-1)%2+1,"bounded repeat step identity drifted")
+    assert(entry.status=="expected-change-observed","bounded repeat outcome missing")
+end
+local bounded=false
+for _,item in ipairs(guide:GetDescendants()) do
+    if item.ClassName=="TextLabel" and type(item.Text)=="string"
+        and string.find(item.Text,"bounded five-sequence limit",1,true) then bounded=true end
+end
+assert(bounded,"bounded repeat limit was not reported")
+assert(feedback.claims.runtimeVerified==false and feedback.claims.gameplayVerified==false
+    and feedback.claims.causalityProven==false,"bounded repeat claims were upgraded")
+controls.CloseGuidedWorkflow.Activated:Fire()
+print("LYCOLES_GUIDED_REPEAT|PASS|5|10")
+'''
+
 
 def _identity(name):
     return [{"name":"PlayerGui","className":"PlayerGui","ordinal":1},
@@ -258,6 +291,20 @@ def execute_cancel_recovery(place_id,luau_binary,timeout_seconds=2.0):
         "activeHighlightCleaned":True,"recoveryRunCompleted":True,
         "boundedRunAttempts":5,"retryLimitRejected":True,
         "orderedStepsObserved":2,"feedbackRecordsObserved":8,"feedbackPlanBound":True,
+        "robloxRuntimeVerified":False,"serverAuthorityVerified":False,
+        "causalityProven":False,"gameplayVerified":False,"transcript":stdout.strip()}
+
+def execute_repeat(place_id,luau_binary,timeout_seconds=2.0):
+    if type(place_id) is not int or place_id<1:raise ValueError("invalid place ID")
+    generated=render(workflow(place_id))
+    source=STUBS.replace("__RUNTIME_PLACE",str(place_id),1)+"\n"+SETUP+"\n"+generated+"\n"+REPEAT_DRIVER
+    stdout=run_bounded_program(source,Path(luau_binary),timeout_seconds=timeout_seconds)
+    if stdout.strip()!="LYCOLES_GUIDED_REPEAT|PASS|5|10":
+        raise ControlledExecutionError("invalid controlled guided repeat transcript")
+    return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
+        "simulatedEnvironment":True,"boundedSequencesObserved":5,
+        "orderedStepsObserved":10,"feedbackRecordsObserved":10,
+        "stateContinuityRequired":True,"retryLimitRejected":True,
         "robloxRuntimeVerified":False,"serverAuthorityVerified":False,
         "causalityProven":False,"gameplayVerified":False,"transcript":stdout.strip()}
 
