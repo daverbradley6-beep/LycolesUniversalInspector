@@ -455,7 +455,8 @@ def main():
     try:
         result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
             args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback)
-        if result.get("schemaVersion") in {"109.manifest-readiness.1","109.manifest-readiness.2"}:
+        schema = result.get("schemaVersion")
+        if isinstance(schema, str) and schema.startswith("109.manifest-readiness."):
             print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)
             return 2
         return 0

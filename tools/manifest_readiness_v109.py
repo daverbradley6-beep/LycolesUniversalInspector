@@ -94,6 +94,37 @@ def _transport_stage_labels(status, attempted, acknowledged, expected, integrity
     return attempt_status,receiver_status,downstream_status
 
 
+def _workflow_generation_diagnostics(value):
+    if value is None:
+        return {"available": False, "blockers": []}
+    details = _mapping(value, "workflow generation diagnostics")
+    available = details.get("available")
+    if type(available) is not bool:
+        raise ValueError("invalid workflow generation availability")
+    blockers = details.get("blockers", [])
+    if not isinstance(blockers, list) or len(blockers) > 64:
+        raise ValueError("invalid workflow generation blockers")
+    if any(not isinstance(item, str) or not item or len(item) > 120 for item in blockers):
+        raise ValueError("invalid workflow generation blocker")
+    if blockers != list(dict.fromkeys(blockers)):
+        raise ValueError("duplicate workflow generation blocker")
+
+    result = {"available": available, "blockers": blockers}
+    for field in (
+            "interactionEvents",
+            "attributedInteractions",
+            "unattributedInteractions",
+            "linkedConfirmations",
+            "corroboratedActionOutcomes",
+            "completedWorkflowCandidates",
+            "explicitWorkflowRecordings"):
+        current = details.get(field)
+        if current is not None:
+            result[field] = _integer(current, f"workflow generation {field}")
+    return result
+
+
+
 def _transport(manifest):
     expected = _integer(manifest.get("expectedParts", manifest.get("partCount")), "expected parts", minimum=1)
     part_count = _integer(manifest.get("partCount"), "part count", minimum=1)
@@ -341,6 +372,8 @@ def analyze(manifest):
     }
     diagnostics = _mapping(manifest.get("interactionDiagnostics"), "interaction diagnostics")
     workflow = _mapping(diagnostics.get("workflowStats"), "workflow stats")
+    workflow_generation = _workflow_generation_diagnostics(
+        diagnostics.get("workflowGenerationDiagnostics"))
     history = diagnostics.get("recentInteractions") or []
     if not isinstance(history, list) or len(history) > 2000:
         raise ValueError("invalid interaction history")
@@ -376,6 +409,14 @@ def analyze(manifest):
         "reviewed_implementation_contract_unavailable",
         "interaction_source_authenticity_unverified",
     ]
+    if workflow_generation.get("available") is True:
+        for blocker, mapped in (
+                ("explicit-workflow-recording-not-armed", "explicit_workflow_recording_not_armed"),
+                ("no-linked-confirmation-events", "workflow_linkage_not_observed"),
+                ("no-corroborated-action-outcomes", "workflow_outcome_corroboration_unavailable"),
+                ("no-completed-workflow-candidates", "completed_workflow_candidates_unavailable")):
+            if blocker in workflow_generation["blockers"] and mapped not in blockers:
+                blockers.append(mapped)
     if history_subset:
         blockers.append("complete_interaction_history_unavailable")
     if scan_id is None:
@@ -394,7 +435,7 @@ def analyze(manifest):
         recovery = "save_numbered_parts_or_upload"
         next_artifact = "complete numbered multipart report from local export or verified receiver retrieval"
     return {
-        "schemaVersion": "109.manifest-readiness.2",
+        "schemaVersion": "109.manifest-readiness.3",
         "scanId": scan_id,
         "placeId": place_id,
         "inspectorVersion": manifest.get("version"),
@@ -413,6 +454,7 @@ def analyze(manifest):
             "historyEventsReported": history_total,
             "historyIsSubset": history_subset,
             "featureConsistentOutcomeCandidatesLowerBound": len(outcomes),
+            "workflowGenerationDiagnostics": workflow_generation,
         },
         "outcomeCandidates": outcomes,
         "capabilities": capabilities,

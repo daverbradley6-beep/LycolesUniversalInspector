@@ -37,7 +37,7 @@ class ManifestReadinessTests(unittest.TestCase):
 
     def test_real_manifest_explains_evidence_and_generation_blockers(self):
         result = MODULE.analyze(self.manifest)
-        self.assertEqual(result["schemaVersion"], "109.manifest-readiness.2")
+        self.assertEqual(result["schemaVersion"], "109.manifest-readiness.3")
         self.assertEqual(result["placeId"], 85896571713843)
         self.assertTrue(result["scan"]["complete"])
         self.assertTrue(result["scan"]["objectAccountingValid"])
@@ -48,6 +48,9 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(result["evidence"]["completedWorkflowCandidates"], 0)
         self.assertTrue(result["evidence"]["historyIsSubset"])
         self.assertEqual(result["evidence"]["featureConsistentOutcomeCandidatesLowerBound"], 3)
+        self.assertEqual(result["evidence"]["workflowGenerationDiagnostics"],
+                         {"available": False, "blockers": []})
+
         self.assertEqual(
             {item["feature"] for item in result["outcomeCandidates"]},
             {"pets", "rewards"},
@@ -65,6 +68,39 @@ class ManifestReadinessTests(unittest.TestCase):
             result["generationReadiness"]["blockers"],
         )
         self.assertFalse(result["claims"]["causalityProven"])
+        self.assertFalse(result["claims"]["gameplayVerified"])
+
+    def test_workflow_generation_blockers_are_mapped_into_readiness(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["interactionDiagnostics"]["workflowGenerationDiagnostics"] = {
+            "available": True,
+            "interactionEvents": 153,
+            "attributedInteractions": 89,
+            "unattributedInteractions": 64,
+            "linkedConfirmations": 0,
+            "corroboratedActionOutcomes": 0,
+            "completedWorkflowCandidates": 0,
+            "explicitWorkflowRecordings": 0,
+            "blockers": [
+                "explicit-workflow-recording-not-armed",
+                "no-linked-confirmation-events",
+                "no-corroborated-action-outcomes",
+                "no-completed-workflow-candidates",
+            ],
+        }
+        result = MODULE.analyze(manifest)
+        diagnostics = result["evidence"]["workflowGenerationDiagnostics"]
+        self.assertTrue(diagnostics["available"])
+        self.assertIn("explicit_workflow_recording_not_armed",
+                      result["generationReadiness"]["blockers"])
+        self.assertIn("workflow_linkage_not_observed",
+                      result["generationReadiness"]["blockers"])
+        self.assertIn("workflow_outcome_corroboration_unavailable",
+                      result["generationReadiness"]["blockers"])
+        self.assertIn("completed_workflow_candidates_unavailable",
+                      result["generationReadiness"]["blockers"])
+
+
         self.assertFalse(result["claims"]["gameplayVerified"])
 
     def test_legacy_uploaded_parts_zero_is_unknown_not_failure(self):
