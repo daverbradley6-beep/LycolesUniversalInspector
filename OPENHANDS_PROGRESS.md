@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Exact local multipart byte provenance
+
+- Local multipart compilation now emits `30.2.source-provenance.2` with ordered SHA-256 digests for the exact current raw bytes of every accepted numbered part. This provides deterministic input identity only; source authenticity, original in-game byte equivalence, receiver equivalence, causality, server authority, runtime behavior, gameplay, and action outcomes remain unverified.
+- Duplicate part indices whose canonical JSON agrees but raw bytes differ now fail closed instead of allowing filename order to choose which byte representation is recorded.
+- Generation and dynamic-observation overlay consumers validate complete, unique, bounded v2 part-index/digest coverage. Existing receiver imports remain on `30.2.source-provenance.1` and retain their established strict/legacy verification semantics.
+- Generated utilities distinguish locally computed digest coverage from receiver payload-digest and retrieval-integrity status.
+- Implementation commit: `0777765` (`Bind local compilation to exact part bytes`).
+- Verification: focused compiler/receiver/generator/overlay/release tests passed; full Python suite **1504 passed, 17 skipped**; receiver checks and checked-in/representative generated Luau parsing passed through `npm test`; Python compilation, diff checks, and credential-pattern checks passed.
+- No Roblox runtime or gameplay test was performed or claimed. No receiver deployment, credentials, production infrastructure, or user-provided untracked files were changed.
+
 ## Update — 2026-11-02 — Self-consistent local report recovery
 
 - Released inspector patch `30.5.1` with explicit local export initialization and distinct not-attempted, incomplete, failed, and complete states.
