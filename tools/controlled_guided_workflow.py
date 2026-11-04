@@ -95,9 +95,10 @@ assert(_G.__workflowTest.selectButton:FindFirstChild("LycolesGuidedHighlight")==
     "first step highlight leaked")
 assert(_G.__workflowTest.confirmButton:FindFirstChild("LycolesGuidedHighlight")==nil,
     "second step highlight leaked")
+_G.__workflowTest.stage.Value=0
 _G.__workflowTest.confirmButton.Text="Drifted"
 controls.StartGuidedWorkflow.Activated:Fire()
-assert(_G.__workflowClicks==3 and _G.__workflowTest.stage.Value==3,
+assert(_G.__workflowClicks==3 and _G.__workflowTest.stage.Value==1,
     "metadata drift should stop after the still-valid first step")
 local drifted=false
 for _,item in ipairs(guide:GetDescendants()) do
@@ -109,10 +110,90 @@ assert(#feedback.entries==4 and feedback.entries[3].runId==2
     and feedback.entries[3].status=="expected-change-observed"
     and feedback.entries[4].stepSequence==2 and feedback.entries[4].status=="metadata-drift",
     "failed run feedback contract drifted")
+_G.__workflowTest.confirmButton.Text="Confirm"
+_G.__workflowTest.stage.Value=9
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==3 and _G.__workflowTest.stage.Value==9,
+    "entry-state drift should stop before activation")
+local stateDrifted=false
+for _,item in ipairs(guide:GetDescendants()) do
+    if item.ClassName=="TextLabel" and type(item.Text)=="string"
+        and string.find(item.Text,"state prerequisite drifted at step 1",1,true) then stateDrifted=true end
+end
+assert(stateDrifted,"step-specific state prerequisite drift was not reported")
+assert(#feedback.entries==5 and feedback.entries[5].stepSequence==1
+    and feedback.entries[5].status=="metadata-drift",
+    "state prerequisite drift feedback missing")
 controls.CloseGuidedWorkflow.Activated:Fire()
 assert(playerGui:FindFirstChild("LycolesGuidedWorkflow")==nil,"guided workflow UI did not close")
 print("LYCOLES_GUIDED_WORKFLOW|PASS|2|1|1")
 '''
+
+CANCEL_WAIT=r'''
+_G.__cancelWorkflow=true
+task.wait=function()
+    local guide=playerGui:FindFirstChild("LycolesGuidedWorkflow")
+    if _G.__workflowTest.selectButton:FindFirstChild("LycolesGuidedHighlight") then
+        if _G.__cancelWorkflow and guide then
+            for _,item in ipairs(guide:GetDescendants()) do
+                if item.Name=="StopGuidedWorkflow" then _G.__cancelWorkflow=false;item.Activated:Fire();return 0 end
+            end
+        end
+        _G.__workflowHighlightCount+=1;_G.__workflowTest.selectButton.Activated:Fire()
+    elseif _G.__workflowTest.confirmButton:FindFirstChild("LycolesGuidedHighlight") then
+        _G.__workflowHighlightCount+=1;_G.__workflowTest.confirmButton.Activated:Fire()
+    end
+    return 0
+end
+'''
+
+CANCEL_DRIVER=r'''
+local guide=playerGui:FindFirstChild("LycolesGuidedWorkflow")
+assert(guide,"guided workflow UI missing")
+local controls={}
+for _,item in ipairs(guide:GetDescendants()) do controls[item.Name]=item end
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==0 and _G.__workflowTest.stage.Value==0,
+    "cancelled workflow activated a control")
+assert(_G.__workflowTest.selectButton:FindFirstChild("LycolesGuidedHighlight")==nil,
+    "cancelled workflow leaked its highlight")
+local stopped=false
+for _,item in ipairs(guide:GetDescendants()) do
+    if item.ClassName=="TextLabel" and type(item.Text)=="string"
+        and string.find(item.Text,"Stopped by user",1,true) then stopped=true end
+end
+assert(stopped,"user cancellation was not reported")
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==2 and _G.__workflowTest.stage.Value==2,
+    "workflow did not recover after cancellation")
+local feedback=_G.LycolesGuidedWorkflowFeedback
+assert(#feedback.entries==2 and feedback.entries[1].runId==3
+    and feedback.entries[1].stepSequence==1 and feedback.entries[2].stepSequence==2,
+    "recovered workflow feedback order drifted")
+assert(feedback.entries[1].status=="expected-change-observed"
+    and feedback.entries[2].status=="expected-change-observed",
+    "recovered workflow observations missing")
+for _=1,3 do
+    _G.__workflowTest.stage.Value=0
+    controls.StartGuidedWorkflow.Activated:Fire()
+end
+assert(_G.__workflowClicks==8 and #feedback.entries==8,
+    "bounded retry attempts did not complete exactly five starts")
+_G.__workflowTest.stage.Value=0
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==8 and _G.__workflowTest.stage.Value==0 and #feedback.entries==8,
+    "sixth workflow start exceeded the bounded retry limit")
+local retryLimited=false
+for _,item in ipairs(guide:GetDescendants()) do
+    if item.ClassName=="TextLabel" and type(item.Text)=="string"
+        and string.find(item.Text,"bounded retry limit reached",1,true) then retryLimited=true end
+end
+assert(retryLimited,"bounded retry limit was not reported")
+controls.CloseGuidedWorkflow.Activated:Fire()
+assert(playerGui:FindFirstChild("LycolesGuidedWorkflow")==nil,"recovered workflow UI did not close")
+print("LYCOLES_GUIDED_CANCEL_RECOVERY|PASS|5|8")
+'''
+
 
 def _identity(name):
     return [{"name":"PlayerGui","className":"PlayerGui","ordinal":1},
@@ -157,11 +238,28 @@ def execute(place_id,luau_binary,timeout_seconds=2.0):
         raise ControlledExecutionError("invalid controlled guided workflow transcript")
     return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
         "simulatedEnvironment":True,"orderedStepsObserved":2,"exactHighlightsObserved":2,
-        "metadataDriftRejected":True,"normalUserActivationEventsUsed":True,
-        "feedbackRecordsObserved":4,"feedbackPlanBound":True,
+        "metadataDriftRejected":True,"statePrerequisiteDriftRejected":True,
+        "normalUserActivationEventsUsed":True,"feedbackRecordsObserved":5,"feedbackPlanBound":True,
         "automaticGuiActivationUsed":False,"robloxRuntimeVerified":False,
         "serverAuthorityVerified":False,"causalityProven":False,
         "gameplayVerified":False,"transcript":stdout.strip()}
+
+
+def execute_cancel_recovery(place_id,luau_binary,timeout_seconds=2.0):
+    if type(place_id) is not int or place_id<1:raise ValueError("invalid place ID")
+    generated=render(workflow(place_id))
+    source=(STUBS.replace("__RUNTIME_PLACE",str(place_id),1)+"\n"+SETUP+"\n"+CANCEL_WAIT
+        +"\n"+generated+"\n"+CANCEL_DRIVER)
+    stdout=run_bounded_program(source,Path(luau_binary),timeout_seconds=timeout_seconds)
+    if stdout.strip()!="LYCOLES_GUIDED_CANCEL_RECOVERY|PASS|5|8":
+        raise ControlledExecutionError("invalid controlled cancellation recovery transcript")
+    return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
+        "simulatedEnvironment":True,"cancelledBeforeActivation":True,
+        "activeHighlightCleaned":True,"recoveryRunCompleted":True,
+        "boundedRunAttempts":5,"retryLimitRejected":True,
+        "orderedStepsObserved":2,"feedbackRecordsObserved":8,"feedbackPlanBound":True,
+        "robloxRuntimeVerified":False,"serverAuthorityVerified":False,
+        "causalityProven":False,"gameplayVerified":False,"transcript":stdout.strip()}
 
 
 MIXED_SETUP=r'''
@@ -204,10 +302,11 @@ assert(feedback.entries[1].status=="expected-change-observed"
     and feedback.entries[2].status=="expected-change-observed","mixed feedback outcomes missing")
 assert(feedback.claims.runtimeVerified==false and feedback.claims.gameplayVerified==false
     and feedback.claims.causalityProven==false,"mixed feedback claims were upgraded")
+_G.__mixedWorkflowTest.stage.Value=0
 _G.__mixedWorkflowTest.prompt.ActionText="Drifted"
 controls.StartGuidedWorkflow.Activated:Fire()
 assert(_G.__mixedToolActivations==2 and _G.__mixedPromptActivations==1
-    and _G.__mixedWorkflowTest.stage.Value==3,"Prompt drift did not stop after valid Tool step")
+    and _G.__mixedWorkflowTest.stage.Value==1,"Prompt drift did not stop after valid Tool step")
 assert(#feedback.entries==4 and feedback.entries[3].status=="expected-change-observed"
     and feedback.entries[4].status=="metadata-drift","Prompt drift feedback missing")
 controls.CloseGuidedWorkflow.Activated:Fire()
@@ -243,7 +342,6 @@ end
 controls.CloseGuidedWorkflow.Activated:Fire()
 print("LYCOLES_THREE_KIND_WORKFLOW|PASS|3|1|1|1")
 '''
-
 
 
 def _mixed_step(kind,sequence):
@@ -334,7 +432,6 @@ def execute_three_kind(place_id,luau_binary,timeout_seconds=2.0):
         "normalUserActivationEventsUsed":True,"automaticGuiActivationUsed":False,
         "robloxRuntimeVerified":False,"serverAuthorityVerified":False,
         "causalityProven":False,"gameplayVerified":False,"transcript":stdout.strip()}
-
 
 
 def canonical(value):

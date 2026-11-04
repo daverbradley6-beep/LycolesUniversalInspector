@@ -8,6 +8,7 @@ import unicodedata
 
 SCHEMA="114.generated-workflow-plan.1"
 MAX_EVENTS=2000
+MAX_WORKFLOW_STEPS=64
 FALSE_CLAIMS=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
     "runtimeVerified","gameplayVerified","actionOutcomesVerified")
 
@@ -125,10 +126,12 @@ def _step(event,sequence,transaction_order,kind,metadata_key,target):
         "controlType":target["controlType"],"kind":kind,"activationMode":activation_mode,
         "pathIdentity":copy.deepcopy(target["pathIdentity"]),
         "prerequisiteMetadata":copy.deepcopy(target[metadata_key]),
+        "entryStatePrerequisite":{"key":outcome["key"],"value":observed["before"],
+            "stateIdentity":copy.deepcopy(outcome["stateIdentity"]),
+            "classification":"exact-observed-entry-state","causalityProven":False},
         "selectedOutcome":{"key":outcome["key"],"change":outcome["change"],
             "stateIdentity":copy.deepcopy(outcome["stateIdentity"]),
-            "observedBefore":observed["before"] if observed else None,
-            "observedAfter":observed["after"] if observed else None},
+            "observedBefore":observed["before"],"observedAfter":observed["after"]},
         "manualActivationRequired":kind=="guided-gui-activation-trial",
         "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False}
 
@@ -195,7 +198,10 @@ def plan(plan_document,actions):
             blockers.append("At least one GUI step requires normal user activation")
         if prompt_runtime:
             blockers.append("Prompt steps require fireproximityprompt availability at runtime")
-        guided_ready=len(mapped)==len(events)
+        within_step_bound=len(mapped)<=MAX_WORKFLOW_STEPS
+        if not within_step_bound:
+            blockers.append("Workflow exceeds the bounded 64-step generation limit")
+        guided_ready=len(mapped)==len(events) and within_step_bound
         automatic=guided_ready and not manual_gui
         execution_mode=("bounded-automatic" if automatic else "mixed-guided" if guided_ready
             else "review-only")

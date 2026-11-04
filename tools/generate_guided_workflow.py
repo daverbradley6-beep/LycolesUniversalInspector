@@ -132,7 +132,17 @@ def _step(value):
                 and math.isfinite(position[key]) for key in ("x","y","z")))
     state_identity=outcome.get("stateIdentity") if isinstance(outcome,dict) else None
     change=outcome.get("change") if isinstance(outcome,dict) else None
-    if (not valid_metadata or not isinstance(outcome,dict) or not _text(outcome.get("key"),200)
+    outcome_key=outcome.get("key") if isinstance(outcome,dict) else None
+    observed_before=outcome.get("observedBefore") if isinstance(outcome,dict) else None
+    entry=value.get("entryStatePrerequisite")
+    entry_valid=(entry is None or isinstance(entry,dict)
+        and set(entry)=={"key","value","stateIdentity","classification","causalityProven"}
+        and entry.get("key")==outcome_key and entry.get("value")==observed_before
+        and entry.get("stateIdentity")==state_identity and _scalar(entry.get("value"))
+        and entry.get("classification")=="exact-observed-entry-state"
+        and entry.get("causalityProven") is False)
+    if (not valid_metadata or not entry_valid or not isinstance(outcome,dict)
+            or not _text(outcome.get("key"),200)
             or change not in ("increased","decreased","changed")
             or not _identity(state_identity) or state_identity[0]["name"] not in ("leaderstats","Data")
             or ".".join(item["name"] for item in state_identity)!=outcome["key"]
@@ -157,7 +167,7 @@ def validate(document):
         if item.get("guidedTrialGenerationReady") is not True:continue
         steps=item.get("steps")
         if (not _text(item.get("id"),80) or not _text(item.get("transactionId"),128)
-                or not isinstance(steps,list) or not 2<=len(steps)<=16
+                or not isinstance(steps,list) or not 2<=len(steps)<=64
                 or item.get("stepCount")!=len(steps) or item.get("unmappedLinkedEvents")!=0
                 or item.get("exactOrderObserved") is not True
                 or item.get("allStepsGenerationReady") is not True
@@ -238,6 +248,7 @@ def _step_lua(step):
         +",kind="+_lua(step["kind"])+",activationMode="+_lua(activation_mode)
         +",identity="+_identity_lua(step["pathIdentity"])+",metadata="+_metadata_lua(metadata)
         +",outcome={key="+_lua(outcome["key"])+",change="+_lua(outcome["change"])
+        +",requiredBefore="+_lua(outcome["observedBefore"])
         +",identity="+_identity_lua(outcome["stateIdentity"])+"}}")
 
 def validate_source(source,place_id):
@@ -248,7 +259,9 @@ def validate_source(source,place_id):
         "pcall(function() tool:Activate() end)",
         "type(fireproximityprompt)~=\"function\"",
         "pcall(function() fireproximityprompt(prompt) end)",
-        "for index,step in ipairs(steps) do","normal user activation",
+        "for index,step in ipairs(steps) do","before~=step.outcome.requiredBefore",
+        "runAttempts>=maxRunAttempts","local maxRunAttempts=5",
+        "normal user activation",
         "No GUI event is synthesized","115.guided-workflow-feedback.1",
         "_G.LycolesGuidedWorkflowFeedback=feedback","recordFeedback(",
         "HttpService:JSONEncode(feedback)","actionOutcomesVerified=false")
@@ -291,6 +304,8 @@ local feedback={{schemaVersion="115.guided-workflow-feedback.1",placeId={documen
 _G.LycolesGuidedWorkflowFeedback=feedback
 local running=false
 local runId=0
+local runAttempts=0
+local maxRunAttempts=5
 local activeConnection=nil
 local activeStroke=nil
 local status=nil
@@ -515,9 +530,13 @@ local function finish(message)
 end
 local function runWorkflow()
   if running then return end
+  if runAttempts>=maxRunAttempts then
+    finish("Stopped: bounded retry limit reached for this session.");return
+  end
   if #feedback.entries+#steps>400 then
     finish("Stopped: feedback record limit reached; export before rerunning.");return
   end
+  runAttempts=runAttempts+1
   running=true;runId=runId+1;local thisRun=runId
   for index,step in ipairs(steps) do
     if not running or runId~=thisRun then return end
@@ -532,6 +551,11 @@ local function runWorkflow()
       recordFeedback(thisRun,index,step,nil,nil,false,false,"state-unreadable",
         "Selected client-visible state is not readable scalar")
       finish("Stopped: selected state is not readable scalar at step "..index);return
+    end
+    if before~=step.outcome.requiredBefore then
+      recordFeedback(thisRun,index,step,nil,nil,false,false,"metadata-drift",
+        "Selected entry-state prerequisite changed")
+      finish("Stopped: state prerequisite drifted at step "..index);return
     end
     local activated,failureStatus,failureMessage=activateStep(step,index,#steps)
     if not running or runId~=thisRun then return end

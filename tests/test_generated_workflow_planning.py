@@ -12,6 +12,7 @@ def load(name,filename):
 
 discovery=load("workflow_action_discovery","discover_action_capabilities.py")
 planner=load("generated_workflow_planner","plan_generated_workflows.py")
+generator=load("generated_workflow_generator","generate_guided_workflow.py")
 
 def identity(button):
     return [{"name":"PlayerGui","className":"PlayerGui","ordinal":1},
@@ -93,6 +94,11 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertEqual(candidate["stateContinuityLinks"],[{"fromStep":1,"toStep":2,
             "stateKey":"Data.ShopStage","value":3,
             "classification":"observed-state-continuity","causalityProven":False}])
+        self.assertEqual(candidate["steps"][1]["entryStatePrerequisite"],{
+            "key":"Data.ShopStage","value":3,"stateIdentity":[
+                {"name":"Data","className":"Folder","ordinal":1},
+                {"name":"ShopStage","className":"IntValue","ordinal":1}],
+            "classification":"exact-observed-entry-state","causalityProven":False})
         self.assertFalse(candidate["automaticallyExecutable"])
         self.assertTrue(candidate["executionReady"])
         self.assertEqual(candidate["executionMode"],"mixed-guided")
@@ -160,6 +166,29 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertTrue(candidate["automaticallyExecutable"])
         self.assertFalse(candidate["runtimeVerified"])
         self.assertFalse(candidate["gameplayVerified"])
+
+    def test_long_repeated_action_sequence_is_generation_ready(self):
+        value=plan();value["observedInteractionHistory"]=[
+            (tool_event if sequence%2 else prompt_event)(sequence,sequence-1,sequence,"long-flow")
+            for sequence in range(1,25)]
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertEqual(candidate["stepCount"],24)
+        self.assertEqual([step["kind"] for step in candidate["steps"][:4]],[
+            "official-tool-activation-trial","proximity-prompt-trial",
+            "official-tool-activation-trial","proximity-prompt-trial"])
+        self.assertTrue(candidate["executionReady"])
+        self.assertEqual(len(generator.validate(result)[0]["steps"]),24)
+
+    def test_sequence_over_sixty_four_steps_stays_review_only(self):
+        value=plan();value["observedInteractionHistory"]=[
+            tool_event(sequence,sequence-1,sequence,"over-bound") for sequence in range(1,66)]
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertEqual(candidate["stepCount"],65)
+        self.assertFalse(candidate["executionReady"])
+        self.assertEqual(candidate["executionMode"],"review-only")
+        self.assertIn("Workflow exceeds the bounded 64-step generation limit",candidate["blockers"])
+        self.assertEqual(generator.validate(result),[])
+
 
     def test_exact_determinism(self):
         value=plan();actions=discovery.analyze(value)

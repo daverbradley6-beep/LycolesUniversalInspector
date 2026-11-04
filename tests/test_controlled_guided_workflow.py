@@ -6,7 +6,8 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"tools"))
-from controlled_guided_workflow import canonical,execute,execute_mixed,execute_three_kind
+from controlled_guided_workflow import (canonical,execute,execute_cancel_recovery,execute_mixed,
+    execute_three_kind)
 
 PLACE=85896571713843
 DEFAULTS=(ROOT/"build"/"luau-0.744"/"luau",Path("/tmp/luau-0.744/luau"))
@@ -21,8 +22,9 @@ class ControlledGuidedWorkflowTests(unittest.TestCase):
         self.assertEqual(result["orderedStepsObserved"],2)
         self.assertEqual(result["exactHighlightsObserved"],2)
         self.assertTrue(result["metadataDriftRejected"])
+        self.assertTrue(result["statePrerequisiteDriftRejected"])
         self.assertTrue(result["normalUserActivationEventsUsed"])
-        self.assertEqual(result["feedbackRecordsObserved"],4)
+        self.assertEqual(result["feedbackRecordsObserved"],5)
         self.assertTrue(result["feedbackPlanBound"])
         self.assertFalse(result["automaticGuiActivationUsed"])
         self.assertFalse(result["robloxRuntimeVerified"])
@@ -55,6 +57,17 @@ class ControlledGuidedWorkflowTests(unittest.TestCase):
         self.assertFalse(result["robloxRuntimeVerified"])
         self.assertFalse(result["gameplayVerified"])
 
+    def test_cancellation_cleans_active_state_and_allows_recovery(self):
+        result=execute_cancel_recovery(PLACE,LUAU)
+        self.assertTrue(result["cancelledBeforeActivation"])
+        self.assertTrue(result["activeHighlightCleaned"])
+        self.assertTrue(result["recoveryRunCompleted"])
+        self.assertEqual(result["boundedRunAttempts"],5)
+        self.assertTrue(result["retryLimitRejected"])
+        self.assertEqual(result["orderedStepsObserved"],2)
+        self.assertEqual(result["feedbackRecordsObserved"],8)
+        self.assertFalse(result["robloxRuntimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
 
 
     def test_execution_report_is_deterministic(self):

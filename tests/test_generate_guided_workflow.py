@@ -22,7 +22,12 @@ def step(button,sequence):
             "controlClass":"TextButton","text":button,"visible":True,"active":True,
             "selectable":True,"autoButtonColor":True,"interactable":True,
             "ancestorVisible":True,"screenEnabled":True,"withinScrollingBounds":True,
-            "effectiveVisible":True},"selectedOutcome":{"key":"Data.Stage","change":"increased",
+            "effectiveVisible":True},"entryStatePrerequisite":{"key":"Data.Stage",
+                "value":sequence-1,"stateIdentity":[
+                    {"name":"Data","className":"Folder","ordinal":1},
+                    {"name":"Stage","className":"IntValue","ordinal":1}],
+                "classification":"exact-observed-entry-state","causalityProven":False},
+            "selectedOutcome":{"key":"Data.Stage","change":"increased",
                 "stateIdentity":[{"name":"Data","className":"Folder","ordinal":1},
                     {"name":"Stage","className":"IntValue","ordinal":1}],
                 "observedBefore":sequence-1,"observedAfter":sequence},
@@ -90,6 +95,10 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         self.assertIn('title.Text="Guided workflow (guided-flow)"',source)
         self.assertIn('button.Activated:Connect(function() activated=true end)',source)
         self.assertIn('for index,step in ipairs(steps) do',source)
+        self.assertIn('requiredBefore=0',source)
+        self.assertIn('before~=step.outcome.requiredBefore',source)
+        self.assertIn('local maxRunAttempts=5',source)
+        self.assertIn('runAttempts>=maxRunAttempts',source)
         self.assertIn('activate highlighted',source)
         self.assertIn('causality and gameplay remain unverified',source)
         self.assertNotIn("firesignal",source.lower())
@@ -184,6 +193,10 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
             generator.render(value)
         value=document();value["workflowCandidates"][0]["steps"][1]["transactionOrder"]=1
         with self.assertRaisesRegex(ValueError,"step order"):
+            generator.render(value)
+        value=document();value["workflowCandidates"][0]["steps"][0][
+            "entryStatePrerequisite"]["value"]=99
+        with self.assertRaisesRegex(ValueError,"step contract"):
             generator.render(value)
         value=document();value["workflowCandidates"][0].pop("transactionId")
         with self.assertRaisesRegex(ValueError,"candidate"):
