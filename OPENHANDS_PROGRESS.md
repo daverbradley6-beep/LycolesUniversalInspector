@@ -10,6 +10,7 @@
 - `tools/build_release.py` retains manifest-only routing compatibility with both v109.1 and v109.2.
 - Implementation commit: `8b50574` (`Finalize local report export lifecycle`).
 - Verification: full Python suite **1500 passed, 17 skipped**; receiver tests passed; checked-in and representative generated Luau parsed; targeted manifest/inspector/release tests, `py_compile`/`compileall`, version consistency, `git diff --check`, and credential-pattern checks passed.
+- GitHub Actions: all **19/19** workflows observed for exact pushed head `334ab0a8aac07fe15d2b8e434496f9ff96b63d33` completed successfully.
 - No receiver deployment, credentials, or production infrastructure changed. Receiver integrity, local-file existence outside the manifest claim, source authenticity, causality, server authority, Roblox runtime behavior, gameplay, and script-generation readiness remain unverified.
 
 ## Update — 2026-11-02 — Provider-independent game profile expansion
