@@ -11,7 +11,8 @@ COMMANDS=("fly","unfly","noclip","clip","tp","goto","speed","jump",
 def evidence_summaries(document,generation_readiness=None):
     unavailable=("System candidates: no v110 gameplay-understanding artifact supplied",
                  "Request readiness: no v110 gameplay-understanding artifact supplied")
-    if not isinstance(document,dict) or document.get("schemaVersion")!="110.gameplay-understanding.1":
+    if (not isinstance(document,dict) or document.get("schemaVersion") not in
+            {"110.gameplay-understanding.1","110.gameplay-understanding.2"}):
         return unavailable
     raw_systems=document.get("systems")
     if not isinstance(raw_systems,list):raise ValueError("Invalid gameplay systems")

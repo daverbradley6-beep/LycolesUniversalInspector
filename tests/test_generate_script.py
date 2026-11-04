@@ -120,7 +120,7 @@ class GeneratorTests(unittest.TestCase):
             self.assertFalse(generated_result["gameplayVerified"])
 
             self.assertEqual(manifest["gameplayUnderstanding"]["schemaVersion"],
-                             "110.gameplay-understanding.1")
+                             "110.gameplay-understanding.2")
             self.assertIn("egg_selection_observation",
                           gameplay["requestedCapabilityAssessment"]["blockers"])
             self.assertEqual(manifest["generationReadiness"]["schemaVersion"],
@@ -143,6 +143,11 @@ class GeneratorTests(unittest.TestCase):
                              "evidence-only-no-replay-contract")
             self.assertEqual(readiness["generatedCapabilities"],[])
             self.assertIn("Request missing:",combined)
+            self.assertEqual(gameplay["profileIndex"]["schemaVersion"],
+                             "110.game-profile-index.1")
+            self.assertGreater(len(gameplay["evidenceGaps"]),0)
+            self.assertIn("Game profile: provider-independent composable evidence",combined)
+            self.assertIn("Unresolved evidence gaps:",combined)
             self.assertIn("Generation request: evidence-only-no-replay-contract",combined)
             self.assertIn("Generation readiness: evidence-only-no-replay-contract",commands)
             self.assertIn("full request implemented: false",commands)

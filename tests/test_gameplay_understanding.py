@@ -58,7 +58,7 @@ def plan():
 class GameplayUnderstandingTests(unittest.TestCase):
     def test_bubble_like_evidence_forms_composable_systems_and_loops(self):
         result=understanding.analyze(plan())
-        self.assertEqual(result["schemaVersion"],"110.gameplay-understanding.1")
+        self.assertEqual(result["schemaVersion"],"110.gameplay-understanding.2")
         capability_ids={item["id"] for item in result["systems"]}
         self.assertTrue({"companion_collection","commerce","navigation",
                          "task_progression","reward_collection","resource_progression"}
@@ -136,6 +136,86 @@ class GameplayUnderstandingTests(unittest.TestCase):
         self.assertEqual(result["systems"][0]["id"],"resource_progression")
         self.assertEqual(result["systems"][0]["sourceFeatures"],["progression","training"])
         self.assertEqual(result["systems"][0]["observedInteractions"],5)
+
+    def test_unknown_feature_remains_a_structural_composable_system(self):
+        value=plan();value["requestedCapability"]="Automatically fish in the lake"
+        value["features"]=[feature("fishing")];value["observedInteractionHistory"]=[]
+        result=understanding.analyze(value)
+        self.assertEqual(len(result["systems"]),1)
+        system=result["systems"][0]
+        self.assertTrue(system["id"].startswith("feature_fishing_"))
+        self.assertEqual(system["sourceFeatures"],["fishing"])
+        self.assertEqual(system["evidenceTier"],"structural_candidate")
+        self.assertEqual(result["requestedCapabilityAssessment"]["matchedSystems"],[system["id"]])
+        self.assertEqual(result["requestedCapabilityAssessment"]["status"],
+            "insufficient_interaction_evidence")
+        self.assertIn("observed_interaction_evidence",
+            result["requestedCapabilityAssessment"]["blockers"])
+        self.assertFalse(system["systemVerified"])
+
+    def test_generic_system_inventory_is_bounded_and_truncation_disclosed(self):
+        value=plan();value["requestedCapability"]=None
+        value["features"]=[feature(f"custom_{index:03d}") for index in range(140)]
+        value["features"].append(feature("travel"));value["observedInteractionHistory"]=[]
+        result=understanding.analyze(value)
+        self.assertEqual(len(result["systems"]),understanding.MAX_SYSTEMS)
+        self.assertIn("navigation",{item["id"] for item in result["systems"]})
+        self.assertEqual(result["summary"]["omittedSystemCandidates"],13)
+        self.assertTrue(result["profileIndex"]["systemInventoryTruncated"])
+        self.assertEqual(result["profileIndex"]["omittedSystemCandidates"],13)
+
+    def test_duplicate_resource_labels_keep_distinct_provider_independent_ids(self):
+        value=plan();value["observedInteractionHistory"]=[
+            event("HUD.First","shops","purchase",[
+                {"key":"Data.Coins","before":10,"after":9,
+                 "stateIdentityStatus":"component-resolved","stateIdentity":[
+                    {"name":"Data","className":"Folder","ordinal":1},
+                    {"name":"Coins","className":"IntValue","ordinal":1}]},
+                {"key":"Data.Coins","before":100,"after":90,
+                 "stateIdentityStatus":"component-resolved","stateIdentity":[
+                    {"name":"Data","className":"Folder","ordinal":1},
+                    {"name":"Coins","className":"IntValue","ordinal":2}]}],False,1)]
+        result=understanding.analyze(value)
+        coins=[item for item in result["resources"] if item["name"]=="Coins"]
+        self.assertEqual(len(coins),2)
+        self.assertEqual(len({item["id"] for item in coins}),2)
+        self.assertTrue(all(item["identityMode"]=="component-resolved" for item in coins))
+        self.assertEqual({item["stateIdentity"][-1]["ordinal"] for item in coins},{1,2})
+        effect_ids={item["resourceId"] for item in result["observedActions"][0][
+            "resourceEffects"]}
+        self.assertEqual(effect_ids,{item["id"] for item in coins})
+        self.assertTrue(all(item["targetId"] in effect_ids
+            for item in result["progressionRelationships"]))
+
+    def test_profile_index_and_structured_evidence_gaps_are_bounded(self):
+        result=understanding.analyze(plan())
+        profile=result["profileIndex"]
+        self.assertEqual(profile["model"],"provider-independent-composable-profile")
+        self.assertFalse(profile["singleGenreAssumed"])
+        self.assertEqual(profile["resourceIds"],sorted(
+            item["id"] for item in result["resources"]))
+        gaps={item["id"]:item for item in result["evidenceGaps"]}
+        self.assertFalse(profile["systemInventoryTruncated"])
+        self.assertEqual(profile["omittedSystemCandidates"],0)
+        self.assertIn("interaction_mechanism",gaps)
+        self.assertIn("mode_selection_observation",gaps)
+        self.assertTrue(gaps["mode_selection_observation"]["requestRelevant"])
+        self.assertTrue(gaps["mode_selection_observation"]["liveObservationRequired"])
+        self.assertEqual(gaps["permitted_action_contract"]["category"],"operator-review")
+        self.assertTrue(all(item["status"]=="unresolved" for item in gaps.values()))
+        self.assertTrue(all(item["causalityProven"] is False for item in gaps.values()))
+        resource_ids=set(profile["resourceIds"])
+        action_ids=set(profile["observedActionIds"])
+        system_ids=set(profile["systemIds"])
+        self.assertTrue(all(item["targetId"] in resource_ids
+            and item["sourceId"] in action_ids for item in result["progressionRelationships"]))
+        for loop in result["progressionLoops"]:
+            self.assertTrue(set(loop["stepActionIds"])<=action_ids)
+            self.assertTrue(set(loop.get("inputResourceIds",[]))<=resource_ids)
+            self.assertTrue(set(loop.get("intermediateResourceIds",[]))<=resource_ids)
+            self.assertTrue(set(loop.get("outputResourceIds",[]))<=resource_ids)
+        self.assertTrue(all(set(item["targetIds"])<=(resource_ids|system_ids)
+            for item in result["objectiveCandidates"]))
 
     def test_exact_determinism_and_fail_closed_claims(self):
         value=plan()

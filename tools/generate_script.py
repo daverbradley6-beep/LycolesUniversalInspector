@@ -134,7 +134,8 @@ def gameplay_understanding_lines(plan,understanding):
     false_claims=("sourceAuthenticityVerified","primaryObjectiveVerified","causalityProven",
                   "serverAuthorityVerified","replayable","runtimeVerified",
                   "gameplayVerified","actionOutcomesVerified")
-    if (understanding.get("schemaVersion")!="110.gameplay-understanding.1"
+    if (understanding.get("schemaVersion") not in {
+                "110.gameplay-understanding.1","110.gameplay-understanding.2"}
             or understanding.get("placeId")!=integrity.get("placeId")
             or understanding.get("scanId")!=integrity.get("scanId")
             or understanding.get("model")!="composable_capabilities"
@@ -153,6 +154,26 @@ def gameplay_understanding_lines(plan,understanding):
            "Objective candidates: "+str(len(objectives)),
            "Progression loops: "+str(len(loops)),
            "No gameplay mechanics are verified"]
+    profile=understanding.get("profileIndex");gaps=understanding.get("evidenceGaps")
+    if profile is not None or gaps is not None:
+        if (not isinstance(profile,dict)
+                or profile.get("schemaVersion")!="110.game-profile-index.1"
+                or profile.get("model")!="provider-independent-composable-profile"
+                or profile.get("singleGenreAssumed") is not False
+                or type(profile.get("systemInventoryTruncated")) is not bool
+                or type(profile.get("omittedSystemCandidates")) is not int
+                or profile["omittedSystemCandidates"]<0
+                or profile["systemInventoryTruncated"]!=(profile["omittedSystemCandidates"]>0)
+                or profile.get("implementationReady") is not False
+                or profile.get("runtimeVerified") is not False
+                or profile.get("gameplayVerified") is not False
+                or not isinstance(gaps,list) or len(gaps)>128
+                or any(not isinstance(item,dict) or item.get("status")!="unresolved"
+                    or item.get("implementationReady") is not False
+                    or item.get("causalityProven") is not False for item in gaps)):
+            raise ValueError("Malformed provider-independent game profile")
+        lines.extend(["Game profile: provider-independent composable evidence",
+            "Unresolved evidence gaps: "+str(len(gaps))])
     assessment=understanding.get("requestedCapabilityAssessment")
     if assessment is not None:
         if (not isinstance(assessment,dict)

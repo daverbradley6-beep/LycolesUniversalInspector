@@ -11,8 +11,9 @@ import pathlib
 import re
 import sys
 
-SCHEMA_VERSION="110.gameplay-understanding.1"
+SCHEMA_VERSION="110.gameplay-understanding.2"
 MAX_FEATURES=5000
+MAX_SYSTEMS=128
 MAX_EVENTS=2000
 MAX_CHANGES=32
 MAX_TEXT=240
@@ -85,7 +86,9 @@ def _safe_text(value):
 
 def _tokens(value):
     if not isinstance(value,str): return set()
-    return {item.casefold() for item in re.findall(r"[^\W_]+",value,flags=re.UNICODE)}
+    values={item.casefold() for item in re.findall(r"[^\W_]+",value,flags=re.UNICODE)}
+    values.update(item[:-3] for item in list(values) if len(item)>5 and item.endswith("ing"))
+    return values
 
 
 def _terminal_name(key):
@@ -103,6 +106,23 @@ def _resource_classification(key,name):
     if words & {"health","damage","strength","agility","level","levels","xp","experience","rebirth","rebirths","score"}:
         return "progression_stat_candidate"
     return "observable_resource_candidate"
+
+
+def _state_identity(change):
+    if change.get("stateIdentityStatus")!="component-resolved":return None,None
+    raw=change.get("stateIdentity")
+    if not isinstance(raw,list) or not raw or len(raw)>32:return None,None
+    normalized=[]
+    for component in raw:
+        if (not isinstance(component,dict) or not _safe_text(component.get("name"))
+                or not _safe_text(component.get("className"))
+                or type(component.get("ordinal")) is not int
+                or not 1<=component["ordinal"]<=1_000_000):
+            return None,None
+        normalized.append({"name":component["name"],"className":component["className"],
+            "ordinal":component["ordinal"]})
+    key=json.dumps(normalized,sort_keys=True,separators=(",",":"),ensure_ascii=False)
+    return normalized,key
 
 
 def _tier(feature=None,events=None):
@@ -134,10 +154,17 @@ def _changes(event):
         if (not _safe_text(key) or type(before) not in SCALARS or type(after) not in SCALARS
                 or len(str(before))>100 or len(str(after))>100):
             continue
-        identity=(key,type(before).__name__,str(before),type(after).__name__,str(after))
+        state_identity,state_identity_key=_state_identity(item)
+        identity=(key,state_identity_key,type(before).__name__,str(before),
+            type(after).__name__,str(after))
         if identity in seen: continue
         seen.add(identity)
-        result.append({"key":key,"before":before,"after":after})
+        change={"key":key,"before":before,"after":after,
+            "stateIdentityKey":state_identity_key}
+        if state_identity is not None:
+            change["stateIdentityStatus"]="component-resolved"
+            change["stateIdentity"]=state_identity
+        result.append(change)
         if len(result)>=MAX_CHANGES: break
     return result
 
@@ -194,17 +221,28 @@ def _systems(features,history):
     for event in history:
         name=event.get("featureCandidate")
         if name in events_by_feature: events_by_feature[name].append(event)
-    systems={}
-    for name,item in sorted(by_feature.items()):
+    systems={};omitted=0
+    ordered=sorted(by_feature.items(),key=lambda entry:(
+        0 if entry[0] in FEATURE_SYSTEMS else 1,
+        0 if entry[1].get("interactionEvents",0)>0 or events_by_feature[entry[0]] else 1,
+        entry[0]))
+    for name,item in ordered:
         mapping=FEATURE_SYSTEMS.get(name)
-        if mapping is None: continue
-        identifier,label=mapping
+        if mapping is None:
+            slug=re.sub(r"[^a-z0-9]+","_",name.casefold()).strip("_")[:40] or "unknown"
+            identity=hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+            identifier,label="feature_"+slug+"_"+identity,"Feature candidate: "+name
+        else:
+            identifier,label=mapping
         events=events_by_feature[name]
         evidence=item.get("evidence")
         readiness=item.get("readiness")
         if (not events and item.get("interactionEvents",0)==0
                 and ((isinstance(evidence,dict) and evidence.get("status")=="not-discovered")
                      or (isinstance(readiness,dict) and readiness.get("discovered") is False))):
+            continue
+        if identifier not in systems and len(systems)>=MAX_SYSTEMS:
+            omitted+=1
             continue
         tier=_tier(item,events)
         system=systems.setdefault(identifier,{"id":identifier,"label":label,
@@ -216,7 +254,7 @@ def _systems(features,history):
         system["evidenceTier"]=_better(system["evidenceTier"],tier)
         system["observedInteractions"]+=item.get("interactionEvents",0)
         system["observableOutcomeCandidates"]+=item.get("observableOutcomeCandidates",0)
-    return [systems[identifier] for identifier in sorted(systems)]
+    return [systems[identifier] for identifier in sorted(systems)],omitted
 
 
 def _resources(history):
@@ -228,23 +266,27 @@ def _resources(history):
             before,after=change["before"],change["after"]
             if type(before) not in (int,float) or type(after) not in (int,float) or before==after:
                 continue
-            name=_terminal_name(change["key"])
-            item=collected.setdefault(name,{"name":name,"sourceKeys":set(),"observedDirections":set(),
+            key=change["key"];name=_terminal_name(key)
+            resource_key=(key,change["stateIdentityKey"])
+            item=collected.setdefault(resource_key,{"name":name,
+                "stateIdentity":change.get("stateIdentity"),"observedDirections":set(),
                 "observedActions":set(),"sourceFeatures":set(),"observationCount":0,
-                "classification":_resource_classification(change["key"],name)})
-            item["sourceKeys"].add(change["key"])
+                "classification":_resource_classification(key,name)})
             item["observedDirections"].add("increase" if after>before else "decrease")
             if action:item["observedActions"].add(action)
             if feature:item["sourceFeatures"].add(feature)
             item["observationCount"]+=1
     result=[]
-    for name,item in sorted(collected.items()):
-        source_keys=sorted(item["sourceKeys"])
+    for resource_key,item in sorted(collected.items(),key=lambda value:(
+            value[1]["name"],value[0][0],value[0][1] or "")):
+        key,state_identity_key=resource_key;name=item["name"]
         slug=re.sub(r"[^a-z0-9]+","_",name.casefold()).strip("_")[:40] or "value"
-        identity=hashlib.sha256("\n".join(source_keys).encode("utf-8")).hexdigest()[:12]
+        identity=hashlib.sha256((key+"\n"+(state_identity_key or "")).encode(
+            "utf-8")).hexdigest()[:12]
         result.append({"id":"resource_"+slug+"_"+identity,
-            "name":name,"classification":item["classification"],
-            "sourceKeys":source_keys,
+            "name":name,"classification":item["classification"],"sourceKeys":[key],
+            "identityMode":"component-resolved" if state_identity_key else "legacy-flat-path",
+            "stateIdentity":item["stateIdentity"],
             "observedDirections":sorted(item["observedDirections"]),
             "observedActions":sorted(item["observedActions"]),
             "sourceFeatures":sorted(item["sourceFeatures"]),
@@ -254,7 +296,9 @@ def _resources(history):
 
 
 def _actions(history,resources):
-    resource_by_key={key:item["name"] for item in resources for key in item["sourceKeys"]}
+    resource_by_key={(key,json.dumps(item["stateIdentity"],sort_keys=True,
+        separators=(",",":"),ensure_ascii=False) if item["stateIdentity"] else None):item
+        for item in resources for key in item["sourceKeys"]}
     grouped={}
     for event in history:
         action=_action(event)
@@ -267,17 +311,20 @@ def _actions(history,resources):
         if _safe_text(event.get("path")) and len(item["paths"])<8:item["paths"].add(event["path"])
         item["evidenceTier"]=_better(item["evidenceTier"],_tier(events=[event]))
         for change in _changes(event):
-            resource=resource_by_key.get(change["key"])
+            resource=resource_by_key.get((change["key"],change["stateIdentityKey"]))
             if resource is None: continue
             before,after=change["before"],change["after"]
             if type(before) in (int,float) and type(after) in (int,float) and before!=after:
-                item["effects"].setdefault(resource,set()).add("increase" if after>before else "decrease")
+                effect=item["effects"].setdefault(resource["id"],
+                    {"resource":resource["name"],"directions":set()})
+                effect["directions"].add("increase" if after>before else "decrease")
     result=[]
     for action,item in sorted(grouped.items()):
         result.append({"id":action,"role":item["role"],
             "sourceFeatures":sorted(item["sourceFeatures"]),"observedPaths":sorted(item["paths"]),
-            "resourceEffects":[{"resource":name,"directions":sorted(directions)}
-                               for name,directions in sorted(item["effects"].items())],
+            "resourceEffects":[{"resourceId":resource_id,"resource":effect["resource"],
+                "directions":sorted(effect["directions"])}
+                for resource_id,effect in sorted(item["effects"].items())],
             "interactionCount":item["interactionCount"],"evidenceTier":item["evidenceTier"],
             "classification":"observed_client_interaction",
             "interactionMechanismVerified":False,"causalityProven":False,
@@ -291,7 +338,8 @@ def _relationships(actions):
         for effect in action["resourceEffects"]:
             for direction in effect["directions"]:
                 result.append({"sourceType":"observed_action","sourceId":action["id"],
-                    "targetType":"observable_resource","targetId":effect["resource"],
+                    "targetType":"observable_resource","targetId":effect["resourceId"],
+                    "targetLabel":effect["resource"],
                     "relationship":"temporally_followed_by_"+direction,
                     "evidenceTier":action["evidenceTier"],"causalityProven":False})
     for index,item in enumerate(result):item["id"]=f"relationship_{index:04d}"
@@ -299,31 +347,37 @@ def _relationships(actions):
 
 
 def _loops(actions,resources):
-    resource_classes={item["name"]:item["classification"] for item in resources}
+    resources_by_id={item["id"]:item for item in resources}
+    def labels(identifiers):
+        return sorted(resources_by_id[value]["name"] for value in identifiers)
     loops=[]
     for action in actions:
-        increases={e["resource"] for e in action["resourceEffects"] if "increase" in e["directions"]}
-        decreases={e["resource"] for e in action["resourceEffects"] if "decrease" in e["directions"]}
+        increases={e["resourceId"] for e in action["resourceEffects"] if "increase" in e["directions"]}
+        decreases={e["resourceId"] for e in action["resourceEffects"] if "decrease" in e["directions"]}
         if increases and decreases:
-            loop_id="companion_acquisition" if (action["role"]=="acquire_item" and
-                any(resource_classes.get(name)=="inventory_quantity_candidate" for name in increases)) else "resource_conversion"
+            loop_id="companion_acquisition" if (action["role"]=="acquire_item" and any(
+                resources_by_id[value]["classification"]=="inventory_quantity_candidate"
+                for value in increases)) else "resource_conversion"
             loops.append({"id":loop_id,"label":"Companion or item acquisition" if loop_id=="companion_acquisition" else "Resource conversion",
-                "stepActionIds":[action["id"]],"inputResources":sorted(decreases),
-                "outputResources":sorted(increases),"evidenceTier":action["evidenceTier"],
+                "stepActionIds":[action["id"]],"inputResourceIds":sorted(decreases),
+                "inputResources":labels(decreases),"outputResourceIds":sorted(increases),
+                "outputResources":labels(increases),"evidenceTier":action["evidenceTier"],
                 "classification":"observed_transition_pattern","completedLoopObserved":False,
                 "causalityProven":False,"replayable":False,"gameplayVerified":False})
     generated=[action for action in actions if action["role"] in ("generate_resource","collect_resource")]
     converted=[action for action in actions if action["role"]=="convert_resource"]
     for source in generated:
-        source_up={e["resource"] for e in source["resourceEffects"] if "increase" in e["directions"]}
+        source_up={e["resourceId"] for e in source["resourceEffects"] if "increase" in e["directions"]}
         for target in converted:
-            target_down={e["resource"] for e in target["resourceEffects"] if "decrease" in e["directions"]}
+            target_down={e["resourceId"] for e in target["resourceEffects"] if "decrease" in e["directions"]}
             shared=source_up&target_down
             if shared:
+                outputs={e["resourceId"] for e in target["resourceEffects"] if "increase" in e["directions"]}
                 loops.append({"id":"accumulate_and_convert","label":"Accumulate and convert resources",
-                    "stepActionIds":[source["id"],target["id"]],"inputResources":[],
-                    "intermediateResources":sorted(shared),"outputResources":sorted(
-                        e["resource"] for e in target["resourceEffects"] if "increase" in e["directions"]),
+                    "stepActionIds":[source["id"],target["id"]],"inputResourceIds":[],
+                    "inputResources":[],"intermediateResourceIds":sorted(shared),
+                    "intermediateResources":labels(shared),"outputResourceIds":sorted(outputs),
+                    "outputResources":labels(outputs),
                     "evidenceTier":_better(source["evidenceTier"],target["evidenceTier"]),
                     "classification":"cross_interaction_progression_hypothesis",
                     "completedLoopObserved":False,"causalityProven":False,
@@ -353,7 +407,10 @@ def _objectives(systems,resources,actions):
                 system["evidenceTier"] for system in systems if system["id"]=="combat"),
             "classification":"objective_candidate","primaryObjectiveVerified":False})
     objectives.sort(key=lambda item:(-TIER_ORDER[item["evidenceTier"]],item["kind"],item["label"]))
-    for index,item in enumerate(objectives):item["rank"]=index+1
+    for index,item in enumerate(objectives):
+        identity=hashlib.sha256((item["kind"]+"\n"+"\n".join(item["targetIds"])).encode(
+            "utf-8")).hexdigest()[:12]
+        item["id"]="objective_"+item["kind"]+"_"+identity;item["rank"]=index+1
     return objectives
 
 
@@ -369,6 +426,7 @@ def _opportunities(systems,actions):
             tier=max([tier]+[item["evidenceTier"] for item in related],key=lambda value:TIER_ORDER[value])
         blockers={"permitted_action_contract","live_failure_validation","clean_stop_behavior"}
         for action in related:blockers.update(ACTION_BLOCKERS.get(action["id"],("interaction_mechanism","observable_result")))
+        if not related:blockers.add("observed_interaction_evidence")
         values.append({"id":system["id"],"label":system["label"],"evidenceTier":tier,
             "observedActionIds":sorted(item["id"] for item in related),
             "status":"blocked_pending_action_contract" if related else "insufficient_interaction_evidence",
@@ -381,11 +439,17 @@ def _request(plan,systems,resources,actions,opportunities):
     if request is None:return None
     if not _safe_text(request):raise ValueError("invalid requested capability")
     words=_tokens(request)
-    matched_systems=sorted(system["id"] for system in systems
-        if words&SYSTEM_ALIASES.get(system["id"],set()))
+    matched_systems=[]
+    for system in systems:
+        aliases=set(SYSTEM_ALIASES.get(system["id"],set()))|_tokens(system["label"])
+        for source in system["sourceFeatures"]:aliases.update(_tokens(source))
+        if words&aliases:matched_systems.append(system["id"])
+    matched_systems.sort()
     matched_actions=sorted(action["id"] for action in actions
         if words&ACTION_ALIASES.get(action["id"],{action["id"]}))
-    matched_resources=sorted(resource["name"] for resource in resources if words&_tokens(resource["name"]))
+    matched_resource_items=[resource for resource in resources if words&_tokens(resource["name"])]
+    matched_resources=sorted({resource["name"] for resource in matched_resource_items})
+    matched_resource_ids=sorted(resource["id"] for resource in matched_resource_items)
     tiers=[system["evidenceTier"] for system in systems if system["id"] in matched_systems]
     tiers.extend(action["evidenceTier"] for action in actions if action["id"] in matched_actions)
     tier=max(tiers,key=lambda value:TIER_ORDER[value]) if tiers else "structural_candidate"
@@ -406,37 +470,93 @@ def _request(plan,systems,resources,actions,opportunities):
         status="insufficient_interaction_evidence"
     return {"request":request,"matchedSystems":matched_systems,
         "matchedObservedActions":matched_actions,"matchedResources":matched_resources,
+        "matchedResourceIds":matched_resource_ids,
         "evidenceTier":tier,"status":status,"blockers":sorted(blockers),
+        "implementationReady":False,"runtimeVerified":False,"gameplayVerified":False}
+
+
+def _gap_category(identifier):
+    if identifier=="permitted_action_contract":return "operator-review",False
+    if identifier=="clean_stop_behavior":return "generation-contract",False
+    if identifier=="matching_client_visible_evidence":return "client-evidence",True
+    if identifier in ("game_restrictions","live_failure_validation"):
+        return "live-validation",True
+    return "client-observation",True
+
+
+def _evidence_gaps(opportunities,request):
+    sources={}
+    for opportunity in opportunities:
+        for blocker in opportunity["blockers"]:
+            sources.setdefault(blocker,set()).add(opportunity["id"])
+    request_blockers=set(request["blockers"]) if request else set()
+    for blocker in request_blockers:sources.setdefault(blocker,set())
+    result=[]
+    for identifier in sorted(sources):
+        category,live=_gap_category(identifier)
+        result.append({"id":identifier,"category":category,"status":"unresolved",
+            "sourceOpportunityIds":sorted(sources[identifier]),
+            "requestRelevant":identifier in request_blockers,
+            "liveObservationRequired":live,"implementationReady":False,
+            "sourceAuthenticityVerified":False,"causalityProven":False,
+            "runtimeVerified":False,"gameplayVerified":False})
+    return result
+
+
+def _profile_index(systems,resources,actions,relationships,loops,objectives,opportunities,gaps,
+        omitted_systems):
+    return {"schemaVersion":"110.game-profile-index.1",
+        "model":"provider-independent-composable-profile","singleGenreAssumed":False,
+        "systemInventoryTruncated":omitted_systems>0,
+        "omittedSystemCandidates":omitted_systems,
+        "systemIds":sorted(item["id"] for item in systems),
+        "resourceIds":sorted(item["id"] for item in resources),
+        "observedActionIds":sorted(item["id"] for item in actions),
+        "relationshipIds":sorted(item["id"] for item in relationships),
+        "progressionLoopIds":sorted(item["id"] for item in loops),
+        "objectiveIds":sorted(item["id"] for item in objectives),
+        "automationOpportunityIds":sorted(item["id"] for item in opportunities),
+        "evidenceGapIds":sorted(item["id"] for item in gaps),
         "implementationReady":False,"runtimeVerified":False,"gameplayVerified":False}
 
 
 def analyze(plan):
     integrity,features,history=_validate_plan(plan)
-    systems=_systems(features,history)
+    systems,omitted_systems=_systems(features,history)
     resources=_resources(history)
     actions=_actions(history,resources)
     if resources and not any(system["id"]=="resource_progression" for system in systems):
-        systems.append({"id":"resource_progression","label":"Observable resources and progression state",
-            "sourceFeatures":[],"evidenceTier":"temporal_state_correlation",
-            "observedInteractions":sum(item["interactionCount"] for item in actions),
-            "observableOutcomeCandidates":sum(item["evidenceTier"]=="observable_outcome_candidate_unverified" for item in actions),
-            "classification":"composable_system_candidate","systemVerified":False,
-            "causalityProven":False,"gameplayVerified":False})
+        if len(systems)<MAX_SYSTEMS:
+            systems.append({"id":"resource_progression","label":"Observable resources and progression state",
+                "sourceFeatures":[],"evidenceTier":"temporal_state_correlation",
+                "observedInteractions":sum(item["interactionCount"] for item in actions),
+                "observableOutcomeCandidates":sum(item["evidenceTier"]=="observable_outcome_candidate_unverified" for item in actions),
+                "classification":"composable_system_candidate","systemVerified":False,
+                "causalityProven":False,"gameplayVerified":False})
+        else:
+            omitted_systems+=1
     systems.sort(key=lambda item:item["id"])
     relationships=_relationships(actions)
     loops=_loops(actions,resources)
     objectives=_objectives(systems,resources,actions)
     opportunities=_opportunities(systems,actions)
+    request=_request(plan,systems,resources,actions,opportunities)
+    gaps=_evidence_gaps(opportunities,request)
+    profile=_profile_index(systems,resources,actions,relationships,loops,objectives,
+        opportunities,gaps,omitted_systems)
     result={"schemaVersion":SCHEMA_VERSION,"placeId":integrity["placeId"],
         "scanId":integrity["scanId"],"model":"composable_capabilities","genre":None,
-        "objectiveCandidates":objectives,"systems":systems,"resources":resources,
-        "observedActions":actions,"progressionRelationships":relationships,
-        "progressionLoops":loops,"automationOpportunities":opportunities,
-        "requestedCapabilityAssessment":_request(plan,systems,resources,actions,opportunities),
+        "profileIndex":profile,"objectiveCandidates":objectives,"systems":systems,
+        "resources":resources,"observedActions":actions,
+        "progressionRelationships":relationships,"progressionLoops":loops,
+        "automationOpportunities":opportunities,"evidenceGaps":gaps,
+        "requestedCapabilityAssessment":request,
         "summary":{"objectiveCandidates":len(objectives),"systems":len(systems),
+            "omittedSystemCandidates":omitted_systems,
             "resources":len(resources),"observedActions":len(actions),
             "progressionRelationships":len(relationships),"progressionLoops":len(loops),
-            "implementationReadyOpportunities":0},
+            "evidenceGaps":len(gaps),"requestRelevantEvidenceGaps":sum(
+                item["requestRelevant"] for item in gaps),"implementationReadyOpportunities":0},
         "claims":{"sourceAuthenticityVerified":False,"primaryObjectiveVerified":False,
             "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
             "runtimeVerified":False,"gameplayVerified":False,"actionOutcomesVerified":False},
