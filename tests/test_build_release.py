@@ -94,6 +94,46 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue((base/"out"/"LycolesPromptInteractions.lua").exists())
             self.assertFalse((base/"out"/"LycolesEggAutofarm.lua").exists())
 
+    def test_exact_tool_contract_generates_distinct_official_activation_trial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            event={"featureCandidate":"combat","path":"LocalPlayer.Backpack.Training Sword",
+                "pathIdentity":[{"name":"LocalPlayer","className":"Player","ordinal":1},
+                    {"name":"Backpack","className":"Backpack","ordinal":1},
+                    {"name":"Training Sword","className":"Tool","ordinal":1}],
+                "controlType":"Tool.Activated","evidenceLevel":"temporal-state-change-observed",
+                "controlMetadata":{"tooltip":"Training weapon","requiresHandle":False,
+                    "canBeDropped":False,"enabled":True,"manualActivationOnly":False},
+                "outcomeVerified":False,"stateChanges":[{"key":"leaderstats.Hits","before":4,
+                    "after":5,"stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"leaderstats","className":"Folder","ordinal":1},
+                        {"name":"Hits","className":"IntValue","ordinal":1}]}],
+                "workflow":{"phase":"initiated","action":"attack",
+                    "confidence":"bounded-name-context-heuristic","verified":False}}
+            make_parts(parts,event=event,request="Attack using the training sword")
+            first=json.loads((parts/"1.json").read_text());first["featureEvidence"]={"combat":{}}
+            first["objects"][0]={"path":event["path"],"class":"Tool","scanOrdinal":1,
+                "tool":{"tooltip":"Training weapon","requiresHandle":False,"canBeDropped":False,
+                    "enabled":True,"manualActivationOnly":False}}
+            (parts/"1.json").write_text(json.dumps(first))
+            manifest=builder.build(parts,base/"out")
+            self.assertTrue(manifest["toolActivationTrial"]["generated"])
+            self.assertTrue(manifest["toolActivationTrial"]["officialActivation"])
+            self.assertTrue(manifest["toolActivationTrial"]["boundedEquip"])
+            self.assertFalse(manifest["toolActivationTrial"]["automaticMovement"])
+            self.assertFalse(manifest["promptInteractionTrial"]["generated"])
+            self.assertFalse(manifest["eggAutofarmTrial"]["generated"])
+            self.assertEqual(manifest["actionCapabilities"]["generationReadyToolTargets"],1)
+            self.assertIn("Tool Activation Trial",manifest["implementedClientControls"])
+            source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("humanoid:EquipTool(tool)",source)
+            self.assertIn("tool:Activate()",source)
+            self.assertNotIn("FireServer(",source)
+            readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
+            self.assertEqual(readiness["generatedCapabilities"][0]["kind"],
+                "official-tool-activation-trial")
+            self.assertFalse(readiness["claims"]["runtimeVerified"])
+
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:
@@ -133,7 +173,6 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(evaluated["gameplayVerified"])
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertIn("prompt-trial-evaluation.json",archive.namelist())
-
 
 
     def test_build_and_reproducibility(self):

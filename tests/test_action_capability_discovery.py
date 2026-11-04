@@ -229,7 +229,7 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Malformed observation windows"):
             discovery.analyze(plan)
 
-    def test_observed_tool_with_identity_prerequisites_and_scalar_outcome_is_trial_ready(self):
+    def ready_tool_plan(self):
         plan=self.real_plan()
         plan["actionableObjects"]=[{"path":"LocalPlayer.Backpack.Assault Rifle","class":"Tool",
             "tool":{"requiresHandle":True,"tooltip":"Primary weapon","enabled":True,
@@ -245,20 +245,46 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                 "stateIdentityStatus":"component-resolved","stateIdentity":[
                     {"name":"leaderstats","className":"Folder","ordinal":1},
                     {"name":"Hits","className":"IntValue","ordinal":1}]}]})
-        result=discovery.analyze(plan)
+        return plan
+
+    def test_observed_tool_with_identity_prerequisites_and_scalar_outcome_is_trial_ready(self):
+        result=discovery.analyze(self.ready_tool_plan())
         generic=result["genericCapabilities"]
         self.assertEqual(generic["families"]["tool-action"]["observed"],1)
         self.assertEqual(generic["combatCandidates"][0]["evidenceTier"],"interaction-observed")
         self.assertFalse(generic["combatCandidates"][0]["replayContractAvailable"])
         tools=result["toolInteractions"]
         self.assertEqual(tools["activationContractReadyTargets"],1)
-        self.assertFalse(tools["generatorIntegrated"])
+        self.assertTrue(tools["generatorIntegrated"])
+        self.assertEqual(tools["generationReadyTargets"],1)
         self.assertEqual(tools["executionMechanism"],"official Tool:Activate() after bounded equip")
         target=tools["targets"][0]
         self.assertEqual(target["selectedOutcome"]["key"],"leaderstats.Hits")
         self.assertTrue(target["activationContractReady"])
-        self.assertFalse(target["trialGenerationReady"])
+        self.assertTrue(target["trialGenerationReady"])
+        self.assertTrue(target["replayContractAvailable"])
         self.assertFalse(target["causalityProven"])
+        source=generator.render(result)
+        for token in ('kind="tool"','humanoid:EquipTool(tool)','tool:Activate()',
+                      'tool.Enabled','tool.ToolTip~=metadata.tooltip','tool-metadata-drift',
+                      'Expected one mobile Tool match'):
+            self.assertIn(token,source)
+        self.assertNotIn("FireServer(",source)
+
+    def test_disabled_or_metadata_drifted_tool_is_not_generation_ready(self):
+        disabled=self.ready_tool_plan()
+        disabled["observedInteractionHistory"][-1]["controlMetadata"]["enabled"]=False
+        result=discovery.analyze(disabled);target=result["toolInteractions"]["targets"][0]
+        self.assertFalse(target["trialGenerationReady"])
+        self.assertIn("Tool was not observed enabled for activation",target["blockers"])
+
+        drifted=self.ready_tool_plan()
+        second=json.loads(json.dumps(drifted["observedInteractionHistory"][-1]))
+        second["controlMetadata"]["tooltip"]="Changed tooltip"
+        drifted["observedInteractionHistory"].append(second)
+        result=discovery.analyze(drifted);target=result["toolInteractions"]["targets"][0]
+        self.assertFalse(target["trialGenerationReady"])
+        self.assertIn("Tool activation prerequisite metadata drift was observed",target["blockers"])
 
     def test_tool_without_prerequisites_or_outcome_remains_discovery_only(self):
         plan=self.real_plan();plan["actionableObjects"]=[]

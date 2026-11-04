@@ -94,6 +94,8 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
         self.assertIn('local function interactionPathIdentity(obj,root,label)',SRC)
         self.assertIn('pathIdentity=interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('item.kind~="official-tool-activation-trial"',SRC)
+
         self.assertIn('local function stateValueIdentity(obj,root)',SRC)
         self.assertIn('stateIdentityStatus=identity and "component-resolved" or "unavailable"',SRC)
         self.assertIn('keyboardKeyCode=obj.KeyboardKeyCode.Name',SRC)

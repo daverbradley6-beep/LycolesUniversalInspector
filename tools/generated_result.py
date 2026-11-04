@@ -45,7 +45,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
         raise ValueError("Invalid generation-readiness capabilities")
     for item in generated:
         if (not isinstance(item,dict) or not _bounded_text(item.get("id"),80)
-                or item.get("kind")!="proximity-prompt-trial"
+                or item.get("kind") not in ("proximity-prompt-trial","official-tool-activation-trial")
                 or not _bounded_text(item.get("targetLabel"),120)
                 or not _bounded_text(item.get("selectedOutcomeKey"),200)
                 or item.get("expectedChange") not in ("increased","decreased","changed")

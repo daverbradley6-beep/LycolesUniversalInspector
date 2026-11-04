@@ -6,7 +6,6 @@ import unittest
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 
-
 def load(name,filename):
     spec=importlib.util.spec_from_file_location(name,ROOT/"tools"/filename)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
@@ -16,7 +15,6 @@ understanding=load("readiness_gameplay","understand_gameplay.py")
 discovery=load("readiness_actions","discover_action_capabilities.py")
 readiness=load("generation_readiness","assess_generation_readiness.py")
 
-
 def feature(name,interactions=0,candidates=0):
     return {"feature":name,"interactionEvents":interactions,"observedEvents":interactions,
         "verifiedClientOutcomes":0,"clientCorroboratedEvents":0,
@@ -24,7 +22,6 @@ def feature(name,interactions=0,candidates=0):
         "featureStateCorrelations":candidates,"featureGuiCorrelations":0,
         "status":"observable-outcome-candidate-unverified" if candidates else "discovered",
         "implementationReady":False,"reason":"passive evidence"}
-
 
 def egg_plan(request="Automatically hatch the selected egg in multi mode"):
     return {"integrity":{"scanComplete":True,"placeId":85896571713843,
@@ -38,7 +35,6 @@ def egg_plan(request="Automatically hatch the selected egg in multi mode"):
             "stateChanges":[{"key":"leaderstats.Hatches","before":4,"after":5}],
             "outcomeVerified":False,"workflow":{"phase":"initiated","action":"hatch",
                 "confidence":"bounded-name-context-heuristic","verified":False}}]}
-
 
 def assess(plan):
     gameplay=understanding.analyze(plan);actions=discovery.analyze(plan)
@@ -100,6 +96,35 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
         self.assertEqual(result["discoveryOnlyCapabilities"][0]["family"],"combat-tool-action")
         self.assertFalse(result["discoveryOnlyCapabilities"][0]["replayContractAvailable"])
+
+    def test_exact_tool_evidence_produces_bounded_official_activation_trial(self):
+        value={"integrity":{"scanComplete":True,"placeId":456,"scanId":"tool-ready-scan"},
+            "requestedCapability":"Attack using the training sword",
+            "features":[feature("combat",1,1)],"actionableObjects":[],
+            "observedInteractionHistory":[{"path":"LocalPlayer.Backpack.Training Sword",
+                "pathIdentity":[{"name":"LocalPlayer","className":"Player","ordinal":1},
+                    {"name":"Backpack","className":"Backpack","ordinal":1},
+                    {"name":"Training Sword","className":"Tool","ordinal":1}],
+                "controlType":"Tool.Activated","featureCandidate":"combat",
+                "controlMetadata":{"tooltip":"Training weapon","requiresHandle":False,
+                    "canBeDropped":False,"enabled":True,"manualActivationOnly":False},
+                "stateChanges":[{"key":"leaderstats.Hits","before":4,"after":5,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"leaderstats","className":"Folder","ordinal":1},
+                        {"name":"Hits","className":"IntValue","ordinal":1}]}],
+                "outcomeVerified":False,"workflow":{"phase":"initiated","action":"attack",
+                    "confidence":"bounded-name-context-heuristic","verified":False}}]}
+        result=assess(value)
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        self.assertEqual(result["request"]["matchedGeneratedCapabilityIds"],["tool-activation-trial"])
+        generated=result["generatedCapabilities"][0]
+        self.assertEqual(generated["kind"],"official-tool-activation-trial")
+        self.assertTrue(generated["officialActivation"])
+        self.assertTrue(generated["boundedEquip"])
+        self.assertEqual(generated["attemptLimit"],25)
+        self.assertFalse(generated["automaticMovement"])
+        self.assertEqual(result["discoveryOnlyCapabilities"],[])
+        self.assertFalse(result["claims"]["runtimeVerified"])
 
     def test_name_only_prompt_does_not_become_generated_subset(self):
         value=egg_plan();value["observedInteractionHistory"]=[]

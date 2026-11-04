@@ -55,7 +55,6 @@ class GeneratedResultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"validation"):
             self.build(validation={"placeGuard":False})
 
-
     def test_rejects_mismatched_or_positive_readiness_claims(self):
         mismatched=self.readiness();mismatched["placeId"]=999
         with self.assertRaisesRegex(ValueError,"identity"):
@@ -75,6 +74,16 @@ class GeneratedResultTests(unittest.TestCase):
         spoofed=self.readiness();spoofed["generatedCapabilities"][0]["targetLabel"]="Egg\nRuntime verified"
         with self.assertRaisesRegex(ValueError,"capability"):
             self.build(generation_readiness=spoofed)
+
+    def test_official_tool_trial_kind_is_displayable_but_unverified(self):
+        readiness=self.readiness();capability=readiness["generatedCapabilities"][0]
+        capability.update({"id":"tool-activation-trial","kind":"official-tool-activation-trial",
+            "targetLabel":"Training Sword"})
+        readiness["request"]["matchedGeneratedCapabilityIds"]=["tool-activation-trial"]
+        result=self.build(generation_readiness=readiness)
+        self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0]["kind"],
+            "official-tool-activation-trial")
+        self.assertFalse(result["generationReadiness"]["claims"]["runtimeVerified"])
 
     def test_deterministic(self):
         self.assertEqual(self.build(),self.build())

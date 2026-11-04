@@ -875,7 +875,8 @@ local function validateGeneratedReadiness(result)
     local generatedSeen={}
     for _,item in ipairs(generated) do
         if type(item)~="table" or not boundedResultText(item.id,80) or generatedSeen[item.id]
-            or item.kind~="proximity-prompt-trial" or not boundedResultText(item.targetLabel,120)
+            or (item.kind~="proximity-prompt-trial" and item.kind~="official-tool-activation-trial")
+            or not boundedResultText(item.targetLabel,120)
             or not boundedResultText(item.selectedOutcomeKey,200)
             or (item.expectedChange~="increased" and item.expectedChange~="decreased"
                 and item.expectedChange~="changed")

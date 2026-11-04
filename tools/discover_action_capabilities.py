@@ -385,15 +385,22 @@ def analyze(plan):
         identity=target.get("pathIdentity")
         identity_ready=(isinstance(identity,list) and identity[0]["name"]=="LocalPlayer"
             and identity[-1]["className"]=="Tool" and target["identityAmbiguous"] is False)
-        metadata_ready=bool(target["prerequisiteEvidence"]["metadataSnapshots"])
+        metadata_snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
+        metadata_ready=(len(metadata_snapshots)==1 and metadata_snapshots[0]["enabled"] is True)
         outcome_ready=bool(target["outcomeSignals"])
         target["activationContractReady"]=identity_ready and metadata_ready and outcome_ready
+        target["trialGenerationReady"]=target["activationContractReady"]
+        target["replayContractAvailable"]=target["activationContractReady"]
         blockers=[]
         if not identity_ready:blockers.append("no exact LocalPlayer Tool component identity was observed")
-        if not metadata_ready:blockers.append("no complete Tool activation prerequisite snapshot was observed")
+        if not metadata_snapshots:
+            blockers.append("no complete Tool activation prerequisite snapshot was observed")
+        elif len(metadata_snapshots)>1:
+            blockers.append("Tool activation prerequisite metadata drift was observed")
+        elif metadata_snapshots[0]["enabled"] is not True:
+            blockers.append("Tool was not observed enabled for activation")
         if not outcome_ready:blockers.append("no resolvable scalar outcome change was observed")
-        blockers.extend(["Tool trial generator and controlled runtime harness are not integrated",
-            "temporal correlation does not prove causality",
+        blockers.extend(["temporal correlation does not prove causality",
             "live Roblox Tool activation and outcome remain unverified"])
         target["blockers"]=blockers
         tool_list.append(target)
@@ -404,10 +411,10 @@ def analyze(plan):
         "activationContractReadyTargets":len(contract_ready),
         "selectedTargetPath":contract_ready[0]["path"] if contract_ready else None,
         "executionMechanism":"official Tool:Activate() after bounded equip",
-        "generatorIntegrated":False,"generationReadyTargets":0,
+        "generatorIntegrated":True,"generationReadyTargets":len(contract_ready),
         "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False,
-        "blockers":["Tool trial generator and controlled runtime harness are not integrated"]
-            if contract_ready else ["no observed Tool has identity, prerequisites, and a resolvable scalar outcome"]}
+        "blockers":[] if contract_ready else
+            ["no observed Tool has identity, prerequisites, and a resolvable scalar outcome"]}
 
 
     for path,item in by_path.items():

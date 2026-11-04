@@ -14,17 +14,14 @@ _FALSE_CLAIMS={
     "gameplayVerified":False,"actionOutcomesVerified":False,
 }
 
-
 def _load(filename,name):
     source=pathlib.Path(__file__).with_name(filename)
     spec=importlib.util.spec_from_file_location(name,source)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 
-
 def _tokens(value):
     if not isinstance(value,str):return set()
     return {token for token in re.findall(r"[a-z0-9]+",value.casefold()) if len(token)>2}
-
 
 def _validate_sources(plan,gameplay,actions):
     if not isinstance(plan,dict):raise ValueError("compiled plan must be an object")
@@ -35,7 +32,6 @@ def _validate_sources(plan,gameplay,actions):
     if any(actions.get("claims",{}).get(key) is not value for key,value in _FALSE_CLAIMS.items()):
         raise ValueError("action capabilities contain unsupported claims")
     return plan["integrity"],plan.get("requestedCapability")
-
 
 def _selected_prompt(actions):
     prompts=actions["promptInteractions"]
@@ -51,12 +47,26 @@ def _selected_prompt(actions):
         raise ValueError("selected prompt outcome is inconsistent")
     return target
 
+def _selected_tool(actions):
+    tools=actions.get("toolInteractions",{})
+    selected=tools.get("selectedTargetPath")
+    if tools.get("generationReadyTargets",0)<=0 or not isinstance(selected,str):return None
+    matches=[item for item in tools.get("targets",[])
+             if item.get("path")==selected and item.get("trialGenerationReady") is True]
+    if len(matches)!=1:raise ValueError("selected Tool target is inconsistent")
+    target=matches[0];outcome=target.get("selectedOutcome")
+    if (target.get("activationContractReady") is not True
+            or target.get("replayContractAvailable") is not True
+            or not isinstance(outcome,dict)
+            or outcome.get("selection",{}).get("selectedForTrial") is not True):
+        raise ValueError("selected Tool outcome is inconsistent")
+    return target
+
 
 def _is_egg_target(actions,target):
     if target is None:return False
     return any(item.get("path")==target["path"]
                for item in actions["eggHatching"].get("targets",[]))
-
 
 def _generated_capability(target,is_egg):
     commands=["interaction","interactionstart","interactionstop","interactions"]
@@ -67,7 +77,20 @@ def _generated_capability(target,is_egg):
         "targetFeature":target.get("featureCandidate"),
         "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
         "commands":commands,"automaticMovement":True,"boundedRepeat":True,
-        "operatorStartRequired":True,"failureLimit":3,
+        "operatorStartRequired":True,"failureLimit":3,"attemptLimit":25,
+        "classification":"generated-evidence-bounded-trial",
+        "fullGameplayMechanicImplemented":False,"runtimeVerified":False,
+        "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
+
+def _generated_tool_capability(target):
+    outcome=target["selectedOutcome"]
+    return {"id":"tool-activation-trial","kind":"official-tool-activation-trial",
+        "targetPath":target["path"],"targetLabel":target["label"],
+        "targetFeature":target.get("featureCandidate"),
+        "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
+        "commands":["interaction","interactionstart","interactionstop","interactions"],
+        "officialActivation":True,"boundedEquip":True,"automaticMovement":False,
+        "boundedRepeat":True,"operatorStartRequired":True,"failureLimit":3,"attemptLimit":25,
         "classification":"generated-evidence-bounded-trial",
         "fullGameplayMechanicImplemented":False,"runtimeVerified":False,
         "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
@@ -90,33 +113,43 @@ def _unavailable_requested(request_words,actions,is_egg):
             "reason":"No distinct replayable multi-hatch contract with a greater-than-one observed outcome exists."})
     return values
 
-
 def _discovery_only(actions):
     generic=actions["genericCapabilities"];values=[]
-    combat=generic.get("combatCandidates",[])
+    generated_tool_paths={item.get("path") for item in actions.get("toolInteractions",{}).get("targets",[])
+                          if item.get("trialGenerationReady") is True}
+    combat=[item for item in generic.get("combatCandidates",[])
+            if item.get("path") not in generated_tool_paths]
     if combat:
         values.append({"family":"combat-tool-action","candidateCount":len(combat),
             "observedCount":sum(item.get("evidenceTier")=="interaction-observed" for item in combat),
             "replayContractAvailable":False,
-            "reason":"Weapon and Tool evidence is discovery-only; no permitted replay contract is established."})
+            "reason":"Remaining weapon and Tool evidence lacks an exact generated activation contract."})
     for family in ("world-interaction","gui-control","tool-action"):
         summary=generic.get("families",{}).get(family,{})
-        if summary.get("discovered",0)>0:
-            values.append({"family":family,"candidateCount":summary["discovered"],
-                "observedCount":summary.get("observed",0),"replayContractAvailable":False,
+        discovered=summary.get("discovered",0);observed=summary.get("observed",0)
+        if family=="tool-action":
+            discovered=max(0,discovered-len(generated_tool_paths))
+            observed=max(0,observed-len(generated_tool_paths))
+        if discovered>0:
+            values.append({"family":family,"candidateCount":discovered,
+                "observedCount":min(discovered,observed),"replayContractAvailable":False,
                 "reason":"Names and observed activation do not establish a generic replay operation."})
     return values
 
-
 def assess(plan,gameplay,actions):
     integrity,request=_validate_sources(plan,gameplay,actions)
-    target=_selected_prompt(actions)
+    target=_selected_prompt(actions);tool_target=_selected_tool(actions)
     is_egg=_is_egg_target(actions,target)
-    generated=[_generated_capability(target,is_egg)] if target else []
+    generated=[];generated_sources=[]
+    if target:
+        generated.append(_generated_capability(target,is_egg));generated_sources.append(target)
+    if tool_target:
+        generated.append(_generated_tool_capability(tool_target));generated_sources.append(tool_target)
     request_words=_tokens(request)
-    aligned=bool(target and target.get("objective",{}).get("requestAligned") is True)
-    matched_generated=[generated[0]["id"]] if generated and aligned else []
-    unavailable=_unavailable_requested(request_words,actions,is_egg and aligned)
+    matched_generated=[capability["id"] for capability,source in zip(generated,generated_sources)
+        if source.get("objective",{}).get("requestAligned") is True]
+    prompt_aligned=bool(target and target.get("objective",{}).get("requestAligned") is True)
+    unavailable=_unavailable_requested(request_words,actions,is_egg and prompt_aligned)
     gameplay_request=gameplay.get("requestedCapabilityAssessment")
     evidence_matched=bool(gameplay_request and (gameplay_request.get("matchedSystems")
         or gameplay_request.get("matchedObservedActions") or gameplay_request.get("matchedResources")))
@@ -124,17 +157,21 @@ def assess(plan,gameplay,actions):
         status="no-capability-requested"
     elif matched_generated:
         status="generated-bounded-subset"
-    elif evidence_matched or target:
+    elif evidence_matched or target or tool_target:
         status="evidence-only-no-replay-contract"
     else:
         status="unsupported-by-current-evidence"
     supported_subset=[]
+    if "prompt-interaction-trial" in matched_generated:
+        supported_subset.extend(["select one exact observed prompt target",
+            "move the local character to its observed anchor"])
+    if "tool-activation-trial" in matched_generated:
+        supported_subset.extend(["select one exact observed Tool target",
+            "equip it through the local Humanoid and call official Tool:Activate()"])
     if matched_generated:
-        supported_subset=["select one exact observed prompt target",
-            "move the local character to its observed anchor",
-            "run an operator-started bounded repeat trial",
+        supported_subset.extend(["run an operator-started bounded repeat trial",
             "observe one selected client-visible scalar direction",
-            "stop cleanly after request, close, or three uncorroborated attempts"]
+            "stop cleanly after request, close, three uncorroborated attempts, or 25 total attempts"])
     request_result={"request":request,"status":status,
         "matchedGeneratedCapabilityIds":matched_generated,
         "generatedSubsetAvailable":bool(matched_generated),
@@ -154,11 +191,11 @@ def assess(plan,gameplay,actions):
             "discoveryOnlyCapabilityFamilies":len(discovery_only)},
         "claims":dict(_FALSE_CLAIMS),
         "limitations":["Generation readiness describes emitted code, not successful gameplay",
-            "Prompt outcomes remain temporal correlations without causal proof",
+            "Prompt and Tool outcomes remain temporal correlations without causal proof",
             "Executor-provided prompt activation is checked only at runtime",
-            "GUI and Tool candidates remain unavailable without permitted replay contracts"]}
+            "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
+            "GUI and remaining generic candidates stay unavailable without exact replay contracts"]}
     return result
-
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

@@ -9,7 +9,7 @@ def _quote(value):
     return json.dumps(str(value),ensure_ascii=False)
 
 
-def _identity_lua(value):
+def _identity_lua(value,expected_class="ProximityPrompt"):
     if value is None:return "nil"
     if not isinstance(value,list) or not 2<=len(value)<=21:raise ValueError("Malformed correlated prompt target")
     segments=[]
@@ -22,7 +22,7 @@ def _identity_lua(value):
         segments.append("{name="+_quote(name)+",className="+_quote(class_name)+",ordinal="+str(ordinal)+"}")
     if value[0]["name"] not in ("Workspace","LocalPlayer","ReplicatedStorage","Players"):
         raise ValueError("Malformed correlated prompt target")
-    if value[-1]["className"]!="ProximityPrompt":raise ValueError("Malformed correlated prompt target")
+    if value[-1]["className"]!=expected_class:raise ValueError("Malformed correlated interaction target")
     return "{"+",".join(segments)+"}"
 
 def _state_identity_lua(value):
@@ -63,6 +63,26 @@ def _prompt_snapshot(value):
         raise ValueError("Malformed prompt prerequisite evidence")
     return value
 
+
+def _tool_snapshot(value):
+    if not isinstance(value,dict) or set(value)!={"tooltip","requiresHandle","canBeDropped",
+            "enabled","manualActivationOnly"}:
+        raise ValueError("Malformed Tool prerequisite evidence")
+    tooltip=value.get("tooltip")
+    if (not isinstance(tooltip,str) or len(tooltip)>120
+            or any(ord(character)<32 or ord(character)==127 for character in tooltip)):
+        raise ValueError("Malformed Tool prerequisite evidence")
+    if any(type(value.get(key)) is not bool for key in
+            ("requiresHandle","canBeDropped","enabled","manualActivationOnly")):
+        raise ValueError("Malformed Tool prerequisite evidence")
+    return value
+
+def _tool_metadata_lua(value):
+    value=_tool_snapshot(value)
+    boolean=lambda item:"true" if item else "false"
+    return "{tooltip="+_quote(value["tooltip"])+",requiresHandle="+boolean(value["requiresHandle"])+\
+        ",canBeDropped="+boolean(value["canBeDropped"])+",enabled="+boolean(value["enabled"])+\
+        ",manualActivationOnly="+boolean(value["manualActivationOnly"])+"}"
 
 
 
@@ -124,7 +144,8 @@ def render(discovery):
             if type(score) is not int:raise ValueError("Malformed prompt objective")
             targets.append((label,path,signal["key"],signal["change"],multi,is_egg,
                 str(item.get("featureCandidate") or "other")[:80],score,
-                _identity_lua(item.get("pathIdentity")),_state_identity_lua(signal.get("stateIdentity"))))
+                _identity_lua(item.get("pathIdentity")),_state_identity_lua(signal.get("stateIdentity")),
+                "prompt","nil"))
     elif egg.get("automaticSingleTrialReady") is True:
         for item in egg.get("targets",[]):
             if not isinstance(item,dict) or item.get("incrementObservations",0)<1:continue
@@ -134,15 +155,61 @@ def render(discovery):
             metadata=json.dumps(item.get("promptMetadata",{}),ensure_ascii=False).lower()
             multi=any(token in (label+" "+metadata).lower() for token in ("multi","triple","x3","3 egg","three"))
             targets.append((label,path,keys[0],"increased",multi,True,"pets",0,
-                _identity_lua(item.get("pathIdentity")),_state_identity_lua(identities.get(keys[0]))))
+                _identity_lua(item.get("pathIdentity")),_state_identity_lua(identities.get(keys[0])),
+                "prompt","nil"))
+    tool_contract=discovery.get("toolInteractions")
+    if isinstance(tool_contract,dict):
+        if (tool_contract.get("generatorIntegrated") is not True
+                or any(tool_contract.get(key) is not False for key in
+                    ("causalityProven","runtimeVerified","gameplayVerified"))):
+            raise ValueError("Malformed Tool interaction contract")
+        for item in tool_contract.get("targets",[]):
+            if not isinstance(item,dict) or item.get("trialGenerationReady") is not True:continue
+            path=item.get("path");label=item.get("label");signals=item.get("outcomeSignals")
+            signal=item.get("selectedOutcome")
+            if (not isinstance(path,str) or not isinstance(label,str) or not isinstance(signals,list)
+                    or not signals or not isinstance(signal,dict) or signal not in signals
+                    or item.get("activationContractReady") is not True
+                    or item.get("controlType")!="Tool.Activated"
+                    or type(item.get("observedActivations")) is not int
+                    or item["observedActivations"]<1 or item.get("temporalCorrelationOnly") is not True
+                    or any(item.get(key) is not False for key in
+                        ("causalityProven","runtimeVerified","gameplayVerified"))):
+                raise ValueError("Malformed correlated Tool target")
+            selection=signal.get("selection")
+            if (not isinstance(signal.get("key"),str)
+                    or signal.get("change") not in ("increased","decreased","changed")
+                    or signal.get("generationResolvable") is not True
+                    or not isinstance(selection,dict) or selection.get("selectedForTrial") is not True):
+                raise ValueError("Malformed correlated Tool outcome")
+            evidence=item.get("prerequisiteEvidence")
+            if not isinstance(evidence,dict):raise ValueError("Malformed Tool prerequisite evidence")
+            snapshots=evidence.get("metadataSnapshots");drift=evidence.get("metadataDriftObserved")
+            if (not isinstance(snapshots,list) or len(snapshots)!=1
+                    or type(drift) is not bool or drift is not False
+                    or len({json.dumps(snapshot,sort_keys=True,ensure_ascii=False)
+                        for snapshot in snapshots})!=len(snapshots)):
+                raise ValueError("Malformed Tool prerequisite evidence")
+            for snapshot in snapshots:_tool_snapshot(snapshot)
+            if snapshots[0]["enabled"] is not True or item.get("toolMetadata")!=snapshots[0]:
+                raise ValueError("Malformed Tool prerequisite evidence")
+            objective=item.get("objective") if isinstance(item.get("objective"),dict) else {}
+            score=objective.get("score",0)
+            if type(score) is not int:raise ValueError("Malformed Tool objective")
+            targets.append((label,path,signal["key"],signal["change"],False,False,
+                str(item.get("featureCandidate") or "other")[:80],score,
+                _identity_lua(item.get("pathIdentity"),"Tool"),
+                _state_identity_lua(signal.get("stateIdentity")),"tool",
+                _tool_metadata_lua(snapshots[0])))
+
     if not targets:return None
     targets.sort(key=lambda item:(-item[7],item[0].lower(),item[1]))
     target_rows="\n".join("    {label="+_quote(label)+",path="+_quote(path)+
         ",outcome="+_quote(outcome)+",expected="+_quote(expected)+
         ",multi="+("true" if multi else "false")+",egg="+("true" if is_egg else "false")+
-        ",feature="+_quote(feature)+",objectiveScore="+str(score)+
-        ",identity="+identity+",outcomeIdentity="+outcome_identity+"},"
-        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity in targets)
+        ",feature="+_quote(feature)+",objectiveScore="+str(score)+",kind="+_quote(kind)+
+        ",identity="+identity+",outcomeIdentity="+outcome_identity+",toolMetadata="+tool_metadata+"},"
+        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity,kind,tool_metadata in targets)
     scan_id=discovery.get("scanId")
     if scan_id is None:
         scan_id="UNAVAILABLE"
@@ -151,7 +218,7 @@ def render(discovery):
     discovery_digest=hashlib.sha256(json.dumps(
         discovery,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode("utf-8")).hexdigest()
 
-    source=r'''-- Evidence-bounded ProximityPrompt trials; outcome changes are observed, not causal proof.
+    source=r'''-- Evidence-bounded interaction trials; outcome changes are observed, not causal proof.
 do
 assert(game.PlaceId == __PLACE_ID__, "Incorrect Roblox place")
 local Players=game:GetService("Players")
@@ -167,8 +234,9 @@ local alive,running=true,false
 local selected=1
 local mode="auto"
 local failures=0
+local attempts=0
 local connections={}
-local sharedState={running=false,selectedIndex=1,selectedLabel="",mode="auto",failures=0}
+local sharedState={running=false,selectedIndex=1,selectedLabel="",mode="auto",failures=0,attempts=0}
 _G.LycolesPromptState=sharedState
 local feedbackSequence=0
 local feedback={schemaVersion="112.prompt-trial-feedback.1",placeId=__PLACE_ID__,scanId=__SCAN_ID__,
@@ -251,6 +319,22 @@ local function resolve(target)
     end
     return current,nil
 end
+local function resolveTool(target)
+    local exact,exactError=resolve(target)
+    if exact and exact:IsA("Tool") then return exact,nil end
+    local expected=target.identity and target.identity[#target.identity]
+    if not expected then return nil,exactError or "Tool identity unavailable" end
+    local matches={}
+    local function collect(container)
+        if not container then return end
+        for _,child in ipairs(container:GetChildren()) do
+            if child.Name==expected.name and child.ClassName=="Tool" then table.insert(matches,child) end
+        end
+    end
+    collect(player:FindFirstChildOfClass("Backpack")) collect(player.Character)
+    if #matches~=1 then return nil,"Expected one mobile Tool match, found "..tostring(#matches) end
+    return matches[1],nil
+end
 local function readOutcome(target)
     local current=nil
     if target.outcomeIdentity then
@@ -311,7 +395,8 @@ local function update()
     toggle.Text=running and "STOP" or "START"
     if running then targetDropdown.Visible=false end
     sharedState.running=running sharedState.selectedIndex=selected
-    sharedState.selectedLabel=target.label sharedState.mode=mode sharedState.failures=failures
+    sharedState.selectedLabel=target.label sharedState.mode=mode
+    sharedState.failures=failures sharedState.attempts=attempts
     for index,row in pairs(targetRows) do
         row.BackgroundColor3=index==selected and Color3.fromRGB(61,107,139) or Color3.fromRGB(42,51,64)
     end
@@ -340,19 +425,45 @@ local function activateOnce()
         recordFeedback(target,before,after,false,resultStatus,message)
         return false,message
     end
-    local prompt,err=resolve(target)
-    if not prompt or not prompt:IsA("ProximityPrompt") then
-        return failed("target-unresolved",err or "Target is not a ProximityPrompt")
+    local before=nil
+    if target.kind=="tool" then
+        local tool,err=resolveTool(target)
+        if not tool then return failed("target-unresolved",err or "Tool target unresolved") end
+        local metadata=target.toolMetadata
+        if not metadata or tool.ToolTip~=metadata.tooltip or tool.RequiresHandle~=metadata.requiresHandle
+            or tool.CanBeDropped~=metadata.canBeDropped
+            or tool.ManualActivationOnly~=metadata.manualActivationOnly then
+            return failed("tool-metadata-drift","Tool activation prerequisite metadata changed")
+        end
+        local character=player.Character
+        local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+        local backpack=player:FindFirstChildOfClass("Backpack")
+        if not character or not humanoid then return failed("tool-equip-failed","Character humanoid unavailable") end
+        if tool.Parent==backpack then
+            local equipped,equipError=pcall(function() humanoid:EquipTool(tool) end)
+            if not equipped then return failed("tool-equip-failed","Tool equip failed: "..tostring(equipError)) end
+            task.wait(.1)
+        end
+        if tool.Parent~=character then return failed("tool-equip-failed","Tool is not uniquely equipped") end
+        if not tool.Enabled then return failed("tool-disabled","Observed Tool is currently disabled") end
+        before=readOutcome(target)
+        local ok,activateError=pcall(function() tool:Activate() end)
+        if not ok then return failed("activation-failed","Tool activation failed: "..tostring(activateError),before) end
+    else
+        local prompt,err=resolve(target)
+        if not prompt or not prompt:IsA("ProximityPrompt") then
+            return failed("target-unresolved",err or "Target is not a ProximityPrompt")
+        end
+        if not prompt.Enabled then return failed("prompt-disabled","Observed prompt is currently disabled") end
+        if type(fireproximityprompt)~="function" then
+            return failed("activation-unavailable","fireproximityprompt unavailable in this environment")
+        end
+        local moved,moveError=teleportTo(prompt)
+        if not moved then return failed("teleport-failed",moveError) end
+        before=readOutcome(target)
+        local ok,fireError=pcall(function() fireproximityprompt(prompt) end)
+        if not ok then return failed("activation-failed","Prompt activation failed: "..tostring(fireError),before) end
     end
-    if not prompt.Enabled then return failed("prompt-disabled","Observed prompt is currently disabled") end
-    if type(fireproximityprompt)~="function" then
-        return failed("activation-unavailable","fireproximityprompt unavailable in this environment")
-    end
-    local moved,moveError=teleportTo(prompt)
-    if not moved then return failed("teleport-failed",moveError) end
-    local before=readOutcome(target)
-    local ok,fireError=pcall(function() fireproximityprompt(prompt) end)
-    if not ok then return failed("activation-failed","Prompt activation failed: "..tostring(fireError),before) end
     task.wait(1.5)
     local after=readOutcome(target)
     local observed=target.expected=="increased" and type(before)=="number" and type(after)=="number" and after>before
@@ -368,22 +479,27 @@ local function activateOnce()
     return failed("expected-change-not-observed","No expected "..target.expected.." outcome observed",before,after)
 end
 local function start()
-    if running then return true,"Prompt trial already running" end
-    if type(fireproximityprompt)~="function" then return false,"fireproximityprompt unavailable in this environment" end
-    if mode=="multi" and not currentTarget() then return false,"No observed multi-hatch target" end
-    running=true failures=0 update()
+    if running then return true,"Interaction trial already running" end
+    local target=currentTarget()
+    if target and target.kind=="prompt" and type(fireproximityprompt)~="function" then
+        return false,"fireproximityprompt unavailable in this environment"
+    end
+    if mode=="multi" and not target then return false,"No observed multi-hatch target" end
+    running=true failures=0 attempts=0 update()
     task.spawn(function()
         while alive and running do
+            attempts=attempts+1 update()
             local ok,message=activateOnce()
             if not ok then
                 failures=failures+1 update()
-                status.Text=message.." (attempt "..tostring(failures).."/3)"
+                status.Text=message.." (failure "..tostring(failures).."/3)"
                 if failures>=3 then stop("Stopped after 3 uncorroborated attempts. "..message) break end
             end
+            if attempts>=25 then stop("Stopped at the bounded 25-attempt trial limit") break end
             task.wait(.4)
         end
     end)
-    return true,"Prompt interaction trial started"
+    return true,"Interaction trial started"
 end
 local function hasMulti()
     for _,target in ipairs(targets) do if target.multi then return true end end return false
@@ -419,15 +535,20 @@ local function commandState()
     return (running and "running" or "stopped").." | "..target.label.." | "..mode
         .." | failures "..tostring(failures).."/3"
 end
+local function activationAvailable()
+    local target=currentTarget() or targets[selected]
+    if target.kind=="tool" then return true,"official Tool activation available" end
+    return type(fireproximityprompt)=="function","fireproximityprompt unavailable"
+end
 _G.LycolesGameCommands={
-    interactions={category="Game: Interactions",description="List evidence-backed prompt targets",arguments="",availability=function() return true,"available" end,state=commandState,
+    interactions={category="Game: Interactions",description="List evidence-backed interaction targets",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() return true,listTargets(false) end},
-    interaction={category="Game: Interactions",description="Select an evidence-backed prompt target",arguments="[name]",availability=function() return not running,running and "stop prompt trial first" or "available" end,state=commandState,
+    interaction={category="Game: Interactions",description="Select an evidence-backed interaction target",arguments="[name]",availability=function() return not running,running and "stop interaction trial first" or "available" end,state=commandState,
         run=function(words) return selectTarget(words,false,"Usage: ;interaction [name]") end},
-    interactionstart={category="Game: Interactions",description="Start selected prompt trial",arguments="",availability=function() return type(fireproximityprompt)=="function","fireproximityprompt unavailable" end,state=commandState,run=function() return start() end},
-    interactionstop={category="Game: Interactions",description="Stop prompt trial",arguments="",availability=function() return true,"available" end,state=commandState,
-        run=function() stop("Stopped by command") return true,"Prompt trial stopped" end},
-    interactionfeedback={category="Game: Interactions",description="Export bounded prompt trial feedback JSON",arguments="",availability=function() return true,"available" end,state=commandState,
+    interactionstart={category="Game: Interactions",description="Start selected interaction trial",arguments="",availability=activationAvailable,state=commandState,run=function() return start() end},
+    interactionstop={category="Game: Interactions",description="Stop interaction trial",arguments="",availability=function() return true,"available" end,state=commandState,
+        run=function() stop("Stopped by command") return true,"Interaction trial stopped" end},
+    interactionfeedback={category="Game: Interactions",description="Export bounded interaction trial feedback JSON",arguments="",availability=function() return true,"available" end,state=commandState,
         run=function() local ok,payload=pcall(function() return HttpService:JSONEncode(feedback) end) return ok,ok and payload or "Feedback JSON encoding failed" end},
 
     eggs={category="Game: Eggs",description="List evidence-backed egg targets",arguments="",availability=function() return true,"available" end,state=commandState,

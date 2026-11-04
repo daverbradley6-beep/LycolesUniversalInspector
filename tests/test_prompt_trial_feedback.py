@@ -1,10 +1,10 @@
+import copy
 import importlib.util
 import json
 import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-
 
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, ROOT / "tools" / filename)
@@ -88,6 +88,33 @@ class PromptTrialFeedbackTests(unittest.TestCase):
         feedback["entries"][0]["targetPath"] = "Workspace.Forged.Prompt"
         with self.assertRaisesRegex(ValueError, "Invalid prompt feedback entry"):
             EVALUATOR.evaluate(discovery, feedback)
+
+    def test_tool_feedback_status_is_bound_without_verification_upgrade(self):
+        discovery=self.discovery();target=copy.deepcopy(next(
+            item for item in discovery["promptInteractions"]["targets"]
+            if item["trialGenerationReady"]))
+        target.update({"path":"LocalPlayer.Backpack.Training Sword","label":"Training Sword",
+            "controlType":"Tool.Activated","activationContractReady":True,
+            "replayContractAvailable":True})
+        discovery["promptInteractions"]["targets"]=[]
+        discovery["toolInteractions"]={"targets":[target]}
+        outcome=target["selectedOutcome"]
+        feedback={"schemaVersion":EVALUATOR.SCHEMA,"placeId":discovery["placeId"],
+            "scanId":discovery["scanId"],"discoverySHA256":EVALUATOR._digest(discovery),
+            "sessionId":"controlled-tool-session","entries":[{"sequence":1,
+                "targetPath":target["path"],"outcomeKey":outcome["key"],
+                "expected":outcome["change"],"before":10,"after":10,
+                "observedExpectedChange":False,"status":"tool-disabled",
+                "message":"Observed Tool is currently disabled","observedAtUnix":1793635200},
+                {"sequence":2,"targetPath":target["path"],"outcomeKey":outcome["key"],
+                "expected":outcome["change"],"before":None,"after":None,
+                "observedExpectedChange":False,"status":"tool-metadata-drift",
+                "message":"Tool activation prerequisite metadata changed","observedAtUnix":1793635201}],
+            "claims":{key:False for key in EVALUATOR.FALSE_CLAIMS}}
+        result=EVALUATOR.evaluate(discovery,feedback)
+        self.assertFalse(result["targets"][0]["runtimeCorrelationObserved"])
+        self.assertFalse(result["runtimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
 
 
 if __name__ == "__main__":

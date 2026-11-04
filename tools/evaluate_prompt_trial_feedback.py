@@ -13,8 +13,9 @@ FALSE_CLAIMS = {
     "runtimeVerified", "gameplayVerified", "actionOutcomesVerified",
 }
 STATUSES = {
-    "target-unresolved", "prompt-disabled", "activation-unavailable", "teleport-failed",
-    "activation-failed", "expected-change-observed", "expected-change-not-observed",
+    "target-unresolved", "prompt-disabled", "tool-disabled", "tool-equip-failed",
+    "tool-metadata-drift", "activation-unavailable", "teleport-failed", "activation-failed",
+    "expected-change-observed", "expected-change-not-observed",
 }
 ENTRY_FIELDS = {
     "sequence", "targetPath", "outcomeKey", "expected", "before", "after",
@@ -61,10 +62,14 @@ def _contracts(discovery):
     if not isinstance(claims, dict) or set(claims) != FALSE_CLAIMS or any(claims.values()):
         raise ValueError("Action capability discovery claims unsupported verification")
     prompt = discovery.get("promptInteractions")
+    tool = discovery.get("toolInteractions")
     if not isinstance(prompt, dict) or not isinstance(prompt.get("targets"), list):
         raise ValueError("Invalid prompt interaction discovery")
+    if tool is not None and (not isinstance(tool,dict) or not isinstance(tool.get("targets"),list)):
+        raise ValueError("Invalid Tool interaction discovery")
+    targets=list(prompt["targets"])+(list(tool["targets"]) if isinstance(tool,dict) else [])
     contracts = {}
-    for target in prompt["targets"]:
+    for target in targets:
         if not isinstance(target, dict) or target.get("trialGenerationReady") is not True:
             continue
         selected = target.get("selectedOutcome")
@@ -79,10 +84,10 @@ def _contracts(discovery):
             raise ValueError("Invalid selected prompt outcome")
         key = target["path"]
         if key in contracts:
-            raise ValueError("Duplicate prompt target path")
+            raise ValueError("Duplicate interaction target path")
         contracts[key] = {"outcomeKey": selected["key"], "expected": selected["change"]}
     if not contracts:
-        raise ValueError("No feedback-ready prompt targets")
+        raise ValueError("No feedback-ready interaction targets")
     return contracts
 
 

@@ -146,6 +146,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     utility_lua=generator.render(plan,gameplay_understanding,generation_readiness)
     prompt_generator=load_module("generate_prompt_interactions.py","lycoles_prompt_interactions")
     prompt_interactions_lua=prompt_generator.render(action_discovery)
+    prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
+    tool_trial_generated=action_discovery["toolInteractions"]["generationReadyTargets"]>0
+    egg_trial_generated=action_discovery["eggHatching"]["automaticSingleTrialReady"] is True
+
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
     prompt_feedback=None
     prompt_feedback_bytes=None
@@ -179,6 +183,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "sha256":sha(action_discovery_bytes),
             "promptTargets":len(action_discovery["promptInteractions"]["targets"]),
             "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
+            "toolTargets":len(action_discovery["toolInteractions"]["targets"]),
+            "generationReadyToolTargets":action_discovery["toolInteractions"]["generationReadyTargets"],
             "eggTargets":len(action_discovery["eggHatching"]["targets"]),
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
         "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
@@ -188,11 +194,15 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "request":generation_readiness["request"],
             "runtimeVerified":False,"gameplayVerified":False,
             "causalityProven":False,"actionOutcomesVerified":False},
-        "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_interactions_lua else None,
-            "generated":prompt_interactions_lua is not None,"automaticMovement":prompt_interactions_lua is not None,
+        "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
+            "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
-        "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_interactions_lua else None,
-            "generated":prompt_interactions_lua is not None,"runtimeVerified":False,"gameplayVerified":False,
+        "toolActivationTrial":{"artifact":"LycolesPromptInteractions.lua" if tool_trial_generated else None,
+            "generated":tool_trial_generated,"officialActivation":tool_trial_generated,
+            "boundedEquip":tool_trial_generated,"automaticMovement":False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
+            "generated":egg_trial_generated,"runtimeVerified":False,"gameplayVerified":False,
             "multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],
             "compatibilityAlias":True},
         "promptTrialFeedback":{"artifact":"prompt-trial-evaluation.json" if prompt_feedback else None,
@@ -226,7 +236,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
         "implementedClientControls":["Stats","Menus","Prompts","Features","Admin Commands"]+
-            (["Prompt Interactions"] if prompt_interactions_lua else []),
+            (["Prompt Interactions"] if prompt_trial_generated else [])+
+            (["Tool Activation Trial"] if tool_trial_generated else []),
         "implementedGameplayAutomation":[],
         "adminCommandFramework":{"artifact":"LycolesAdminCommands.lua",
             "commands":list(admin_generator.COMMANDS),"prefix":";",
@@ -274,7 +285,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
-          "This release contains client-side diagnostics and, when evidence permits, bounded ProximityPrompt trials.\n"
+          "This release contains client-side diagnostics and, when evidence permits, bounded prompt or official Tool activation trials.\n"
           "Baseline source input: "+source_provenance["inputMode"]+".\n"
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
@@ -285,7 +296,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
           "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
-          "Prompt trials have not been live runtime-tested; do not claim gameplay functionality or causality.\n"
+          "Generated prompt and Tool trials have not been live runtime-tested; do not claim gameplay functionality or causality.\n"
       ).encode()
     }
     if prompt_interactions_lua is not None:
