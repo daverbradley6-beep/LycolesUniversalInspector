@@ -171,6 +171,36 @@ def _workflow_request_aligned(candidate,request):
     return bool(requested&evidence)
 
 
+def _workflow_selection(workflow_plan,selected):
+    if workflow_plan is None:
+        return {"available":False,"totalCandidates":0,"shownCandidates":0,
+            "omittedCandidates":0,"selectedCandidateId":None,"candidates":[]}
+    candidates=workflow_plan.get("workflowCandidates",[])
+    selected_id=selected.get("id") if selected else None
+    selected_score=selected.get("selection",{}).get("requestScore",0) if selected else 0
+    selected_automatic=selected.get("automaticallyExecutable",False) if selected else False
+    shown=candidates[:20]
+    if selected and all(item.get("id")!=selected_id for item in shown):
+        shown=(shown[:19]+[selected]) if shown else [selected]
+    values=[]
+    for item in shown:
+        score=item.get("selection",{}).get("requestScore",0)
+        if item.get("id")==selected_id:reason="selected-highest-ranked-execution-ready-candidate"
+        elif item.get("executionReady") is not True:reason="not-execution-ready"
+        elif score<selected_score:reason="lower-request-evidence-score"
+        elif selected_automatic and item.get("automaticallyExecutable") is not True:
+            reason="more-user-involvement-tiebreak"
+        else:reason="stable-identity-tiebreak"
+        values.append({"candidateId":item["id"],"requestScore":score,
+            "matchedTerms":item.get("selection",{}).get("matchedTerms",[]),
+            "executionMode":item.get("executionMode","review-only"),
+            "executionReady":item.get("executionReady") is True,
+            "selected":item.get("id")==selected_id,"selectionReason":reason})
+    return {"available":True,"totalCandidates":len(candidates),"shownCandidates":len(values),
+        "omittedCandidates":max(0,len(candidates)-len(values)),
+        "selectedCandidateId":selected_id,"candidates":values}
+
+
 
 
 def _unavailable_requested(request_words,actions,is_egg):
@@ -321,6 +351,7 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
         "generatedCapabilities":generated,
         "unavailableRequestedBehavior":unavailable,
         "discoveryOnlyCapabilities":discovery_only,
+        "workflowSelection":_workflow_selection(workflow_plan,workflow_target),
         "guidedWorkflowFeedbackCorrelation":guided_correlation,
         "summary":{"generatedCapabilities":len(generated),
             "requestMatchedGeneratedCapabilities":len(matched_generated),

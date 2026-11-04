@@ -92,6 +92,46 @@ def _validate_feedback_correlation(correlation):
         raise ValueError("Inconsistent guided feedback correlation summary")
 
 
+def _validate_workflow_selection(selection):
+    if not isinstance(selection,dict) or type(selection.get("available")) is not bool:
+        raise ValueError("Invalid workflow selection")
+    candidates=selection.get("candidates")
+    if (not isinstance(candidates,list) or len(candidates)>20
+            or type(selection.get("totalCandidates")) is not int
+            or type(selection.get("shownCandidates")) is not int
+            or type(selection.get("omittedCandidates")) is not int
+            or selection["shownCandidates"]!=len(candidates)
+            or selection["totalCandidates"]!=len(candidates)+selection["omittedCandidates"]
+            or selection["omittedCandidates"]<0):
+        raise ValueError("Invalid workflow selection counts")
+    selected_id=selection.get("selectedCandidateId");selected_count=0
+    reasons={"selected-highest-ranked-execution-ready-candidate","not-execution-ready",
+        "lower-request-evidence-score","more-user-involvement-tiebreak","stable-identity-tiebreak"}
+    for item in candidates:
+        terms=item.get("matchedTerms") if isinstance(item,dict) else None
+        if (not isinstance(item,dict) or not _bounded_text(item.get("candidateId"),120)
+                or type(item.get("requestScore")) is not int or not 0<=item["requestScore"]<=10_000
+                or not isinstance(terms,list) or len(terms)>128
+                or any(not _bounded_text(term,80) or not all(
+                    "a"<=character<="z" or "0"<=character<="9" for character in term)
+                    for term in terms)
+                or terms!=sorted(set(terms)) or (item["requestScore"]>0)!=bool(terms)
+                or item.get("executionMode") not in ("review-only","mixed-guided","bounded-automatic")
+                or type(item.get("executionReady")) is not bool
+                or type(item.get("selected")) is not bool
+                or item.get("selectionReason") not in reasons):
+            raise ValueError("Invalid workflow selection candidate")
+        if item["selected"]:
+            selected_count+=1
+            if (item["candidateId"]!=selected_id
+                    or item["selectionReason"]!="selected-highest-ranked-execution-ready-candidate"):
+                raise ValueError("Invalid selected workflow candidate")
+    if selected_count!=(1 if selected_id is not None else 0):
+        raise ValueError("Invalid workflow selection identity")
+    if not selection["available"] and (selection["totalCandidates"]!=0 or selected_id is not None):
+        raise ValueError("Invalid unavailable workflow selection")
+
+
 def _validate_generation_readiness(place_id,scan_id,requested_capability,readiness):
     if (not isinstance(readiness,dict)
             or readiness.get("schemaVersion")!="113.generation-readiness.1"
@@ -102,6 +142,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
             or any(claims.get(field) is not False for field in _FALSE_CLAIMS)):
         raise ValueError("Invalid generation-readiness claims")
     _validate_feedback_correlation(readiness.get("guidedWorkflowFeedbackCorrelation"))
+    _validate_workflow_selection(readiness.get("workflowSelection"))
     request=readiness.get("request")
     if (not isinstance(request,dict) or request.get("request")!=requested_capability
             or request.get("status") not in ("no-capability-requested","generated-bounded-subset",
@@ -122,6 +163,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
     generated=readiness.get("generatedCapabilities")
     if not isinstance(generated,list) or len(generated)>64:
         raise ValueError("Invalid generation-readiness capabilities")
+    workflow_capability_ids=[]
     for item in generated:
         if (not isinstance(item,dict) or not _bounded_text(item.get("id"),80)
                 or any(item.get(field) is not False for field in
@@ -157,6 +199,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or item.get("operatorStartRequired") is not True
                     or item.get("stopOnFirstUnobservedOutcome") is not True):
                 raise ValueError("Invalid workflow generation-readiness capability")
+            workflow_capability_ids.append(item["candidateId"])
             continue
         if (kind not in ("proximity-prompt-trial","official-tool-activation-trial",
                     "guided-gui-activation-trial")
@@ -169,6 +212,11 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or item.get("manualActivationRequired") is not True
                     or item.get("exactControlHighlighting") is not True)):
             raise ValueError("Invalid guided GUI generation-readiness capability")
+    selected_workflow=readiness["workflowSelection"]["selectedCandidateId"]
+    if (len(workflow_capability_ids)>1
+            or (workflow_capability_ids[0] if workflow_capability_ids else None)!=selected_workflow):
+        raise ValueError("Workflow selection and generated capability mismatch")
+
 
     generated_ids=[item["id"] for item in generated]
     status=request["status"]

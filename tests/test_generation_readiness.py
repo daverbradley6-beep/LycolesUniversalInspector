@@ -227,5 +227,22 @@ class GenerationReadinessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"workflow plan"):
             readiness.assess(value,gameplay,actions,forged,[])
 
+    def test_workflow_selection_explains_non_selected_candidates(self):
+        selected={"id":"selected","selection":{"requestScore":10,"matchedTerms":["shop"]},
+            "executionReady":True,"automaticallyExecutable":True,"executionMode":"bounded-automatic"}
+        lower={"id":"lower","selection":{"requestScore":5,"matchedTerms":["shop"]},
+            "executionReady":True,"automaticallyExecutable":True,"executionMode":"bounded-automatic"}
+        blocked={"id":"blocked","selection":{"requestScore":12,"matchedTerms":["shop"]},
+            "executionReady":False,"automaticallyExecutable":False,"executionMode":"review-only"}
+        manual={"id":"manual","selection":{"requestScore":10,"matchedTerms":["shop"]},
+            "executionReady":True,"automaticallyExecutable":False,"executionMode":"mixed-guided"}
+        result=readiness._workflow_selection(
+            {"workflowCandidates":[selected,blocked,manual,lower]},selected)
+        reasons={item["candidateId"]:item["selectionReason"] for item in result["candidates"]}
+        self.assertEqual(reasons["selected"],"selected-highest-ranked-execution-ready-candidate")
+        self.assertEqual(reasons["blocked"],"not-execution-ready")
+        self.assertEqual(reasons["manual"],"more-user-involvement-tiebreak")
+        self.assertEqual(reasons["lower"],"lower-request-evidence-score")
+
 
 if __name__=="__main__":unittest.main()

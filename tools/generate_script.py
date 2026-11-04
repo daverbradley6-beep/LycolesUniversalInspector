@@ -304,6 +304,32 @@ def generation_readiness_lines(plan,readiness):
                     or capability.get("exactControlHighlighting") is not True)):
             raise ValueError("Malformed guided GUI capability")
         lines.append("Generated trial: "+label+" ["+kind+"]")
+    selection=readiness.get("workflowSelection")
+    candidates=selection.get("candidates") if isinstance(selection,dict) else None
+    if (not isinstance(selection,dict) or type(selection.get("available")) is not bool
+            or not isinstance(candidates,list) or len(candidates)>20
+            or type(selection.get("totalCandidates")) is not int
+            or type(selection.get("omittedCandidates")) is not int
+            or selection.get("shownCandidates")!=len(candidates)
+            or selection["totalCandidates"]!=len(candidates)+selection["omittedCandidates"]):
+        raise ValueError("Malformed workflow selection")
+    selected_id=selection.get("selectedCandidateId")
+    if selected_id is not None:
+        if not isinstance(selected_id,str) or not 1<=len(selected_id)<=120:
+            raise ValueError("Malformed selected workflow identity")
+        lines.append("Workflow selected: "+selected_id+" of "+str(selection["totalCandidates"]))
+    alternatives=0
+    for item in candidates:
+        if not isinstance(item,dict) or type(item.get("selected")) is not bool:
+            raise ValueError("Malformed workflow alternative")
+        if item["selected"]:continue
+        identifier=item.get("candidateId");reason=item.get("selectionReason")
+        if (not isinstance(identifier,str) or not 1<=len(identifier)<=120
+                or not isinstance(reason,str) or not 1<=len(reason)<=80):
+            raise ValueError("Malformed workflow alternative")
+        if alternatives<3:lines.append("Workflow not selected: "+identifier+" ["+reason+"]")
+        alternatives+=1
+
     for item in unavailable:
         identifier=item.get("id") if isinstance(item,dict) else None
         status_value=item.get("status") if isinstance(item,dict) else None

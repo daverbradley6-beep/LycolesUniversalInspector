@@ -22,6 +22,8 @@ class GeneratedResultTests(unittest.TestCase):
             "unavailableRequestedBehavior":[{"id":"multi-game-mode","status":"unavailable"}],
             "discoveryOnlyCapabilities":[{"family":"tool-action","candidateCount":2,
                 "observedCount":1,"replayContractAvailable":False}],
+            "workflowSelection":{"available":False,"totalCandidates":0,"shownCandidates":0,
+                "omittedCandidates":0,"selectedCandidateId":None,"candidates":[]},
             "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
                 "serverAuthorityVerified":False,"runtimeVerified":False,
                 "gameplayVerified":False,"actionOutcomesVerified":False}}
@@ -115,10 +117,20 @@ class GeneratedResultTests(unittest.TestCase):
             "automaticallyExecutable":True,"operatorStartRequired":True,
             "stopOnFirstUnobservedOutcome":True,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}]
+        readiness["workflowSelection"]={"available":True,"totalCandidates":1,
+            "shownCandidates":1,"omittedCandidates":0,"selectedCandidateId":"workflow-1",
+            "candidates":[{"candidateId":"workflow-1","requestScore":5,
+                "matchedTerms":["shop"],"executionMode":"bounded-automatic",
+                "executionReady":True,"selected":True,
+                "selectionReason":"selected-highest-ranked-execution-ready-candidate"}]}
         readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
         result=self.build(generation_readiness=readiness)
         self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0][
             "executionMode"],"bounded-automatic")
+        readiness["workflowSelection"]["selectedCandidateId"]="forged"
+        with self.assertRaisesRegex(ValueError,"selected workflow|selection"):
+            self.build(generation_readiness=readiness)
+        readiness["workflowSelection"]["selectedCandidateId"]="workflow-1"
         readiness["generatedCapabilities"][0]["executionMode"]="mixed-guided"
         with self.assertRaisesRegex(ValueError,"workflow"):
             self.build(generation_readiness=readiness)
