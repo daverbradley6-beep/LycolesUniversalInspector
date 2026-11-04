@@ -44,6 +44,36 @@ def diagnose(endpoint, read_key, scan_ids, *, timeout=30, allow_http=False,
     key = FETCHER._read_key(read_key)
     validated_ids = [FETCHER._identifier(scan_id, "receiver scan ID") for scan_id in scan_ids]
     opener = urllib.request.build_opener(FETCHER._NoRedirect)
+    collection_root = "/reports/" + urllib.parse.quote(key, safe="")
+    collection = {"accessible": False, "requestedScansListed": {
+        scan_id: False for scan_id in validated_ids}}
+    try:
+        collection_document = FETCHER._read_json(
+            opener, origin + collection_root, timeout)
+        scans = collection_document.get("scans") if isinstance(collection_document, dict) else None
+        reports = collection_document.get("reports") if isinstance(collection_document, dict) else None
+        has_more = collection_document.get("hasMore") if isinstance(collection_document, dict) else None
+        if (isinstance(scans, list) and reports is None
+                and all(isinstance(item, str) for item in scans)):
+            listed = scans
+            collection_contract = "multipart-scans"
+        elif (isinstance(reports, list) and scans is None
+              and all(isinstance(item, str) for item in reports)):
+            listed = reports
+            collection_contract = "legacy-single-reports"
+        else:
+            raise ValueError("receiver collection response is invalid")
+        if type(has_more) is not bool:
+            raise ValueError("receiver collection response is invalid")
+        listed_set = set(listed)
+        collection.update({"accessible": True, "collectionContract": collection_contract,
+                           "listedRecordCount": len(listed), "hasMore": has_more,
+                           "requestedScansListed": {
+                               scan_id: scan_id in listed_set for scan_id in validated_ids}})
+    except (ValueError, OSError) as exc:
+        collection["error"] = str(exc)
+    result["collection"] = collection
+
     for scan_id in validated_ids:
         check = {"scanId": scan_id, "metadataAccessible": False,
                  "partOneAccessible": False, "deploymentContract": "unknown",
@@ -81,9 +111,34 @@ def diagnose(endpoint, read_key, scan_ids, *, timeout=30, allow_http=False,
             check["error"] = str(exc)
             check["readyForImport"] = False
         result["checks"].append(check)
+    if (collection["accessible"]
+            and collection["collectionContract"] == "legacy-single-reports"):
+        for check in result["checks"]:
+            check["readyForImport"] = False
+            check["collectionContractBlocker"] = "pre-multipart-single-report-storage"
     result["status"] = (
-        "ready" if result["checks"] and all(item["readyForImport"] for item in result["checks"])
+        "ready" if (collection["accessible"]
+                    and collection["collectionContract"] == "multipart-scans"
+                    and result["checks"]
+                    and all(item["readyForImport"] for item in result["checks"]))
         else "blocked")
+    if not collection["accessible"]:
+        result["diagnosis"] = "receiver-origin-or-read-key-route-not-recognized"
+    elif collection["collectionContract"] == "legacy-single-reports":
+        if any(collection["requestedScansListed"].values()):
+            result["diagnosis"] = "requested-records-are-legacy-single-reports"
+        elif collection["hasMore"]:
+            result["diagnosis"] = "requested-records-not-in-first-legacy-page"
+        else:
+            result["diagnosis"] = "requested-records-not-listed-in-legacy-collection"
+    elif (not collection["hasMore"]
+          and not any(collection["requestedScansListed"].values())):
+        result["diagnosis"] = "requested-scans-not-listed"
+    elif result["status"] == "ready":
+        result["diagnosis"] = "requested-scans-ready"
+    else:
+        result["diagnosis"] = "requested-scans-require-individual-check-review"
+
     return result
 
 

@@ -53,7 +53,7 @@ export LYCOLES_RECEIVER_ORIGIN=https://receiver.example
 python3 tools/diagnose_receiver_access.py SCAN_ID [SCAN_ID ...]
 ```
 
-The diagnostic never prints either value. It identifies missing configuration, metadata/first-part access, and whether the deployment supports v12 persisted digest headers or the older v11 contract. Add `--check-integrity` only when the Worker's potentially expensive full integrity route should be run.
+The diagnostic never prints either value or unrelated receiver record IDs. It first probes the authenticated collection and distinguishes multipart `scans` deployments from the original pre-multipart `reports` deployment, then checks requested metadata/first-part access and whether a multipart deployment supports v12 persisted digest headers or the older v11 contract. A `legacy-single-reports` collection is not eligible for multipart v11 recovery. Add `--check-integrity` only when the Worker's potentially expensive full integrity route should be run. Long-running Agent Canvas conversations may retain their startup secret snapshot; start a fresh conversation after adding Settings secrets rather than creating duplicate secrets or transferring values through chat.
 
 For a v12 receiver, run:
 

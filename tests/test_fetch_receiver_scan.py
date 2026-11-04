@@ -32,7 +32,8 @@ class ReceiverServer:
     def __init__(self, *, incomplete=False, mismatch=False, redirect=False,
                  object_count_mismatch=False, malformed_length=False, transient=False,
                  duplicate_object=False, digest_mismatch=False, missing_digest=False,
-                 legacy_integrity_complete=True, fail_part=None):
+                 legacy_integrity_complete=True, fail_part=None,
+                 legacy_collection=False):
         base = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -72,6 +73,7 @@ class ReceiverServer:
         self.digest_mismatch = digest_mismatch
         self.missing_digest = missing_digest
         self.legacy_integrity_complete = legacy_integrity_complete
+        self.legacy_collection = legacy_collection
         self.transient = transient
         self.fail_part = fail_part
         self.transient_failures = 0
@@ -101,7 +103,11 @@ class ReceiverServer:
                     self.end_headers()
                     return
                 prefix = "/reports/read-secret/receiverscan01/"
-                if self.path == prefix + "metadata":
+                if self.path == "/reports/read-secret":
+                    payload = ({"reports": ["receiverscan01"], "hasMore": False}
+                               if owner.legacy_collection else
+                               {"scans": ["receiverscan01"], "hasMore": False})
+                elif self.path == prefix + "metadata":
                     payload = {"metadata": owner.metadata}
                 elif self.path == prefix + "integrity":
                     object_count = sum(len(part["objects"]) for part in owner.parts.values())
@@ -171,8 +177,50 @@ class ReceiverImportTests(unittest.TestCase):
                 receiver.server.base_url, "read-secret", ["receiverscan01"],
                 allow_http=True)
         self.assertEqual(result["status"], "ready")
+        self.assertTrue(result["collection"]["accessible"])
+        self.assertTrue(result["collection"]["requestedScansListed"]["receiverscan01"])
+        self.assertEqual(result["diagnosis"], "requested-scans-ready")
         self.assertEqual(result["checks"][0]["deploymentContract"],
                          "v12-persisted-digests")
+
+    def test_access_diagnostic_distinguishes_unrecognized_key_route(self):
+        with ReceiverServer() as receiver:
+            result = DIAGNOSTICS.diagnose(
+                receiver.server.base_url, "wrong-read-key", ["receiverscan01"],
+                allow_http=True)
+        self.assertEqual(result["status"], "blocked")
+        self.assertFalse(result["collection"]["accessible"])
+        self.assertEqual(result["collection"]["error"], "unexpected HTTP status 404")
+        self.assertEqual(result["diagnosis"],
+                         "receiver-origin-or-read-key-route-not-recognized")
+        self.assertFalse(result["credentialsExposed"])
+
+    def test_access_diagnostic_detects_scan_absence_after_collection_access(self):
+        with ReceiverServer() as receiver:
+            result = DIAGNOSTICS.diagnose(
+                receiver.server.base_url, "read-secret", ["missing-scan-01"],
+                allow_http=True)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(result["collection"]["accessible"])
+        self.assertFalse(result["collection"]["hasMore"])
+        self.assertFalse(result["collection"]["requestedScansListed"]["missing-scan-01"])
+        self.assertEqual(result["diagnosis"], "requested-scans-not-listed")
+
+    def test_access_diagnostic_recognizes_pre_multipart_collection(self):
+        with ReceiverServer(legacy_collection=True) as receiver:
+            result = DIAGNOSTICS.diagnose(
+                receiver.server.base_url, "read-secret", ["receiverscan01"],
+                allow_http=True)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(result["collection"]["accessible"])
+        self.assertEqual(result["collection"]["collectionContract"],
+                         "legacy-single-reports")
+        self.assertEqual(result["checks"][0]["collectionContractBlocker"],
+                         "pre-multipart-single-report-storage")
+        self.assertFalse(result["checks"][0]["readyForImport"])
+        self.assertEqual(result["diagnosis"],
+                         "requested-records-are-legacy-single-reports")
+        self.assertFalse(result["credentialsExposed"])
 
     def test_access_diagnostic_detects_v11_contract(self):
         with ReceiverServer(missing_digest=True) as receiver:

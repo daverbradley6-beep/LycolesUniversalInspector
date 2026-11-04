@@ -1,6 +1,16 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-04 — Receiver configuration and deployment diagnosis
+
+- Confirmed the Settings secrets are valid and securely injected into newly created agent conversations. The already-running parent conversation retained its startup secret snapshot and therefore reported both variables missing; no duplicate secret creation or plaintext transfer is required. A fresh conversation is sufficient to consume newly added Settings secrets.
+- Read-only receiver collection access authenticated successfully without exposing credentials. The configured deployment reports the original `legacy-single-reports` collection contract, not the v11/v12 multipart `scans` contract. Its first 100 legacy records are returned with `hasMore: true`; neither requested scan ID appears in that page, and direct metadata lookup for both IDs returns HTTP 404.
+- No numbered part was retrieved, multipart integrity was not claimed, and no gameplay/egg/Auto/Multi analysis was fabricated. Strict v12 remained the default; explicit v11 recovery was not allowed because multipart metadata and complete v11 integrity could not be established.
+- Enhanced `tools/diagnose_receiver_access.py` to probe the authenticated collection safely, distinguish multipart scans from original pre-multipart single reports, distinguish an unrecognized origin/key route from absent records, and report only requested-ID membership/counts rather than unrelated receiver IDs.
+- Exact external blocker: the configured origin/read-key pair reaches an authenticated pre-multipart deployment/KV view, not a multipart v11/v12 receiver containing the two confirmed scan IDs (or those records are beyond an unpageable first legacy page). Recovery requires the correct multipart receiver origin/read-key pairing or separately authorized receiver/KV migration; no production configuration was changed.
+
+
+
 ## Update — 2026-11-02 — Historical receiver recovery and bounded live feedback
 
 - Implemented explicit `--allow-legacy-v11` retrieval for confirmed scans stored by the historical Worker. Legacy mode first requires complete receiver integrity and exact identity/uniqueness/object accounting, downloads every numbered part without resume, computes local SHA-256 over exact response bytes, reruns compiler validation, and publishes atomically.
