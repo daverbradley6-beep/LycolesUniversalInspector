@@ -1,6 +1,19 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Deterministic generation readiness and synchronized controls
+
+- Committed `b468780` (`Add evidence-bounded generation readiness`) on `openhands-development`. `tools/assess_generation_readiness.py` recomputes schema `113.generation-readiness.1` from the exact compiled capability plan, gameplay understanding, and action-capability discovery rather than trusting asserted readiness.
+- The artifact distinguishes emitted bounded prompt trials, request-matched generated subsets, unavailable requested Auto/Multi game modes, and discovery-only combat/Tool/GUI families. All authenticity, causality, server-authority, runtime, gameplay, and action-outcome verification claims remain false.
+- Release and standalone generation write `generation-readiness.json`, link its exact SHA-256 in their manifests, include it in deterministic ZIPs, and render the same status in Features and `;readiness`. A Bubble Gum-style request for automatic multi hatching reports a generated single-target bounded trial while Auto and Multi remain explicitly unavailable.
+- The generated game-specific prompt interface now has a bounded target dropdown. Target, mode, running, and failure-count state are shared with categorized Admin Commands; GUI actions and `;interaction*`/`;egg*` commands refresh the same visible command state.
+- Controlled official-Luau execution verifies dropdown creation, synchronized target/running/failure state, automatic teleport, one synthetic prompt activation, expected synthetic counter observation, three-failure shutdown, unavailable Multi mode, and cleanup. This is simulated execution, not live Roblox runtime or gameplay verification.
+- Final local gate passed: **1,442 Python tests** with pinned official Luau 0.744 enabled; receiver checks passed; **4 Node tests** passed (checked-in/generated Luau parsing plus receiver integrity); Python compilation, credential-pattern scan, and `git diff --check` passed.
+- The supplied files remain untouched and untracked. Complete Bubble Gum scan analysis remains externally blocked because the configured authenticated receiver exposes a pre-multipart legacy collection rather than the requested multipart scans; no production configuration or credentials were changed.
+- Next priorities: propagate generation readiness into the display-only generated-result handoff used by the in-game Generated Script tab, then strengthen capability/evidence/unsupported-behavior presentation without authorizing execution or upgrading live verification claims.
+
+
+
 ## Update — 2026-11-04 — Receiver configuration and deployment diagnosis
 
 - Confirmed the Settings secrets are valid and securely injected into newly created agent conversations. The already-running parent conversation retained its startup secret snapshot and therefore reported both variables missing; no duplicate secret creation or plaintext transfer is required. A fresh conversation is sufficient to consume newly added Settings secrets.
