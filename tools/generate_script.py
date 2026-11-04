@@ -59,6 +59,28 @@ def _validate_source_provenance(provenance):
                   "actionOutcomesVerified")
     if any(provenance.get(field) is not False for field in false_claims):
         raise ValueError("Source provenance claims unsupported verification")
+    schema=provenance.get("schemaVersion")
+    if schema not in ("30.2.source-provenance.1","30.2.source-provenance.2"):
+        raise ValueError("Unsupported source provenance schema")
+    if schema=="30.2.source-provenance.2":
+        part_count=provenance.get("partCount")
+        digests=provenance.get("partContentDigests")
+        if (mode!="local-multipart" or type(part_count) is not int or not 1<=part_count<=2000
+                or provenance.get("localPartContentDigestsComputed") is not True
+                or not isinstance(digests,list) or len(digests)!=part_count):
+            raise ValueError("Invalid local part digest coverage")
+        indexes=set()
+        for entry in digests:
+            if (not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}
+                    or type(entry.get("partIndex")) is not int
+                    or not 1<=entry["partIndex"]<=part_count
+                    or not isinstance(entry.get("sha256"),str)
+                    or re.fullmatch(r"[a-f0-9]{64}",entry["sha256"]) is None
+                    or entry["partIndex"] in indexes):
+                raise ValueError("Invalid local part digest coverage")
+            indexes.add(entry["partIndex"])
+        if indexes!=set(range(1,part_count+1)):
+            raise ValueError("Invalid local part digest coverage")
     digest_verified=provenance.get("receiverStoredPayloadDigestsVerified")
     integrity_verified=provenance.get("receiverIntegrityVerified")
     acknowledgement_equivalent=provenance.get("receiverAcknowledgementDigestEquivalent")
@@ -75,8 +97,8 @@ def _validate_source_provenance(provenance):
 def source_provenance_lines(plan):
     provenance=plan.get("sourceProvenance")
     if provenance is None:
-        lines=["Baseline input: local multipart","Receiver payload digests: unavailable",
-               "Receiver retrieval integrity: unavailable",
+        lines=["Baseline input: local multipart","Local part digests: unavailable",
+               "Receiver payload digests: unavailable","Receiver retrieval integrity: unavailable",
                "Inspector ACK digest equivalence: not established",
                "Resume checkpoint authentication: unavailable",
                "Response authenticity: unverified",
@@ -88,8 +110,16 @@ def source_provenance_lines(plan):
         mode=provenance["inputMode"]
         baseline=("legacy v11 receiver import" if mode=="receiver-import-legacy-v11"
                   else "receiver import" if receiver else "local multipart")
+        if receiver:
+            local_digest_line="not applicable"
+        elif provenance.get("schemaVersion")=="30.2.source-provenance.2":
+            local_digest_line=("computed for "+str(len(provenance["partContentDigests"]))
+                               +"/"+str(provenance["partCount"])+" parts")
+        else:
+            local_digest_line="unavailable"
         lines=[
             "Baseline input: "+baseline,
+            "Local part digests: "+local_digest_line,
             "Receiver payload digests: "+("verified" if digest_verified else "unavailable"),
             "Receiver retrieval integrity: "+("verified" if integrity_verified else "unavailable"),
             "Inspector ACK digest equivalence: "+(
@@ -112,7 +142,8 @@ def source_provenance_lines(plan):
         overlay_provenance=overlay.get("sourceProvenance")
         if (_validate_source_provenance(overlay_provenance)[0]):
             receiver_overlays+=1
-        if (overlay_provenance.get("schemaVersion")!="30.2.source-provenance.1"
+        if (overlay_provenance.get("schemaVersion") not in
+                ("30.2.source-provenance.1","30.2.source-provenance.2")
                 or overlay_provenance.get("scanId")!=overlay.get("scanId")
                 or overlay_provenance.get("placeId")!=plan["integrity"]["placeId"]
                 or overlay_provenance.get("partCount")!=overlay.get("parts")):

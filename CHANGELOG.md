@@ -4,6 +4,7 @@
 - Finalize `SAVE REPORT` with a second manifest write so `complete` is present in the manifest actually saved to disk only after every numbered part and the matching final manifest succeed.
 - Surface numbered-part and manifest-save status separately in the Generated Script handoff.
 - Upgrade manifest-readiness output to schema `109.manifest-readiness.2`, preserving v109.1 release routing while validating local export accounting, reporting explicit lifecycle stages, and recommending local or receiver recovery without treating a manifest-only claim as retrieved multipart evidence.
+- Bind local multipart compilation to SHA-256 digests of every exact accepted raw part in `30.2.source-provenance.2`; reject raw-byte-ambiguous duplicate indices and validate v2 coverage in generation and dynamic-overlay consumers. These local hashes are deterministic input identity, not source authenticity or receiver/original-payload equivalence.
 - Keep receiver integrity, source authenticity, causality, server authority, runtime behavior, gameplay, and script-generation readiness unverified.
 
 ## v30.5.0 — Actionable gameplay discovery and prompt interaction trials

@@ -4,11 +4,36 @@
 This is an evidence overlay, not object reconstruction or gameplay execution.
 """
 import copy
+import re
 
 
 _UNVERIFIED_PROVENANCE=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
     "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
     "serverAuthorityVerified","replayable","gameplayVerified","actionOutcomesVerified")
+
+
+def _valid_local_digests(provenance):
+    if provenance.get("schemaVersion")=="30.2.source-provenance.1":
+        return True
+    count=provenance.get("partCount")
+    entries=provenance.get("partContentDigests")
+    if (provenance.get("schemaVersion")!="30.2.source-provenance.2"
+            or provenance.get("inputMode")!="local-multipart"
+            or type(count) is not int or not 1<=count<=2000
+            or provenance.get("localPartContentDigestsComputed") is not True
+            or not isinstance(entries,list) or len(entries)!=count):
+        return False
+    indexes=set()
+    for entry in entries:
+        if (not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}
+                or type(entry.get("partIndex")) is not int or not 1<=entry["partIndex"]<=count
+                or not isinstance(entry.get("sha256"),str)
+                or re.fullmatch(r"[a-f0-9]{64}",entry["sha256"]) is None
+                or entry["partIndex"] in indexes):
+            return False
+        indexes.add(entry["partIndex"])
+    return indexes==set(range(1,count+1))
+
 
 def _observation_provenance(observation,integrity):
     provenance=observation.get("sourceProvenance")
@@ -20,7 +45,9 @@ def _observation_provenance(observation,integrity):
     acknowledgement=provenance.get("receiverAcknowledgementDigestEquivalent") if provenance else None
     revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun") if provenance else None
     if (not isinstance(provenance,dict)
-            or provenance.get("schemaVersion")!="30.2.source-provenance.1"
+            or provenance.get("schemaVersion") not in
+                ("30.2.source-provenance.1","30.2.source-provenance.2")
+            or not _valid_local_digests(provenance)
             or mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11")
             or provenance.get("scanId")!=integrity.get("scanId")
             or provenance.get("placeId")!=integrity.get("placeId")

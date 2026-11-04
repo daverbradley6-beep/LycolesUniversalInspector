@@ -98,7 +98,7 @@ def bounded_path_identity(value):
 
 
 
-def _local_source_provenance(scan_id,place_id,part_count):
+def _base_source_provenance(scan_id,place_id,part_count):
     return {
         "schemaVersion":"30.2.source-provenance.1","inputMode":"local-multipart",
         "scanId":scan_id,"placeId":place_id,"partCount":part_count,
@@ -113,6 +113,19 @@ def _local_source_provenance(scan_id,place_id,part_count):
         "serverAuthorityVerified":False,"replayable":False,
         "gameplayVerified":False,"actionOutcomesVerified":False,
     }
+
+
+def _local_source_provenance(scan_id,place_id,part_count,digests):
+    if set(digests)!=set(range(1,part_count+1)):
+        fail("Incomplete local part digest coverage")
+    result=_base_source_provenance(scan_id,place_id,part_count)
+    result.update({
+        "schemaVersion":"30.2.source-provenance.2",
+        "partContentDigests":[{"partIndex":index,"sha256":digests[index]}
+                              for index in range(1,part_count+1)],
+        "localPartContentDigestsComputed":True,
+    })
+    return result
 
 
 def _receiver_source_provenance(manifest,scan_id,place_id,part_count,
@@ -172,7 +185,7 @@ def _receiver_source_provenance(manifest,scan_id,place_id,part_count,
             or manifest.get("localPayloadEquivalent") is not False
             or not isinstance(manifest.get("note"),str)):
         fail("Invalid receiver provenance claims")
-    result=_local_source_provenance(scan_id,place_id,part_count)
+    result=_base_source_provenance(scan_id,place_id,part_count)
     result.update({
         "inputMode":"receiver-import",
         "partContentDigests":[{"partIndex":index,"sha256":digests[index]}
@@ -244,7 +257,7 @@ def _legacy_receiver_source_provenance(manifest,scan_id,place_id,part_count,
             or manifest.get("localPayloadEquivalent") is not False
             or not isinstance(manifest.get("note"),str)):
         fail("Invalid legacy receiver provenance claims")
-    result=_local_source_provenance(scan_id,place_id,part_count)
+    result=_base_source_provenance(scan_id,place_id,part_count)
     result.update({
         "inputMode":"receiver-import-legacy-v11",
         "partContentDigests":[{"partIndex":index,"sha256":digests[index]}
@@ -303,6 +316,8 @@ def compile_scan(directory):
         fingerprint=hashlib.sha256(json.dumps(part,sort_keys=True,separators=(",",":")).encode()).hexdigest()
         if index in by_index:
             if by_index[index][0]!=fingerprint: fail(f"Conflicting duplicate part {index}")
+            if by_index[index][2]!=raw_digest:
+                fail(f"Conflicting duplicate part bytes {index}")
             continue
         by_index[index]=(fingerprint,part,raw_digest)
     missing=[i for i in range(1,count+1) if i not in by_index]
@@ -381,7 +396,8 @@ def compile_scan(directory):
             source_provenance=_receiver_source_provenance(
                 receiver_manifest,scan_id,place_id,count,len(objects),actual_part_digests)
     else:
-        source_provenance=_local_source_provenance(scan_id,place_id,count)
+        source_provenance=_local_source_provenance(
+            scan_id,place_id,count,actual_part_digests)
 
     features=[]
     for name in sorted(feature_names):

@@ -43,6 +43,18 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(overlay["sourceProvenance"]["scanId"],"delta")
         self.assertEqual(overlay["sourceProvenance"]["inputMode"],"local-multipart")
         self.assertFalse(overlay["sourceProvenance"]["sourceAuthenticityVerified"])
+    def test_local_v2_digest_provenance_is_preserved_and_validated(self):
+        observation=self.observation();provenance=observation["sourceProvenance"]
+        provenance.update(schemaVersion="30.2.source-provenance.2",
+            localPartContentDigestsComputed=True,partContentDigests=[
+                {"partIndex":1,"sha256":"1"*64},{"partIndex":2,"sha256":"2"*64}])
+        merged=m.merge_evidence(self.baseline(),[observation])
+        self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["schemaVersion"],
+                         "30.2.source-provenance.2")
+        provenance["partContentDigests"][1]["partIndex"]=1
+        with self.assertRaisesRegex(ValueError,"provenance"):
+            m.merge_evidence(self.baseline(),[observation])
+
     def test_forged_overlay_provenance_rejected(self):
         for field in ("gameplayVerified","receiverStoredPayloadDigestsVerified"):
             with self.subTest(field=field):

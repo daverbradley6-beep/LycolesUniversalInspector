@@ -68,6 +68,26 @@ class GeneratorTests(unittest.TestCase):
         result=generator.render(plan)
         self.assertIn("Dynamic evidence overlays: 1",result)
         self.assertIn("Overlay sources: 1 receiver import, 0 local multipart; separate provenance",result)
+    def test_local_v2_part_digest_provenance_is_validated_and_reported(self):
+        provenance={"schemaVersion":"30.2.source-provenance.2",
+            "inputMode":"local-multipart","scanId":"testscan","placeId":3623096087,
+            "partCount":2,"partContentDigests":[
+                {"partIndex":1,"sha256":"1"*64},{"partIndex":2,"sha256":"2"*64}],
+            "localPartContentDigestsComputed":True,
+            "resumeCheckpointAuthenticated":False,"receiverResponseAuthenticityVerified":False,
+            "localPayloadEquivalent":False,"sourceAuthenticityVerified":False,
+            "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
+            "gameplayVerified":False,"actionOutcomesVerified":False,
+            "receiverStoredPayloadDigestsVerified":False,"receiverIntegrityVerified":False,
+            "receiverAcknowledgementDigestEquivalent":False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun":False}
+        plan=self.plan();plan["sourceProvenance"]=provenance
+        result=generator.render(plan)
+        self.assertIn("Local part digests: computed for 2/2 parts",result)
+        provenance["partContentDigests"][1]["partIndex"]=1
+        with self.assertRaisesRegex(ValueError,"part digest coverage"):
+            generator.render(plan)
+
     def test_malformed_requested_capability_blocked(self):
         for request in ("x"*241,"🙂"*61,"Show\u0085status"):
             with self.subTest(request=repr(request)):

@@ -23,6 +23,24 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(result["integrity"]["objects"],2)
             self.assertEqual(result["features"][0]["status"],"interaction-observed")
             self.assertFalse(result["releaseGate"]["gameplayAutomationApproved"])
+
+    def test_local_source_provenance_binds_exact_current_part_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path)
+            expected=[compiler.hashlib.sha256((path/f"{index}.json").read_bytes()).hexdigest()
+                      for index in (1,2)]
+            provenance=compiler.compile_scan(path)["sourceProvenance"]
+            self.assertEqual(provenance["schemaVersion"], "30.2.source-provenance.2")
+            self.assertEqual(provenance["inputMode"], "local-multipart")
+            self.assertTrue(provenance["localPartContentDigestsComputed"])
+            self.assertEqual(
+                provenance["partContentDigests"],
+                [{"partIndex": index, "sha256": digest}
+                 for index,digest in enumerate(expected,1)],
+            )
+            self.assertFalse(provenance["sourceAuthenticityVerified"])
+            self.assertFalse(provenance["localPayloadEquivalent"])
+
     def test_actionable_objects_retain_bounded_prompt_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)
@@ -56,6 +74,13 @@ class ScanCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
                 compiler.compile_scan(path)
 
+    def test_duplicate_part_with_different_raw_bytes_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path)
+            duplicate=json.loads((path/"1.json").read_text())
+            (path/"duplicate.json").write_text(json.dumps(duplicate,indent=2))
+            with self.assertRaisesRegex(ValueError,"Conflicting duplicate part bytes"):
+                compiler.compile_scan(path)
 
     def test_missing_part(self):
         with tempfile.TemporaryDirectory() as tmp:
