@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Evidence-bounded guided GUI activation generation
+
+- Committed `2325f83` (`Generate bounded guided GUI trials`) on `openhands-development`. The inspector now captures one normalized GUI prerequisite snapshot across static objects, actionable candidates, and activation-time evidence: exact control class/text, visible/active/selectable/AutoButtonColor/Interactable state, ancestor visibility, ScreenGui enablement, scrolling-frame intersection, and effective visibility.
+- Action discovery emits strict `guiInteractions` contracts only for observed `GuiButton.Activated` evidence with one stable complete prerequisite snapshot, one exact unambiguous PlayerGui component identity, and one selected resolvable scalar outcome. Hidden, disabled, off-scroll, malformed, ambiguous, incomplete, or metadata-drifted controls remain discovery-only and fail closed. Prompt, Tool, and GUI metadata projections are independent deep copies so forged in-memory projections cannot mutate their supporting evidence by alias.
+- Generated Luau resolves the exact observed button, rechecks all prerequisites, highlights it with a bounded `UIStroke`, observes the official `Activated` event, waits up to five seconds for normal user activation, and monitors only the selected outcome direction. It does not use `firesignal`, `VirtualInputManager`, `VirtualUser`, invented `GuiButton:Activate()`, or discovered remote invocation. Three failures and 25 attempts remain hard bounds; stop and close always remove highlighting.
+- Generation readiness, display-only generated results, standalone generation, deterministic release manifests, and feedback evaluation distinguish `guided-gui-activation-trial` from automatic replay. They require `automaticActivation=false`, `manualActivationRequired=true`, and `exactControlHighlighting=true`; runtime, gameplay, causality, action-outcome, source-authenticity, and server-authority claims remain false.
+- Added controlled official-Luau simulation covering exact identity resolution, highlighting, user-event activation, selected counter observation, metadata-drift rejection, hidden-control rejection, activation timeout, cleanup, and the exact 25-successful-attempt cap. This is deterministic stub execution, not live Roblox verification.
+- Final local gate passed: **1,462 Python tests** (17 environment-dependent skips), **3 Node/Luau parser tests**, standalone receiver integrity checks, Python compilation, pinned official Luau 0.744 controlled execution, credential-pattern scan, and `git diff --check`.
+- Bubble Gum multipart retrieval remains externally blocked by the configured pre-multipart receiver; no new evidence justified reinvestigation. The supplied handover and manifest remain untouched and untracked. No production receiver configuration, credentials, Cloudflare infrastructure, or live Roblox session changed.
+- Next priorities: derive evidence-bounded multi-step workflow candidates across generated Prompt, Tool, and guided GUI controls; preserve prerequisite/outcome state between steps; add deterministic workflow planning and controlled execution without promoting temporal correlation to causality; then improve Generated Script tab execution controls for validated artifacts.
+
 
 ## Update — 2026-11-02 — Bounded official Tool activation generation
 
