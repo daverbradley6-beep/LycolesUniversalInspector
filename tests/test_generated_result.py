@@ -85,5 +85,24 @@ class GeneratedResultTests(unittest.TestCase):
             "official-tool-activation-trial")
         self.assertFalse(result["generationReadiness"]["claims"]["runtimeVerified"])
 
+    def test_guided_gui_trial_requires_manual_activation_safeguards(self):
+        readiness=self.readiness();capability=readiness["generatedCapabilities"][0]
+        capability.update({"id":"guided-gui-interaction-trial",
+            "kind":"guided-gui-activation-trial","targetLabel":"Buy Upgrade",
+            "automaticActivation":False,"manualActivationRequired":True,
+            "exactControlHighlighting":True})
+        readiness["request"]["matchedGeneratedCapabilityIds"]=["guided-gui-interaction-trial"]
+        result=self.build(generation_readiness=readiness)
+        generated=result["generationReadiness"]["generatedCapabilities"][0]
+        self.assertTrue(generated["manualActivationRequired"])
+        forged=self.readiness();forged_capability=forged["generatedCapabilities"][0]
+        forged_capability.update({"id":"guided-gui-interaction-trial",
+            "kind":"guided-gui-activation-trial","automaticActivation":True,
+            "manualActivationRequired":False,"exactControlHighlighting":True})
+        forged["request"]["matchedGeneratedCapabilityIds"]=["guided-gui-interaction-trial"]
+        with self.assertRaisesRegex(ValueError,"guided GUI"):
+            self.build(generation_readiness=forged)
+
+
     def test_deterministic(self):
         self.assertEqual(self.build(),self.build())

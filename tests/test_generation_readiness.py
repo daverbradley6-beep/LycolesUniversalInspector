@@ -126,6 +126,38 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["discoveryOnlyCapabilities"],[])
         self.assertFalse(result["claims"]["runtimeVerified"])
 
+
+    def test_exact_gui_evidence_produces_manual_guided_trial(self):
+        value={"integrity":{"scanComplete":True,"placeId":789,"scanId":"gui-ready-scan"},
+            "requestedCapability":"Buy the shop upgrade","features":[feature("shops",1,1)],
+            "actionableObjects":[],"observedInteractionHistory":[{
+                "path":"PlayerGui.HUD.Shop.List.Buy","controlType":"GuiButton.Activated",
+                "featureCandidate":"shops","pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Shop","className":"Frame","ordinal":1},
+                    {"name":"List","className":"ScrollingFrame","ordinal":1},
+                    {"name":"Buy","className":"TextButton","ordinal":1}],
+                "controlMetadata":{"controlClass":"TextButton","text":"Buy Upgrade",
+                    "visible":True,"active":True,"selectable":True,"autoButtonColor":True,
+                    "interactable":True,"ancestorVisible":True,"screenEnabled":True,
+                    "withinScrollingBounds":True,"effectiveVisible":True},
+                "stateChanges":[{"key":"Data.Upgrades","before":2,"after":3,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"Upgrades","className":"IntValue","ordinal":1}]}]}]}
+        result=assess(value)
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        self.assertEqual(result["request"]["matchedGeneratedCapabilityIds"],
+            ["guided-gui-interaction-trial"])
+        generated=result["generatedCapabilities"][0]
+        self.assertEqual(generated["kind"],"guided-gui-activation-trial")
+        self.assertFalse(generated["automaticActivation"])
+        self.assertTrue(generated["manualActivationRequired"])
+        self.assertTrue(generated["exactControlHighlighting"])
+        self.assertIn("require the user to activate",result["request"]["supportedSubset"][1])
+        self.assertEqual(result["discoveryOnlyCapabilities"],[])
+
     def test_name_only_prompt_does_not_become_generated_subset(self):
         value=egg_plan();value["observedInteractionHistory"]=[]
         value["actionableObjects"]=[{"path":"Workspace.Eggs.Basic.Prompt",

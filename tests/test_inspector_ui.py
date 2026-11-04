@@ -105,6 +105,12 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}',SRC)
         self.assertIn('controlMetadata=interactionDescriptor(obj,root,label)',SRC)
         self.assertIn('enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly',SRC)
+        self.assertIn('local function guiControlSnapshot(obj)',SRC)
+        self.assertIn('ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true',SRC)
+        self.assertIn('current:IsA("ScrollingFrame")',SRC)
+        self.assertIn('effectiveVisible=visible',SRC)
+        self.assertIn('return guiControlSnapshot(obj)',SRC)
+
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

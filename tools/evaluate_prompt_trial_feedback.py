@@ -14,7 +14,8 @@ FALSE_CLAIMS = {
 }
 STATUSES = {
     "target-unresolved", "prompt-disabled", "tool-disabled", "tool-equip-failed",
-    "tool-metadata-drift", "activation-unavailable", "teleport-failed", "activation-failed",
+    "tool-metadata-drift", "gui-unavailable", "gui-metadata-drift", "gui-guide-failed",
+    "gui-activation-timeout", "activation-unavailable", "teleport-failed", "activation-failed",
     "expected-change-observed", "expected-change-not-observed",
 }
 ENTRY_FIELDS = {
@@ -63,11 +64,15 @@ def _contracts(discovery):
         raise ValueError("Action capability discovery claims unsupported verification")
     prompt = discovery.get("promptInteractions")
     tool = discovery.get("toolInteractions")
+    gui = discovery.get("guiInteractions")
     if not isinstance(prompt, dict) or not isinstance(prompt.get("targets"), list):
         raise ValueError("Invalid prompt interaction discovery")
     if tool is not None and (not isinstance(tool,dict) or not isinstance(tool.get("targets"),list)):
         raise ValueError("Invalid Tool interaction discovery")
-    targets=list(prompt["targets"])+(list(tool["targets"]) if isinstance(tool,dict) else [])
+    if gui is not None and (not isinstance(gui,dict) or not isinstance(gui.get("targets"),list)):
+        raise ValueError("Invalid GUI interaction discovery")
+    targets=(list(prompt["targets"])+(list(tool["targets"]) if isinstance(tool,dict) else [])
+        +(list(gui["targets"]) if isinstance(gui,dict) else []))
     contracts = {}
     for target in targets:
         if not isinstance(target, dict) or target.get("trialGenerationReady") is not True:

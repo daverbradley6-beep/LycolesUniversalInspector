@@ -220,10 +220,17 @@ def generation_readiness_lines(plan,readiness):
         if not isinstance(capability,dict):raise ValueError("Malformed generated capability")
         label=capability.get("targetLabel");kind=capability.get("kind")
         if (not isinstance(label,str) or not 1<=len(label)<=120
-                or kind not in ("proximity-prompt-trial","official-tool-activation-trial")
+                or kind not in ("proximity-prompt-trial","official-tool-activation-trial",
+                    "guided-gui-activation-trial")
                 or capability.get("runtimeVerified") is not False
                 or capability.get("gameplayVerified") is not False):
             raise ValueError("Malformed generated capability")
+        if (kind=="guided-gui-activation-trial"
+                and (capability.get("automaticActivation") is not False
+                    or capability.get("manualActivationRequired") is not True
+                    or capability.get("exactControlHighlighting") is not True)):
+            raise ValueError("Malformed guided GUI capability")
+
         lines.append("Generated trial: "+label+" ["+kind+"]")
     for item in unavailable:
         identifier=item.get("id") if isinstance(item,dict) else None
@@ -425,6 +432,7 @@ def main():
         prompt_interactions_lua=prompt_generator.render(action_discovery)
         prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
         tool_trial_generated=action_discovery["toolInteractions"]["generationReadyTargets"]>0
+        gui_trial_generated=action_discovery["guiInteractions"]["generationReadyTargets"]>0
         egg_trial_generated=action_discovery["eggHatching"]["automaticSingleTrialReady"] is True
 
         admin_generator=load_local_module("lycoles_admin_commands",
@@ -438,7 +446,8 @@ def main():
             {"placeGuard":True,"note":"Generator structural contract; not live runtime validation"},
             list(ALLOWED_FEATURES)+["Admin Commands"]+
                 (["Prompt Interactions"] if prompt_trial_generated else [])+
-                (["Tool Activation Trial"] if tool_trial_generated else []),
+                (["Tool Activation Trial"] if tool_trial_generated else [])+
+                (["Guided GUI Trial"] if gui_trial_generated else []),
             generation_readiness)
 
         generation_readiness_bytes=(json.dumps(
@@ -464,7 +473,8 @@ def main():
           "generatedLuaSHA256":hashlib.sha256(lua.encode()).hexdigest(),
           "implementedFeatures":list(ALLOWED_FEATURES)+["Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
-            (["Tool Activation Trial"] if tool_trial_generated else []),
+            (["Tool Activation Trial"] if tool_trial_generated else [])+
+            (["Guided GUI Trial"] if gui_trial_generated else []),
           "adminCommands":list(admin_generator.COMMANDS),
           "generatedResult":{"artifact":result_name,"schemaVersion":generated_result["schemaVersion"],
             "displayOnly":True,"executionAuthorized":False},
@@ -474,6 +484,8 @@ def main():
             "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
             "toolTargets":len(action_discovery["toolInteractions"]["targets"]),
             "generationReadyToolTargets":action_discovery["toolInteractions"]["generationReadyTargets"],
+            "guiTargets":len(action_discovery["guiInteractions"]["targets"]),
+            "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
           "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
             "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
@@ -482,6 +494,12 @@ def main():
             "generated":tool_trial_generated,"officialActivation":tool_trial_generated,
             "boundedEquip":tool_trial_generated,"automaticMovement":False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "guidedGuiTrial":{"artifact":"LycolesPromptInteractions.lua" if gui_trial_generated else None,
+            "generated":gui_trial_generated,"automaticActivation":False,
+            "manualActivationRequired":gui_trial_generated,
+            "exactControlHighlighting":gui_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+
           "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
             "generated":egg_trial_generated,"runtimeVerified":False,
             "gameplayVerified":False,"multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],

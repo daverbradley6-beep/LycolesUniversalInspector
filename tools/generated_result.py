@@ -45,13 +45,20 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
         raise ValueError("Invalid generation-readiness capabilities")
     for item in generated:
         if (not isinstance(item,dict) or not _bounded_text(item.get("id"),80)
-                or item.get("kind") not in ("proximity-prompt-trial","official-tool-activation-trial")
+                or item.get("kind") not in ("proximity-prompt-trial","official-tool-activation-trial",
+                    "guided-gui-activation-trial")
                 or not _bounded_text(item.get("targetLabel"),120)
                 or not _bounded_text(item.get("selectedOutcomeKey"),200)
                 or item.get("expectedChange") not in ("increased","decreased","changed")
                 or any(item.get(field) is not False for field in
                        ("runtimeVerified","gameplayVerified","causalityProven","actionOutcomeVerified"))):
             raise ValueError("Invalid generation-readiness capability")
+        if (item.get("kind")=="guided-gui-activation-trial"
+                and (item.get("automaticActivation") is not False
+                    or item.get("manualActivationRequired") is not True
+                    or item.get("exactControlHighlighting") is not True)):
+            raise ValueError("Invalid guided GUI generation-readiness capability")
+
     generated_ids=[item["id"] for item in generated]
     status=request["status"]
     if (len(set(generated_ids))!=len(generated_ids) or len(set(matched))!=len(matched)

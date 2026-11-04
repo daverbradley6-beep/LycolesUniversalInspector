@@ -63,6 +63,24 @@ def _selected_tool(actions):
     return target
 
 
+def _selected_gui(actions):
+    gui=actions.get("guiInteractions",{})
+    selected=gui.get("selectedTargetPath")
+    if gui.get("generationReadyTargets",0)<=0 or not isinstance(selected,str):return None
+    matches=[item for item in gui.get("targets",[])
+             if item.get("path")==selected and item.get("trialGenerationReady") is True]
+    if len(matches)!=1:raise ValueError("selected GUI target is inconsistent")
+    target=matches[0];outcome=target.get("selectedOutcome")
+    if (target.get("guidedActivationContractReady") is not True
+            or target.get("automaticActivationAvailable") is not False
+            or target.get("replayContractAvailable") is not False
+            or not isinstance(outcome,dict)
+            or outcome.get("selection",{}).get("selectedForTrial") is not True):
+        raise ValueError("selected GUI outcome is inconsistent")
+    return target
+
+
+
 def _is_egg_target(actions,target):
     if target is None:return False
     return any(item.get("path")==target["path"]
@@ -96,6 +114,22 @@ def _generated_tool_capability(target):
         "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
 
 
+def _generated_gui_capability(target):
+    outcome=target["selectedOutcome"]
+    return {"id":"guided-gui-interaction-trial","kind":"guided-gui-activation-trial",
+        "targetPath":target["path"],"targetLabel":target["label"],
+        "targetFeature":target.get("featureCandidate"),
+        "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
+        "commands":["interaction","interactionstart","interactionstop","interactions"],
+        "automaticActivation":False,"manualActivationRequired":True,
+        "exactControlHighlighting":True,"automaticMovement":False,
+        "boundedRepeat":True,"operatorStartRequired":True,"failureLimit":3,"attemptLimit":25,
+        "classification":"generated-evidence-bounded-guided-trial",
+        "fullGameplayMechanicImplemented":False,"runtimeVerified":False,
+        "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
+
+
+
 def _unavailable_requested(request_words,actions,is_egg):
     if not is_egg:return []
     egg=actions["eggHatching"];values=[]
@@ -117,6 +151,8 @@ def _discovery_only(actions):
     generic=actions["genericCapabilities"];values=[]
     generated_tool_paths={item.get("path") for item in actions.get("toolInteractions",{}).get("targets",[])
                           if item.get("trialGenerationReady") is True}
+    generated_gui_paths={item.get("path") for item in actions.get("guiInteractions",{}).get("targets",[])
+                         if item.get("trialGenerationReady") is True}
     combat=[item for item in generic.get("combatCandidates",[])
             if item.get("path") not in generated_tool_paths]
     if combat:
@@ -130,6 +166,9 @@ def _discovery_only(actions):
         if family=="tool-action":
             discovered=max(0,discovered-len(generated_tool_paths))
             observed=max(0,observed-len(generated_tool_paths))
+        elif family=="gui-control":
+            discovered=max(0,discovered-len(generated_gui_paths))
+            observed=max(0,observed-len(generated_gui_paths))
         if discovered>0:
             values.append({"family":family,"candidateCount":discovered,
                 "observedCount":min(discovered,observed),"replayContractAvailable":False,
@@ -138,13 +177,15 @@ def _discovery_only(actions):
 
 def assess(plan,gameplay,actions):
     integrity,request=_validate_sources(plan,gameplay,actions)
-    target=_selected_prompt(actions);tool_target=_selected_tool(actions)
+    target=_selected_prompt(actions);tool_target=_selected_tool(actions);gui_target=_selected_gui(actions)
     is_egg=_is_egg_target(actions,target)
     generated=[];generated_sources=[]
     if target:
         generated.append(_generated_capability(target,is_egg));generated_sources.append(target)
     if tool_target:
         generated.append(_generated_tool_capability(tool_target));generated_sources.append(tool_target)
+    if gui_target:
+        generated.append(_generated_gui_capability(gui_target));generated_sources.append(gui_target)
     request_words=_tokens(request)
     matched_generated=[capability["id"] for capability,source in zip(generated,generated_sources)
         if source.get("objective",{}).get("requestAligned") is True]
@@ -157,7 +198,7 @@ def assess(plan,gameplay,actions):
         status="no-capability-requested"
     elif matched_generated:
         status="generated-bounded-subset"
-    elif evidence_matched or target or tool_target:
+    elif evidence_matched or target or tool_target or gui_target:
         status="evidence-only-no-replay-contract"
     else:
         status="unsupported-by-current-evidence"
@@ -168,6 +209,10 @@ def assess(plan,gameplay,actions):
     if "tool-activation-trial" in matched_generated:
         supported_subset.extend(["select one exact observed Tool target",
             "equip it through the local Humanoid and call official Tool:Activate()"])
+    if "guided-gui-interaction-trial" in matched_generated:
+        supported_subset.extend(["resolve and highlight one exact observed GUI control",
+            "require the user to activate that game control through Roblox's normal input path"])
+
     if matched_generated:
         supported_subset.extend(["run an operator-started bounded repeat trial",
             "observe one selected client-visible scalar direction",
@@ -194,7 +239,8 @@ def assess(plan,gameplay,actions):
             "Prompt and Tool outcomes remain temporal correlations without causal proof",
             "Executor-provided prompt activation is checked only at runtime",
             "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
-            "GUI and remaining generic candidates stay unavailable without exact replay contracts"]}
+            "Guided GUI trials highlight exact controls but require normal user activation because GuiButton has no public automatic Activate method",
+            "Remaining generic candidates stay unavailable without exact action contracts"]}
     return result
 
 def main():

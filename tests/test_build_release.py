@@ -134,6 +134,51 @@ class ReleaseBuilderTests(unittest.TestCase):
                 "official-tool-activation-trial")
             self.assertFalse(readiness["claims"]["runtimeVerified"])
 
+    def test_exact_gui_contract_generates_distinct_manual_guided_trial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            event={"featureCandidate":"shops","path":"PlayerGui.HUD.Shop.List.Buy",
+                "controlType":"GuiButton.Activated","evidenceLevel":"temporal-state-change-observed",
+                "outcomeVerified":False,"pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Shop","className":"Frame","ordinal":1},
+                    {"name":"List","className":"ScrollingFrame","ordinal":1},
+                    {"name":"Buy","className":"TextButton","ordinal":1}],
+                "controlMetadata":{"controlClass":"TextButton","text":"Buy Upgrade",
+                    "visible":True,"active":True,"selectable":True,"autoButtonColor":True,
+                    "interactable":True,"ancestorVisible":True,"screenEnabled":True,
+                    "withinScrollingBounds":True,"effectiveVisible":True},
+                "stateChanges":[{"key":"Data.Upgrades","before":2,"after":3,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"Upgrades","className":"IntValue","ordinal":1}]}],
+                "workflow":{"phase":"initiated","action":"buy",
+                    "confidence":"bounded-name-context-heuristic","verified":False}}
+            make_parts(parts,event=event,request="Buy the shop upgrade")
+            first=json.loads((parts/"1.json").read_text());first["featureEvidence"]={"shops":{}}
+            first["objects"][0]={"path":event["path"],"class":"TextButton","scanOrdinal":1,
+                "guiControl":event["controlMetadata"]}
+            (parts/"1.json").write_text(json.dumps(first))
+            manifest=builder.build(parts,base/"out")
+            self.assertTrue(manifest["guidedGuiTrial"]["generated"])
+            self.assertFalse(manifest["guidedGuiTrial"]["automaticActivation"])
+            self.assertTrue(manifest["guidedGuiTrial"]["manualActivationRequired"])
+            self.assertTrue(manifest["guidedGuiTrial"]["exactControlHighlighting"])
+            self.assertFalse(manifest["promptInteractionTrial"]["generated"])
+            self.assertFalse(manifest["toolActivationTrial"]["generated"])
+            self.assertEqual(manifest["actionCapabilities"]["generationReadyGuiTargets"],1)
+            self.assertIn("Guided GUI Trial",manifest["implementedClientControls"])
+            source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn('kind="gui"',source)
+            self.assertIn('button.Activated:Connect',source)
+            self.assertNotIn("firesignal(",source)
+            readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
+            self.assertEqual(readiness["generatedCapabilities"][0]["kind"],
+                "guided-gui-activation-trial")
+            self.assertFalse(readiness["claims"]["runtimeVerified"])
+
+
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:

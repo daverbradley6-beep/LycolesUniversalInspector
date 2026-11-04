@@ -20,6 +20,27 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                     FIXTURE["interactionDiagnostics"]["recentInteractions"])),
                 "actionableObjects":[],"actionableObjectsTruncated":True}
 
+    def gui_plan(self):
+        metadata={"controlClass":"TextButton","text":"Buy Upgrade","visible":True,
+            "active":True,"selectable":True,"autoButtonColor":True,"interactable":True,
+            "ancestorVisible":True,"screenEnabled":True,"withinScrollingBounds":True,
+            "effectiveVisible":True}
+        return {"integrity":{"scanComplete":True,"placeId":123,"scanId":"gui-scan"},
+            "requestedCapability":"buy upgrade","actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"PlayerGui.HUD.Shop.List.Buy","controlType":"GuiButton.Activated",
+                "featureCandidate":"shops","controlMetadata":metadata,"pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Shop","className":"Frame","ordinal":1},
+                    {"name":"List","className":"ScrollingFrame","ordinal":1},
+                    {"name":"Buy","className":"TextButton","ordinal":1}],
+                "stateChanges":[{"key":"Data.Upgrades","before":2,"after":3,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"Upgrades","className":"IntValue","ordinal":1}]}]}]}
+
+
     def test_real_rainbow_egg_prompt_becomes_correlated_trial_target(self):
         result=discovery.analyze(self.real_plan())
         egg=result["eggHatching"]
@@ -300,3 +321,53 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
             "controlMetadata":{"enabled":"yes"}})
         with self.assertRaisesRegex(ValueError,"Malformed Tool prerequisite metadata"):
             discovery.analyze(plan)
+
+
+    def test_observed_gui_control_produces_guided_not_automatic_contract(self):
+        result=discovery.analyze(self.gui_plan());gui=result["guiInteractions"]
+        self.assertEqual(gui["guidedTrialReadyTargets"],1)
+        self.assertFalse(gui["automaticActivationSupported"])
+        target=gui["targets"][0]
+        self.assertTrue(target["guidedActivationContractReady"])
+        self.assertTrue(target["trialGenerationReady"])
+        self.assertFalse(target["automaticActivationAvailable"])
+        self.assertFalse(target["replayContractAvailable"])
+        self.assertEqual(target["selectedOutcome"]["key"],"Data.Upgrades")
+        self.assertTrue(any("no public automatic Activate method" in item
+            for item in target["blockers"]))
+        self.assertTrue(gui["generatorIntegrated"])
+        self.assertEqual(gui["generationReadyTargets"],1)
+        source=generator.render(result)
+        for token in ('kind="gui"','guiMetadata={','local function currentGuiMetadata(button)',
+                      'Instance.new("UIStroke")','button.Activated:Connect',
+                      'gui-activation-timeout','automatic GUI activation unsupported'):
+            self.assertIn(token,source)
+        for forbidden in ('firesignal(','VirtualInputManager','VirtualUser'):
+            self.assertNotIn(forbidden,source)
+
+
+    def test_unavailable_or_drifted_gui_control_stays_discovery_only(self):
+        unavailable=self.gui_plan()
+        unavailable["observedInteractionHistory"][0]["controlMetadata"]["withinScrollingBounds"]=False
+        target=discovery.analyze(unavailable)["guiInteractions"]["targets"][0]
+        self.assertFalse(target["guidedActivationContractReady"])
+        self.assertIn("GUI control was not observed visible, enabled, and within scrolling bounds",
+            target["blockers"])
+        drift=self.gui_plan();second=json.loads(json.dumps(drift["observedInteractionHistory"][0]))
+        second["controlMetadata"]["text"]="Buy Better Upgrade"
+        drift["observedInteractionHistory"].append(second)
+        target=discovery.analyze(drift)["guiInteractions"]["targets"][0]
+        self.assertFalse(target["guidedActivationContractReady"])
+        self.assertTrue(target["prerequisiteEvidence"]["metadataDriftObserved"])
+        self.assertIn("GUI activation prerequisite metadata drift was observed",target["blockers"])
+
+    def test_malformed_gui_prerequisite_metadata_fails_closed(self):
+        plan=self.gui_plan();plan["observedInteractionHistory"][0]["controlMetadata"]["unknown"]=True
+        with self.assertRaisesRegex(ValueError,"Malformed GUI prerequisite metadata"):
+            discovery.analyze(plan)
+
+    def test_generator_rejects_forged_gui_prerequisite_evidence(self):
+        result=discovery.analyze(self.gui_plan())
+        result["guiInteractions"]["targets"][0]["guiMetadata"]["text"]="Forged"
+        with self.assertRaisesRegex(ValueError,"Malformed GUI prerequisite evidence"):
+            generator.render(result)

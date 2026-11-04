@@ -148,6 +148,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     prompt_interactions_lua=prompt_generator.render(action_discovery)
     prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
     tool_trial_generated=action_discovery["toolInteractions"]["generationReadyTargets"]>0
+    gui_trial_generated=action_discovery["guiInteractions"]["generationReadyTargets"]>0
     egg_trial_generated=action_discovery["eggHatching"]["automaticSingleTrialReady"] is True
 
     admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
@@ -185,6 +186,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
             "toolTargets":len(action_discovery["toolInteractions"]["targets"]),
             "generationReadyToolTargets":action_discovery["toolInteractions"]["generationReadyTargets"],
+            "guiTargets":len(action_discovery["guiInteractions"]["targets"]),
+            "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
             "eggTargets":len(action_discovery["eggHatching"]["targets"]),
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
         "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
@@ -201,6 +204,12 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "generated":tool_trial_generated,"officialActivation":tool_trial_generated,
             "boundedEquip":tool_trial_generated,"automaticMovement":False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "guidedGuiTrial":{"artifact":"LycolesPromptInteractions.lua" if gui_trial_generated else None,
+            "generated":gui_trial_generated,"automaticActivation":False,
+            "manualActivationRequired":gui_trial_generated,
+            "exactControlHighlighting":gui_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+
         "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
             "generated":egg_trial_generated,"runtimeVerified":False,"gameplayVerified":False,
             "multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],
@@ -237,7 +246,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
         "implementedClientControls":["Stats","Menus","Prompts","Features","Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
-            (["Tool Activation Trial"] if tool_trial_generated else []),
+            (["Tool Activation Trial"] if tool_trial_generated else [])+
+            (["Guided GUI Trial"] if gui_trial_generated else []),
         "implementedGameplayAutomation":[],
         "adminCommandFramework":{"artifact":"LycolesAdminCommands.lua",
             "commands":list(admin_generator.COMMANDS),"prefix":";",
@@ -285,7 +295,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
-          "This release contains client-side diagnostics and, when evidence permits, bounded prompt or official Tool activation trials.\n"
+          "This release contains client-side diagnostics and, when evidence permits, bounded prompt, official Tool, or user-mediated guided GUI trials.\n"
           "Baseline source input: "+source_provenance["inputMode"]+".\n"
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
@@ -296,7 +306,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"
           "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
           "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
-          "Generated prompt and Tool trials have not been live runtime-tested; do not claim gameplay functionality or causality.\n"
+          "Generated prompt, Tool, and user-mediated guided GUI trials have not been live runtime-tested; do not claim gameplay functionality or causality.\n"
       ).encode()
     }
     if prompt_interactions_lua is not None:

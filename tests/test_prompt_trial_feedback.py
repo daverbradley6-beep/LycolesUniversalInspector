@@ -116,6 +116,31 @@ class PromptTrialFeedbackTests(unittest.TestCase):
         self.assertFalse(result["runtimeVerified"])
         self.assertFalse(result["gameplayVerified"])
 
+    def test_guided_gui_feedback_status_remains_unverified(self):
+        discovery=self.discovery();target=copy.deepcopy(next(
+            item for item in discovery["promptInteractions"]["targets"]
+            if item["trialGenerationReady"]))
+        target.update({"path":"PlayerGui.HUD.Shop.Buy","label":"Buy Upgrade",
+            "controlType":"GuiButton.Activated","guidedActivationContractReady":True,
+            "automaticActivationAvailable":False,"replayContractAvailable":False})
+        discovery["promptInteractions"]["targets"]=[]
+        discovery["guiInteractions"]={"targets":[target]}
+        outcome=target["selectedOutcome"]
+        feedback={"schemaVersion":EVALUATOR.SCHEMA,"placeId":discovery["placeId"],
+            "scanId":discovery["scanId"],"discoverySHA256":EVALUATOR._digest(discovery),
+            "sessionId":"controlled-gui-session","entries":[{"sequence":1,
+                "targetPath":target["path"],"outcomeKey":outcome["key"],
+                "expected":outcome["change"],"before":10,"after":None,
+                "observedExpectedChange":False,"status":"gui-activation-timeout",
+                "message":"Highlighted GUI control was not activated within 5 seconds",
+                "observedAtUnix":1793635200}],
+            "claims":{key:False for key in EVALUATOR.FALSE_CLAIMS}}
+        result=EVALUATOR.evaluate(discovery,feedback)
+        self.assertFalse(result["targets"][0]["runtimeCorrelationObserved"])
+        self.assertFalse(result["runtimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

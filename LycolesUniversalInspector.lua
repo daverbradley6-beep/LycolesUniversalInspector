@@ -157,6 +157,39 @@ local function interactionGuiContext(obj)
     end
     return context
 end
+
+local function guiControlSnapshot(obj)
+    local text,interactable="",nil
+    pcall(function() text=obj.Text end)
+    pcall(function() interactable=obj.Interactable end)
+    local ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true
+    local current=obj.Parent
+    while current do
+        if current:IsA("GuiObject") then
+            if not current.Visible then ancestorVisible=false end
+            if current:IsA("ScrollingFrame") then
+                local targetPosition,targetSize=obj.AbsolutePosition,obj.AbsoluteSize
+                local framePosition,frameSize=current.AbsolutePosition,current.AbsoluteSize
+                local intersects=targetPosition.X+targetSize.X>framePosition.X
+                    and targetPosition.Y+targetSize.Y>framePosition.Y
+                    and targetPosition.X<framePosition.X+frameSize.X
+                    and targetPosition.Y<framePosition.Y+frameSize.Y
+                if not intersects then withinScrollingBounds=false end
+            end
+        elseif current:IsA("ScreenGui") and not current.Enabled then
+            screenEnabled=false
+        end
+        if current:IsA("PlayerGui") then break end
+        current=current.Parent
+    end
+    local visible=obj.Visible and ancestorVisible and screenEnabled
+    return {controlClass=obj.ClassName,text=tostring(text or ""):sub(1,100):gsub("[%c]"," "),
+        visible=obj.Visible,active=obj.Active,selectable=obj.Selectable,
+        autoButtonColor=obj.AutoButtonColor,interactable=interactable,
+        ancestorVisible=ancestorVisible,screenEnabled=screenEnabled,
+        withinScrollingBounds=withinScrollingBounds,effectiveVisible=visible}
+end
+
 -- Capture nearby GUI state without collecting text, input contents or private data.
 local function safeNearbyGuiState(obj)
     local result, count = {}, 0
@@ -1480,15 +1513,7 @@ local function enrichEntry(entry, obj)
         }
     end
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end)
-        local interactable = nil
-        pcall(function() interactable = obj.Interactable end)
-        entry.guiControl = {
-            text = tostring(buttonText):sub(1,100):gsub("[%c]", " "),
-            autoButtonColor = obj.AutoButtonColor,
-            enabled = interactable
-        }
+        entry.guiControl = guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.guiControl = {placeholder = tostring(obj.PlaceholderText):sub(1,100)}
     end
@@ -1652,17 +1677,7 @@ local function enrichEntry(entry, obj)
 
     -- Capture UI control structure only. Never collect text entered into TextBoxes.
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end) -- ImageButton has no Text property.
-        entry.controlMetadata = {
-            controlType = obj.ClassName,
-            text = tostring(buttonText or ""):sub(1,100):gsub("[%c]"," "),
-            visible = obj.Visible,
-            active = obj.Active,
-            selectable = obj.Selectable
-        }
-        local okInteractable, interactable = pcall(function() return obj.Interactable end)
-        if okInteractable then entry.controlMetadata.interactable = interactable end
+        entry.controlMetadata = guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.controlMetadata = {
             controlType = "TextBox",
@@ -2055,11 +2070,7 @@ local function interactionDescriptor(obj,root,label)
             anchorPosition=anchor and anchor:IsA("BasePart") and watchVec(anchor.Position) or nil}
     end
     if obj:IsA("GuiButton") then
-        local text="" local interactable=nil
-        pcall(function() text=obj.Text end)
-        pcall(function() interactable=obj.Interactable end)
-        return {text=tostring(text):sub(1,100):gsub("[%c]"," "),
-            active=obj.Active,visible=obj.Visible,interactable=interactable}
+        return guiControlSnapshot(obj)
     end
     if obj:IsA("ClickDetector") then
         return {maxActivationDistance=obj.MaxActivationDistance}

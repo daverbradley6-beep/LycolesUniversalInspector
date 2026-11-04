@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Discover evidence-bounded executable client action candidates from a compiled scan."""
+import copy
 import json
 import math
 import re
@@ -180,6 +181,35 @@ def _tool_metadata(value):
         "enabled","manualActivationOnly")}
 
 
+def _gui_metadata(value):
+    if value is None:return None
+    if not isinstance(value,dict):raise ValueError("Malformed GUI prerequisite metadata")
+    allowed={"controlClass","text","visible","active","selectable","autoButtonColor",
+        "interactable","ancestorVisible","screenEnabled","withinScrollingBounds",
+        "effectiveVisible"}
+    if any(key not in allowed for key in value):
+        raise ValueError("Malformed GUI prerequisite metadata")
+    result={}
+    control_class=value.get("controlClass")
+    if control_class is not None:
+        if control_class not in ("TextButton","ImageButton"):
+            raise ValueError("Malformed GUI prerequisite metadata")
+        result["controlClass"]=control_class
+    text=value.get("text")
+    if text is not None:
+        if (not isinstance(text,str) or len(text)>100
+                or any(ord(character)<32 or ord(character)==127 for character in text)):
+            raise ValueError("Malformed GUI prerequisite metadata")
+        result["text"]=text
+    for key in allowed-{"controlClass","text"}:
+        item=value.get(key)
+        if item is not None:
+            if type(item) is not bool:raise ValueError("Malformed GUI prerequisite metadata")
+            result[key]=item
+    return result
+
+
+
 def _label(path,metadata):
     interaction=metadata.get("interaction") if isinstance(metadata,dict) else None
     if isinstance(interaction,dict):
@@ -212,7 +242,7 @@ def analyze(plan):
     request=plan.get("requestedCapability")
     if request is not None and (not isinstance(request,str) or len(request)>500):
         raise ValueError("Malformed requested capability")
-    observed_actions=[];egg_targets={};prompt_targets={};tool_targets={}
+    observed_actions=[];egg_targets={};prompt_targets={};tool_targets={};gui_targets={}
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
         path=event.get("path");control=event.get("controlType")
@@ -270,7 +300,7 @@ def analyze(plan):
                     if len(snapshots)>=8:raise ValueError("Excessive prompt prerequisite metadata drift")
                     snapshots.append(event_metadata)
                 target["prerequisiteEvidence"]["metadataDriftObserved"]=len(snapshots)>1
-                target["promptMetadata"]=snapshots[0]
+                target["promptMetadata"]=copy.deepcopy(snapshots[0])
             target["observedTriggers"]+=1
             target["evidenceTier"]=tier
             seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}
@@ -311,7 +341,7 @@ def analyze(plan):
                     if len(snapshots)>=8:raise ValueError("Excessive Tool prerequisite metadata drift")
                     snapshots.append(event_metadata)
                 target["prerequisiteEvidence"]["metadataDriftObserved"]=len(snapshots)>1
-                target["toolMetadata"]=snapshots[0]
+                target["toolMetadata"]=copy.deepcopy(snapshots[0])
             target["observedActivations"]+=1
             target["evidenceTier"]=tier
             seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}
@@ -323,6 +353,47 @@ def analyze(plan):
             for signal in gui_signals:
                 marker=(signal["path"],signal["change"])
                 if marker not in seen_gui:target["guiOutcomeSignals"].append(signal);seen_gui.add(marker)
+        if control=="GuiButton.Activated":
+            event_metadata=_gui_metadata(event.get("controlMetadata"))
+            label=(event_metadata or {}).get("text") or (identity[-1]["name"] if identity else path.rsplit(".",1)[-1])
+            target=gui_targets.setdefault(path,{"path":path,"label":label,
+                "controlType":control,"pathIdentity":identity,"identityAmbiguous":False,
+                "identityMode":"component" if identity else "unresolved",
+                "featureCandidate":event.get("featureCandidate"),
+                "actionCandidate":(event.get("workflow") or {}).get("action")
+                    if isinstance(event.get("workflow"),dict) else None,
+                "observedActivations":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "evidenceTier":"interaction-observed","guidedActivationContractReady":False,
+                "trialGenerationReady":False,"automaticActivationAvailable":False,
+                "prerequisites":{"officialActivatedObservation":True,
+                    "manualUserActivation":True,"uniqueControlIdentityAtRuntime":True,
+                    "controlAvailableAtRuntime":True},
+                "prerequisiteEvidence":{"metadataSnapshots":[],"metadataDriftObserved":False},
+                "temporalCorrelationOnly":True,"causalityProven":False,
+                "runtimeVerified":False,"gameplayVerified":False})
+            if identity:
+                if target.get("pathIdentity") not in (None,identity):target["identityAmbiguous"]=True
+                elif target.get("pathIdentity") is None:
+                    target["pathIdentity"]=identity;target["identityMode"]="component"
+            if event_metadata:
+                snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
+                if event_metadata not in snapshots:
+                    if len(snapshots)>=8:raise ValueError("Excessive GUI prerequisite metadata drift")
+                    snapshots.append(event_metadata)
+                target["prerequisiteEvidence"]["metadataDriftObserved"]=len(snapshots)>1
+                target["guiMetadata"]=copy.deepcopy(snapshots[0])
+            target["observedActivations"]+=1
+            target["evidenceTier"]=tier
+            seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}
+            for signal in state_signals:
+                marker=(signal["key"],signal["change"])
+                if signal["generationResolvable"] and marker not in seen_outcomes:
+                    target["outcomeSignals"].append(signal);seen_outcomes.add(marker)
+            seen_gui={(item["path"],item["change"]) for item in target["guiOutcomeSignals"]}
+            for signal in gui_signals:
+                marker=(signal["path"],signal["change"])
+                if marker not in seen_gui:target["guiOutcomeSignals"].append(signal);seen_gui.add(marker)
+
 
 
         lower=path.lower()
@@ -415,6 +486,64 @@ def analyze(plan):
         "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False,
         "blockers":[] if contract_ready else
             ["no observed Tool has identity, prerequisites, and a resolvable scalar outcome"]}
+
+    gui_list=[]
+    required_gui_metadata={"controlClass","text","visible","active","selectable",
+        "autoButtonColor","ancestorVisible","screenEnabled","withinScrollingBounds",
+        "effectiveVisible"}
+    for target in gui_targets.values():
+        context=" ".join(str(value or "") for value in (target["path"],
+            target.get("featureCandidate"),target.get("actionCandidate"),target["label"]))
+        target["outcomeSignals"]=_rank_outcomes(target["outcomeSignals"],request,context)
+        target["selectedOutcome"]=target["outcomeSignals"][0] if target["outcomeSignals"] else None
+        target["guiOutcomeSignals"].sort(key=lambda item:(item["path"],item["change"]))
+        target["objective"]=_prompt_objective(target["path"],target.get("featureCandidate"),
+            target.get("actionCandidate"),target["label"],request,target["outcomeSignals"])
+        identity=target.get("pathIdentity")
+        identity_ready=(isinstance(identity,list) and identity[0]["name"]=="PlayerGui"
+            and identity[0]["className"]=="PlayerGui"
+            and identity[-1]["className"] in ("TextButton","ImageButton")
+            and target["identityAmbiguous"] is False)
+        metadata_snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
+        metadata_complete=(len(metadata_snapshots)==1
+            and required_gui_metadata.issubset(metadata_snapshots[0]))
+        metadata_available=(metadata_complete
+            and all(metadata_snapshots[0][key] is True for key in
+                ("visible","active","ancestorVisible","screenEnabled",
+                    "withinScrollingBounds","effectiveVisible"))
+            and metadata_snapshots[0].get("interactable") is not False)
+        outcome_ready=bool(target["outcomeSignals"])
+        target["guidedActivationContractReady"]=identity_ready and metadata_available and outcome_ready
+        target["trialGenerationReady"]=target["guidedActivationContractReady"]
+        target["replayContractAvailable"]=False
+        blockers=[]
+        if not identity_ready:blockers.append("no exact unambiguous PlayerGui component identity was observed")
+        if not metadata_snapshots:
+            blockers.append("no GUI activation prerequisite snapshot was observed")
+        elif len(metadata_snapshots)>1:
+            blockers.append("GUI activation prerequisite metadata drift was observed")
+        elif not metadata_complete:
+            blockers.append("GUI activation prerequisite snapshot lacks hierarchy or availability fields")
+        elif not metadata_available:
+            blockers.append("GUI control was not observed visible, enabled, and within scrolling bounds")
+        if not outcome_ready:blockers.append("no resolvable scalar outcome change was observed")
+        blockers.extend(["GuiButton exposes an Activated event but no public automatic Activate method",
+            "generated trial requires the user to activate the highlighted game control",
+            "temporal correlation does not prove causality",
+            "live Roblox GUI activation and outcome remain unverified"])
+        target["blockers"]=blockers
+        gui_list.append(target)
+    gui_list.sort(key=lambda item:(-item["objective"]["requestAligned"],
+        -item["objective"]["score"],item["label"].lower(),item["path"]))
+    guided_ready=[item for item in gui_list if item["guidedActivationContractReady"]]
+    gui_interactions={"targets":gui_list,"guidedTrialReadyTargets":len(guided_ready),
+        "selectedTargetPath":guided_ready[0]["path"] if guided_ready else None,
+        "executionMechanism":"guided exact-control highlighting plus official Activated observation; user activation required",
+        "automaticActivationSupported":False,"generatorIntegrated":True,
+        "generationReadyTargets":len(guided_ready),"causalityProven":False,"runtimeVerified":False,
+        "gameplayVerified":False,"blockers":[] if guided_ready else
+            ["no observed GUI control has stable identity, availability prerequisites, and a resolvable scalar outcome"]}
+
 
 
     for path,item in by_path.items():
@@ -528,7 +657,7 @@ def analyze(plan):
         "actionableObjectsTruncated":plan.get("actionableObjectsTruncated") is True,
         "observedActions":observed_actions,"genericCapabilities":generic,
         "promptInteractions":prompt_interactions,"toolInteractions":tool_interactions,
-        "eggHatching":egg,
+        "guiInteractions":gui_interactions,"eggHatching":egg,
         "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
             "serverAuthorityVerified":False,"runtimeVerified":False,
             "gameplayVerified":False,"actionOutcomesVerified":False}}

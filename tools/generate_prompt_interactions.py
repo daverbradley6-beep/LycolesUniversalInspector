@@ -20,7 +20,7 @@ def _identity_lua(value,expected_class="ProximityPrompt"):
                 or not 1<=len(class_name)<=100 or type(ordinal) is not int or not 1<=ordinal<=10000):
             raise ValueError("Malformed correlated prompt target")
         segments.append("{name="+_quote(name)+",className="+_quote(class_name)+",ordinal="+str(ordinal)+"}")
-    if value[0]["name"] not in ("Workspace","LocalPlayer","ReplicatedStorage","Players"):
+    if value[0]["name"] not in ("Workspace","LocalPlayer","ReplicatedStorage","Players","PlayerGui"):
         raise ValueError("Malformed correlated prompt target")
     if value[-1]["className"]!=expected_class:raise ValueError("Malformed correlated interaction target")
     return "{"+",".join(segments)+"}"
@@ -85,12 +85,41 @@ def _tool_metadata_lua(value):
         ",manualActivationOnly="+boolean(value["manualActivationOnly"])+"}"
 
 
+def _gui_snapshot(value):
+    required={"controlClass","text","visible","active","selectable","autoButtonColor",
+        "ancestorVisible","screenEnabled","withinScrollingBounds","effectiveVisible"}
+    allowed=required|{"interactable"}
+    if not isinstance(value,dict) or set(value)-allowed or not required.issubset(value):
+        raise ValueError("Malformed GUI prerequisite evidence")
+    if value["controlClass"] not in ("TextButton","ImageButton"):
+        raise ValueError("Malformed GUI prerequisite evidence")
+    text=value["text"]
+    if (not isinstance(text,str) or len(text)>100
+            or any(ord(character)<32 or ord(character)==127 for character in text)):
+        raise ValueError("Malformed GUI prerequisite evidence")
+    for key in allowed-{"controlClass","text"}:
+        if key in value and type(value[key]) is not bool:
+            raise ValueError("Malformed GUI prerequisite evidence")
+    return value
+
+
+def _gui_metadata_lua(value):
+    value=_gui_snapshot(value)
+    fields=["controlClass="+_quote(value["controlClass"]),"text="+_quote(value["text"])]
+    for key in ("visible","active","selectable","autoButtonColor","interactable",
+            "ancestorVisible","screenEnabled","withinScrollingBounds","effectiveVisible"):
+        if key in value:fields.append(key+"="+("true" if value[key] else "false"))
+    return "{"+",".join(fields)+"}"
+
+
+
 
 def render(discovery):
     if not isinstance(discovery,dict) or discovery.get("schemaVersion")!="111.action-capabilities.1":
         raise ValueError("Action capability discovery required")
     place=discovery.get("placeId");egg=discovery.get("eggHatching");claims=discovery.get("claims")
     prompt_contract=discovery.get("promptInteractions")
+    gui_contract=discovery.get("guiInteractions")
     if type(place) is not int or not isinstance(egg,dict) or not isinstance(claims,dict):
         raise ValueError("Malformed action capability discovery")
     if any(claims.get(key) is not False for key in ("sourceAuthenticityVerified","causalityProven",
@@ -145,7 +174,7 @@ def render(discovery):
             targets.append((label,path,signal["key"],signal["change"],multi,is_egg,
                 str(item.get("featureCandidate") or "other")[:80],score,
                 _identity_lua(item.get("pathIdentity")),_state_identity_lua(signal.get("stateIdentity")),
-                "prompt","nil"))
+                "prompt","nil","nil"))
     elif egg.get("automaticSingleTrialReady") is True:
         for item in egg.get("targets",[]):
             if not isinstance(item,dict) or item.get("incrementObservations",0)<1:continue
@@ -156,7 +185,7 @@ def render(discovery):
             multi=any(token in (label+" "+metadata).lower() for token in ("multi","triple","x3","3 egg","three"))
             targets.append((label,path,keys[0],"increased",multi,True,"pets",0,
                 _identity_lua(item.get("pathIdentity")),_state_identity_lua(identities.get(keys[0])),
-                "prompt","nil"))
+                "prompt","nil","nil"))
     tool_contract=discovery.get("toolInteractions")
     if isinstance(tool_contract,dict):
         if (tool_contract.get("generatorIntegrated") is not True
@@ -200,7 +229,55 @@ def render(discovery):
                 str(item.get("featureCandidate") or "other")[:80],score,
                 _identity_lua(item.get("pathIdentity"),"Tool"),
                 _state_identity_lua(signal.get("stateIdentity")),"tool",
-                _tool_metadata_lua(snapshots[0])))
+                _tool_metadata_lua(snapshots[0]),"nil"))
+    if isinstance(gui_contract,dict):
+        if (gui_contract.get("generatorIntegrated") is not True
+                or gui_contract.get("automaticActivationSupported") is not False
+                or any(gui_contract.get(key) is not False for key in
+                    ("causalityProven","runtimeVerified","gameplayVerified"))):
+            raise ValueError("Malformed GUI interaction contract")
+        for item in gui_contract.get("targets",[]):
+            if not isinstance(item,dict) or item.get("trialGenerationReady") is not True:continue
+            path=item.get("path");label=item.get("label");signals=item.get("outcomeSignals")
+            signal=item.get("selectedOutcome")
+            if (not isinstance(path,str) or not isinstance(label,str) or not isinstance(signals,list)
+                    or not signals or not isinstance(signal,dict) or signal not in signals
+                    or item.get("guidedActivationContractReady") is not True
+                    or item.get("automaticActivationAvailable") is not False
+                    or item.get("replayContractAvailable") is not False
+                    or item.get("controlType")!="GuiButton.Activated"
+                    or type(item.get("observedActivations")) is not int
+                    or item["observedActivations"]<1 or item.get("temporalCorrelationOnly") is not True
+                    or any(item.get(key) is not False for key in
+                        ("causalityProven","runtimeVerified","gameplayVerified"))):
+                raise ValueError("Malformed correlated GUI target")
+            selection=signal.get("selection")
+            if (not isinstance(signal.get("key"),str)
+                    or signal.get("change") not in ("increased","decreased","changed")
+                    or signal.get("generationResolvable") is not True
+                    or not isinstance(selection,dict) or selection.get("selectedForTrial") is not True):
+                raise ValueError("Malformed correlated GUI outcome")
+            evidence=item.get("prerequisiteEvidence")
+            if not isinstance(evidence,dict):raise ValueError("Malformed GUI prerequisite evidence")
+            snapshots=evidence.get("metadataSnapshots");drift=evidence.get("metadataDriftObserved")
+            if (not isinstance(snapshots,list) or len(snapshots)!=1 or drift is not False
+                    or item.get("guiMetadata")!=snapshots[0]):
+                raise ValueError("Malformed GUI prerequisite evidence")
+            snapshot=_gui_snapshot(snapshots[0])
+            if (not all(snapshot[key] is True for key in
+                    ("visible","active","ancestorVisible","screenEnabled",
+                        "withinScrollingBounds","effectiveVisible"))
+                    or snapshot.get("interactable") is False):
+                raise ValueError("Malformed GUI prerequisite evidence")
+            objective=item.get("objective") if isinstance(item.get("objective"),dict) else {}
+            score=objective.get("score",0)
+            if type(score) is not int:raise ValueError("Malformed GUI objective")
+            targets.append((label,path,signal["key"],signal["change"],False,False,
+                str(item.get("featureCandidate") or "other")[:80],score,
+                _identity_lua(item.get("pathIdentity"),snapshot["controlClass"]),
+                _state_identity_lua(signal.get("stateIdentity")),"gui","nil",
+                _gui_metadata_lua(snapshot)))
+
 
     if not targets:return None
     targets.sort(key=lambda item:(-item[7],item[0].lower(),item[1]))
@@ -208,8 +285,9 @@ def render(discovery):
         ",outcome="+_quote(outcome)+",expected="+_quote(expected)+
         ",multi="+("true" if multi else "false")+",egg="+("true" if is_egg else "false")+
         ",feature="+_quote(feature)+",objectiveScore="+str(score)+",kind="+_quote(kind)+
-        ",identity="+identity+",outcomeIdentity="+outcome_identity+",toolMetadata="+tool_metadata+"},"
-        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity,kind,tool_metadata in targets)
+        ",identity="+identity+",outcomeIdentity="+outcome_identity+",toolMetadata="+tool_metadata+
+        ",guiMetadata="+gui_metadata+"},"
+        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity,kind,tool_metadata,gui_metadata in targets)
     scan_id=discovery.get("scanId")
     if scan_id is None:
         scan_id="UNAVAILABLE"
@@ -236,6 +314,7 @@ local mode="auto"
 local failures=0
 local attempts=0
 local connections={}
+local activeGuide=nil
 local sharedState={running=false,selectedIndex=1,selectedLabel="",mode="auto",failures=0,attempts=0}
 _G.LycolesPromptState=sharedState
 local feedbackSequence=0
@@ -293,7 +372,7 @@ local function split(path)
     local result={} for value in string.gmatch(path,"[^%.]+") do table.insert(result,value) end return result
 end
 local function resolve(target)
-    local roots={Workspace=workspace,LocalPlayer=player,
+    local roots={Workspace=workspace,LocalPlayer=player,PlayerGui=player:FindFirstChildOfClass("PlayerGui"),
         ReplicatedStorage=game:GetService("ReplicatedStorage"),Players=Players}
     if target.identity then
         local current=roots[target.identity[1].name]
@@ -360,6 +439,47 @@ local function readOutcome(target)
     local ok,value=pcall(function() return current.Value end)
     return ok and value or nil
 end
+local function clearGuide()
+    if activeGuide then pcall(function() activeGuide:Destroy() end) activeGuide=nil end
+end
+local function currentGuiMetadata(button)
+    local text="" local interactable=nil
+    pcall(function() text=button.Text end)
+    pcall(function() interactable=button.Interactable end)
+    local ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true
+    local current=button.Parent
+    while current do
+        if current:IsA("GuiObject") then
+            if not current.Visible then ancestorVisible=false end
+            if current:IsA("ScrollingFrame") then
+                local targetPosition,targetSize=button.AbsolutePosition,button.AbsoluteSize
+                local framePosition,frameSize=current.AbsolutePosition,current.AbsoluteSize
+                local intersects=targetPosition.X+targetSize.X>framePosition.X
+                    and targetPosition.Y+targetSize.Y>framePosition.Y
+                    and targetPosition.X<framePosition.X+frameSize.X
+                    and targetPosition.Y<framePosition.Y+frameSize.Y
+                if not intersects then withinScrollingBounds=false end
+            end
+        elseif current:IsA("ScreenGui") and not current.Enabled then screenEnabled=false end
+        if current:IsA("PlayerGui") then break end
+        current=current.Parent
+    end
+    return {controlClass=button.ClassName,text=tostring(text):sub(1,100):gsub("[%c]"," "),
+        visible=button.Visible,active=button.Active,selectable=button.Selectable,
+        autoButtonColor=button.AutoButtonColor,interactable=interactable,
+        ancestorVisible=ancestorVisible,screenEnabled=screenEnabled,
+        withinScrollingBounds=withinScrollingBounds,
+        effectiveVisible=button.Visible and ancestorVisible and screenEnabled}
+end
+local function guiMetadataMatches(actual,expected)
+    for _,key in ipairs({"controlClass","text","visible","active","selectable","autoButtonColor",
+        "ancestorVisible","screenEnabled","withinScrollingBounds","effectiveVisible"}) do
+        if actual[key]~=expected[key] then return false end
+    end
+    if expected.interactable~=nil and actual.interactable~=expected.interactable then return false end
+    return true
+end
+
 local function teleportTo(prompt)
     local _,_,root=(function()
         local character=player.Character
@@ -415,7 +535,7 @@ for index,target in ipairs(targets) do
 end
 
 local function stop(reason)
-    running=false update()
+    running=false clearGuide() update()
     if reason then status.Text=reason end
 end
 local function activateOnce()
@@ -426,7 +546,47 @@ local function activateOnce()
         return false,message
     end
     local before=nil
-    if target.kind=="tool" then
+    if target.kind=="gui" then
+        local button,err=resolve(target)
+        if not button or not button:IsA("GuiButton") then
+            return failed("target-unresolved",err or "Target is not a GuiButton")
+        end
+        local metadata=target.guiMetadata
+        if not metadata then return failed("gui-metadata-drift","GUI prerequisite metadata unavailable") end
+        local actual=currentGuiMetadata(button)
+        if not actual.effectiveVisible or not actual.active or actual.interactable==false
+                or not actual.withinScrollingBounds then
+            return failed("gui-unavailable","Observed GUI control is hidden, disabled, or outside scrolling bounds")
+        end
+        if not guiMetadataMatches(actual,metadata) then
+            return failed("gui-metadata-drift","GUI activation prerequisite metadata changed")
+        end
+        before=readOutcome(target)
+        clearGuide()
+        local guideOk,guide=pcall(function()
+            local stroke=Instance.new("UIStroke")
+            stroke.Name="LycolesGuidedTarget" stroke.Color=Color3.fromRGB(255,205,65)
+            stroke.Thickness=3 stroke.Parent=button return stroke
+        end)
+        if not guideOk or not guide then
+            return failed("gui-guide-failed","Unable to highlight the exact observed GUI control",before)
+        end
+        activeGuide=guide
+        local activated=false
+        local activationConnection=button.Activated:Connect(function() activated=true end)
+        status.Text="Activate highlighted game control: "..target.label
+            ..". Lycoles cannot invoke GuiButton automatically through a public Roblox API."
+        for _=1,50 do
+            if activated or not alive or not running then break end
+            task.wait(.1)
+        end
+        pcall(function() activationConnection:Disconnect() end)
+        clearGuide()
+        if not alive or not running then return false,"Guided GUI trial stopped" end
+        if not activated then
+            return failed("gui-activation-timeout","Highlighted GUI control was not activated within 5 seconds",before)
+        end
+    elseif target.kind=="tool" then
         local tool,err=resolveTool(target)
         if not tool then return failed("target-unresolved",err or "Tool target unresolved") end
         local metadata=target.toolMetadata
@@ -490,6 +650,7 @@ local function start()
         while alive and running do
             attempts=attempts+1 update()
             local ok,message=activateOnce()
+            if not alive or not running then break end
             if not ok then
                 failures=failures+1 update()
                 status.Text=message.." (failure "..tostring(failures).."/3)"
@@ -538,6 +699,7 @@ end
 local function activationAvailable()
     local target=currentTarget() or targets[selected]
     if target.kind=="tool" then return true,"official Tool activation available" end
+    if target.kind=="gui" then return true,"guided user activation available; automatic GUI activation unsupported" end
     return type(fireproximityprompt)=="function","fireproximityprompt unavailable"
 end
 _G.LycolesGameCommands={
@@ -563,7 +725,7 @@ _G.LycolesGameCommands={
 }
 _G.LycolesGameStopAll=function() stop("Stopped by ;stopall") end
 _G.LycolesPromptClose=function()
-    alive=false running=false
+    alive=false running=false clearGuide()
     for _,connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
     if gui then gui:Destroy() end
     _G.LycolesGameCommands=nil _G.LycolesGameStopAll=nil _G.LycolesPromptTrialFeedback=nil
