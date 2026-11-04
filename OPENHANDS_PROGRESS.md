@@ -1,5 +1,18 @@
 # OpenHands Development Progress
 
+## 2026-11-04 — Digest-bound guided workflow feedback
+
+- Completed implementation commit `626ec46` (`Evaluate guided workflow feedback`).
+- `LycolesGuidedWorkflow.lua` now emits at most 400 local `115.guided-workflow-feedback.1` records bound to the canonical generated-workflow plan digest and exact deterministically rendered candidate. Each record preserves run/step order, exact target/outcome contract, normal-user activation observation, bounded scalar samples, a terminal status, message, and timestamp.
+- Added a print-only feedback control and `_G.LycolesGuidedWorkflowFeedback`; generated source validation forbids clipboard, outbound request, synthetic GUI activation, discovered remote invocation, and other unsafe execution helpers.
+- Added `tools/evaluate_guided_workflow_feedback.py`, which fails closed on plan/digest/candidate/step/outcome/run/status/direction mismatches, positive verification claims, missing samples, malformed scalars, or unrendered eligible candidates. It reports complete ordered **client-observation sequences** without upgrading source authenticity, causality, server authority, runtime, gameplay, or action-outcome verification.
+- Release and standalone manifests expose the feedback schema and canonical plan binding. `tools/build_release.py --guided-feedback` evaluates and bundles `guided-workflow-evaluation.json`; rebuilds without feedback remove stale evaluations deterministically.
+- The controlled official-Luau harness observed four records across a complete two-step simulated run and a second run that failed closed on step-two metadata drift. This validates wiring in simulation only, not Roblox gameplay.
+- Added evaluator, generation, controlled execution, release bundling, deterministic-candidate, forged-claim, unsafe-API, and stale-cleanup regressions.
+- Verification: complete Python suite passed (`1485` tests, `17` skipped); Node receiver integrity and generated/checked-in Luau parsing passed; Python compile, diff, credential-pattern, and generated unsafe-API scans passed. Repository contains no shell test gates.
+- CI for `626ec46` is pending push at this checkpoint; the preceding `4698879` head passed all `21/21` GitHub Actions workflows.
+- Next priority: aggregate multiple digest-bound guided feedback sessions into conflict-aware outcome-correlation summaries without treating repetition or temporal order as causality, then feed those conservative summaries into generation readiness.
+
 ## Update — 2026-11-02 — Manual-only guided multi-step GUI trials
 
 - Committed `f9c52dd` (`Generate manual guided GUI workflows`) on `openhands-development`. `114.generated-workflow-plan.1` now marks a trial generation-ready only when every linked event maps to an exact generation-ready guided GUI control, no linked event is omitted, source order is preserved, and every step remains normal-user-activation only.
