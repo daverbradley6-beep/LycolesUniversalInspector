@@ -638,6 +638,8 @@ def main():
             "summary":generated_workflows["summary"],
             "temporalAdjacency":{field:generated_workflows["temporalAdjacency"][field]
                 for field in ("timedEvents","unlinkedAdjacentPairs","usedForWorkflowLinkage")},
+            "guiRevealFollowups":{field:generated_workflows["guiRevealFollowups"][field]
+                for field in ("candidateCount","usedForWorkflowLinkage","causalityProven")},
             "automaticallyExecutable":
                 generated_workflows["summary"]["automaticallyExecutableWorkflows"]>0,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},

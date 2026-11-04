@@ -1,3 +1,12 @@
+## v30.6.7 — Observed GUI reveal followup diagnostics
+
+- Preserve exact class/name/sibling-ordinal PlayerGui identity only for GUI nodes whose visibility actually changes, avoiding per-node identity work during every bounded snapshot; sort before deterministic truncation and disclose bounded reveal-queue evictions.
+- Record a bounded review-only candidate when a later normal user activation targets the exact revealed GUI component or one of its descendants within 15 seconds.
+- Require the planner to reconstruct the source transition, source and target identities, session timing, observation window, and all-negative verification claims before reporting a followup episode.
+- Keep reveal followups separate from explicit transactions and generated workflow candidates; neither GUI containment nor timing creates causality, linkage, execution readiness, or gameplay verification.
+- Propagate bounded candidate counts and explicit non-linkage status into generated-result and deterministic-release manifests.
+
+
 ## v30.6.6 — Session-relative interaction timing diagnostics
 
 - Record monotonic millisecond session-relative timestamps and session identity on interaction history and change-queue events while preserving UTC display timestamps.

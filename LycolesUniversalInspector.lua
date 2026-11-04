@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.6
+-- Lycoles Universal Inspector v30.6.7
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.6"
+local VERSION = "30.6.7"
 
 local endpoint = ""
 local autoSend = true
@@ -129,7 +129,10 @@ local transactionEvidenceSeen = {}
 local transactionEvidenceCount = 0
 local MAX_TRANSACTION_SIGNATURES = 2000
 local pendingActions = {}
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
+local pendingGuiReveals = {}
+local MAX_PENDING_GUI_REVEALS = 100
+local GUI_REVEAL_FOLLOWUP_SECONDS = 15
+local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil, preActivationListenersAttached=0, preActivationCaptures=0, preActivationBaselinesUsed=0, callbackBaselinesUsed=0, stalePreActivationCaptures=0, preActivationCaptureFailures=0}
@@ -217,6 +220,31 @@ local function guiControlSnapshot(obj)
         withinScrollingBounds=withinScrollingBounds,effectiveVisible=visible}
 end
 
+local function interactionPathIdentity(obj,root,label)
+    local identity,current={},obj
+    while current and current~=root and #identity<20 do
+        local ordinal=1
+        local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(label) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>400 then return nil end
+    return identity
+end
+
+
 -- Capture nearby GUI state without collecting text, input contents or private data.
 local function safeNearbyGuiState(obj)
     local result, count = {}, 0
@@ -241,7 +269,7 @@ local function safeNearbyGuiState(obj)
             end
             local key=table.concat(segments,"/"):sub(1,180)
             if key ~= "" and not key:lower():find("password",1,true) then
-                result[key] = {visible=node.Visible}
+                result[key] = {visible=node.Visible,node=node}
                 if node:IsA("GuiButton") then
                     result[key].active=node.Active
                 end
@@ -251,27 +279,60 @@ local function safeNearbyGuiState(obj)
     end
     return result
 end
+local function guiTransitionIdentity(sample,fallbackPath)
+    local node=sample and sample.node
+    local guiRoot=player:FindFirstChildOfClass("PlayerGui")
+    if not node or not guiRoot then return fallbackPath,nil end
+    local pathIdentity=interactionPathIdentity(node,guiRoot,"PlayerGui")
+    if not pathIdentity then return fallbackPath,nil end
+    local names={}
+    for _,segment in ipairs(pathIdentity) do names[#names+1]=segment.name end
+    local path=table.concat(names,".")
+    if path:lower():find("password",1,true) then return fallbackPath,nil end
+    return path,pathIdentity
+end
+
+local function guiChangeLess(a,b)
+    if a.path~=b.path then return a.path<b.path end
+    local left,right=a.pathIdentity or {},b.pathIdentity or {}
+    for index=1,math.min(#left,#right) do
+        if left[index].className~=right[index].className then
+            return left[index].className<right[index].className
+        end
+        if left[index].ordinal~=right[index].ordinal then
+            return left[index].ordinal<right[index].ordinal
+        end
+    end
+    return #left<#right
+end
+
 local function compareNearbyGuiState(before, after)
     local changes={}
     for key, value in pairs(before) do
         local nextValue=after[key]
         if nextValue and (value.visible ~= nextValue.visible or value.active ~= nextValue.active) then
-            changes[#changes+1]={path=key,beforeVisible=value.visible,afterVisible=nextValue.visible,
+            local path,pathIdentity=guiTransitionIdentity(nextValue,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                beforeVisible=value.visible,afterVisible=nextValue.visible,
                 beforeActive=value.active,afterActive=nextValue.active}
-            if #changes >= 16 then break end
         end
     end
     for key, value in pairs(after) do
-        if not before[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="appeared",afterVisible=value.visible,afterActive=value.active}
+        if not before[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="appeared",afterVisible=value.visible,afterActive=value.active}
         end
     end
     for key, value in pairs(before) do
-        if not after[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
+        if not after[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
         end
     end
-    table.sort(changes,function(a,b) return a.path < b.path end)
+    table.sort(changes,guiChangeLess)
+    while #changes>MAX_GUI_CHANGES do table.remove(changes) end
     return changes
 end
 local function stateValueIdentity(obj,root)
@@ -1798,31 +1859,6 @@ local function watchPath(obj, root, label)
     if current ~= root then return nil end
     return label .. "." .. table.concat(names, ".")
 end
-local function interactionPathIdentity(obj,root,label)
-    local identity,current={},obj
-    while current and current~=root and #identity<20 do
-        local ordinal=1
-        local parent=current.Parent
-        if parent then
-            for _,sibling in ipairs(parent:GetChildren()) do
-                if sibling==current then break end
-                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
-            end
-        end
-        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
-        if #currentName>100 or #currentClass>100 then return nil end
-        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
-        current=parent
-    end
-    local rootName=tostring(label) local rootClass=tostring(root.ClassName)
-    if current~=root or #rootName>100 or #rootClass>100 then return nil end
-    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
-    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
-    if #table.concat(names,".")>400 then return nil end
-    return identity
-end
-
-
 
 local function watchVec(v)
     return {x = math.floor(v.X * 100) / 100,
@@ -2376,6 +2412,63 @@ local function linkWorkflow(obj, feature, sequence)
     end
     return nil
 end
+local function identityIsPrefix(prefix,target)
+    if type(prefix)~="table" or type(target)~="table" or #prefix>#target then return false end
+    for index,segment in ipairs(prefix) do
+        local candidate=target[index]
+        if not candidate or segment.name~=candidate.name or segment.className~=candidate.className
+            or segment.ordinal~=candidate.ordinal then return false end
+    end
+    return true
+end
+local function matchGuiRevealFollowup(targetIdentity,targetSequence,targetElapsed)
+    for index=#pendingGuiReveals,1,-1 do
+        local sourceAge=targetElapsed-pendingGuiReveals[index].sourceElapsed
+        if sourceAge<0 or sourceAge>GUI_REVEAL_FOLLOWUP_SECONDS then
+            table.remove(pendingGuiReveals,index)
+            workflowStats.guiRevealCandidatesExpired=workflowStats.guiRevealCandidatesExpired+1
+        end
+    end
+    if not targetIdentity then return nil end
+    local best=nil
+    for _,candidate in ipairs(pendingGuiReveals) do
+        if candidate.sourceSequence<targetSequence
+            and identityIsPrefix(candidate.revealedPathIdentity,targetIdentity)
+            and (not best or #candidate.revealedPathIdentity>#best.revealedPathIdentity
+                or (#candidate.revealedPathIdentity==#best.revealedPathIdentity
+                    and candidate.observedClock>best.observedClock)) then
+            best=candidate
+        end
+    end
+    if not best then return nil end
+    workflowStats.guiRevealFollowups=workflowStats.guiRevealFollowups+1
+    return {sourceSequence=best.sourceSequence,sourcePath=best.sourcePath,
+        sourcePathIdentity=best.sourcePathIdentity,revealedPath=best.revealedPath,
+        revealedPathIdentity=best.revealedPathIdentity,
+        sourceObservationWindowSeconds=best.observationWindowSeconds,
+        elapsedSinceSourceSeconds=math.floor((targetElapsed-best.sourceElapsed)*1000+0.5)/1000,
+        classification="observed-gui-reveal-descendant-followup",
+        explicitlyLinked=false,temporalCorrelationOnly=true,causalityProven=false,
+        runtimeVerified=false,gameplayVerified=false}
+end
+local function registerGuiRevealCandidates(changes,historyItem,observationWindowSeconds)
+    for _,change in ipairs(changes) do
+        if change.afterVisible==true and change.beforeVisible~=true and change.pathIdentity
+            and historyItem.pathIdentity then
+            pendingGuiReveals[#pendingGuiReveals+1]={observedClock=os.clock(),
+                sourceSequence=historyItem.sequence,sourcePath=historyItem.path,
+                sourcePathIdentity=historyItem.pathIdentity,sourceElapsed=historyItem.sessionElapsedSeconds,
+                revealedPath=change.path,revealedPathIdentity=change.pathIdentity,
+                observationWindowSeconds=observationWindowSeconds}
+            workflowStats.guiRevealCandidates=workflowStats.guiRevealCandidates+1
+            if #pendingGuiReveals>MAX_PENDING_GUI_REVEALS then
+                table.remove(pendingGuiReveals,1)
+                workflowStats.guiRevealCandidatesDropped=workflowStats.guiRevealCandidatesDropped+1
+            end
+        end
+    end
+end
+
 local function relevantActionEvidence(feature, workflow, changes)
     local kind=workflow and workflow.action
     if not kind and feature=="rebirth" then kind="rebirth" end
@@ -2578,12 +2671,16 @@ local function observeInteractionObject(obj, root, label)
             baselineSource="activation-callback-fallback"
             observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
         end
+        local targetPathIdentity=interactionPathIdentity(obj,root,label)
+        local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
+            observationSequence+1,sessionElapsedSeconds)
         local historyItem = {
-            path=path:sub(1,400), pathIdentity=interactionPathIdentity(obj,root,label),
+            path=path:sub(1,400), pathIdentity=targetPathIdentity,
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
+            guiRevealFollowup=guiRevealFollowup,
             controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
             baselineTiming=baselineSource=="activation-callback-fallback"
                 and "activation-callback" or "pre-activation",
@@ -2688,6 +2785,7 @@ local function observeInteractionObject(obj, root, label)
                             freshGui[#freshGui+1]=change
                         end
                     end
+                    registerGuiRevealCandidates(freshGui,historyItem,delaySeconds)
                     -- Deduplicate across related initiation/confirmation interactions.
                     -- Retain per-interaction evidence, but count a shared transition once.
                     local transactionFresh={}
@@ -3384,8 +3482,10 @@ local function inspect(requestType, featureRequest)
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
+                pendingGuiRevealCount=#pendingGuiReveals,
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
+                guiRevealFollowupPolicy="visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only",
                 inventoryDiscovery="candidate-first-gui-sampling-parent-aware-pagination",
                 evidenceLevels={"interaction-observed","temporal-state-change-observed",
                     "feature-consistent-observable-change","gameplay-outcome-verified"},

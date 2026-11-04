@@ -130,7 +130,8 @@ class InspectorUITests(unittest.TestCase):
     def test_interactions_capture_replay_relevant_control_metadata(self):
         self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
         self.assertIn('local function interactionPathIdentity(obj,root,label)',SRC)
-        self.assertIn('pathIdentity=interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('local targetPathIdentity=interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('path=path:sub(1,400), pathIdentity=targetPathIdentity',SRC)
         self.assertIn('["official-tool-activation-trial"]=true',SRC)
 
         self.assertIn('local function stateValueIdentity(obj,root)',SRC)
@@ -165,6 +166,21 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('observationWindowAccountingValid=',SRC)
         self.assertIn('evidenceLossPossible=pendingObservationEvents>0',SRC)
         self.assertNotIn('pendingObservationEvents=0, cumulativeChangeEvents',SRC)
+
+    def test_gui_reveal_followups_require_exact_component_containment(self):
+        self.assertIn('pathIdentity=interactionPathIdentity(node,guiRoot,"PlayerGui")',SRC)
+        self.assertIn('identityIsPrefix(candidate.revealedPathIdentity,targetIdentity)',SRC)
+        self.assertIn('change.afterVisible==true and change.beforeVisible~=true',SRC)
+        self.assertIn('classification="observed-gui-reveal-descendant-followup"',SRC)
+        self.assertIn('explicitlyLinked=false,temporalCorrelationOnly=true,causalityProven=false',SRC)
+        self.assertIn('GUI_REVEAL_FOLLOWUP_SECONDS = 15',SRC)
+        self.assertIn('pendingGuiRevealCount=#pendingGuiReveals',SRC)
+        self.assertIn('visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only',SRC)
+        self.assertIn('MAX_PENDING_GUI_REVEALS = 100',SRC)
+        self.assertIn('sourceAge=targetElapsed-pendingGuiReveals[index].sourceElapsed',SRC)
+        self.assertIn('guiRevealCandidatesDropped=workflowStats.guiRevealCandidatesDropped+1',SRC)
+        self.assertIn('table.sort(changes,guiChangeLess)',SRC)
+        self.assertIn('while #changes>MAX_GUI_CHANGES do table.remove(changes) end',SRC)
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

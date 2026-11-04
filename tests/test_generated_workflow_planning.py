@@ -129,6 +129,58 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"session timing"):
             self.analyze(value)
 
+    def test_gui_reveal_descendant_followup_is_review_only(self):
+        value=plan();source,target=value["observedInteractionHistory"]
+        source.update(transactionId="event-one",sessionId="session",sessionElapsedSeconds=20.0,
+            guiStateChanges=[{"path":"PlayerGui.HUD.Shop.Confirm",
+                "pathIdentity":identity("Confirm"),"beforeVisible":False,"afterVisible":True}])
+        target.update(transactionId="event-two",sessionId="session",sessionElapsedSeconds=22.5,
+            guiRevealFollowup={"sourceSequence":1,
+                "sourcePath":"PlayerGui.HUD.Shop.Select","sourcePathIdentity":identity("Select"),
+                "revealedPath":"PlayerGui.HUD.Shop.Confirm",
+                "revealedPathIdentity":identity("Confirm"),"sourceObservationWindowSeconds":0.35,
+                "elapsedSinceSourceSeconds":2.5,
+                "classification":"observed-gui-reveal-descendant-followup",
+                "explicitlyLinked":False,"temporalCorrelationOnly":True,
+                "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
+        result=self.analyze(value);followups=result["guiRevealFollowups"]
+        self.assertEqual(result["summary"]["planningStatus"],"singleton-transactions-only")
+        self.assertEqual(result["summary"]["workflowCandidates"],0)
+        self.assertEqual(result["summary"]["guiRevealFollowupCandidates"],1)
+        self.assertEqual(followups["candidateCount"],1)
+        self.assertEqual(followups["candidates"][0]["targetSequence"],2)
+        self.assertFalse(followups["usedForWorkflowLinkage"])
+        self.assertFalse(followups["candidates"][0]["causalityProven"])
+        forged=copy.deepcopy(value)
+        forged["observedInteractionHistory"][1]["guiRevealFollowup"]["causalityProven"]=True
+        with self.assertRaisesRegex(ValueError,"GUI reveal followup"):
+            self.analyze(forged)
+        cross_session=copy.deepcopy(value)
+        cross_session["observedInteractionHistory"][1]["sessionId"]="other-session"
+        with self.assertRaisesRegex(ValueError,"GUI reveal followup"):
+            self.analyze(cross_session)
+        expired=copy.deepcopy(value)
+        expired["observedInteractionHistory"][1]["sessionElapsedSeconds"]=36.0
+        expired["observedInteractionHistory"][1]["guiRevealFollowup"]["elapsedSinceSourceSeconds"]=16.0
+        with self.assertRaisesRegex(ValueError,"GUI reveal followup"):
+            self.analyze(expired)
+
+    def test_gui_reveal_requires_observed_transition_and_identity_containment(self):
+        value=plan();source,target=value["observedInteractionHistory"]
+        source.update(transactionId="event-one",sessionId="session",sessionElapsedSeconds=20.0,
+            guiStateChanges=[])
+        target.update(transactionId="event-two",sessionId="session",sessionElapsedSeconds=21.0,
+            guiRevealFollowup={"sourceSequence":1,
+                "sourcePath":"PlayerGui.HUD.Shop.Select","sourcePathIdentity":identity("Select"),
+                "revealedPath":"PlayerGui.HUD.Shop.Other","revealedPathIdentity":identity("Other"),
+                "sourceObservationWindowSeconds":0.35,"elapsedSinceSourceSeconds":1.0,
+                "classification":"observed-gui-reveal-descendant-followup",
+                "explicitlyLinked":False,"temporalCorrelationOnly":True,
+                "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
+        with self.assertRaisesRegex(ValueError,"GUI reveal followup"):
+            self.analyze(value)
+
+
 
 
     def test_request_alignment_ranks_executable_workflows_before_lexical_order(self):

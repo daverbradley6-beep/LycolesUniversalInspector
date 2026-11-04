@@ -211,6 +211,89 @@ def _temporal_adjacency(history):
         "candidatesTruncated":count>len(candidates),"usedForWorkflowLinkage":False,
         "causalityProven":False}
 
+def _identity_prefix(prefix,target):
+    return (len(prefix)<=len(target) and all(left==right
+        for left,right in zip(prefix,target)))
+
+
+def _gui_reveal_followups(history):
+    if not any(event.get("guiRevealFollowup") is not None for event in history):
+        return {"candidateCount":0,"candidates":[],"candidatesTruncated":False,
+            "evidenceRule":"observed visible transition plus exact descendant component identity",
+            "usedForWorkflowLinkage":False,"causalityProven":False}
+    by_sequence={}
+    for event in history:
+        sequence=event.get("sequence")
+        if type(sequence) is int:
+            if sequence in by_sequence:raise ValueError("Duplicate interaction sequence")
+            by_sequence[sequence]=event
+    candidates=[];count=0
+    for target in history:
+        evidence=target.get("guiRevealFollowup")
+        if evidence is None:continue
+        if not isinstance(evidence,dict):raise ValueError("Malformed GUI reveal followup")
+        source_sequence=evidence.get("sourceSequence");target_sequence=target.get("sequence")
+        source=by_sequence.get(source_sequence)
+        source_identity=_identity(evidence.get("sourcePathIdentity"))
+        revealed_identity=_identity(evidence.get("revealedPathIdentity"))
+        target_identity=_identity(target.get("pathIdentity"))
+        source_event_identity=_identity(source.get("pathIdentity")) if source else None
+        elapsed=evidence.get("elapsedSinceSourceSeconds")
+        observation_window=evidence.get("sourceObservationWindowSeconds")
+        claims=(evidence.get("explicitlyLinked") is False
+            and evidence.get("temporalCorrelationOnly") is True
+            and evidence.get("causalityProven") is False
+            and evidence.get("runtimeVerified") is False
+            and evidence.get("gameplayVerified") is False)
+        path_names=".".join(item["name"] for item in revealed_identity or [])
+        source_path_names=".".join(item["name"] for item in source_identity or [])
+        target_path_names=".".join(item["name"] for item in target_identity or [])
+        source_changes=source.get("guiStateChanges",[]) if source else None
+        if not isinstance(source_changes,list) or len(source_changes)>48:
+            raise ValueError("Malformed GUI reveal followup")
+        matching_changes=[change for change in source_changes
+            if isinstance(change,dict) and _identity(change.get("pathIdentity"))==revealed_identity
+            and change.get("path")==evidence.get("revealedPath")
+            and change.get("afterVisible") is True and change.get("beforeVisible") is not True]
+        valid_timing=(source and source.get("sessionId")==target.get("sessionId")
+            and type(source.get("sessionElapsedSeconds")) in (int,float)
+            and type(source.get("sessionElapsedSeconds")) is not bool
+            and type(target.get("sessionElapsedSeconds")) in (int,float)
+            and type(target.get("sessionElapsedSeconds")) is not bool
+            and math.isfinite(source["sessionElapsedSeconds"])
+            and math.isfinite(target["sessionElapsedSeconds"])
+            and round(target["sessionElapsedSeconds"]-source["sessionElapsedSeconds"],3)==elapsed)
+        if (type(source_sequence) is not int or type(target_sequence) is not int
+                or source_sequence>=target_sequence or not source
+                or not _text(source.get("path"),400) or evidence.get("sourcePath")!=source.get("path")
+                or source_identity is None or source_identity!=source_event_identity
+                or source_path_names!=source.get("path")
+                or revealed_identity is None or target_identity is None
+                or not _text(target.get("path"),400) or target_path_names!=target.get("path")
+                or not _identity_prefix(revealed_identity,target_identity)
+                or not _text(evidence.get("revealedPath"),400)
+                or path_names!=evidence.get("revealedPath") or len(matching_changes)!=1
+                or type(elapsed) not in (int,float) or type(elapsed) is bool
+                or not math.isfinite(elapsed) or not 0<=elapsed<=ADJACENCY_WINDOW_SECONDS
+                or observation_window not in (0.35,1.25,3.0)
+                or not valid_timing or not claims
+                or evidence.get("classification")!="observed-gui-reveal-descendant-followup"):
+            raise ValueError("Malformed GUI reveal followup")
+        count+=1
+        if len(candidates)<MAX_ADJACENCY_CANDIDATES:
+            candidates.append({"sourceSequence":source_sequence,"targetSequence":target_sequence,
+                "sourcePath":source["path"],"targetPath":target.get("path"),
+                "revealedPath":evidence["revealedPath"],
+                "sourceObservationWindowSeconds":observation_window,
+                "elapsedSinceSourceSeconds":elapsed,
+                "classification":"observed-gui-reveal-descendant-followup",
+                "usedForWorkflowLinkage":False,"causalityProven":False})
+    return {"candidateCount":count,"candidates":candidates,
+        "candidatesTruncated":count>len(candidates),
+        "evidenceRule":"observed visible transition plus exact descendant component identity",
+        "usedForWorkflowLinkage":False,"causalityProven":False}
+
+
 
 def plan(plan_document,actions):
     integrity=plan_document.get("integrity") if isinstance(plan_document,dict) else None
@@ -239,6 +322,7 @@ def plan(plan_document,actions):
             unlinked+=1;continue
         groups.setdefault(str(transaction),[]).append(event)
     temporal_adjacency=_temporal_adjacency(history)
+    gui_reveal_followups=_gui_reveal_followups(history)
     candidates=[];insufficient_contracts=0;partially_mapped=0;over_step_bound=0
     singleton_transactions=sum(len(events)==1 for events in groups.values())
     multi_event_transactions=sum(len(events)>1 for events in groups.values())
@@ -314,11 +398,14 @@ def plan(plan_document,actions):
             "automaticallyExecutableWorkflows":sum(
                 item["automaticallyExecutable"] for item in candidates),
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
+            "guiRevealFollowupCandidates":gui_reveal_followups["candidateCount"],
             "selectedExecutionCandidateId":selected["id"] if selected else None},
         "temporalAdjacency":temporal_adjacency,
+        "guiRevealFollowups":gui_reveal_followups,
         "claims":false_claims,"limitations":[
             "Only explicit shared transaction IDs and recorded sequence values establish ordering",
             "Session-relative temporal adjacency is review evidence and never creates workflow linkage",
+            "Observed GUI reveal and descendant followup evidence remains review-only and unlinked",
             "A transaction ID present on only one event does not establish cross-event linkage",
             "State continuity is descriptive client-visible evidence, not causal proof",
             "GUI steps require normal user activation because GuiButton has no public activation method",

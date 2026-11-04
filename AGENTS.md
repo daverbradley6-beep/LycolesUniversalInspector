@@ -73,6 +73,7 @@ Current dynamic-overlay provenance contract: each complete observation scan must
 - v30.6.4 generated linked workflows offer operator-armed repetition capped at five sequences and 400 feedback records. Sequence one requires exact observed entry values; later sequences use the prior observed value keyed by the exact resolved state instance. STOP/CLOSE, identity/metadata/state drift, activation failure, or missing selected outcome terminates immediately.
 - v30.6.5 appends an eligible `LycolesGuidedWorkflow.lua` source into the primary `LycolesGeneratedUtility.lua` in both generation paths while retaining the standalone file for review. Manifests/control inventories must agree through `integratedInGeneratedUtility` and `Linked Workflow Trial`; no eligible workflow means neither claim is present.
 - v30.6.6 interaction records optionally carry validated `sessionId` and monotonic `sessionElapsedSeconds`. Observed/generated workflow plans may surface bounded adjacent unlinked pairs for review, but temporal proximity must never create a transaction, workflow candidate, causality claim, or execution readiness.
+- v30.6.7 GUI reveal followups require an observed transition to visible, exact class/name/sibling-ordinal containment of the later normally activated control, matching same-session elapsed timing, and all-negative claims. They are bounded review episodes only and must not create transaction IDs, workflow candidates, automatic linkage, execution readiness, or causal/gameplay claims.
 
 Each generated feature must define:
 
