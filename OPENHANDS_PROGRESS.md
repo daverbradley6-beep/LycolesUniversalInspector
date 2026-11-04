@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Flexible bounded workflow execution
+
+- Completed implementation commit `9ad5185` (`Extend bounded workflow execution`) on `openhands-development`.
+- Workflow planning and generation now support exact repeated GUI/Tool/ProximityPrompt sequences through 64 steps. A 24-step alternating Tool/Prompt regression is generation-ready; sequences above 64 steps are retained for review but explicitly blocked from execution, closing the previous planner/generator 16-step mismatch.
+- Every newly planned step carries an `exact-observed-entry-state` prerequisite bound to the selected scalar identity and observed-before value. Generated Luau independently checks that exact value before activation and records a fail-closed drift result without activating when runtime progression differs.
+- Generated sessions permit at most five operator-started attempts. Controlled official-Luau execution verifies cancellation before activation, highlight/connection cleanup, successful retry, four completed runs after cancellation, rejection of a sixth start, exact entry-state drift rejection, and existing GUI→Tool→Prompt order. These are deterministic stubbed client checks, not live Roblox or gameplay verification.
+- Full local gate passed: **1,521 Python tests** with pinned official Luau 0.744 enabled; receiver integrity plus malformed/checked-in/generated Luau parser checks passed through `npm test` (**3/3**); Python compilation, credential-pattern, ancestry, whitespace, and diff gates passed.
+- No live Roblox session, receiver deployment, credential, Cloudflare configuration, source-authenticity claim, causality claim, server-authority claim, runtime verification, gameplay verification, or action-outcome verification changed. The supplied handover and manifest remain untouched and untracked.
+- Next priority: item 5, add generated-result feedback export/import and integrated workflow status/error display without making client observations execution proof.
+
 ## Update — 2026-11-02 — Workflow selection transparency
 
 - Completed implementation commit `30ac9c3` (`Explain workflow selection decisions`) on `openhands-development`.
