@@ -157,6 +157,11 @@ class ReleaseBuilderTests(unittest.TestCase):
                 result_name="Lycoles-3623096087-generated-result.json"
                 self.assertIn(result_name,archive.namelist())
                 generated_result=json.loads(archive.read(result_name))
+                self.assertEqual(generated_result["schemaVersion"],"113.generated-result.1")
+                self.assertEqual(generated_result["generationReadiness"]["schemaVersion"],
+                                 "113.generation-readiness.1")
+                self.assertFalse(generated_result["generationReadiness"]["request"]["fullRequestImplemented"])
+
                 self.assertFalse(generated_result["packageAuthenticityVerified"])
                 self.assertFalse(generated_result["executionAuthorized"])
 

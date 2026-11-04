@@ -433,7 +433,8 @@ def main():
             plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
             {"placeGuard":True,"note":"Generator structural contract; not live runtime validation"},
             list(ALLOWED_FEATURES)+["Admin Commands"]+
-                (["Prompt Interactions"] if prompt_interactions_lua else []))
+                (["Prompt Interactions"] if prompt_interactions_lua else []),
+            generation_readiness)
 
         generation_readiness_bytes=(json.dumps(
             generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")

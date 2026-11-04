@@ -822,6 +822,93 @@ local function refreshGeneratedHandoff(phase)
         .."; integrity unverified"
         .."\nGeneration: offline compilation/validation pending; gameplay unverified"
 end
+local function boundedResultText(value,limit)
+    return type(value)=="string" and #value>=1 and #value<=limit
+        and value:find("[%c]")==nil
+end
+local function validateGeneratedReadiness(result)
+    if result.schemaVersion=="110.generated-result.1" then return true,nil end
+    if result.schemaVersion~="113.generated-result.1" then return false,nil end
+    local readiness=result.generationReadiness
+    if type(readiness)~="table" or readiness.schemaVersion~="113.generation-readiness.1"
+        or readiness.placeId~=result.placeId or readiness.scanId~=result.scanId then
+        return false,nil
+    end
+    local claims=readiness.claims
+    if type(claims)~="table" or claims.sourceAuthenticityVerified~=false
+        or claims.causalityProven~=false or claims.serverAuthorityVerified~=false
+        or claims.runtimeVerified~=false or claims.gameplayVerified~=false
+        or claims.actionOutcomesVerified~=false then
+        return false,nil
+    end
+    local request=readiness.request
+    local validStatus={
+        ["no-capability-requested"]=true,["generated-bounded-subset"]=true,
+        ["evidence-only-no-replay-contract"]=true,["unsupported-by-current-evidence"]=true
+    }
+    if type(request)~="table" or request.request~=result.requestedCapability
+        or validStatus[request.status]~=true
+        or request.fullRequestImplemented~=false or request.implementationReady~=false
+        or request.runtimeVerified~=false or request.gameplayVerified~=false
+        or request.causalityProven~=false or request.actionOutcomesVerified~=false
+        or type(request.generatedSubsetAvailable)~="boolean"
+        or type(request.supportedSubset)~="table" or #request.supportedSubset>16
+        or type(request.matchedGeneratedCapabilityIds)~="table"
+        or #request.matchedGeneratedCapabilityIds>64 then
+        return false,nil
+    end
+    for _,item in ipairs(request.supportedSubset) do
+        if not boundedResultText(item,160) then return false,nil end
+    end
+    local matchedSeen={}
+    for _,item in ipairs(request.matchedGeneratedCapabilityIds) do
+        if not boundedResultText(item,80) or matchedSeen[item] then return false,nil end
+        matchedSeen[item]=true
+    end
+    local generated=readiness.generatedCapabilities
+    local unavailable=readiness.unavailableRequestedBehavior
+    local discovery=readiness.discoveryOnlyCapabilities
+    if type(generated)~="table" or #generated>64 or type(unavailable)~="table"
+        or #unavailable>16 or type(discovery)~="table" or #discovery>16 then
+        return false,nil
+    end
+    local generatedSeen={}
+    for _,item in ipairs(generated) do
+        if type(item)~="table" or not boundedResultText(item.id,80) or generatedSeen[item.id]
+            or item.kind~="proximity-prompt-trial" or not boundedResultText(item.targetLabel,120)
+            or not boundedResultText(item.selectedOutcomeKey,200)
+            or (item.expectedChange~="increased" and item.expectedChange~="decreased"
+                and item.expectedChange~="changed")
+            or item.runtimeVerified~=false or item.gameplayVerified~=false
+            or item.causalityProven~=false or item.actionOutcomeVerified~=false then
+            return false,nil
+        end
+        generatedSeen[item.id]=true
+    end
+    local generatedStatus=request.status=="generated-bounded-subset"
+    if ((result.requestedCapability==nil)~=(request.status=="no-capability-requested"))
+        or generatedStatus~=request.generatedSubsetAvailable
+        or generatedStatus~=(#request.matchedGeneratedCapabilityIds>0)
+        or generatedStatus~=(#request.supportedSubset>0) then return false,nil end
+    for identifier in pairs(matchedSeen) do
+        if not generatedSeen[identifier] then return false,nil end
+    end
+
+    for _,item in ipairs(unavailable) do
+        if type(item)~="table" or not boundedResultText(item.id,80)
+            or item.status~="unavailable" then return false,nil end
+    end
+    for _,item in ipairs(discovery) do
+        if type(item)~="table" or not boundedResultText(item.family,80)
+            or type(item.candidateCount)~="number" or item.candidateCount<0
+            or item.candidateCount>1000000 or item.candidateCount%1~=0
+            or type(item.observedCount)~="number" or item.observedCount<0
+            or item.observedCount>item.candidateCount or item.observedCount%1~=0
+            or item.replayContractAvailable~=false then return false,nil end
+    end
+    return true,readiness
+end
+
 loadGeneratedResult.MouseButton1Click:Connect(function()
     if type(readfile)~="function" then
         generatedStatus.Text="Result loading unavailable: readfile is not supported."
@@ -835,20 +922,48 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
     end
     local decodeOk,result=pcall(function() return HttpService:JSONDecode(raw) end)
     local code=decodeOk and type(result)=="table" and result.generatedCode or nil
-    local valid=decodeOk and type(result)=="table"
-        and result.schemaVersion=="110.generated-result.1"
+    local schemaValid=decodeOk and type(result)=="table" and
+        (result.schemaVersion=="110.generated-result.1"
+            or result.schemaVersion=="113.generated-result.1")
+    local readinessValid,readiness=false,nil
+    if schemaValid then readinessValid,readiness=validateGeneratedReadiness(result) end
+    local valid=schemaValid and readinessValid
         and result.placeId==game.PlaceId and type(result.scanId)=="string"
         and result.staticValidationPassed==true and result.packageAuthenticityVerified==false
         and result.runtimeVerified==false and result.gameplayVerified==false
         and result.executionAuthorized==false and type(code)=="string" and #code<=1000000
         and code:find("assert(game.PlaceId == "..tostring(game.PlaceId),1,true)~=nil
     if not valid then
-        generatedStatus.Text="Result rejected: schema, place guard, or verification claims are invalid."
+        generatedStatus.Text="Result rejected: schema, place guard, readiness, or verification claims are invalid."
         return
     end
     generatedCodeOutput.Text=code
-    generatedStatus.Text="Loaded display-only offline result for scan "..result.scanId
-        ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+    if readiness then
+        local generated=readiness.generatedCapabilities
+        local unavailable={}
+        for index,item in ipairs(readiness.unavailableRequestedBehavior) do
+            if index>4 then break end unavailable[#unavailable+1]=item.id
+        end
+        local details={"Loaded display-only result for scan "..result.scanId,
+            "Readiness: "..readiness.request.status,
+            "Generated bounded capabilities: "..tostring(#generated),
+            "Full request implemented: false | Runtime/gameplay verified: false"}
+        if #generated>0 then
+            local item=generated[1]
+            details[#details+1]="Evidence: "..item.targetLabel.." -> "
+                ..item.selectedOutcomeKey.." "..item.expectedChange
+        else
+            details[#details+1]="Evidence: no generated replay capability"
+        end
+        details[#details+1]="Unsupported: "
+            ..(#unavailable>0 and table.concat(unavailable,", ") or "see packaged limitations")
+        details[#details+1]="Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+        generatedStatus.TextSize=11
+        generatedStatus.Text=table.concat(details,"\n")
+    else
+        generatedStatus.Text="Loaded legacy display-only offline result for scan "..result.scanId
+            ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+    end
     showGeneratedScriptPane(true)
 end)
 

@@ -14,6 +14,8 @@
 - Add discovery-digest-bound, 100-entry prompt trial feedback export through `;interactionfeedback` and a strict offline evaluator that rejects unknown targets, unselected outcomes, forged directional changes, excess fields, and positive verification claims. `build_release.py --prompt-feedback` packages the digest-linked evaluation and a false-claim summary into deterministic releases. Accepted records remain operator-supplied client correlation rather than causal, server-authoritative, runtime-verified, or gameplay-verified evidence.
 - Add deterministic `113.generation-readiness.1` synthesis across gameplay understanding and executable action discovery. Releases now distinguish emitted bounded prompt trials, request-matched supported subsets, unavailable Auto/Multi behavior, and discovery-only combat/Tool candidates without upgrading runtime, causality, outcome, or gameplay claims.
 - Add a game-specific target dropdown and shared prompt state so GUI target/mode/start-stop controls and categorized Admin Commands remain synchronized. Controlled official-Luau execution verifies dropdown creation, shared state, command-row state, teleport, prompt activation, outcome observation, and cleanup; this remains simulated rather than live Roblox verification.
+- Upgrade display-only generated results to schema `113.generated-result.1`, embedding the identity-matched generation-readiness artifact. The in-game Generated Script tab accepts legacy schema 110 for display, fail-closes malformed or positive readiness claims, and shows bounded generated capability, target/outcome evidence, unavailable behavior, static-validation status, and unverified runtime/gameplay status without evaluating code.
+
 
 
 

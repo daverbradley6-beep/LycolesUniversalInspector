@@ -241,7 +241,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     }
     result_builder=load_module("generated_result.py","lycoles_generated_result")
     generated_result=result_builder.build(place,plan["integrity"]["scanId"],lua,
-        plan.get("requestedCapability"),validation,manifest["implementedClientControls"])
+        plan.get("requestedCapability"),validation,manifest["implementedClientControls"],
+        generation_readiness)
     generated_result_name="Lycoles-"+str(place)+"-generated-result.json"
     generated_result_bytes=(json.dumps(
         generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")

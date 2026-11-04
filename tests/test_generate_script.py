@@ -111,7 +111,8 @@ class GeneratorTests(unittest.TestCase):
             commands=(output/"LycolesAdminCommands.lua").read_text()
             generated_result=json.loads((output/(
                 "Lycoles-3623096087-generated-result.json")).read_text())
-            self.assertEqual(generated_result["schemaVersion"],"110.generated-result.1")
+            self.assertEqual(generated_result["schemaVersion"],"113.generated-result.1")
+            self.assertEqual(generated_result["generationReadiness"],readiness)
             self.assertFalse(generated_result["executionAuthorized"])
             self.assertFalse(generated_result["gameplayVerified"])
 
