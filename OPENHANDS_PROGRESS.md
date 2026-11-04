@@ -1,5 +1,17 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Self-consistent local report recovery
+
+- Released inspector patch `30.5.1` with explicit local export initialization and distinct not-attempted, incomplete, failed, and complete states.
+- `SAVE REPORT` now writes exact numbered parts, writes an intermediate manifest, then writes the finalized manifest carrying `complete`, `manifestSaved=true`, and the final attempt count. Complete is never displayed or persisted when a numbered part or final manifest write fails.
+- The Generated Script handoff displays numbered-part progress and manifest finalization separately. File-writing unavailability is recorded as an explicit local-export failure rather than leaving an ambiguous not-attempted state.
+- Upgraded local manifest analysis to `109.manifest-readiness.2`. It validates local part accounting, bounded filename/error metadata, manifest write state, and independent scan/report/local-export/upload/ACK/integrity/downstream lifecycle stages.
+- Added deterministic recovery guidance for complete local-part claims, receiver-acknowledged reports awaiting integrity, failed/configuration-blocked uploads, and unattempted/legacy transport. A manifest-only local claim remains blocked from generation until the actual numbered parts are provided and validated.
+- `tools/build_release.py` retains manifest-only routing compatibility with both v109.1 and v109.2.
+- Implementation commit: `8b50574` (`Finalize local report export lifecycle`).
+- Verification: full Python suite **1500 passed, 17 skipped**; receiver tests passed; checked-in and representative generated Luau parsed; targeted manifest/inspector/release tests, `py_compile`/`compileall`, version consistency, `git diff --check`, and credential-pattern checks passed.
+- No receiver deployment, credentials, or production infrastructure changed. Receiver integrity, local-file existence outside the manifest claim, source authenticity, causality, server authority, Roblox runtime behavior, gameplay, and script-generation readiness remain unverified.
+
 ## Update — 2026-11-02 — Provider-independent game profile expansion
 
 - Expanded canonical gameplay understanding to schema `110.gameplay-understanding.2` while retaining `110.gameplay-understanding.1` readers in generated utility/Admin Commands consumers.
