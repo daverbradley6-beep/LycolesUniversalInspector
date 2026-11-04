@@ -15,6 +15,8 @@
 - Add deterministic `113.generation-readiness.1` synthesis across gameplay understanding and executable action discovery. Releases now distinguish emitted bounded prompt trials, request-matched supported subsets, unavailable Auto/Multi behavior, and discovery-only combat/Tool candidates without upgrading runtime, causality, outcome, or gameplay claims.
 - Add a game-specific target dropdown and shared prompt state so GUI target/mode/start-stop controls and categorized Admin Commands remain synchronized. Controlled official-Luau execution verifies dropdown creation, shared state, command-row state, teleport, prompt activation, outcome observation, and cleanup; this remains simulated rather than live Roblox verification.
 - Upgrade display-only generated results to schema `113.generated-result.1`, embedding the identity-matched generation-readiness artifact. The in-game Generated Script tab accepts legacy schema 110 for display, fail-closes malformed or positive readiness claims, and shows bounded generated capability, target/outcome evidence, unavailable behavior, static-validation status, and unverified runtime/gameplay status without evaluating code.
+- Capture Tool enabled/manual-activation/handle/drop/tooltip prerequisites in scan objects and activation events. Action discovery now ranks exact-identity Tool activations with resolvable scalar outcomes as activation-contract candidates while explicitly keeping replay/generation unavailable until the Tool generator, bounded equip/activation flow, feedback validation, and controlled runtime harness are integrated.
+
 
 
 

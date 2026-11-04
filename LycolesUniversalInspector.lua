@@ -1503,7 +1503,9 @@ local function enrichEntry(entry, obj)
     if obj:IsA("Humanoid") then
         entry.health, entry.maxHealth, entry.walkSpeed = obj.Health, obj.MaxHealth, obj.WalkSpeed
     elseif obj:IsA("Tool") then
-        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,tooltip=obj.ToolTip:sub(1,120)}
+        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly,
+            tooltip=obj.ToolTip:sub(1,120):gsub("[%c]"," ")}
     elseif obj:IsA("ProximityPrompt") then
         entry.interaction = {actionText=obj.ActionText:sub(1,120),objectText=obj.ObjectText:sub(1,120),
             enabled=obj.Enabled,holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance}
@@ -2062,8 +2064,9 @@ local function interactionDescriptor(obj,root,label)
         return {maxActivationDistance=obj.MaxActivationDistance}
     end
     if obj:IsA("Tool") then
-        return {tooltip=tostring(obj.ToolTip):sub(1,120),requiresHandle=obj.RequiresHandle,
-            canBeDropped=obj.CanBeDropped}
+        return {tooltip=tostring(obj.ToolTip):sub(1,120):gsub("[%c]"," "),
+            requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly}
     end
     return nil
 end

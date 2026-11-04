@@ -165,7 +165,19 @@ def _prompt_metadata(value):
     return result
 
 
-
+def _tool_metadata(value):
+    if value is None:return None
+    if not isinstance(value,dict):raise ValueError("Malformed Tool prerequisite metadata")
+    allowed={"tooltip","requiresHandle","canBeDropped","enabled","manualActivationOnly"}
+    if set(value)!=allowed:raise ValueError("Malformed Tool prerequisite metadata")
+    tooltip=value.get("tooltip")
+    if (not isinstance(tooltip,str) or len(tooltip)>120
+            or any(ord(character)<32 or ord(character)==127 for character in tooltip)):
+        raise ValueError("Malformed Tool prerequisite metadata")
+    for key in ("requiresHandle","canBeDropped","enabled","manualActivationOnly"):
+        if type(value.get(key)) is not bool:raise ValueError("Malformed Tool prerequisite metadata")
+    return {key:value[key] for key in ("tooltip","requiresHandle","canBeDropped",
+        "enabled","manualActivationOnly")}
 
 
 def _label(path,metadata):
@@ -200,7 +212,7 @@ def analyze(plan):
     request=plan.get("requestedCapability")
     if request is not None and (not isinstance(request,str) or len(request)>500):
         raise ValueError("Malformed requested capability")
-    observed_actions=[];egg_targets={};prompt_targets={}
+    observed_actions=[];egg_targets={};prompt_targets={};tool_targets={}
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
         path=event.get("path");control=event.get("controlType")
@@ -271,6 +283,47 @@ def analyze(plan):
                 marker=(signal["path"],signal["change"])
                 if marker not in seen_gui:target["guiOutcomeSignals"].append(signal);seen_gui.add(marker)
             target["trialGenerationReady"]=bool(target["outcomeSignals"])
+        if control=="Tool.Activated":
+            raw_metadata=event.get("controlMetadata")
+            event_metadata=_tool_metadata(raw_metadata)
+            label=identity[-1]["name"] if identity else path.rsplit(".",1)[-1]
+            target=tool_targets.setdefault(path,{"path":path,"label":label,
+                "controlType":control,"pathIdentity":identity,"identityAmbiguous":False,
+                "identityMode":"component" if identity else "unresolved",
+                "featureCandidate":event.get("featureCandidate"),
+                "actionCandidate":(event.get("workflow") or {}).get("action")
+                    if isinstance(event.get("workflow"),dict) else None,
+                "observedActivations":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "evidenceTier":"interaction-observed","activationContractReady":False,
+                "trialGenerationReady":False,
+                "prerequisites":{"officialToolActivate":True,"humanoidEquipTool":True,
+                    "toolEnabledAtRuntime":True,"uniqueToolIdentityAtRuntime":True},
+                "prerequisiteEvidence":{"metadataSnapshots":[],"metadataDriftObserved":False},
+                "temporalCorrelationOnly":True,"causalityProven":False,
+                "runtimeVerified":False,"gameplayVerified":False})
+            if identity:
+                if target.get("pathIdentity") not in (None,identity):target["identityAmbiguous"]=True
+                elif target.get("pathIdentity") is None:
+                    target["pathIdentity"]=identity;target["identityMode"]="component"
+            if event_metadata:
+                snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
+                if event_metadata not in snapshots:
+                    if len(snapshots)>=8:raise ValueError("Excessive Tool prerequisite metadata drift")
+                    snapshots.append(event_metadata)
+                target["prerequisiteEvidence"]["metadataDriftObserved"]=len(snapshots)>1
+                target["toolMetadata"]=snapshots[0]
+            target["observedActivations"]+=1
+            target["evidenceTier"]=tier
+            seen_outcomes={(item["key"],item["change"]) for item in target["outcomeSignals"]}
+            for signal in state_signals:
+                marker=(signal["key"],signal["change"])
+                if signal["generationResolvable"] and marker not in seen_outcomes:
+                    target["outcomeSignals"].append(signal);seen_outcomes.add(marker)
+            seen_gui={(item["path"],item["change"]) for item in target["guiOutcomeSignals"]}
+            for signal in gui_signals:
+                marker=(signal["path"],signal["change"])
+                if marker not in seen_gui:target["guiOutcomeSignals"].append(signal);seen_gui.add(marker)
+
 
         lower=path.lower()
         hatch_changes=[(change,state_identity) for change,state_identity in changes_with_identity
@@ -319,6 +372,43 @@ def analyze(plan):
         "selectionPolicy":"request alignment, objective usefulness, label, path",
         "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False,
         "blockers":[] if prompt_ready else ["no observed prompt has a resolvable scalar outcome change"]}
+
+    tool_list=[]
+    for target in tool_targets.values():
+        context=" ".join(str(value or "") for value in (target["path"],
+            target.get("featureCandidate"),target.get("actionCandidate"),target["label"]))
+        target["outcomeSignals"]=_rank_outcomes(target["outcomeSignals"],request,context)
+        target["selectedOutcome"]=target["outcomeSignals"][0] if target["outcomeSignals"] else None
+        target["guiOutcomeSignals"].sort(key=lambda item:(item["path"],item["change"]))
+        target["objective"]=_prompt_objective(target["path"],target.get("featureCandidate"),
+            target.get("actionCandidate"),target["label"],request,target["outcomeSignals"])
+        identity=target.get("pathIdentity")
+        identity_ready=(isinstance(identity,list) and identity[0]["name"]=="LocalPlayer"
+            and identity[-1]["className"]=="Tool" and target["identityAmbiguous"] is False)
+        metadata_ready=bool(target["prerequisiteEvidence"]["metadataSnapshots"])
+        outcome_ready=bool(target["outcomeSignals"])
+        target["activationContractReady"]=identity_ready and metadata_ready and outcome_ready
+        blockers=[]
+        if not identity_ready:blockers.append("no exact LocalPlayer Tool component identity was observed")
+        if not metadata_ready:blockers.append("no complete Tool activation prerequisite snapshot was observed")
+        if not outcome_ready:blockers.append("no resolvable scalar outcome change was observed")
+        blockers.extend(["Tool trial generator and controlled runtime harness are not integrated",
+            "temporal correlation does not prove causality",
+            "live Roblox Tool activation and outcome remain unverified"])
+        target["blockers"]=blockers
+        tool_list.append(target)
+    tool_list.sort(key=lambda item:(-item["objective"]["requestAligned"],
+        -item["objective"]["score"],item["label"].lower(),item["path"]))
+    contract_ready=[item for item in tool_list if item["activationContractReady"]]
+    tool_interactions={"targets":tool_list,
+        "activationContractReadyTargets":len(contract_ready),
+        "selectedTargetPath":contract_ready[0]["path"] if contract_ready else None,
+        "executionMechanism":"official Tool:Activate() after bounded equip",
+        "generatorIntegrated":False,"generationReadyTargets":0,
+        "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False,
+        "blockers":["Tool trial generator and controlled runtime harness are not integrated"]
+            if contract_ready else ["no observed Tool has identity, prerequisites, and a resolvable scalar outcome"]}
+
 
     for path,item in by_path.items():
         lower=path.lower()
@@ -430,7 +520,8 @@ def analyze(plan):
         "scanId":integrity.get("scanId"),"actionableObjectCounts":dict(sorted(class_counts.items())),
         "actionableObjectsTruncated":plan.get("actionableObjectsTruncated") is True,
         "observedActions":observed_actions,"genericCapabilities":generic,
-        "promptInteractions":prompt_interactions,"eggHatching":egg,
+        "promptInteractions":prompt_interactions,"toolInteractions":tool_interactions,
+        "eggHatching":egg,
         "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
             "serverAuthorityVerified":False,"runtimeVerified":False,
             "gameplayVerified":False,"actionOutcomesVerified":False}}

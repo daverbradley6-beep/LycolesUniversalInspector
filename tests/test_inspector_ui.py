@@ -102,6 +102,7 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('signal, controlType = obj.Activated, "Tool.Activated"',SRC)
         self.assertIn('combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}',SRC)
         self.assertIn('controlMetadata=interactionDescriptor(obj,root,label)',SRC)
+        self.assertIn('enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly',SRC)
 
     def test_semantic_actions_use_bounded_context(self):
         self.assertIn("local function semanticActionKind(obj, feature)",SRC)

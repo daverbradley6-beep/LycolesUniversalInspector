@@ -229,13 +229,48 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Malformed observation windows"):
             discovery.analyze(plan)
 
-    def test_generic_tool_actions_support_fps_discovery_without_replay_claims(self):
+    def test_observed_tool_with_identity_prerequisites_and_scalar_outcome_is_trial_ready(self):
         plan=self.real_plan()
         plan["actionableObjects"]=[{"path":"LocalPlayer.Backpack.Assault Rifle","class":"Tool",
-            "tool":{"requiresHandle":True,"tooltip":"Primary weapon"}}]
+            "tool":{"requiresHandle":True,"tooltip":"Primary weapon","enabled":True,
+                "manualActivationOnly":False,"canBeDropped":False}}]
         plan["observedInteractionHistory"].append({"path":"LocalPlayer.Backpack.Assault Rifle",
+            "pathIdentity":[{"name":"LocalPlayer","className":"Player","ordinal":1},
+                {"name":"Backpack","className":"Backpack","ordinal":1},
+                {"name":"Assault Rifle","className":"Tool","ordinal":1}],
+            "controlType":"Tool.Activated","featureCandidate":"combat","outcomeVerified":False,
+            "controlMetadata":{"tooltip":"Primary weapon","requiresHandle":True,
+                "canBeDropped":False,"enabled":True,"manualActivationOnly":False},
+            "stateChanges":[{"key":"leaderstats.Hits","before":4,"after":5,
+                "stateIdentityStatus":"component-resolved","stateIdentity":[
+                    {"name":"leaderstats","className":"Folder","ordinal":1},
+                    {"name":"Hits","className":"IntValue","ordinal":1}]}]})
+        result=discovery.analyze(plan)
+        generic=result["genericCapabilities"]
+        self.assertEqual(generic["families"]["tool-action"]["observed"],1)
+        self.assertEqual(generic["combatCandidates"][0]["evidenceTier"],"interaction-observed")
+        self.assertFalse(generic["combatCandidates"][0]["replayContractAvailable"])
+        tools=result["toolInteractions"]
+        self.assertEqual(tools["activationContractReadyTargets"],1)
+        self.assertFalse(tools["generatorIntegrated"])
+        self.assertEqual(tools["executionMechanism"],"official Tool:Activate() after bounded equip")
+        target=tools["targets"][0]
+        self.assertEqual(target["selectedOutcome"]["key"],"leaderstats.Hits")
+        self.assertTrue(target["activationContractReady"])
+        self.assertFalse(target["trialGenerationReady"])
+        self.assertFalse(target["causalityProven"])
+
+    def test_tool_without_prerequisites_or_outcome_remains_discovery_only(self):
+        plan=self.real_plan();plan["actionableObjects"]=[]
+        plan["observedInteractionHistory"].append({"path":"LocalPlayer.Backpack.Sword",
             "controlType":"Tool.Activated","featureCandidate":"combat","outcomeVerified":False})
-        result=discovery.analyze(plan)["genericCapabilities"]
-        self.assertEqual(result["families"]["tool-action"]["observed"],1)
-        self.assertEqual(result["combatCandidates"][0]["evidenceTier"],"interaction-observed")
-        self.assertFalse(result["combatCandidates"][0]["replayContractAvailable"])
+        result=discovery.analyze(plan)
+        self.assertEqual(result["toolInteractions"]["activationContractReadyTargets"],0)
+        self.assertFalse(result["observedActions"][-1]["replayContractAvailable"])
+
+    def test_malformed_tool_prerequisite_metadata_fails_closed(self):
+        plan=self.real_plan();plan["observedInteractionHistory"].append({
+            "path":"LocalPlayer.Backpack.Sword","controlType":"Tool.Activated",
+            "controlMetadata":{"enabled":"yes"}})
+        with self.assertRaisesRegex(ValueError,"Malformed Tool prerequisite metadata"):
+            discovery.analyze(plan)
