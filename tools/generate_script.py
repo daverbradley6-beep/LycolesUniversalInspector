@@ -424,6 +424,10 @@ def main():
         discovery_builder=load_local_module("lycoles_action_discovery",
                                              "discover_action_capabilities.py")
         action_discovery=discovery_builder.analyze(plan)
+        workflow_planner=load_local_module("lycoles_generated_workflows",
+                                           "plan_generated_workflows.py")
+        generated_workflows=workflow_planner.plan(plan,action_discovery)
+
         readiness_builder=load_local_module("lycoles_generation_readiness",
                                              "assess_generation_readiness.py")
         generation_readiness=readiness_builder.assess(plan,understanding,action_discovery)
@@ -460,6 +464,8 @@ def main():
             json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
         (out/"action-capabilities.json").write_text(json.dumps(
             action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        (out/"generated-workflow-plan.json").write_text(json.dumps(
+            generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
         (out/"generation-readiness.json").write_bytes(generation_readiness_bytes)
         if prompt_interactions_lua is not None:
             (out/"LycolesPromptInteractions.lua").write_text(prompt_interactions_lua,encoding="utf-8")
@@ -487,6 +493,10 @@ def main():
             "guiTargets":len(action_discovery["guiInteractions"]["targets"]),
             "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+          "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
+            "schemaVersion":generated_workflows["schemaVersion"],
+            "summary":generated_workflows["summary"],"automaticallyExecutable":False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
             "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
@@ -499,7 +509,6 @@ def main():
             "manualActivationRequired":gui_trial_generated,
             "exactControlHighlighting":gui_trial_generated,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
-
           "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
             "generated":egg_trial_generated,"runtimeVerified":False,
             "gameplayVerified":False,"multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],

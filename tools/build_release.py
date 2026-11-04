@@ -92,6 +92,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     action_discovery=action_discovery_builder.analyze(plan)
     action_discovery_bytes=(json.dumps(
         action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    workflow_planner=load_module("plan_generated_workflows.py","lycoles_generated_workflows")
+    generated_workflows=workflow_planner.plan(plan,action_discovery)
+    generated_workflows_bytes=(json.dumps(
+        generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
     readiness_builder=load_module(
         "assess_generation_readiness.py","lycoles_generation_readiness")
     generation_readiness=readiness_builder.assess(
@@ -190,6 +195,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
             "eggTargets":len(action_discovery["eggHatching"]["targets"]),
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+        "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
+            "schemaVersion":generated_workflows["schemaVersion"],
+            "sha256":sha(generated_workflows_bytes),"summary":generated_workflows["summary"],
+            "automaticallyExecutable":False,"runtimeVerified":False,
+            "gameplayVerified":False,"causalityProven":False},
         "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
             "artifact":"generation-readiness.json",
             "sha256":sha(generation_readiness_bytes),
@@ -273,6 +283,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
 
     files={
       "feature-coverage.json":(json.dumps(coverage,indent=2,sort_keys=True)+"\n").encode(),
+      "generated-workflow-plan.json":generated_workflows_bytes,
       "review-contracts-template.json":(json.dumps(review_template,indent=2,sort_keys=True)+"\n").encode(),
       "contract-draft.json":(json.dumps(contract_draft,indent=2,sort_keys=True)+"\n").encode(),
       "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
@@ -301,6 +312,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
           "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
+          "Reviewable linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; automatically executable: false.\n"
           "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"
           "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"

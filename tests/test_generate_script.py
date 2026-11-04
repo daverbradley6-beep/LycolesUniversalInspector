@@ -107,6 +107,8 @@ class GeneratorTests(unittest.TestCase):
             manifest=json.loads((output/"release-manifest.json").read_text())
             gameplay=json.loads((output/"gameplay-understanding.json").read_text())
             readiness=json.loads((output/"generation-readiness.json").read_text())
+            workflows=json.loads((output/"generated-workflow-plan.json").read_text())
+
             combined=(output/"LycolesGeneratedUtility.lua").read_text()
             commands=(output/"LycolesAdminCommands.lua").read_text()
             generated_result=json.loads((output/(
@@ -124,6 +126,11 @@ class GeneratorTests(unittest.TestCase):
                              "113.generation-readiness.1")
             self.assertEqual(manifest["generationReadiness"]["sha256"],
                 generator.hashlib.sha256((output/"generation-readiness.json").read_bytes()).hexdigest())
+            self.assertEqual(manifest["generatedWorkflowPlan"]["schemaVersion"],
+                             "114.generated-workflow-plan.1")
+            self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflows["summary"])
+            self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
+            self.assertFalse(workflows["claims"]["causalityProven"])
 
             self.assertEqual(readiness["request"]["status"],
                              "evidence-only-no-replay-contract")

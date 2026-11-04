@@ -178,6 +178,45 @@ class ReleaseBuilderTests(unittest.TestCase):
                 "guided-gui-activation-trial")
             self.assertFalse(readiness["claims"]["runtimeVerified"])
 
+    def test_linked_generated_controls_emit_non_executable_workflow_plan(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            metadata={"controlClass":"TextButton","visible":True,"active":True,
+                "selectable":True,"autoButtonColor":True,"interactable":True,
+                "ancestorVisible":True,"screenEnabled":True,"withinScrollingBounds":True,
+                "effectiveVisible":True}
+            def linked_event(name,sequence,before,after):
+                item={"featureCandidate":"shops","path":"PlayerGui.HUD.Shop."+name,
+                    "controlType":"GuiButton.Activated","evidenceLevel":"temporal-state-change-observed",
+                    "transactionId":"shop-flow","sequence":sequence,"outcomeVerified":False,
+                    "pathIdentity":[{"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                        {"name":"HUD","className":"ScreenGui","ordinal":1},
+                        {"name":"Shop","className":"Frame","ordinal":1},
+                        {"name":name,"className":"TextButton","ordinal":1}],
+                    "controlMetadata":dict(metadata,text=name),
+                    "stateChanges":[{"key":"Data.ShopStage","before":before,"after":after,
+                        "stateIdentityStatus":"component-resolved","stateIdentity":[
+                            {"name":"Data","className":"Folder","ordinal":1},
+                            {"name":"ShopStage","className":"IntValue","ordinal":1}]}]}
+                return item
+            events=[linked_event("Select",1,2,3),linked_event("Confirm",2,3,4)]
+            make_parts(parts,event=events[0],request="Complete the observed shop flow")
+            first=json.loads((parts/"1.json").read_text());first["featureEvidence"]={"shops":{}}
+            (parts/"1.json").write_text(json.dumps(first))
+            second=json.loads((parts/"2.json").read_text());second["interactionHistoryChunk"]=events
+            (parts/"2.json").write_text(json.dumps(second))
+            manifest=builder.build(parts,base/"out")
+            workflow=json.loads((base/"out"/"generated-workflow-plan.json").read_text())
+            self.assertEqual(workflow["summary"]["workflowCandidates"],1)
+            self.assertEqual(workflow["summary"]["generationReadySteps"],2)
+            self.assertEqual(len(workflow["workflowCandidates"][0]["stateContinuityLinks"]),1)
+            self.assertFalse(workflow["workflowCandidates"][0]["automaticallyExecutable"])
+            self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
+            self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflow["summary"])
+            self.assertEqual(manifest["generatedWorkflowPlan"]["sha256"],
+                hashlib.sha256((base/"out"/"generated-workflow-plan.json").read_bytes()).hexdigest())
+            with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
+                self.assertIn("generated-workflow-plan.json",archive.namelist())
 
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib
@@ -218,7 +257,6 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(evaluated["gameplayVerified"])
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertIn("prompt-trial-evaluation.json",archive.namelist())
-
 
     def test_build_and_reproducibility(self):
         with tempfile.TemporaryDirectory() as temp:
