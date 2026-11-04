@@ -1,3 +1,10 @@
+## v30.6.5 — Integrated linked-workflow utility controls
+
+- Embed the selected evidence-linked workflow trial directly in `LycolesGeneratedUtility.lua` for both standalone generation and deterministic release builds.
+- Keep `LycolesGuidedWorkflow.lua` as a reviewable standalone artifact while allowing one primary utility script to launch diagnostics, prompt/Tool/GUI trials, linked workflows, and Admin Commands together when evidence supports them.
+- Add `Linked Workflow Trial` to implemented control inventories and report `integratedInGeneratedUtility` explicitly without claiming gameplay automation or live verification.
+
+
 ## v30.6.4 — Bounded state-dependent workflow repetition
 
 - Add an explicit repeat toggle to generated linked-workflow trials, bounded to five complete sequences and the existing 400-record feedback limit.

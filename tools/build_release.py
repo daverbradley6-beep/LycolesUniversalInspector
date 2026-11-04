@@ -213,7 +213,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
 
     admin_lua=admin_generator.render(
         place,gameplay_understanding,generation_readiness)
-    lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
+    lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
+        +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     if guided_workflow_bytes is None:
@@ -251,6 +252,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
                 "automaticallyExecutableWorkflows"]>0,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False},
         "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "integratedInGeneratedUtility":guided_workflow_lua is not None,
             "candidateId":guided_workflow_candidate_id,
             "executionMode":guided_workflow_candidate.get("executionMode")
                 if guided_workflow_candidate else None,
@@ -334,7 +336,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "implementedClientControls":["Stats","Menus","Prompts","Features","Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
             (["Tool Activation Trial"] if tool_trial_generated else [])+
-            (["Guided GUI Trial"] if gui_trial_generated else []),
+            (["Guided GUI Trial"] if gui_trial_generated else [])+
+            (["Linked Workflow Trial"] if guided_workflow_lua else []),
         "implementedGameplayAutomation":[],
         "adminCommandFramework":{"artifact":"LycolesAdminCommands.lua",
             "commands":list(admin_generator.COMMANDS),"prefix":";",

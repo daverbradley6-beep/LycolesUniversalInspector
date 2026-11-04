@@ -573,7 +573,8 @@ def main():
                                           "generate_admin_commands.py")
         admin_lua=admin_generator.render(
             plan["integrity"]["placeId"],understanding,generation_readiness)
-        lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
+        lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
+            +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
         result_builder=load_local_module("lycoles_generated_result","generated_result.py")
         generated_result=result_builder.build(plan["integrity"]["placeId"],
             plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
@@ -581,7 +582,8 @@ def main():
             list(ALLOWED_FEATURES)+["Admin Commands"]+
                 (["Prompt Interactions"] if prompt_trial_generated else [])+
                 (["Tool Activation Trial"] if tool_trial_generated else [])+
-                (["Guided GUI Trial"] if gui_trial_generated else []),
+                (["Guided GUI Trial"] if gui_trial_generated else [])+
+                (["Linked Workflow Trial"] if guided_workflow_lua else []),
             generation_readiness)
 
         generation_readiness_bytes=(json.dumps(
@@ -617,7 +619,8 @@ def main():
           "implementedFeatures":list(ALLOWED_FEATURES)+["Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
             (["Tool Activation Trial"] if tool_trial_generated else [])+
-            (["Guided GUI Trial"] if gui_trial_generated else []),
+            (["Guided GUI Trial"] if gui_trial_generated else [])+
+            (["Linked Workflow Trial"] if guided_workflow_lua else []),
           "adminCommands":list(admin_generator.COMMANDS),
           "generatedResult":{"artifact":result_name,"schemaVersion":generated_result["schemaVersion"],
             "displayOnly":True,"executionAuthorized":False},
@@ -636,6 +639,7 @@ def main():
                 generated_workflows["summary"]["automaticallyExecutableWorkflows"]>0,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "integratedInGeneratedUtility":guided_workflow_lua is not None,
             "candidateId":guided_workflow_candidate_id,
             "executionMode":guided_workflow_candidate.get("executionMode")
                 if guided_workflow_candidate else None,

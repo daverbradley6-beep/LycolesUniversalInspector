@@ -153,6 +153,8 @@ class GeneratorTests(unittest.TestCase):
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
             self.assertFalse(workflows["claims"]["causalityProven"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertFalse(manifest["guidedWorkflowTrial"]["integratedInGeneratedUtility"])
+
             self.assertFalse(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["candidateId"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["feedbackSchema"])

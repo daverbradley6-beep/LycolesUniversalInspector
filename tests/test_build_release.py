@@ -217,6 +217,11 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(workflow["workflowCandidates"][0]["automaticallyExecutable"])
             guided=(base/"out"/"LycolesGuidedWorkflow.lua").read_text()
             self.assertIn("normal user activation",guided)
+            combined=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn(guided,combined)
+            self.assertIn("Linked Workflow Trial",manifest["implementedClientControls"])
+            self.assertTrue(manifest["guidedWorkflowTrial"]["integratedInGeneratedUtility"])
+
             self.assertEqual(manifest["guidedWorkflowTrial"]["sha256"],
                 hashlib.sha256(guided.encode()).hexdigest())
             self.assertNotIn("firesignal",guided.lower())
