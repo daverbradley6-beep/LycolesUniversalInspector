@@ -1,5 +1,14 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Explicit report handoff lifecycle
+
+- Completed implementation commit `3cbb73b` (`Clarify report handoff lifecycle`) and released inspector **v30.6.1** on `openhands-development`.
+- The in-game Generated Script handoff now reports report generation/local export, upload attempt, receiver ACK/integrity, and downstream availability as separate stages. It distinguishes not attempted, blocked before attempt, previously attempted/currently blocked, uploading, incomplete, partial ACK, complete ACK awaiting integrity, and downstream not validated.
+- Complete/partial receiver acknowledgement counts remain durable across a later configuration-blocked retry. A fully acknowledged report still directs the user to receiver-integrity verification rather than incorrectly reverting to “not uploaded.” No endpoint or credential is shown.
+- v109 manifest readiness derives the same labels from canonical lifecycle fields, rejects contradictory explicit labels, preserves legacy manifest ambiguity, and exposes the labels beside boolean lifecycle stages. Local write and ACK claims remain insufficient for receiver integrity or downstream availability.
+- Full local gate passed: **1,528 Python tests** with pinned official Luau 0.744 enabled; receiver integrity and Luau parser suite passed (**3/3**); whitespace validation passed. No production receiver, secret, or Cloudflare configuration changed.
+- Next priority: strengthen generation-readiness classification with the new baseline/loss provenance so incomplete observation coverage is visible without making complete coverage proof of causality.
+
 ## Update — 2026-11-02 — Pre-activation interaction evidence
 
 - Completed implementation commit `59c0759` (`Capture pre-activation interaction evidence`) and released inspector **v30.6.0** on `openhands-development`.
