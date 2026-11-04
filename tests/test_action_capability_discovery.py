@@ -40,6 +40,47 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
                         {"name":"Data","className":"Folder","ordinal":1},
                         {"name":"Upgrades","className":"IntValue","ordinal":1}]}]}]}
 
+    def test_target_baseline_provenance_is_preserved(self):
+        plan=self.gui_plan();event=plan["observedInteractionHistory"][0]
+        event.update({"baselineSource":"GuiButton.InputBegan",
+            "baselineTiming":"pre-activation","baselineAgeSeconds":0.02,
+            "preActivationBaselineAvailable":True})
+        result=discovery.analyze(plan);target=result["guiInteractions"]["targets"][0]
+        self.assertEqual(target["baselineEvidence"],{"events":1,
+            "preActivationEvents":1,"activationCallbackEvents":0,
+            "unknownTimingEvents":0,"possibleSynchronousLoss":False})
+        self.assertEqual(result["observedActions"][0]["baselineEvidence"]["timing"],
+                         "pre-activation")
+
+    def test_callback_fallback_is_marked_as_possible_loss(self):
+        plan=self.gui_plan();event=plan["observedInteractionHistory"][0]
+        event.update({"baselineSource":"activation-callback-fallback",
+            "baselineTiming":"activation-callback","baselineAgeSeconds":None,
+            "preActivationBaselineAvailable":False})
+        target=discovery.analyze(plan)["guiInteractions"]["targets"][0]
+        self.assertEqual(target["baselineEvidence"]["activationCallbackEvents"],1)
+        self.assertTrue(target["baselineEvidence"]["possibleSynchronousLoss"])
+
+    def test_malformed_baseline_timing_fails_closed(self):
+        plan=self.gui_plan();event=plan["observedInteractionHistory"][0]
+        event.update({"baselineSource":"GuiButton.InputBegan",
+            "baselineTiming":"activation-callback","baselineAgeSeconds":0.02,
+            "preActivationBaselineAvailable":True})
+        with self.assertRaisesRegex(ValueError,"baseline timing"):
+            discovery.analyze(plan)
+    def test_nonfinite_oversized_and_partial_baselines_fail_closed(self):
+        for age in (float("nan"),float("inf"),-0.01,3600.01,True):
+            plan=self.gui_plan();plan["observedInteractionHistory"][0].update({
+                "baselineSource":"GuiButton.InputBegan","baselineTiming":"pre-activation",
+                "baselineAgeSeconds":age,"preActivationBaselineAvailable":True})
+            with self.subTest(age=age),self.assertRaisesRegex(ValueError,"baseline timing"):
+                discovery.analyze(plan)
+        plan=self.gui_plan();plan["observedInteractionHistory"][0]["baselineSource"]="x"*500
+        with self.assertRaisesRegex(ValueError,"baseline timing"):
+            discovery.analyze(plan)
+
+
+
 
     def test_real_rainbow_egg_prompt_becomes_correlated_trial_target(self):
         result=discovery.analyze(self.real_plan())

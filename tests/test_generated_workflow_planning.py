@@ -104,6 +104,15 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertEqual(candidate["executionMode"],"mixed-guided")
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertEqual(result["summary"]["executionReadyWorkflows"],1)
+        self.assertTrue(all(step["observationBaseline"]=={
+            "timing":"unknown","preActivationBaselineAvailable":False,
+            "possibleSynchronousLoss":True} for step in candidate["steps"]))
+        forged=copy.deepcopy(result)
+        forged["workflowCandidates"][0]["steps"][0]["observationBaseline"][
+            "possibleSynchronousLoss"]=False
+        with self.assertRaisesRegex(ValueError,"step contract"):
+            generator.validate(forged)
+
 
 
     def test_request_alignment_ranks_executable_workflows_before_lexical_order(self):

@@ -1,3 +1,11 @@
+## v30.6.2 — Generation-readiness timing provenance
+
+- Preserve normalized pre-activation, activation-callback fallback, and legacy-unknown baseline timing from observed Prompt, Tool, and GUI actions into target evidence, canonical workflow steps, generated capability summaries, and the display-only Generated Script tab.
+- Add scan-wide baseline/window coverage to generation readiness, including explicit pre-activation capture failures and possible evidence loss. Coverage is limitations-only: complete accounting never increases readiness or proves causality, runtime behavior, gameplay, server authority, or source authenticity.
+- Independently validate bounded timing fields in action discovery, workflow planning/generation, generated-result packaging, and the in-game result loader. Malformed, contradictory, non-finite, or oversized provenance fails closed; same-schema legacy artifacts may omit the new fields and remain timing-unknown.
+- Add focused regressions for Prompt/Tool/GUI aggregation, callback fallback, workflow-step propagation, capture failure, forged coverage, legacy compatibility, and display validation.
+
+
 ## v30.6.1 — Explicit downstream handoff stages
 
 - Separate report generation, local export, upload-attempt, receiver acknowledgement/integrity, and downstream availability status in the Generated Script handoff instead of compressing them into one receiver line.

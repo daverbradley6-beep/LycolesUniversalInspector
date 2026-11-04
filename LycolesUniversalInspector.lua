@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.1
+-- Lycoles Universal Inspector v30.6.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.1"
+local VERSION = "30.6.2"
 
 local endpoint = ""
 local autoSend = true
@@ -1043,6 +1043,62 @@ local function validateGuidedFeedbackCorrelation(correlation,selectedWorkflowId)
         and totalConflicts==summary.stepsWithStatusConflict
 end
 
+local function validateGeneratedObservationBaseline(value,workflow)
+    if value==nil then return true end
+    if type(value)~="table" or value.readinessImpact~="limitations-only"
+        or value.causalityProven~=false or value.runtimeVerified~=false
+        or value.gameplayVerified~=false or type(value.possibleSynchronousLoss)~="boolean" then
+        return false
+    end
+    local total=workflow and value.steps or value.events
+    local pre=workflow and value.preActivationSteps or value.preActivationEvents
+    local callback=workflow and value.activationCallbackSteps or value.activationCallbackEvents
+    local unknown=workflow and value.unknownTimingSteps or value.unknownTimingEvents
+    if not boundedResultInteger(total,2000) or total<1
+        or not boundedResultInteger(pre,2000) or not boundedResultInteger(callback,2000)
+        or not boundedResultInteger(unknown,2000) or total~=pre+callback+unknown
+        or value.possibleSynchronousLoss~=(callback>0 or unknown>0) then return false end
+    local expected=unknown>0 and "timing-unknown" or callback>0 and "callback-fallback-present"
+        or workflow and "pre-activation-baseline-available-for-all-steps"
+        or "pre-activation-baseline-available-for-all-observations"
+    return value.classification==expected
+end
+
+local function validateInteractionObservationCoverage(value)
+    if value==nil then return true end
+    if type(value)~="table" or type(value.available)~="boolean"
+        or value.readinessImpact~="limitations-only" or value.causalityProven~=false
+        or value.runtimeVerified~=false or value.gameplayVerified~=false
+        or type(value.limitations)~="table" or #value.limitations>8 then return false end
+    for _,item in ipairs(value.limitations) do if not boundedResultText(item,160) then return false end end
+    if value.available==false then
+        return value.classification=="unavailable-legacy" and value.evidenceLossPossible==nil
+    end
+    local counts={value.callbacksFired,value.preActivationBaselinesUsed,value.callbackBaselinesUsed,
+        value.pendingObservationEvents,value.observationWindowsExpected,
+        value.observationWindowsCompleted,value.observationWindowsFailed}
+    for _,count in ipairs(counts) do if not boundedResultInteger(count,10000000) then return false end end
+    if value.preActivationCaptureFailures~=nil
+        and not boundedResultInteger(value.preActivationCaptureFailures,10000000) then return false end
+    if value.observationWindowAccountingValid~=true
+        or type(value.evidenceLossPossible)~="boolean"
+        or value.preActivationBaselinesUsed+value.callbackBaselinesUsed~=value.callbacksFired
+        or value.observationWindowsCompleted+value.observationWindowsFailed
+            +value.pendingObservationEvents~=value.observationWindowsExpected then return false end
+    local knownPossible=value.callbackBaselinesUsed>0 or value.pendingObservationEvents>0
+        or value.observationWindowsFailed>0
+    local possible=value.evidenceLossPossible
+    if value.preActivationCaptureFailures~=nil then
+        possible=knownPossible or value.preActivationCaptureFailures>0
+    end
+    if knownPossible and value.evidenceLossPossible~=true then return false end
+    local expected=possible and "possible-evidence-loss"
+        or value.callbacksFired==0 and "accounted-no-interactions"
+        or "accounted-pre-activation-observation"
+    return value.evidenceLossPossible==possible and value.classification==expected
+end
+
+
 local function validateGeneratedReadiness(result)
     if result.schemaVersion=="110.generated-result.1" then return true,nil end
     if result.schemaVersion~="113.generated-result.1" then return false,nil end
@@ -1061,7 +1117,10 @@ local function validateGeneratedReadiness(result)
     local workflowSelection=readiness.workflowSelection
     if not validateWorkflowSelection(workflowSelection)
         or not validateGuidedFeedbackCorrelation(readiness.guidedWorkflowFeedbackCorrelation,
-            workflowSelection.selectedCandidateId) then return false,nil end
+            workflowSelection.selectedCandidateId)
+        or not validateInteractionObservationCoverage(readiness.interactionObservationCoverage) then
+        return false,nil
+    end
     local request=readiness.request
     local validStatus={
         ["no-capability-requested"]=true,["generated-bounded-subset"]=true,
@@ -1103,12 +1162,17 @@ local function validateGeneratedReadiness(result)
             or item.causalityProven~=false or item.actionOutcomeVerified~=false then
             return false,nil
         end
-        if item.kind=="mixed-action-workflow-trial" then
+        local workflowKind=item.kind=="mixed-action-workflow-trial"
+        if not validateGeneratedObservationBaseline(item.observationBaseline,workflowKind) then
+            return false,nil
+        end
+        if workflowKind then
             local expectedMode=item.manualGuiActivationRequired and "mixed-guided" or "bounded-automatic"
             if workflowCapabilityId~=nil or not boundedResultText(item.candidateId,120)
                 or not boundedResultText(item.transactionId,200)
                 or item.executionMode~=expectedMode
                 or not boundedResultInteger(item.stepCount,64) or item.stepCount<2
+                or item.observationBaseline~=nil and item.observationBaseline.steps~=item.stepCount
                 or type(item.stepKinds)~="table" or #item.stepKinds~=item.stepCount
                 or type(item.targetPaths)~="table" or #item.targetPaths~=item.stepCount
                 or type(item.requestMatchedTerms)~="table" or #item.requestMatchedTerms>128
@@ -1206,6 +1270,16 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
             "Readiness: "..readiness.request.status,
             "Generated bounded capabilities: "..tostring(#generated),
             "Full request implemented: false | Runtime/gameplay verified: false"}
+        local coverage=readiness.interactionObservationCoverage
+        if type(coverage)=="table" then
+            if coverage.available then
+                details[#details+1]="Observation coverage: "..coverage.classification.." | pre="
+                    ..tostring(coverage.preActivationBaselinesUsed).." callback="
+                    ..tostring(coverage.callbackBaselinesUsed).." | causality unproven"
+            else
+                details[#details+1]="Observation coverage: unavailable for legacy evidence"
+            end
+        end
         local workflowCapability=nil
         local singleCapability=nil
         for _,item in ipairs(generated) do
@@ -1221,6 +1295,13 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
         else
             details[#details+1]="Evidence: no generated replay capability"
         end
+        local selectedCapability=workflowCapability or singleCapability
+        local selectedBaseline=selectedCapability and selectedCapability.observationBaseline or nil
+        if type(selectedBaseline)=="table" then
+            details[#details+1]="Selected evidence baseline: "..selectedBaseline.classification
+                .." | limitations only; not causal proof"
+        end
+
         local correlation=readiness.guidedWorkflowFeedbackCorrelation
         if type(correlation)=="table" and correlation.available then
             local summary=correlation.summary

@@ -60,6 +60,40 @@ def _evidence_tier(state_changes,gui_changes):
     return "interaction-observed"
 
 
+_BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
+    "Tool.Equipped","activation-callback-fallback"}
+
+def _baseline_evidence(event):
+    fields=("baselineSource","baselineTiming","baselineAgeSeconds",
+        "preActivationBaselineAvailable")
+    if not any(field in event for field in fields):
+        return {"timing":"unknown","source":None,"preActivationBaselineAvailable":False,
+            "possibleSynchronousLoss":True}
+    source=event.get("baselineSource");timing=event.get("baselineTiming")
+    available=event.get("preActivationBaselineAvailable");age=event.get("baselineAgeSeconds")
+    expected="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    if (source not in _BASELINE_SOURCES or timing!=expected or type(available) is not bool
+            or available!=(timing=="pre-activation") or (age is not None and
+            (type(age) not in (int,float) or type(age) is bool or not math.isfinite(age)
+                or not 0<=age<=3600))):
+        raise ValueError("Malformed interaction baseline timing")
+    return {"timing":timing,"source":source,"preActivationBaselineAvailable":available,
+        "possibleSynchronousLoss":not available}
+
+def _baseline_summary():
+    return {"events":0,"preActivationEvents":0,"activationCallbackEvents":0,
+        "unknownTimingEvents":0,"possibleSynchronousLoss":False}
+
+def _record_baseline(summary,evidence):
+    summary["events"]+=1
+    field={"pre-activation":"preActivationEvents",
+        "activation-callback":"activationCallbackEvents"}.get(
+            evidence["timing"],"unknownTimingEvents")
+    summary[field]+=1
+    summary["possibleSynchronousLoss"]=summary["possibleSynchronousLoss"] or evidence[
+        "possibleSynchronousLoss"]
+
+
 def _path_identity(value):
     if not isinstance(value,list) or not 1<=len(value)<=21:return None
     result=[]
@@ -269,13 +303,15 @@ def analyze(plan):
             ("visibility-changed" if change.get("beforeVisible")!=change.get("afterVisible")
                 else "active-changed")} for change in gui_changes]
         tier=_evidence_tier(state_signals,gui_signals)
+        baseline=_baseline_evidence(event)
         observed_actions.append({"path":path,"pathIdentity":identity,"controlType":control,
             "featureCandidate":event.get("featureCandidate"),
             "actionCandidate":(event.get("workflow") or {}).get("action")
                 if isinstance(event.get("workflow"),dict) else None,
             "evidenceTier":tier,"observableOutcomeCandidate":bool(state_signals or gui_signals),
             "stateChanges":changes,"stateOutcomeSignals":state_signals,
-            "guiOutcomeSignals":gui_signals,"replayContractAvailable":False,
+            "guiOutcomeSignals":gui_signals,"baselineEvidence":baseline,
+            "replayContractAvailable":False,
             "causalityProven":False,"outcomeVerified":False})
         if control=="ProximityPrompt.Triggered":
             raw_metadata=event.get("controlMetadata")
@@ -287,6 +323,7 @@ def analyze(plan):
                 "actionCandidate":(event.get("workflow") or {}).get("action")
                     if isinstance(event.get("workflow"),dict) else None,
                 "observedTriggers":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "baselineEvidence":_baseline_summary(),
                 "evidenceTier":"interaction-observed","trialGenerationReady":False,
                 "prerequisites":{"executorFireProximityPrompt":True,"characterRoot":True,
                     "targetAnchor":True,"promptEnabledAtRuntime":True},
@@ -294,6 +331,7 @@ def analyze(plan):
                 "temporalCorrelationOnly":True,"causalityProven":False,
                 "runtimeVerified":False,"gameplayVerified":False})
             if identity:target["pathIdentity"]=identity;target["identityMode"]="component"
+            _record_baseline(target["baselineEvidence"],baseline)
             if event_metadata:
                 snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
                 if event_metadata not in snapshots:
@@ -324,6 +362,7 @@ def analyze(plan):
                 "actionCandidate":(event.get("workflow") or {}).get("action")
                     if isinstance(event.get("workflow"),dict) else None,
                 "observedActivations":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "baselineEvidence":_baseline_summary(),
                 "evidenceTier":"interaction-observed","activationContractReady":False,
                 "trialGenerationReady":False,
                 "prerequisites":{"officialToolActivate":True,"humanoidEquipTool":True,
@@ -335,6 +374,7 @@ def analyze(plan):
                 if target.get("pathIdentity") not in (None,identity):target["identityAmbiguous"]=True
                 elif target.get("pathIdentity") is None:
                     target["pathIdentity"]=identity;target["identityMode"]="component"
+            _record_baseline(target["baselineEvidence"],baseline)
             if event_metadata:
                 snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
                 if event_metadata not in snapshots:
@@ -363,6 +403,7 @@ def analyze(plan):
                 "actionCandidate":(event.get("workflow") or {}).get("action")
                     if isinstance(event.get("workflow"),dict) else None,
                 "observedActivations":0,"outcomeSignals":[],"guiOutcomeSignals":[],
+                "baselineEvidence":_baseline_summary(),
                 "evidenceTier":"interaction-observed","guidedActivationContractReady":False,
                 "trialGenerationReady":False,"automaticActivationAvailable":False,
                 "prerequisites":{"officialActivatedObservation":True,
@@ -375,6 +416,7 @@ def analyze(plan):
                 if target.get("pathIdentity") not in (None,identity):target["identityAmbiguous"]=True
                 elif target.get("pathIdentity") is None:
                     target["pathIdentity"]=identity;target["identityMode"]="component"
+            _record_baseline(target["baselineEvidence"],baseline)
             if event_metadata:
                 snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
                 if event_metadata not in snapshots:

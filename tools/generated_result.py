@@ -132,6 +132,79 @@ def _validate_workflow_selection(selection):
         raise ValueError("Invalid unavailable workflow selection")
 
 
+
+def _validate_observation_baseline(value,workflow=False):
+    if value is None:return
+    if (not isinstance(value,dict) or value.get("readinessImpact")!="limitations-only"
+            or any(value.get(field) is not False for field in
+                ("causalityProven","runtimeVerified","gameplayVerified"))
+            or type(value.get("possibleSynchronousLoss")) is not bool):
+        raise ValueError("Invalid generated capability observation baseline")
+    if workflow:
+        fields=("steps","preActivationSteps","activationCallbackSteps","unknownTimingSteps")
+        classifications={"timing-unknown","callback-fallback-present",
+            "pre-activation-baseline-available-for-all-steps"}
+    else:
+        fields=("events","preActivationEvents","activationCallbackEvents","unknownTimingEvents")
+        classifications={"timing-unknown","callback-fallback-present",
+            "pre-activation-baseline-available-for-all-observations"}
+    if (any(type(value.get(field)) is not int or not 0<=value[field]<=2_000 for field in fields)
+            or value[fields[0]]<1 or value[fields[0]]!=sum(value[field] for field in fields[1:])
+            or value["possibleSynchronousLoss"] is not bool(value[fields[2]] or value[fields[3]])
+            or value.get("classification") not in classifications):
+        raise ValueError("Invalid generated capability observation baseline")
+    expected=("timing-unknown" if value[fields[3]] else
+        ("callback-fallback-present" if value[fields[2]] else
+         ("pre-activation-baseline-available-for-all-steps" if workflow else
+          "pre-activation-baseline-available-for-all-observations")))
+    if value["classification"]!=expected:
+        raise ValueError("Inconsistent generated capability observation baseline")
+
+
+def _validate_observation_coverage(value):
+    if value is None:return
+    if (not isinstance(value,dict) or type(value.get("available")) is not bool
+            or value.get("readinessImpact")!="limitations-only"
+            or any(value.get(field) is not False for field in
+                ("causalityProven","runtimeVerified","gameplayVerified"))
+            or not isinstance(value.get("limitations"),list)
+            or len(value["limitations"])>8
+            or any(not _bounded_text(item,160) for item in value["limitations"])
+            or value.get("classification") not in
+                ("unavailable-legacy","possible-evidence-loss","accounted-no-interactions",
+                 "accounted-pre-activation-observation")):
+        raise ValueError("Invalid interaction observation coverage")
+    if value["available"] is False:
+        if value["classification"]!="unavailable-legacy" or value.get("evidenceLossPossible") is not None:
+            raise ValueError("Invalid legacy interaction observation coverage")
+        return
+    fields=("callbacksFired","preActivationBaselinesUsed","callbackBaselinesUsed",
+        "pendingObservationEvents","observationWindowsExpected",
+        "observationWindowsCompleted","observationWindowsFailed")
+    capture_failures=value.get("preActivationCaptureFailures")
+    if (any(type(value.get(field)) is not int or not 0<=value[field]<=10_000_000
+            for field in fields)
+            or capture_failures is not None and
+                (type(capture_failures) is not int or not 0<=capture_failures<=10_000_000)
+            or value.get("observationWindowAccountingValid") is not True
+            or type(value.get("evidenceLossPossible")) is not bool
+            or value["preActivationBaselinesUsed"]+value["callbackBaselinesUsed"]!=value[
+                "callbacksFired"]
+            or value["observationWindowsCompleted"]+value["observationWindowsFailed"]+value[
+                "pendingObservationEvents"]!=value["observationWindowsExpected"]):
+        raise ValueError("Invalid interaction observation coverage counts")
+    known_possible=bool(value["callbackBaselinesUsed"] or value["pendingObservationEvents"]
+        or value["observationWindowsFailed"])
+    possible=(bool(known_possible or capture_failures) if capture_failures is not None
+        else value["evidenceLossPossible"])
+    expected=("possible-evidence-loss" if possible else
+        ("accounted-no-interactions" if value["callbacksFired"]==0 else
+         "accounted-pre-activation-observation"))
+    if (known_possible and value["evidenceLossPossible"] is not True
+            or value["evidenceLossPossible"] is not possible or value["classification"]!=expected):
+        raise ValueError("Inconsistent interaction observation coverage")
+
+
 def _validate_generation_readiness(place_id,scan_id,requested_capability,readiness):
     if (not isinstance(readiness,dict)
             or readiness.get("schemaVersion")!="113.generation-readiness.1"
@@ -143,6 +216,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
         raise ValueError("Invalid generation-readiness claims")
     _validate_feedback_correlation(readiness.get("guidedWorkflowFeedbackCorrelation"))
     _validate_workflow_selection(readiness.get("workflowSelection"))
+    _validate_observation_coverage(readiness.get("interactionObservationCoverage"))
     request=readiness.get("request")
     if (not isinstance(request,dict) or request.get("request")!=requested_capability
             or request.get("status") not in ("no-capability-requested","generated-bounded-subset",
@@ -170,6 +244,8 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                        ("runtimeVerified","gameplayVerified","causalityProven","actionOutcomeVerified"))):
             raise ValueError("Invalid generation-readiness capability")
         kind=item.get("kind")
+        _validate_observation_baseline(item.get("observationBaseline"),
+            workflow=kind=="mixed-action-workflow-trial")
         if kind=="mixed-action-workflow-trial":
             paths=item.get("targetPaths");step_kinds=item.get("stepKinds")
             matched_terms=item.get("requestMatchedTerms");match_score=item.get("requestMatchScore")
@@ -178,6 +254,8 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or item.get("executionMode") not in ("mixed-guided","bounded-automatic")
                     or not isinstance(item.get("stepCount"),int)
                     or not 2<=item["stepCount"]<=64
+                    or item.get("observationBaseline") is not None and
+                        item["observationBaseline"]["steps"]!=item["stepCount"]
                     or not isinstance(paths,list) or len(paths)!=item["stepCount"]
                     or any(not _bounded_text(path,500) for path in paths)
                     or not isinstance(step_kinds,list) or len(step_kinds)!=item["stepCount"]

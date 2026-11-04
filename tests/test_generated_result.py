@@ -99,6 +99,32 @@ class GeneratedResultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"capability"):
             self.build(generation_readiness=spoofed)
 
+
+    def test_observation_provenance_claims_fail_closed_when_present(self):
+        readiness=self.readiness();capability=readiness["generatedCapabilities"][0]
+        capability["observationBaseline"]={"events":1,"preActivationEvents":1,
+            "activationCallbackEvents":0,"unknownTimingEvents":0,
+            "possibleSynchronousLoss":False,
+            "classification":"pre-activation-baseline-available-for-all-observations",
+            "readinessImpact":"limitations-only","causalityProven":False,
+            "runtimeVerified":False,"gameplayVerified":False}
+        readiness["interactionObservationCoverage"]={"available":True,
+            "classification":"accounted-pre-activation-observation","callbacksFired":1,
+            "preActivationBaselinesUsed":1,"callbackBaselinesUsed":0,
+            "pendingObservationEvents":0,"observationWindowsExpected":3,
+            "observationWindowsCompleted":3,"observationWindowsFailed":0,
+            "observationWindowAccountingValid":True,"evidenceLossPossible":False,
+            "readinessImpact":"limitations-only","limitations":[],
+            "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
+        self.build(generation_readiness=readiness)
+        capability["observationBaseline"]["possibleSynchronousLoss"]=True
+        with self.assertRaisesRegex(ValueError,"observation baseline"):
+            self.build(generation_readiness=readiness)
+        capability["observationBaseline"]["possibleSynchronousLoss"]=False
+        readiness["interactionObservationCoverage"]["evidenceLossPossible"]=True
+        with self.assertRaisesRegex(ValueError,"observation coverage"):
+            self.build(generation_readiness=readiness)
+
     def test_official_tool_trial_kind_is_displayable_but_unverified(self):
         readiness=self.readiness();capability=readiness["generatedCapabilities"][0]
         capability.update({"id":"tool-activation-trial","kind":"official-tool-activation-trial",

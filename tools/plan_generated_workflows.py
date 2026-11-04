@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import math
 import re
 import unicodedata
 
@@ -100,6 +101,27 @@ def _event_delta(event,key):
     return {"key":key,"before":matches[0]["before"],"after":matches[0]["after"],
         "stateIdentity":identity}
 
+
+_BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
+    "Tool.Equipped","activation-callback-fallback"}
+
+def _baseline(event):
+    fields=("baselineSource","baselineTiming","baselineAgeSeconds",
+        "preActivationBaselineAvailable")
+    if not any(field in event for field in fields):
+        return {"timing":"unknown","preActivationBaselineAvailable":False,
+            "possibleSynchronousLoss":True}
+    source=event.get("baselineSource");timing=event.get("baselineTiming")
+    available=event.get("preActivationBaselineAvailable");age=event.get("baselineAgeSeconds")
+    expected="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    if (source not in _BASELINE_SOURCES or timing!=expected or type(available) is not bool
+            or available!=(timing=="pre-activation") or (age is not None and
+            (type(age) not in (int,float) or type(age) is bool or not math.isfinite(age)
+                or not 0<=age<=3600))):
+        raise ValueError("Malformed workflow baseline timing")
+    return {"timing":timing,"preActivationBaselineAvailable":available,
+        "possibleSynchronousLoss":not available}
+
 def _step(event,sequence,transaction_order,kind,metadata_key,target):
     outcome=target["selectedOutcome"]
     observed=_event_delta(event,outcome["key"])
@@ -124,6 +146,7 @@ def _step(event,sequence,transaction_order,kind,metadata_key,target):
         "targetLabel":target["label"],"targetFeature":target.get("featureCandidate"),
         "actionCandidate":target.get("actionCandidate"),
         "controlType":target["controlType"],"kind":kind,"activationMode":activation_mode,
+        "observationBaseline":_baseline(event),
         "pathIdentity":copy.deepcopy(target["pathIdentity"]),
         "prerequisiteMetadata":copy.deepcopy(target[metadata_key]),
         "entryStatePrerequisite":{"key":outcome["key"],"value":observed["before"],

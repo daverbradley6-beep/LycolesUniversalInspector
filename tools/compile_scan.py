@@ -130,6 +130,7 @@ def _interaction_observation_summary(diagnostics):
     return {"available":True,"callbacksFired":diagnostics["callbacksFired"],
         "preActivationBaselinesUsed":diagnostics["preActivationBaselinesUsed"],
         "callbackBaselinesUsed":diagnostics["callbackBaselinesUsed"],
+        "preActivationCaptureFailures":diagnostics["preActivationCaptureFailures"],
         "pendingObservationEvents":diagnostics["pendingObservationEvents"],
         "observationWindowsExpected":expected,
         "observationWindowsCompleted":diagnostics["observationWindowsCompleted"],

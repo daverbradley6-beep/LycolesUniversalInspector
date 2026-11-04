@@ -121,6 +121,16 @@ class ScanCompilerTests(unittest.TestCase):
         self.assertTrue(summary["evidenceLossPossible"])
         self.assertIn("callback-time baselines may miss synchronous activation changes",
             summary["limitations"])
+        self.assertEqual(summary["preActivationCaptureFailures"],0)
+        diagnostics.update({"callbacksFired":0,"preActivationBaselinesUsed":0,
+            "callbackBaselinesUsed":0,"preActivationCaptureFailures":1,
+            "observationWindowsExpected":0,"observationWindowsCompleted":0,
+            "evidenceLossPossible":True})
+        summary=compiler._interaction_observation_summary(diagnostics)
+        self.assertEqual(summary["preActivationCaptureFailures"],1)
+        self.assertTrue(summary["evidenceLossPossible"])
+        self.assertIn("one or more pre-activation captures failed",summary["limitations"])
+
 
 
 

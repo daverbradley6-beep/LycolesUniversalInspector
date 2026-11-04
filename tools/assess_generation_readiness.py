@@ -86,6 +86,57 @@ def _is_egg_target(actions,target):
     return any(item.get("path")==target["path"]
                for item in actions["eggHatching"].get("targets",[]))
 
+
+
+def _capability_baseline(target):
+    value=target.get("baselineEvidence")
+    if not isinstance(value,dict):
+        raise ValueError("selected action target lacks baseline evidence")
+    fields=("events","preActivationEvents","activationCallbackEvents","unknownTimingEvents")
+    if (any(type(value.get(field)) is not int or not 0<=value[field]<=2_000 for field in fields)
+            or value["events"]<1 or value["events"]!=sum(value[field] for field in fields[1:])
+            or type(value.get("possibleSynchronousLoss")) is not bool
+            or value["possibleSynchronousLoss"] is not bool(
+                value["activationCallbackEvents"] or value["unknownTimingEvents"])):
+        raise ValueError("selected action target has malformed baseline evidence")
+    if value["unknownTimingEvents"]:
+        classification="timing-unknown"
+    elif value["activationCallbackEvents"]:
+        classification="callback-fallback-present"
+    else:
+        classification="pre-activation-baseline-available-for-all-observations"
+    return {field:value[field] for field in fields}|{
+        "possibleSynchronousLoss":value["possibleSynchronousLoss"],
+        "classification":classification,"readinessImpact":"limitations-only",
+        "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
+
+
+def _workflow_baseline(candidate):
+    steps=candidate.get("steps",[]);timings=[]
+    for step in steps:
+        baseline=step.get("observationBaseline") if isinstance(step,dict) else None
+        if (not isinstance(baseline,dict)
+                or baseline.get("timing") not in ("pre-activation","activation-callback","unknown")
+                or type(baseline.get("preActivationBaselineAvailable")) is not bool
+                or baseline["preActivationBaselineAvailable"] is not (
+                    baseline["timing"]=="pre-activation")
+                or type(baseline.get("possibleSynchronousLoss")) is not bool
+                or baseline["possibleSynchronousLoss"] is not (
+                    baseline["timing"]!="pre-activation")):
+            raise ValueError("generated workflow has malformed baseline evidence")
+        timings.append(baseline["timing"])
+    pre=timings.count("pre-activation");callback=timings.count("activation-callback")
+    unknown=timings.count("unknown")
+    return {"steps":len(steps),"preActivationSteps":pre,
+        "activationCallbackSteps":callback,"unknownTimingSteps":unknown,
+        "possibleSynchronousLoss":bool(callback or unknown),
+        "classification":("timing-unknown" if unknown else
+            ("callback-fallback-present" if callback else
+             "pre-activation-baseline-available-for-all-steps")),
+        "readinessImpact":"limitations-only","causalityProven":False,
+        "runtimeVerified":False,"gameplayVerified":False}
+
+
 def _generated_capability(target,is_egg):
     commands=["interaction","interactionstart","interactionstop","interactions"]
     if is_egg:commands.extend(["egg","eggmode","eggstart","eggstop","eggs"])
@@ -94,6 +145,7 @@ def _generated_capability(target,is_egg):
         "targetPath":target["path"],"targetLabel":target["label"],
         "targetFeature":target.get("featureCandidate"),
         "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
+        "observationBaseline":_capability_baseline(target),
         "commands":commands,"automaticMovement":True,"boundedRepeat":True,
         "operatorStartRequired":True,"failureLimit":3,"attemptLimit":25,
         "classification":"generated-evidence-bounded-trial",
@@ -106,6 +158,7 @@ def _generated_tool_capability(target):
         "targetPath":target["path"],"targetLabel":target["label"],
         "targetFeature":target.get("featureCandidate"),
         "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
+        "observationBaseline":_capability_baseline(target),
         "commands":["interaction","interactionstart","interactionstop","interactions"],
         "officialActivation":True,"boundedEquip":True,"automaticMovement":False,
         "boundedRepeat":True,"operatorStartRequired":True,"failureLimit":3,"attemptLimit":25,
@@ -120,6 +173,7 @@ def _generated_gui_capability(target):
         "targetPath":target["path"],"targetLabel":target["label"],
         "targetFeature":target.get("featureCandidate"),
         "selectedOutcomeKey":outcome["key"],"expectedChange":outcome["change"],
+        "observationBaseline":_capability_baseline(target),
         "commands":["interaction","interactionstart","interactionstop","interactions"],
         "automaticActivation":False,"manualActivationRequired":True,
         "exactControlHighlighting":True,"automaticMovement":False,
@@ -145,6 +199,7 @@ def _generated_workflow_capability(candidate):
         "candidateId":candidate["id"],"transactionId":candidate["transactionId"],
         "executionMode":candidate.get("executionMode","mixed-guided"),
         "stepCount":len(steps),"stepKinds":[step["kind"] for step in steps],
+        "observationBaseline":_workflow_baseline(candidate),
         "targetPaths":[step["targetPath"] for step in steps],
         "targetFeatures":sorted({step.get("targetFeature") for step in steps
             if isinstance(step.get("targetFeature"),str)}),
@@ -249,6 +304,57 @@ def _discovery_only(actions):
     return values
 
 
+def _interaction_observation_coverage(plan):
+    value=plan.get("interactionObservationSummary")
+    if value is None or isinstance(value,dict) and value.get("available") is False:
+        return {"available":False,"classification":"unavailable-legacy",
+            "evidenceLossPossible":None,"readinessImpact":"limitations-only",
+            "limitations":["interaction baseline and delayed-window accounting are unavailable"],
+            "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
+    counts=("callbacksFired","preActivationBaselinesUsed","callbackBaselinesUsed",
+        "pendingObservationEvents","observationWindowsExpected",
+        "observationWindowsCompleted","observationWindowsFailed")
+    capture_failures=value.get("preActivationCaptureFailures") if isinstance(value,dict) else None
+    if (not isinstance(value,dict) or value.get("available") is not True
+            or any(type(value.get(field)) is not int or not 0<=value[field]<=10_000_000
+                for field in counts)
+            or capture_failures is not None and
+                (type(capture_failures) is not int or not 0<=capture_failures<=10_000_000)
+            or value.get("observationWindowAccountingValid") is not True
+            or type(value.get("evidenceLossPossible")) is not bool
+            or value["preActivationBaselinesUsed"]+value["callbackBaselinesUsed"]!=value[
+                "callbacksFired"]
+            or value["observationWindowsCompleted"]+value["observationWindowsFailed"]+value[
+                "pendingObservationEvents"]!=value["observationWindowsExpected"]):
+        raise ValueError("compiled plan has malformed interaction observation coverage")
+    known_possible=bool(value["callbackBaselinesUsed"] or value["pendingObservationEvents"]
+        or value["observationWindowsFailed"])
+    possible=(bool(known_possible or capture_failures) if capture_failures is not None
+        else value["evidenceLossPossible"])
+    if known_possible and value["evidenceLossPossible"] is not True or (
+            capture_failures is not None and possible is not value["evidenceLossPossible"]):
+        raise ValueError("compiled plan has inconsistent interaction evidence-loss status")
+    limitations=[]
+    if value["callbackBaselinesUsed"]:limitations.append(
+        "callback-time baselines may miss synchronous activation changes")
+    if capture_failures:limitations.append("one or more pre-activation captures failed")
+    if value["observationWindowsFailed"]:limitations.append(
+        "one or more delayed observation windows failed")
+    if value["pendingObservationEvents"]:limitations.append(
+        "one or more delayed observation windows were pending at export")
+    classification=("possible-evidence-loss" if possible else
+        ("accounted-no-interactions" if value["callbacksFired"]==0 else
+         "accounted-pre-activation-observation"))
+    result={"available":True,"classification":classification,
+        **{field:value[field] for field in counts},
+        "observationWindowAccountingValid":True,"evidenceLossPossible":possible,
+        "readinessImpact":"limitations-only","limitations":limitations,
+        "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}
+    if capture_failures is not None:result["preActivationCaptureFailures"]=capture_failures
+    return result
+
+
+
 def _guided_feedback_correlation(plan,actions,workflow_plan,feedback_documents):
     if workflow_plan is None:
         if feedback_documents not in (None,[]):
@@ -288,6 +394,7 @@ def _guided_feedback_correlation(plan,actions,workflow_plan,feedback_documents):
 
 def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=None):
     integrity,request=_validate_sources(plan,gameplay,actions)
+    observation_coverage=_interaction_observation_coverage(plan)
     guided_correlation=_guided_feedback_correlation(
         plan,actions,workflow_plan,guided_feedback_documents)
     target=_selected_prompt(actions);tool_target=_selected_tool(actions);gui_target=_selected_gui(actions)
@@ -346,12 +453,22 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
         "runtimeVerified":False,"gameplayVerified":False,
         "causalityProven":False,"actionOutcomesVerified":False}
     discovery_only=_discovery_only(actions)
+    if observation_coverage["available"] is False:
+        observation_limit="Interaction baseline/window coverage is unavailable for this legacy evidence"
+    elif observation_coverage["evidenceLossPossible"]:
+        observation_limit="Interaction timing or delayed-window coverage may have lost client-visible changes"
+    elif observation_coverage["callbacksFired"]==0:
+        observation_limit="Observation accounting is complete but no interaction callback evidence was captured"
+    else:
+        observation_limit="Accounted pre-activation and delayed-window coverage still does not prove causality or complete game state"
+
     result={"schemaVersion":SCHEMA_VERSION,"placeId":integrity["placeId"],
         "scanId":integrity.get("scanId"),"request":request_result,
         "generatedCapabilities":generated,
         "unavailableRequestedBehavior":unavailable,
         "discoveryOnlyCapabilities":discovery_only,
         "workflowSelection":_workflow_selection(workflow_plan,workflow_target),
+        "interactionObservationCoverage":observation_coverage,
         "guidedWorkflowFeedbackCorrelation":guided_correlation,
         "summary":{"generatedCapabilities":len(generated),
             "requestMatchedGeneratedCapabilities":len(matched_generated),
@@ -361,7 +478,8 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
             "guidedFeedbackStatusConflicts":guided_correlation.get("summary",{}).get(
                 "stepsWithStatusConflict",0)},
         "claims":dict(_FALSE_CLAIMS),
-        "limitations":["Generation readiness describes emitted code, not successful gameplay",
+        "limitations":[observation_limit,
+            "Generation readiness describes emitted code, not successful gameplay",
             "Prompt and Tool outcomes remain temporal correlations without causal proof",
             "Executor-provided prompt activation is checked only at runtime",
             "Linked workflow order and state continuity do not prove cross-step gameplay causality",

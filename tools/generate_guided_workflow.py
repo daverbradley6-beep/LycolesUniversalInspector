@@ -91,8 +91,17 @@ def _step(value):
                 and not (contract[4]=="GuiButton" and path_identity[-1]["className"] in
                     ("TextButton","ImageButton"))):
         raise ValueError("Malformed guided workflow step")
+    baseline=value.get("observationBaseline")
+    baseline_valid=(baseline is None or isinstance(baseline,dict)
+        and set(baseline)=={"timing","preActivationBaselineAvailable","possibleSynchronousLoss"}
+        and baseline.get("timing") in ("pre-activation","activation-callback","unknown")
+        and type(baseline.get("preActivationBaselineAvailable")) is bool
+        and baseline["preActivationBaselineAvailable"] is (baseline["timing"]=="pre-activation")
+        and type(baseline.get("possibleSynchronousLoss")) is bool
+        and baseline["possibleSynchronousLoss"] is (baseline["timing"]!="pre-activation"))
     metadata=value.get("prerequisiteMetadata");outcome=value.get("selectedOutcome")
-    if not isinstance(metadata,dict):raise ValueError("Malformed guided workflow step contract")
+    if not baseline_valid or not isinstance(metadata,dict):
+        raise ValueError("Malformed guided workflow step contract")
     if kind=="guided-gui-activation-trial":
         allowed={"controlClass","text",*BOOL_METADATA};text=metadata.get("text")
         valid_metadata=(not set(metadata)-allowed

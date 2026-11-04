@@ -107,6 +107,12 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('generatedCodeOutput.Text=code',SRC)
         self.assertIn('Generated bounded capabilities:',SRC)
         self.assertIn('Full request implemented: false',SRC)
+        self.assertIn('local function validateGeneratedObservationBaseline(value,workflow)',SRC)
+        self.assertIn('validateInteractionObservationCoverage(readiness.interactionObservationCoverage)',SRC)
+        self.assertIn('Observation coverage: "..coverage.classification',SRC)
+        self.assertIn('Selected evidence baseline: "..selectedBaseline.classification',SRC)
+        self.assertIn('limitations only; not causal proof',SRC)
+
         self.assertIn('Workflow: "..workflowCapability.candidateId',SRC)
         self.assertIn('Workflow feedback: "..tostring(summary.sessions)',SRC)
         self.assertIn('if index>4 then break end',SRC)

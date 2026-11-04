@@ -97,6 +97,8 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(generated["targetLabel"],"Daily Reward")
         self.assertEqual(generated["commands"],
             ["interaction","interactionstart","interactionstop","interactions"])
+        self.assertEqual(generated["observationBaseline"]["classification"],"timing-unknown")
+        self.assertEqual(generated["observationBaseline"]["readinessImpact"],"limitations-only")
         self.assertEqual(result["unavailableRequestedBehavior"],[])
         self.assertFalse(result["request"]["fullRequestImplemented"])
 
@@ -142,6 +144,8 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertTrue(generated["boundedEquip"])
         self.assertEqual(generated["attemptLimit"],25)
         self.assertFalse(generated["automaticMovement"])
+        self.assertEqual(generated["observationBaseline"]["classification"],"timing-unknown")
+        self.assertTrue(generated["observationBaseline"]["possibleSynchronousLoss"])
         self.assertEqual(result["discoveryOnlyCapabilities"],[])
         self.assertFalse(result["claims"]["runtimeVerified"])
 
@@ -174,6 +178,8 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertFalse(generated["automaticActivation"])
         self.assertTrue(generated["manualActivationRequired"])
         self.assertTrue(generated["exactControlHighlighting"])
+        self.assertEqual(generated["observationBaseline"]["classification"],"timing-unknown")
+        self.assertTrue(generated["observationBaseline"]["possibleSynchronousLoss"])
         self.assertIn("require the user to activate",result["request"]["supportedSubset"][1])
         self.assertEqual(result["discoveryOnlyCapabilities"],[])
 
@@ -199,6 +205,57 @@ class GenerationReadinessTests(unittest.TestCase):
         value=egg_plan()
         self.assertEqual(assess(value),assess(copy.deepcopy(value)))
 
+
+    def test_pre_activation_coverage_is_visible_but_not_causal_proof(self):
+        value=egg_plan();event=value["observedInteractionHistory"][0]
+        event.update({"baselineSource":"ProximityPrompt.PromptButtonHoldBegan",
+            "baselineTiming":"pre-activation","baselineAgeSeconds":0.03,
+            "preActivationBaselineAvailable":True})
+        value["interactionObservationSummary"]={"available":True,"callbacksFired":1,
+            "preActivationBaselinesUsed":1,"callbackBaselinesUsed":0,
+            "pendingObservationEvents":0,"observationWindowsExpected":3,
+            "observationWindowsCompleted":3,"observationWindowsFailed":0,
+            "observationWindowAccountingValid":True,"evidenceLossPossible":False,
+            "limitations":[]}
+        result=assess(value);coverage=result["interactionObservationCoverage"]
+        self.assertEqual(coverage["classification"],"accounted-pre-activation-observation")
+        self.assertEqual(coverage["readinessImpact"],"limitations-only")
+        baseline=result["generatedCapabilities"][0]["observationBaseline"]
+        self.assertEqual(baseline["classification"],
+                         "pre-activation-baseline-available-for-all-observations")
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        self.assertFalse(result["claims"]["causalityProven"])
+
+    def test_callback_fallback_surfaces_possible_loss_without_hiding_bounded_trial(self):
+        value=egg_plan();event=value["observedInteractionHistory"][0]
+        event.update({"baselineSource":"activation-callback-fallback",
+            "baselineTiming":"activation-callback","baselineAgeSeconds":None,
+            "preActivationBaselineAvailable":False})
+        value["interactionObservationSummary"]={"available":True,"callbacksFired":1,
+            "preActivationBaselinesUsed":0,"callbackBaselinesUsed":1,
+            "pendingObservationEvents":0,"observationWindowsExpected":3,
+            "observationWindowsCompleted":3,"observationWindowsFailed":0,
+            "observationWindowAccountingValid":True,"evidenceLossPossible":True,
+            "limitations":["callback-time baselines may miss synchronous activation changes"]}
+        result=assess(value)
+        self.assertTrue(result["interactionObservationCoverage"]["evidenceLossPossible"])
+        self.assertEqual(result["generatedCapabilities"][0]["observationBaseline"][
+            "classification"],"callback-fallback-present")
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        self.assertIn("may have lost client-visible changes",result["limitations"][0])
+
+    def test_inconsistent_observation_coverage_fails_closed(self):
+        value=egg_plan();value["interactionObservationSummary"]={"available":True,
+            "callbacksFired":1,"preActivationBaselinesUsed":1,"callbackBaselinesUsed":0,
+            "preActivationCaptureFailures":0,
+            "pendingObservationEvents":0,"observationWindowsExpected":3,
+            "observationWindowsCompleted":3,"observationWindowsFailed":0,
+            "observationWindowAccountingValid":True,"evidenceLossPossible":True,
+            "limitations":[]}
+        gameplay=understanding.analyze(value);actions=discovery.analyze(value)
+        with self.assertRaisesRegex(ValueError,"evidence-loss"):
+            readiness.assess(value,gameplay,actions)
+
     def test_guided_feedback_recurrence_is_informational_only(self):
         value=workflow_fixtures.plan();gameplay=understanding.analyze(value)
         actions=discovery.analyze(value);workflow=workflow_fixtures.planner.plan(value,actions)
@@ -211,6 +268,14 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertTrue(all(step["expectedDirectionAcrossMultipleSessions"]
             for step in correlation["steps"]))
         self.assertEqual(correlation["readinessImpact"],"informational-only")
+        workflow_capability=next(item for item in result["generatedCapabilities"]
+            if item["kind"]=="mixed-action-workflow-trial")
+        baseline=workflow_capability["observationBaseline"]
+        self.assertEqual(baseline["steps"],2)
+        self.assertEqual(baseline["unknownTimingSteps"],2)
+        self.assertEqual(baseline["classification"],"timing-unknown")
+        self.assertEqual(baseline["readinessImpact"],"limitations-only")
+
         self.assertFalse(result["request"]["implementationReady"])
         self.assertFalse(result["claims"]["runtimeVerified"])
         self.assertFalse(result["claims"]["actionOutcomesVerified"])
