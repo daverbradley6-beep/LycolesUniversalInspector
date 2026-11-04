@@ -104,6 +104,39 @@ def _validate_workflow_selection(selection):
             or selection["totalCandidates"]!=len(candidates)+selection["omittedCandidates"]
             or selection["omittedCandidates"]<0):
         raise ValueError("Invalid workflow selection counts")
+    diagnostics=selection.get("planningDiagnostics")
+    if diagnostics is not None:
+        fields=("transactionGroups","linkedTransactions","singletonTransactions",
+            "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
+            "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
+            "unlinkedEvents","executionReadyWorkflows")
+        statuses={"execution-ready-candidates","review-only-candidates",
+            "no-multi-step-generation-ready-contract","singleton-transactions-only",
+            "no-explicit-linkage","no-interaction-events"}
+        if (not isinstance(diagnostics,dict) or diagnostics.get("status") not in statuses
+                or any(type(diagnostics.get(field)) is not int
+                    or not 0<=diagnostics[field]<=10_000_000 for field in fields)
+                or diagnostics["transactionGroups"]!=diagnostics["singletonTransactions"]+
+                    diagnostics["multiEventTransactions"]
+                or diagnostics["linkedTransactions"]!=diagnostics["multiEventTransactions"]
+                or diagnostics["workflowCandidates"]!=selection["totalCandidates"]
+                or diagnostics["transactionsWithInsufficientGenerationReadySteps"]>
+                    diagnostics["multiEventTransactions"]
+                or diagnostics["partiallyMappedTransactions"]>diagnostics["workflowCandidates"]
+                or diagnostics["transactionsOverStepBound"]>diagnostics["workflowCandidates"]
+                or diagnostics["executionReadyWorkflows"]>diagnostics["workflowCandidates"]
+                or diagnostics.get("readinessImpact")!="limitations-only"
+                or any(diagnostics.get(field) is not False for field in
+                    ("causalityProven","runtimeVerified","gameplayVerified"))):
+            raise ValueError("Invalid workflow planning diagnostics")
+        expected=("execution-ready-candidates" if diagnostics["executionReadyWorkflows"] else
+            "review-only-candidates" if diagnostics["workflowCandidates"] else
+            "no-multi-step-generation-ready-contract" if diagnostics["multiEventTransactions"] else
+            "singleton-transactions-only" if diagnostics["singletonTransactions"] else
+            "no-explicit-linkage" if diagnostics["unlinkedEvents"] else "no-interaction-events")
+        if diagnostics["status"]!=expected:
+            raise ValueError("Inconsistent workflow planning diagnostics")
+
     selected_id=selection.get("selectedCandidateId");selected_count=0
     reasons={"selected-highest-ranked-execution-ready-candidate","not-execution-ready",
         "lower-request-evidence-score","more-user-involvement-tiebreak","stable-identity-tiebreak"}

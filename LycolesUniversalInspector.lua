@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.2
+-- Lycoles Universal Inspector v30.6.3
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.2"
+local VERSION = "30.6.3"
 
 local endpoint = ""
 local autoSend = true
@@ -922,6 +922,44 @@ local function validateWorkflowSelection(selection)
         or selection.totalCandidates~=#selection.candidates+selection.omittedCandidates then
         return false
     end
+    local diagnostics=selection.planningDiagnostics
+    if diagnostics~=nil then
+        local fields={"transactionGroups","linkedTransactions","singletonTransactions",
+            "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
+            "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
+            "unlinkedEvents","executionReadyWorkflows"}
+        local statuses={
+            ["execution-ready-candidates"]=true,["review-only-candidates"]=true,
+            ["no-multi-step-generation-ready-contract"]=true,
+            ["singleton-transactions-only"]=true,["no-explicit-linkage"]=true,
+            ["no-interaction-events"]=true}
+        if type(diagnostics)~="table" or statuses[diagnostics.status]~=true
+            or diagnostics.readinessImpact~="limitations-only"
+            or diagnostics.causalityProven~=false or diagnostics.runtimeVerified~=false
+            or diagnostics.gameplayVerified~=false then return false end
+        for _,field in ipairs(fields) do
+            if not boundedResultInteger(diagnostics[field],10000000) then return false end
+        end
+        if diagnostics.transactionGroups~=diagnostics.singletonTransactions
+                +diagnostics.multiEventTransactions
+            or diagnostics.linkedTransactions~=diagnostics.multiEventTransactions
+            or diagnostics.workflowCandidates~=selection.totalCandidates
+            or diagnostics.transactionsWithInsufficientGenerationReadySteps
+                >diagnostics.multiEventTransactions
+            or diagnostics.partiallyMappedTransactions>diagnostics.workflowCandidates
+            or diagnostics.transactionsOverStepBound>diagnostics.workflowCandidates
+            or diagnostics.executionReadyWorkflows>diagnostics.workflowCandidates then return false end
+        local expected
+        if diagnostics.executionReadyWorkflows>0 then expected="execution-ready-candidates"
+        elseif diagnostics.workflowCandidates>0 then expected="review-only-candidates"
+        elseif diagnostics.multiEventTransactions>0 then
+            expected="no-multi-step-generation-ready-contract"
+        elseif diagnostics.singletonTransactions>0 then expected="singleton-transactions-only"
+        elseif diagnostics.unlinkedEvents>0 then expected="no-explicit-linkage"
+        else expected="no-interaction-events" end
+        if diagnostics.status~=expected then return false end
+    end
+
     local selectedId=selection.selectedCandidateId
     if selectedId~=nil and not boundedResultText(selectedId,120) then return false end
     local validReason={
@@ -1280,6 +1318,14 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
                 details[#details+1]="Observation coverage: unavailable for legacy evidence"
             end
         end
+        local planning=readiness.workflowSelection.planningDiagnostics
+        if type(planning)=="table" then
+            details[#details+1]="Workflow planning: "..planning.status.." | shared="
+                ..tostring(planning.multiEventTransactions).." singleton="
+                ..tostring(planning.singletonTransactions).." unlinked="
+                ..tostring(planning.unlinkedEvents).." | limitations only"
+        end
+
         local workflowCapability=nil
         local singleCapability=nil
         for _,item in ipairs(generated) do

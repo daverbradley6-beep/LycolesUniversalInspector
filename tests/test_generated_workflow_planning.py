@@ -137,10 +137,28 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
     def test_unlinked_or_partially_ready_events_do_not_form_workflow(self):
         value=plan()
         for item in value["observedInteractionHistory"]:item.pop("transactionId")
-        self.assertEqual(self.analyze(value)["workflowCandidates"],[])
+        result=self.analyze(value)
+        self.assertEqual(result["workflowCandidates"],[])
+        self.assertEqual(result["summary"]["planningStatus"],"no-explicit-linkage")
+        self.assertEqual(result["summary"]["unlinkedEvents"],2)
         value=plan();value["observedInteractionHistory"][1]["controlMetadata"]["visible"]=False
         value["observedInteractionHistory"][1]["controlMetadata"]["effectiveVisible"]=False
-        self.assertEqual(self.analyze(value)["workflowCandidates"],[])
+        result=self.analyze(value)
+        self.assertEqual(result["workflowCandidates"],[])
+        self.assertEqual(result["summary"]["planningStatus"],
+            "no-multi-step-generation-ready-contract")
+        self.assertEqual(result["summary"]["transactionsWithInsufficientGenerationReadySteps"],1)
+
+    def test_unique_per_event_transaction_ids_are_not_reported_as_linked(self):
+        value=plan();events=value["observedInteractionHistory"]
+        events[0]["transactionId"]="event-1";events[1]["transactionId"]="event-2"
+        result=self.analyze(value);summary=result["summary"]
+        self.assertEqual(result["workflowCandidates"],[])
+        self.assertEqual(summary["transactionGroups"],2)
+        self.assertEqual(summary["singletonTransactions"],2)
+        self.assertEqual(summary["multiEventTransactions"],0)
+        self.assertEqual(summary["linkedTransactions"],0)
+        self.assertEqual(summary["planningStatus"],"singleton-transactions-only")
 
     def test_duplicate_sequence_and_forged_claim_fail_closed(self):
         value=plan();value["observedInteractionHistory"][1]["sequence"]=1

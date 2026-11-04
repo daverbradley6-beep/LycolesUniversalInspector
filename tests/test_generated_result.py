@@ -49,6 +49,16 @@ class GeneratedResultTests(unittest.TestCase):
         readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
         return readiness
 
+    def workflow_diagnostics(self):
+        return {"status":"execution-ready-candidates","transactionGroups":2,
+            "linkedTransactions":1,"singletonTransactions":1,"multiEventTransactions":1,
+            "transactionsWithInsufficientGenerationReadySteps":0,
+            "partiallyMappedTransactions":0,"transactionsOverStepBound":0,
+            "workflowCandidates":1,"unlinkedEvents":0,"executionReadyWorkflows":1,
+            "readinessImpact":"limitations-only","causalityProven":False,
+            "runtimeVerified":False,"gameplayVerified":False}
+
+
 
     def build(self,**changes):
         values={"place_id":123,"scan_id":"scan12345",
@@ -165,6 +175,21 @@ class GeneratedResultTests(unittest.TestCase):
         readiness["generatedCapabilities"][0]["executionMode"]="mixed-guided"
         with self.assertRaisesRegex(ValueError,"workflow"):
             self.build(generation_readiness=readiness)
+
+    def test_workflow_planning_diagnostics_fail_closed_when_present(self):
+        readiness=self.workflow_readiness()
+        readiness["workflowSelection"]["planningDiagnostics"]=self.workflow_diagnostics()
+        result=self.build(generation_readiness=readiness)
+        self.assertEqual(result["generationReadiness"]["workflowSelection"][
+            "planningDiagnostics"]["status"],"execution-ready-candidates")
+        readiness["workflowSelection"]["planningDiagnostics"]["singletonTransactions"]=2
+        with self.assertRaisesRegex(ValueError,"planning diagnostics"):
+            self.build(generation_readiness=readiness)
+        readiness["workflowSelection"]["planningDiagnostics"]=self.workflow_diagnostics()
+        readiness["workflowSelection"]["planningDiagnostics"]["status"]="review-only-candidates"
+        with self.assertRaisesRegex(ValueError,"planning diagnostics"):
+            self.build(generation_readiness=readiness)
+
 
 
     def test_guided_feedback_correlation_claims_fail_closed(self):

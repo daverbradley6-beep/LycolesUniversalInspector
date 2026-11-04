@@ -197,7 +197,9 @@ def plan(plan_document,actions):
                 or type(sequence) is not int or not 1<=sequence<=10_000_000):
             unlinked+=1;continue
         groups.setdefault(str(transaction),[]).append(event)
-    candidates=[]
+    candidates=[];insufficient_contracts=0;partially_mapped=0;over_step_bound=0
+    singleton_transactions=sum(len(events)==1 for events in groups.values())
+    multi_event_transactions=sum(len(events)>1 for events in groups.values())
     for transaction,events in sorted(groups.items()):
         sequences=[event["sequence"] for event in events]
         if len(set(sequences))!=len(sequences):
@@ -207,7 +209,9 @@ def plan(plan_document,actions):
         for transaction_order,event in enumerate(events,1):
             key=(event.get("path"),event.get("controlType"))
             if key in targets:mapped.append((transaction_order,event,targets[key]))
+        if len(events)>1 and len(mapped)<2:insufficient_contracts+=1
         if len(mapped)<2:continue
+        if len(mapped)!=len(events):partially_mapped+=1
         steps=[_step(event,index+1,transaction_order,*target_data)
             for index,(transaction_order,event,target_data) in enumerate(mapped)]
         blockers=["Cross-step gameplay semantics are unverified",
@@ -223,6 +227,7 @@ def plan(plan_document,actions):
             blockers.append("Prompt steps require fireproximityprompt availability at runtime")
         within_step_bound=len(mapped)<=MAX_WORKFLOW_STEPS
         if not within_step_bound:
+            over_step_bound+=1
             blockers.append("Workflow exceeds the bounded 64-step generation limit")
         guided_ready=len(mapped)==len(events) and within_step_bound
         automatic=guided_ready and not manual_gui
@@ -243,11 +248,23 @@ def plan(plan_document,actions):
         not item["executionReady"],not item["automaticallyExecutable"],
         item["transactionId"],item["id"]))
     selected=next((item for item in candidates if item["executionReady"]),None)
+    if selected:planning_status="execution-ready-candidates"
+    elif candidates:planning_status="review-only-candidates"
+    elif multi_event_transactions:planning_status="no-multi-step-generation-ready-contract"
+    elif singleton_transactions:planning_status="singleton-transactions-only"
+    elif history:planning_status="no-explicit-linkage"
+    else:planning_status="no-interaction-events"
     false_claims={field:False for field in FALSE_CLAIMS}
     return {"schemaVersion":SCHEMA,"placeId":integrity["placeId"],
         "scanId":integrity["scanId"],"workflowCandidates":candidates,
-        "summary":{"linkedTransactions":len(groups),"workflowCandidates":len(candidates),
-            "guidedTrialGenerationReadyWorkflows":sum(
+        "summary":{"planningStatus":planning_status,"transactionGroups":len(groups),
+            "linkedTransactions":multi_event_transactions,
+            "singletonTransactions":singleton_transactions,
+            "multiEventTransactions":multi_event_transactions,
+            "transactionsWithInsufficientGenerationReadySteps":insufficient_contracts,
+            "partiallyMappedTransactions":partially_mapped,
+            "transactionsOverStepBound":over_step_bound,
+            "workflowCandidates":len(candidates),"guidedTrialGenerationReadyWorkflows":sum(
                 item["guidedTrialGenerationReady"] for item in candidates),
             "generationReadySteps":sum(item["stepCount"] for item in candidates),
             "unlinkedEvents":unlinked,"executionReadyWorkflows":sum(
@@ -257,7 +274,8 @@ def plan(plan_document,actions):
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
             "selectedExecutionCandidateId":selected["id"] if selected else None},
         "claims":false_claims,"limitations":[
-            "Only explicit transaction IDs and recorded sequence values establish ordering",
+            "Only explicit shared transaction IDs and recorded sequence values establish ordering",
+            "A transaction ID present on only one event does not establish cross-event linkage",
             "State continuity is descriptive client-visible evidence, not causal proof",
             "GUI steps require normal user activation because GuiButton has no public activation method",
             "Tool and prompt steps are bounded runtime attempts; successful gameplay remains unverified"]}

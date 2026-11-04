@@ -251,9 +251,40 @@ def _workflow_selection(workflow_plan,selected):
             "executionMode":item.get("executionMode","review-only"),
             "executionReady":item.get("executionReady") is True,
             "selected":item.get("id")==selected_id,"selectionReason":reason})
+    summary=workflow_plan["summary"]
+    diagnostic_fields=("transactionGroups","linkedTransactions","singletonTransactions",
+        "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
+        "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
+        "unlinkedEvents","executionReadyWorkflows")
+    planning_status=summary.get("planningStatus")
+    if (planning_status not in ("execution-ready-candidates","review-only-candidates",
+            "no-multi-step-generation-ready-contract","singleton-transactions-only",
+            "no-explicit-linkage","no-interaction-events")
+            or any(type(summary.get(field)) is not int or not 0<=summary[field]<=10_000_000
+                for field in diagnostic_fields)
+            or summary["transactionGroups"]!=summary["singletonTransactions"]+summary[
+                "multiEventTransactions"]
+            or summary["linkedTransactions"]!=summary["multiEventTransactions"]
+            or summary["workflowCandidates"]!=len(candidates)
+            or summary["transactionsWithInsufficientGenerationReadySteps"]>summary[
+                "multiEventTransactions"]
+            or summary["partiallyMappedTransactions"]>summary["workflowCandidates"]
+            or summary["transactionsOverStepBound"]>summary["workflowCandidates"]
+            or summary["executionReadyWorkflows"]>summary["workflowCandidates"]):
+        raise ValueError("generated workflow plan has malformed planning diagnostics")
+    expected_status=("execution-ready-candidates" if summary["executionReadyWorkflows"] else
+        "review-only-candidates" if summary["workflowCandidates"] else
+        "no-multi-step-generation-ready-contract" if summary["multiEventTransactions"] else
+        "singleton-transactions-only" if summary["singletonTransactions"] else
+        "no-explicit-linkage" if summary["unlinkedEvents"] else "no-interaction-events")
+    if planning_status!=expected_status:
+        raise ValueError("generated workflow plan has inconsistent planning diagnostics")
+    diagnostics={"status":planning_status,**{field:summary[field] for field in diagnostic_fields},
+        "readinessImpact":"limitations-only","causalityProven":False,
+        "runtimeVerified":False,"gameplayVerified":False}
     return {"available":True,"totalCandidates":len(candidates),"shownCandidates":len(values),
         "omittedCandidates":max(0,len(candidates)-len(values)),
-        "selectedCandidateId":selected_id,"candidates":values}
+        "selectedCandidateId":selected_id,"candidates":values,"planningDiagnostics":diagnostics}
 
 
 

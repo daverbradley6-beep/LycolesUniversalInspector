@@ -275,6 +275,12 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(baseline["unknownTimingSteps"],2)
         self.assertEqual(baseline["classification"],"timing-unknown")
         self.assertEqual(baseline["readinessImpact"],"limitations-only")
+        planning=result["workflowSelection"]["planningDiagnostics"]
+        self.assertEqual(planning["status"],"execution-ready-candidates")
+        self.assertEqual(planning["linkedTransactions"],planning["multiEventTransactions"])
+        self.assertEqual(planning["readinessImpact"],"limitations-only")
+        self.assertFalse(planning["causalityProven"])
+
 
         self.assertFalse(result["request"]["implementationReady"])
         self.assertFalse(result["claims"]["runtimeVerified"])
@@ -301,8 +307,13 @@ class GenerationReadinessTests(unittest.TestCase):
             "executionReady":False,"automaticallyExecutable":False,"executionMode":"review-only"}
         manual={"id":"manual","selection":{"requestScore":10,"matchedTerms":["shop"]},
             "executionReady":True,"automaticallyExecutable":False,"executionMode":"mixed-guided"}
+        summary={"planningStatus":"execution-ready-candidates","transactionGroups":4,
+            "linkedTransactions":4,"singletonTransactions":0,"multiEventTransactions":4,
+            "transactionsWithInsufficientGenerationReadySteps":0,
+            "partiallyMappedTransactions":0,"transactionsOverStepBound":0,
+            "workflowCandidates":4,"unlinkedEvents":0,"executionReadyWorkflows":3}
         result=readiness._workflow_selection(
-            {"workflowCandidates":[selected,blocked,manual,lower]},selected)
+            {"workflowCandidates":[selected,blocked,manual,lower],"summary":summary},selected)
         reasons={item["candidateId"]:item["selectionReason"] for item in result["candidates"]}
         self.assertEqual(reasons["selected"],"selected-highest-ranked-execution-ready-candidate")
         self.assertEqual(reasons["blocked"],"not-execution-ready")

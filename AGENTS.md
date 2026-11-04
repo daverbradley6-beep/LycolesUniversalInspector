@@ -69,6 +69,8 @@ Current dynamic-overlay provenance contract: each complete observation scan must
 
 ## Generated features
 
+- v30.6.3 workflow planning distinguishes all transaction groups from genuine shared multi-event links: a transaction ID present on one event is a singleton, not a linked workflow. Planning diagnostics/status are recomputed, cross-field validated, propagated as limitations-only readiness evidence, and displayed without changing causality/runtime/gameplay claims.
+
 Each generated feature must define:
 
 - Evidence source and stable provenance.

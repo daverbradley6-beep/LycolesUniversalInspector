@@ -1,3 +1,11 @@
+## v30.6.3 — Explicit workflow-link planning diagnostics
+
+- Distinguish transaction groups, genuine shared multi-event transaction IDs, singleton per-event IDs, absent linkage, insufficient exact action contracts, partial mappings, and over-bound sequences in workflow planning.
+- Stop reporting unique per-event transaction IDs as linked workflows; a singleton ID now remains explicit non-linkage evidence rather than inflating linked-transaction counts.
+- Project recomputed planning diagnostics into generation readiness and the display-only Generated Script tab with a limitations-only classification and all causality/runtime/gameplay claims false.
+- Validate planning status and cross-field accounting independently in readiness, generated-result packaging, and the in-game loader; forged status/count combinations fail closed.
+
+
 ## v30.6.2 — Generation-readiness timing provenance
 
 - Preserve normalized pre-activation, activation-callback fallback, and legacy-unknown baseline timing from observed Prompt, Tool, and GUI actions into target evidence, canonical workflow steps, generated capability summaries, and the display-only Generated Script tab.

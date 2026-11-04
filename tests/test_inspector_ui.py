@@ -80,10 +80,15 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('Upload: "..uploadAttemptStage()',SRC)
         self.assertIn('Downstream: local files claimed complete; import and validate offline',SRC)
         self.assertIn('Downstream: receiver integrity verification required',SRC)
-
         for phase in ('Scan complete','Upload blocked','Upload started','Upload finished',
                       'Local export finished'):
             self.assertIn(f'refreshGeneratedHandoff("{phase}")',SRC)
+
+    def test_generated_workflow_planning_diagnostics_are_validated_and_visible(self):
+        self.assertIn("local diagnostics=selection.planningDiagnostics",SRC)
+        self.assertIn('expected="singleton-transactions-only"',SRC)
+        self.assertIn('"Workflow planning: "..planning.status',SRC)
+        self.assertIn('.." | limitations only"',SRC)
 
     def test_generated_result_loader_is_place_bound_and_display_only(self):
         self.assertIn('Name = "LoadGeneratedResult", Text = "LOAD RESULT"',SRC)
