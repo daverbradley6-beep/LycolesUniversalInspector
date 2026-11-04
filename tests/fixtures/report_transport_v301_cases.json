@@ -32,6 +32,20 @@
       "expectedUploadFailed": false
     },
     {
+      "name": "upload-cancelled",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "upload-cancelled",
+        "uploadAttempted": true,
+        "uploadStatus": "cancelled",
+        "acknowledgedParts": "PARTIAL",
+        "lastError": "operator cancelled",
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": false
+    },
+    {
       "name": "post-acknowledgement",
       "reportTransport": {
         "reportGenerated": true,

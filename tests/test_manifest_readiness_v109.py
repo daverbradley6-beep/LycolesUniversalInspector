@@ -81,6 +81,7 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport["downstreamAvailabilityStatus"], "not-validated")
         self.assertFalse(transport["receiverIntegrityVerified"])
         self.assertFalse(transport["downstreamReportAvailable"])
+        self.assertIn("pre-upload placeholder", transport["diagnostic"])
 
     def test_missing_local_export_has_actionable_recovery(self):
         result = MODULE.analyze(self.manifest)
@@ -181,7 +182,31 @@ class ManifestReadinessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"inconsistent uploadAttemptStatus"):
             MODULE.analyze(manifest)
 
-
+    def test_cancelled_upload_lifecycle_status_is_preserved(self):
+        manifest = copy.deepcopy(self.manifest)
+        expected = manifest["expectedParts"]
+        manifest["scanId"] = self.transport_scan_id
+        manifest["reportTransport"] = {
+            "reportGenerated": True,
+            "manifestSnapshotPhase": "upload-cancelled",
+            "uploadAttempted": True,
+            "uploadAttemptStatus": "attempted-cancelled",
+            "uploadStatus": "cancelled",
+            "receiverReportStatus": "partially-acknowledged",
+            "downstreamAvailabilityStatus": "not-validated",
+            "acknowledgedParts": max(1, expected // 2),
+            "expectedParts": expected,
+            "lastError": "operator cancelled",
+            "receiverIntegrityVerified": False,
+            "downstreamReportAvailable": False,
+        }
+        result = MODULE.analyze(manifest)
+        transport = result["transport"]
+        self.assertEqual(transport["uploadStatus"], "cancelled")
+        self.assertEqual(transport["manifestSnapshotPhase"], "upload-cancelled")
+        self.assertEqual(transport["uploadAttemptStatus"], "attempted-cancelled")
+        self.assertEqual(transport["receiverReportStatus"], "partially-acknowledged")
+        self.assertFalse(transport["uploadFailed"])
 
     def test_v301_transport_lifecycle_matrix(self):
         for case in self.transport_cases:

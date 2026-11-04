@@ -1,3 +1,9 @@
+## v30.6.10 — Workflow-gap root causes and cancelled-upload compatibility
+
+- Add `workflowGenerationDiagnostics` into inspector `interactionDiagnostics` with deterministic blockers (for example: explicit recording not armed, no linked confirmations, no corroborated outcomes), so high interaction counts with zero completed workflow candidates are explained without lowering evidence standards.
+- Accept and classify cancelled upload snapshots in `manifest_readiness_v109` (`uploadStatus: cancelled`, `manifestSnapshotPhase: upload-cancelled`) while preserving partial-acknowledgement visibility.
+- Extend transport lifecycle fixtures and tests to cover cancelled states and keep legacy `uploadedParts: 0` interpreted as a pre-upload placeholder rather than automatic receiver failure.
+
 ## v30.6.9 — Quick scan profile, stage timing, and cancellation recovery
 
 - Add explicit Inspector controls for `SCAN MODE` (FULL/QUICK) and configurable auto-evidence observation delay (`OBSERVE: Ns`).

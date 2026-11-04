@@ -1,6 +1,6 @@
 # OpenHands Development Progress
 
-## Update — 2026-11-02 — Quick scan profile and lifecycle separation (v30.6.9)
+## Update — 2026-11-02 — Quick scan profile, workflow diagnostics, and lifecycle separation (v30.6.10)
 
 - Added explicit FULL/QUICK scan profiles to the in-game inspector. QUICK uses targeted evidence capture (`quick-targeted-snapshot-v1`) with reduced metadata enrichment and explicit profile-filtered omission accounting; FULL remains available for comprehensive snapshots.
 - Added configurable observation delay control for auto-evidence scheduling and bound QUICK defaults to one automatic rescan while retaining bounded idle/cooldown scheduling.
@@ -8,6 +8,9 @@
 - Separated snapshot/packaging/upload status in inspector output and Generated Script handoff text, with local scan and packaging timing surfaced independently from receiver upload lifecycle.
 - Forced `PRODUCE SCRIPT` requests to switch to FULL mode so requested generation captures remain complete rather than quick-targeted.
 - Added static UI regressions for quick profile controls, observation configuration, and cancellation paths.
+- Added `workflowGenerationDiagnostics` root-cause output in `interactionDiagnostics` so high interaction counts with zero linked/completed workflows are explicitly explained as missing linkage/corroboration evidence rather than implied transport failure.
+- Updated `tools/manifest_readiness_v109.py` and transport fixture/test matrix to accept cancelled upload lifecycle snapshots (`uploadStatus: cancelled`, `manifestSnapshotPhase: upload-cancelled`) while preserving partial acknowledgement visibility.
+
 
 
 ## Update — 2026-11-02 — Explicit bounded workflow recording (v30.6.8)

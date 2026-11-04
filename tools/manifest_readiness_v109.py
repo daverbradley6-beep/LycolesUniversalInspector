@@ -69,6 +69,8 @@ def _transport_stage_labels(status, attempted, acknowledged, expected, integrity
     if status=="configuration-error":
         attempt_status=("attempted-previously-currently-blocked" if attempted
             else "blocked-before-attempt")
+    elif status=="cancelled":
+        attempt_status="attempted-cancelled" if attempted else "cancelled-before-attempt"
     else:
         attempt_status="attempted" if attempted else "not-attempted"
     if integrity:
@@ -77,6 +79,8 @@ def _transport_stage_labels(status, attempted, acknowledged, expected, integrity
         receiver_status="acknowledged-awaiting-integrity"
     elif status=="uploading":
         receiver_status="upload-in-progress"
+    elif status=="cancelled" and acknowledged==0:
+        receiver_status="upload-cancelled"
     elif acknowledged>0:
         receiver_status="partially-acknowledged"
     elif status in {"failed","incomplete"}:
@@ -153,7 +157,7 @@ def _transport(manifest):
     digest_complete = digest_count == expected and digest_indexes == set(range(1, expected + 1))
 
     status = transport.get("uploadStatus")
-    if status not in {"not-attempted", "uploading", "acknowledged", "incomplete", "failed", "configuration-error"}:
+    if status not in {"not-attempted", "uploading", "acknowledged", "incomplete", "failed", "configuration-error", "cancelled"}:
         raise ValueError("invalid upload status")
     expected_phase = {
         "not-attempted": "pre-upload",
@@ -162,6 +166,7 @@ def _transport(manifest):
         "incomplete": "post-upload",
         "failed": "post-upload",
         "configuration-error": "upload-blocked",
+        "cancelled": "upload-cancelled",
     }[status]
     if phase != expected_phase:
         raise ValueError("manifest snapshot phase is inconsistent with upload status")

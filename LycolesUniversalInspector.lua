@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.9
+-- Lycoles Universal Inspector v30.6.10
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.9"
+local VERSION = "30.6.10"
 
 local endpoint = ""
 local autoSend = true
@@ -3355,6 +3355,52 @@ interactionToggle.MouseButton1Click:Connect(function()
         or "Manual interaction observation paused"
 end)
 
+
+local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedInteractions,
+        unattributedInteractions)
+    local blockers = {}
+    if totalInteractions <= 0 then
+        blockers[#blockers+1] = "no-interaction-events-observed"
+    else
+        if attributedInteractions <= 0 then
+            blockers[#blockers+1] = "no-feature-attributed-interactions"
+        end
+        if workflowRecordingStats.started <= 0 then
+            blockers[#blockers+1] = "explicit-workflow-recording-not-armed"
+        end
+        if workflowStats.linkedConfirmations <= 0 then
+            blockers[#blockers+1] = "no-linked-confirmation-events"
+        end
+        if workflowStats.actionOutcomesCorroborated <= 0 then
+            blockers[#blockers+1] = "no-corroborated-action-outcomes"
+        end
+        if workflowStats.completedCandidates <= 0 then
+            blockers[#blockers+1] = "no-completed-workflow-candidates"
+        end
+        if workflowStats.multiWindowSamples <= 0 then
+            blockers[#blockers+1] = "no-observation-window-samples"
+        end
+        if unattributedInteractions > 0 then
+            blockers[#blockers+1] = "some-interactions-remain-unattributed"
+        end
+    end
+    return {
+        available = true,
+        interactionEvents = totalInteractions,
+        attributedInteractions = attributedInteractions,
+        unattributedInteractions = unattributedInteractions,
+        linkedConfirmations = workflowStats.linkedConfirmations,
+        corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
+        completedWorkflowCandidates = workflowStats.completedCandidates,
+        explicitWorkflowRecordings = workflowRecordingStats.started,
+        blockers = blockers,
+        readinessImpact = "limitations-only",
+        causalProof = false,
+        runtimeVerified = false,
+        gameplayVerified = false,
+    }
+end
+
 local function inspect(requestType, featureRequest)
     if running or uploading then
         status.Text = "Wait for current scan/upload or press SCAN to cancel"
@@ -3714,7 +3760,10 @@ local function inspect(requestType, featureRequest)
                 cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
-                workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
+                workflowStats=workflowStats,
+                workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
+                    interactionEventCount, attributedInteractionCount, unattributedInteractionCount),
+                pendingWorkflowCount=#pendingActions,
                 pendingGuiRevealCount=#pendingGuiReveals,
                 workflowRecordingActive=workflowRecording.active,
                 workflowRecordingStats=workflowRecordingStats,

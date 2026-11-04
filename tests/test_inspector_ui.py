@@ -43,6 +43,14 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('uploadState.status = "cancelled"',SRC)
         self.assertIn('scanGeneration = scanGeneration + 1',SRC)
         self.assertIn('scanCancelled = generation ~= scanGeneration',SRC)
+
+    def test_workflow_generation_root_cause_diagnostics(self):
+        self.assertIn('local function buildWorkflowGenerationDiagnostics',SRC)
+        self.assertIn('explicit-workflow-recording-not-armed',SRC)
+        self.assertIn('no-linked-confirmation-events',SRC)
+        self.assertIn('no-completed-workflow-candidates',SRC)
+        self.assertIn('workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics',SRC)
+
     def test_manifest_reports_upload_lifecycle(self):
         self.assertIn("reportTransport = uploadSnapshot(\"pre-upload\")",SRC)
         self.assertIn("uploadAttempted = uploadState.attempted",SRC)
