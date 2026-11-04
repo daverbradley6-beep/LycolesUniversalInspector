@@ -41,6 +41,29 @@ def _transition(before,after,change):
     return before!=after
 
 
+
+_STOP_WORDS={"a","an","and","complete","do","for","from","in","of","observed","please",
+    "the","to","with","workflow","flow"}
+
+def _tokens(value):
+    if not isinstance(value,str):return set()
+    result=set()
+    for token in re.findall(r"[a-z0-9]+",value.lower())[:128]:
+        if len(token)>4 and token.endswith("s") and not token.endswith("ss"):token=token[:-1]
+        if len(token)>=2 and token not in _STOP_WORDS:result.add(token)
+    return result
+
+def _selection(steps,requested_terms):
+    requested=set(requested_terms);weighted={}
+    for step in steps:
+        for value,weight in ((step.get("targetFeature"),5),(step.get("actionCandidate"),4),
+                (step.get("targetLabel"),3),(step.get("targetPath"),1),
+                (step.get("selectedOutcome",{}).get("key"),1)):
+            for token in _tokens(value):weighted[token]=max(weighted.get(token,0),weight)
+    matched=sorted(requested&set(weighted))
+    return {"requestAligned":bool(matched),"requestScore":sum(weighted[token] for token in matched),
+        "matchedTerms":matched,"requestedTerms":sorted(requested)}
+
 def _step(value):
     path_identity=value.get("pathIdentity") if isinstance(value,dict) else None
     kind=value.get("kind") if isinstance(value,dict) else None
@@ -56,7 +79,10 @@ def _step(value):
             or value.get("activationMode",contract[1])!=contract[1]
             or value.get("runtimeVerified") is not False or value.get("gameplayVerified") is not False
             or value.get("causalityProven") is not False or not _text(value.get("targetPath"),400)
-            or not _text(value.get("targetLabel"),120) or value.get("controlType")!=contract[0]
+            or not _text(value.get("targetLabel"),120)
+            or value.get("targetFeature") is not None and not _text(value.get("targetFeature"),120)
+            or value.get("actionCandidate") is not None and not _text(value.get("actionCandidate"),120)
+            or value.get("controlType")!=contract[0]
             or type(value.get("sequence")) is not int or value["sequence"]<1
             or type(value.get("transactionOrder")) is not int or value["transactionOrder"]<1
             or type(value.get("observedSequence")) is not int or value["observedSequence"]<1
@@ -153,6 +179,22 @@ def validate(document):
                 or item.get("automaticallyExecutable") is not (not manual_gui)
                 or item.get("executionReady") is not True):
             raise ValueError("Malformed guided workflow execution mode")
+        selection=item.get("selection")
+        if selection is not None:
+            if (not isinstance(selection,dict)
+                    or set(selection)!={"requestAligned","requestScore","matchedTerms","requestedTerms"}
+                    or type(selection.get("requestAligned")) is not bool
+                    or type(selection.get("requestScore")) is not int
+                    or not 0<=selection["requestScore"]<=10_000
+                    or not isinstance(selection.get("matchedTerms"),list)
+                    or not isinstance(selection.get("requestedTerms"),list)
+                    or len(selection["matchedTerms"])>128 or len(selection["requestedTerms"])>128
+                    or any(not _text(term,80) or re.fullmatch(r"[a-z0-9]+",term) is None
+                        for term in selection["matchedTerms"]+selection["requestedTerms"])
+                    or selection["matchedTerms"]!=sorted(set(selection["matchedTerms"]))
+                    or selection["requestedTerms"]!=sorted(set(selection["requestedTerms"]))
+                    or selection!=_selection(normalized,selection["requestedTerms"])):
+                raise ValueError("Malformed guided workflow selection")
         expected_order=list(range(1,len(normalized)+1))
         observed=[step["observedSequence"] for step in normalized]
         if ([step["sequence"] for step in normalized]!=expected_order
@@ -160,7 +202,9 @@ def validate(document):
                 or observed!=sorted(observed) or len(set(observed))!=len(observed)):
             raise ValueError("Malformed guided workflow step order")
         eligible.append(item)
-    eligible.sort(key=lambda item:item["id"])
+    eligible.sort(key=lambda item:(-item.get("selection",{}).get("requestScore",0),
+        not item.get("executionReady",False),not item.get("automaticallyExecutable",False),
+        item["transactionId"],item["id"]))
     return eligible
 
 def _lua(value):

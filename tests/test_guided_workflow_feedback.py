@@ -1,9 +1,11 @@
 import copy
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/"tools"))
 
 def load(name,filename):
     spec=importlib.util.spec_from_file_location(name,ROOT/"tools"/filename)
@@ -11,6 +13,7 @@ def load(name,filename):
 
 GENERATOR=load("guided_feedback_generator","generate_guided_workflow.py")
 EVALUATOR=load("guided_feedback_evaluator","evaluate_guided_workflow_feedback.py")
+CONTROLLED=load("guided_feedback_controlled","controlled_guided_workflow.py")
 
 
 def identity(name):
@@ -59,7 +62,8 @@ def feedback(document):
             "observedAtUnix":1793635200+sequence})
     return {"schemaVersion":EVALUATOR.SCHEMA,"placeId":document["placeId"],
         "scanId":document["scanId"],"workflowPlanSHA256":EVALUATOR.digest(document),
-        "candidateId":"guided-flow","sessionId":"guided-session-1","entries":entries,
+        "candidateId":document["workflowCandidates"][0]["id"],
+        "sessionId":"guided-session-1","entries":entries,
         "claims":{key:False for key in EVALUATOR.FALSE_CLAIMS}}
 
 
@@ -82,6 +86,17 @@ class GuidedWorkflowFeedbackTests(unittest.TestCase):
         self.assertFalse(result["runtimeVerified"])
         self.assertFalse(result["gameplayVerified"])
         self.assertFalse(result["causalityProven"])
+    def test_gui_tool_prompt_feedback_remains_client_observation_only(self):
+        document=CONTROLLED.three_kind_workflow(789)
+        result=EVALUATOR.evaluate(document,feedback(document))
+        self.assertEqual(result["summary"]["submittedEntries"],3)
+        self.assertEqual(result["summary"]["activationEventsObserved"],3)
+        self.assertEqual(result["summary"]["completeClientObservationSequences"],1)
+        self.assertFalse(result["runtimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
+        self.assertFalse(result["causalityProven"])
+
+
 
     def test_digest_candidate_and_step_contract_fail_closed(self):
         document=plan();value=feedback(document);value["workflowPlanSHA256"]="0"*64

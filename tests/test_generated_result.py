@@ -110,7 +110,8 @@ class GeneratedResultTests(unittest.TestCase):
             "executionMode":"bounded-automatic","stepCount":2,
             "stepKinds":["official-tool-activation-trial","proximity-prompt-trial"],
             "targetPaths":["LocalPlayer.Backpack.Sword","Workspace.Shop.Door.Prompt"],
-            "targetFeatures":["shops"],"manualGuiActivationRequired":False,
+            "targetFeatures":["shops"],"requestMatchedTerms":["shop"],
+            "requestMatchScore":5,"manualGuiActivationRequired":False,
             "automaticallyExecutable":True,"operatorStartRequired":True,
             "stopOnFirstUnobservedOutcome":True,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}]

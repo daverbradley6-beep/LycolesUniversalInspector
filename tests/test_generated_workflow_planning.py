@@ -99,6 +99,26 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertEqual(result["summary"]["executionReadyWorkflows"],1)
 
+
+    def test_request_alignment_ranks_executable_workflows_before_lexical_order(self):
+        value=plan();value["requestedCapability"]="Train with the sword in combat"
+        value["observedInteractionHistory"]=[
+            event("Select",1,0,1,"a-shop"),event("Confirm",2,1,2,"a-shop"),
+            tool_event(3,2,3,"z-combat"),tool_event(4,3,4,"z-combat")]
+        result=self.analyze(value);candidates=result["workflowCandidates"]
+        self.assertEqual(len(candidates),2)
+        self.assertEqual(candidates[0]["transactionId"],"z-combat")
+        self.assertEqual(candidates[0]["selection"]["matchedTerms"],["combat","sword"])
+        self.assertGreater(candidates[0]["selection"]["requestScore"],
+            candidates[1]["selection"]["requestScore"])
+        self.assertEqual(result["summary"]["requestAlignedWorkflows"],1)
+        self.assertEqual(result["summary"]["selectedExecutionCandidateId"],candidates[0]["id"])
+
+    def test_malformed_requested_capability_fails_closed(self):
+        value=plan();value["requestedCapability"]="x"*1001
+        with self.assertRaisesRegex(ValueError,"requested capability"):
+            self.analyze(value)
+
     def test_unlinked_or_partially_ready_events_do_not_form_workflow(self):
         value=plan()
         for item in value["observedInteractionHistory"]:item.pop("transactionId")

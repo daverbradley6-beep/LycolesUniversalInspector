@@ -129,8 +129,11 @@ def _generated_gui_capability(target):
         "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
 
 
-def _selected_workflow(workflow_plan):
+def _selected_workflow(workflow_plan,plan,actions):
     if workflow_plan is None:return None
+    expected=_load("plan_generated_workflows.py","readiness_workflow_planner").plan(plan,actions)
+    if workflow_plan!=expected:
+        raise ValueError("generated workflow plan does not match compiled evidence")
     candidates=_load("generate_guided_workflow.py","readiness_workflow_generator").validate(
         workflow_plan)
     return candidates[0] if candidates else None
@@ -145,6 +148,8 @@ def _generated_workflow_capability(candidate):
         "targetPaths":[step["targetPath"] for step in steps],
         "targetFeatures":sorted({step.get("targetFeature") for step in steps
             if isinstance(step.get("targetFeature"),str)}),
+        "requestMatchedTerms":candidate.get("selection",{}).get("matchedTerms",[]),
+        "requestMatchScore":candidate.get("selection",{}).get("requestScore",0),
         "manualGuiActivationRequired":candidate["manualGuiActivationRequired"],
         "automaticallyExecutable":candidate["automaticallyExecutable"],
         "operatorStartRequired":True,"stopOnFirstUnobservedOutcome":True,
@@ -154,6 +159,8 @@ def _generated_workflow_capability(candidate):
 
 
 def _workflow_request_aligned(candidate,request):
+    selection=candidate.get("selection")
+    if isinstance(selection,dict):return selection.get("requestAligned") is True
     requested=_tokens(request)
     if not requested:return False
     evidence=set()
@@ -254,7 +261,7 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
     guided_correlation=_guided_feedback_correlation(
         plan,actions,workflow_plan,guided_feedback_documents)
     target=_selected_prompt(actions);tool_target=_selected_tool(actions);gui_target=_selected_gui(actions)
-    workflow_target=_selected_workflow(workflow_plan)
+    workflow_target=_selected_workflow(workflow_plan,plan,actions)
     is_egg=_is_egg_target(actions,target)
     generated=[];matched_generated=[]
     for target_value,builder in ((target,lambda value:_generated_capability(value,is_egg)),

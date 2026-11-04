@@ -214,6 +214,37 @@ controls.CloseGuidedWorkflow.Activated:Fire()
 print("LYCOLES_MIXED_WORKFLOW|PASS|2|2|1")
 '''
 
+THREE_KIND_WAIT=r'''
+task.wait=function()
+    if _G.__workflowTest.selectButton:FindFirstChild("LycolesGuidedHighlight") then
+        _G.__workflowHighlightCount+=1;_G.__workflowTest.selectButton.Activated:Fire()
+    end
+    return 0
+end
+'''
+
+THREE_KIND_DRIVER=r'''
+local guide=playerGui:FindFirstChild("LycolesGuidedWorkflow")
+assert(guide,"three-kind workflow UI missing")
+local controls={}
+for _,item in ipairs(guide:GetDescendants()) do controls[item.Name]=item end
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__workflowClicks==1 and _G.__workflowHighlightCount==1,
+    "GUI step did not use one normal activation event")
+assert(_G.__mixedToolActivations==1 and _G.__mixedPromptActivations==1
+    and _G.__workflowTest.stage.Value==3,"three-kind sequence did not complete in order")
+local feedback=_G.LycolesGuidedWorkflowFeedback
+assert(#feedback.entries==3,"three-kind feedback count drifted")
+for index=1,3 do
+    assert(feedback.entries[index].stepSequence==index
+        and feedback.entries[index].status=="expected-change-observed",
+        "three-kind feedback order or result drifted")
+end
+controls.CloseGuidedWorkflow.Activated:Fire()
+print("LYCOLES_THREE_KIND_WORKFLOW|PASS|3|1|1|1")
+'''
+
+
 
 def _mixed_step(kind,sequence):
     outcome={"key":"Data.Stage","change":"increased","stateIdentity":[
@@ -276,6 +307,34 @@ def execute_mixed(place_id,luau_binary,timeout_seconds=2.0):
         "normalUserActivationEventsUsed":False,"robloxRuntimeVerified":False,
         "serverAuthorityVerified":False,"causalityProven":False,"gameplayVerified":False,
         "transcript":stdout.strip()}
+
+
+def three_kind_workflow(place_id):
+    document=mixed_workflow(place_id);candidate=document["workflowCandidates"][0]
+    candidate.update(id="controlled-three-kind-flow",transactionId="controlled-three-kind-transaction",
+        manualGuiActivationRequired=True,executionMode="mixed-guided",
+        automaticallyExecutable=False)
+    candidate["steps"]=[_step("Select",1),_mixed_step("tool",2),_mixed_step("prompt",3)]
+    candidate["stepCount"]=3
+    return document
+
+
+def execute_three_kind(place_id,luau_binary,timeout_seconds=2.0):
+    if type(place_id) is not int or place_id<1:raise ValueError("invalid place ID")
+    generated=render(three_kind_workflow(place_id))
+    source=(STUBS.replace("__RUNTIME_PLACE",str(place_id),1)+"\n"+SETUP+"\n"+MIXED_SETUP
+        +"\n"+THREE_KIND_WAIT+"\n"+generated+"\n"+THREE_KIND_DRIVER)
+    stdout=run_bounded_program(source,Path(luau_binary),timeout_seconds=timeout_seconds)
+    if stdout.strip()!="LYCOLES_THREE_KIND_WORKFLOW|PASS|3|1|1|1":
+        raise ControlledExecutionError("invalid controlled three-kind workflow transcript")
+    return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
+        "simulatedEnvironment":True,"orderedStepsObserved":3,"guiActivationsObserved":1,
+        "toolActivationsObserved":1,"promptActivationsObserved":1,
+        "feedbackRecordsObserved":3,"feedbackPlanBound":True,
+        "normalUserActivationEventsUsed":True,"automaticGuiActivationUsed":False,
+        "robloxRuntimeVerified":False,"serverAuthorityVerified":False,
+        "causalityProven":False,"gameplayVerified":False,"transcript":stdout.strip()}
+
 
 
 def canonical(value):

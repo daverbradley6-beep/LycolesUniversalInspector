@@ -144,6 +144,22 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"claims"):
             generator.render(value)
 
+    def test_request_selection_chooses_highest_scored_eligible_candidate(self):
+        value=document();first=value["workflowCandidates"][0]
+        first["selection"]={"requestAligned":False,"requestScore":0,
+            "matchedTerms":[],"requestedTerms":["combat"]}
+        second=copy.deepcopy(first);second["id"]="request-aligned";second["transactionId"]="z"
+        for step in second["steps"]:step["targetFeature"]="combat"
+        second["selection"]={"requestAligned":True,"requestScore":5,
+            "matchedTerms":["combat"],"requestedTerms":["combat"]}
+        value["workflowCandidates"].append(second)
+        source=generator.render(value)
+        self.assertIn("Guided workflow (request-aligned)",source)
+        second["selection"]["requestScore"]=0
+        with self.assertRaisesRegex(ValueError,"selection"):
+            generator.render(value)
+
+
     def test_source_validator_rejects_missing_safeguard_and_synthetic_activation(self):
         source=generator.render(document())
         with self.assertRaisesRegex(ValueError,"Missing guided workflow safeguard"):

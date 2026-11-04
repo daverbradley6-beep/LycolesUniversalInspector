@@ -276,14 +276,22 @@ def generation_readiness_lines(plan,readiness):
             raise ValueError("Malformed generated capability")
         if kind=="mixed-action-workflow-trial":
             label=capability.get("candidateId");mode=capability.get("executionMode")
+            matched=capability.get("requestMatchedTerms");score=capability.get("requestMatchScore")
             if (not isinstance(label,str) or not 1<=len(label)<=120
                     or mode not in ("mixed-guided","bounded-automatic")
                     or not isinstance(capability.get("stepCount"),int)
                     or not 2<=capability["stepCount"]<=128
+                    or not isinstance(matched,list) or len(matched)>128
+                    or any(not isinstance(term,str) or not 1<=len(term)<=80 or not all(
+                        "a"<=character<="z" or "0"<=character<="9" for character in term)
+                        for term in matched)
+                    or matched!=sorted(set(matched)) or type(score) is not int
+                    or not 0<=score<=10_000 or (score>0)!=bool(matched)
                     or capability.get("operatorStartRequired") is not True):
                 raise ValueError("Malformed generated workflow capability")
             lines.append("Generated workflow: "+label+" ["+mode+", "+str(
-                capability["stepCount"])+" steps]")
+                capability["stepCount"])+" steps; request evidence: "+(
+                    ", ".join(matched) if matched else "none")+"]")
             continue
         label=capability.get("targetLabel")
         if (not isinstance(label,str) or not 1<=len(label)<=120

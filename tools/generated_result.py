@@ -130,6 +130,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
         kind=item.get("kind")
         if kind=="mixed-action-workflow-trial":
             paths=item.get("targetPaths");step_kinds=item.get("stepKinds")
+            matched_terms=item.get("requestMatchedTerms");match_score=item.get("requestMatchScore")
             if (not _bounded_text(item.get("candidateId"),120)
                     or not _bounded_text(item.get("transactionId"),200)
                     or item.get("executionMode") not in ("mixed-guided","bounded-automatic")
@@ -141,6 +142,13 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or any(step_kind not in ("guided-gui-activation-trial",
                         "official-tool-activation-trial","proximity-prompt-trial")
                         for step_kind in step_kinds)
+                    or not isinstance(matched_terms,list) or len(matched_terms)>128
+                    or any(not _bounded_text(term,80) or not all(
+                        "a"<=character<="z" or "0"<=character<="9" for character in term)
+                        for term in matched_terms)
+                    or matched_terms!=sorted(set(matched_terms))
+                    or type(match_score) is not int or not 0<=match_score<=10_000
+                    or (match_score>0)!=bool(matched_terms)
                     or type(item.get("manualGuiActivationRequired")) is not bool
                     or item.get("automaticallyExecutable") is not (
                         not item["manualGuiActivationRequired"])

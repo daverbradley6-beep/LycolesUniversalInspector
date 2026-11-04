@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import re
 import unicodedata
 
 SCHEMA="114.generated-workflow-plan.1"
@@ -16,6 +17,29 @@ def _text(value,limit):
 
 def _scalar(value):
     return type(value) in (int,float,str,bool) and len(str(value))<=200
+
+_STOP_WORDS={"a","an","and","complete","do","for","from","in","of","observed","please",
+    "the","to","with","workflow","flow"}
+
+def _tokens(value):
+    if not isinstance(value,str):return set()
+    result=set()
+    for token in re.findall(r"[a-z0-9]+",value.lower())[:128]:
+        if len(token)>4 and token.endswith("s") and not token.endswith("ss"):token=token[:-1]
+        if len(token)>=2 and token not in _STOP_WORDS:result.add(token)
+    return result
+
+def _selection(steps,request):
+    requested=_tokens(request);weighted={}
+    for step in steps:
+        for value,weight in ((step.get("targetFeature"),5),(step.get("actionCandidate"),4),
+                (step.get("targetLabel"),3),(step.get("targetPath"),1),
+                (step.get("selectedOutcome",{}).get("key"),1)):
+            for token in _tokens(value):weighted[token]=max(weighted.get(token,0),weight)
+    matched=sorted(requested&set(weighted))
+    return {"requestAligned":bool(matched),"requestScore":sum(weighted[token] for token in matched),
+        "matchedTerms":matched,"requestedTerms":sorted(requested)}
+
 
 def _identity(value):
     if not isinstance(value,list) or not 1<=len(value)<=21:return None
@@ -126,6 +150,10 @@ def plan(plan_document,actions):
     if (not isinstance(integrity,dict) or integrity.get("scanComplete") is not True
             or type(integrity.get("placeId")) is not int or not _text(integrity.get("scanId"),128)):
         raise ValueError("Complete identified scan required")
+    request=plan_document.get("requestedCapability")
+    if request is not None and not _text(request,1000):
+        raise ValueError("Malformed requested capability")
+    request=request or ""
     claims=actions.get("claims") if isinstance(actions,dict) else None
     if (not isinstance(actions,dict) or actions.get("schemaVersion")!="111.action-capabilities.1"
             or actions.get("placeId")!=integrity["placeId"]
@@ -177,11 +205,15 @@ def plan(plan_document,actions):
             "unmappedLinkedEvents":len(events)-len(mapped),"exactOrderObserved":True,
             "allStepsGenerationReady":len(mapped)==len(events),
             "stateContinuityLinks":_continuity(steps),"operatorStartRequired":True,
-            "manualGuiActivationRequired":manual_gui,
+            "manualGuiActivationRequired":manual_gui,"selection":_selection(steps,request),
             "guidedTrialGenerationReady":guided_ready,"executionMode":execution_mode,
             "automaticallyExecutable":automatic,"executionReady":guided_ready,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
             "blockers":blockers})
+    candidates.sort(key=lambda item:(-item["selection"]["requestScore"],
+        not item["executionReady"],not item["automaticallyExecutable"],
+        item["transactionId"],item["id"]))
+    selected=next((item for item in candidates if item["executionReady"]),None)
     false_claims={field:False for field in FALSE_CLAIMS}
     return {"schemaVersion":SCHEMA,"placeId":integrity["placeId"],
         "scanId":integrity["scanId"],"workflowCandidates":candidates,
@@ -192,7 +224,9 @@ def plan(plan_document,actions):
             "unlinkedEvents":unlinked,"executionReadyWorkflows":sum(
                 item["executionReady"] for item in candidates),
             "automaticallyExecutableWorkflows":sum(
-                item["automaticallyExecutable"] for item in candidates)},
+                item["automaticallyExecutable"] for item in candidates),
+            "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
+            "selectedExecutionCandidateId":selected["id"] if selected else None},
         "claims":false_claims,"limitations":[
             "Only explicit transaction IDs and recorded sequence values establish ordering",
             "State continuity is descriptive client-visible evidence, not causal proof",
