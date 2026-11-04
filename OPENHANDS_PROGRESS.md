@@ -21,6 +21,7 @@
 - Added deterministic aggregation, CLI, malformed inventory, duplicate session, forged claim, readiness drift, display validation, release compatibility, ZIP inclusion, stale cleanup, and generated UI regressions.
 - Implementation commit: `4c6b6a8` (`Aggregate guided workflow feedback`).
 - Verification: full Python suite **1493 passed, 17 skipped**; receiver duplicate/conflict/count/integrity checks passed; checked-in and representative generated Luau parsed; `py_compile`/`compileall`, `git diff --check`, and targeted credential-pattern scans passed.
+- Remote verification: pushed through `32b5832` to authorized `origin/openhands-development`; local and remote SHA matched. GitHub Actions runs `41811575732` (offline regression/real fixture) and `41811575802` (client inspection adapter) both completed successfully for that head.
 - Scope remains offline/client-observation only. No live Roblox execution, source authenticity, causality, server authority, gameplay semantics, or successful action outcome was verified.
 
 ## Update — 2026-11-02 — Manual-only guided multi-step GUI trials
