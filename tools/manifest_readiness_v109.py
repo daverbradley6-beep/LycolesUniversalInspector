@@ -380,6 +380,14 @@ def analyze(manifest):
     history_total = _integer(diagnostics.get("historyTotal", len(history)), "interaction history total")
     if history_total < len(history):
         raise ValueError("invalid interaction history total")
+    interactions = _integer(diagnostics.get("totalInteractionEvents"), "interaction count")
+    attributed_interactions = _integer(diagnostics.get("attributedEvents"), "attributed interactions")
+    unattributed_interactions = _integer(diagnostics.get("unattributedEvents"), "unattributed interactions")
+    state_transitions = _integer(workflow.get("uniqueStateEvents"), "state transitions")
+    gui_transitions = _integer(workflow.get("guiTransitions"), "GUI transitions")
+    linked_confirmations = _integer(workflow.get("linkedConfirmations"), "linked confirmations")
+    corroborated_outcomes = _integer(workflow.get("actionOutcomesCorroborated"), "corroborated outcomes")
+    completed_candidates = _integer(workflow.get("completedCandidates"), "completed candidates")
     outcomes = _outcome_candidates(history)
     readiness = manifest.get("featureReadiness") or {}
     evidence = manifest.get("featureEvidence") or {}
@@ -417,6 +425,13 @@ def analyze(manifest):
                 ("no-completed-workflow-candidates", "completed_workflow_candidates_unavailable")):
             if blocker in workflow_generation["blockers"] and mapped not in blockers:
                 blockers.append(mapped)
+    elif interactions > 0:
+        if linked_confirmations == 0 and "workflow_linkage_not_observed" not in blockers:
+            blockers.append("workflow_linkage_not_observed")
+        if completed_candidates == 0 and "completed_workflow_candidates_unavailable" not in blockers:
+            blockers.append("completed_workflow_candidates_unavailable")
+        if unattributed_interactions > 0 and "interaction_attribution_incomplete" not in blockers:
+            blockers.append("interaction_attribution_incomplete")
     if history_subset:
         blockers.append("complete_interaction_history_unavailable")
     if scan_id is None:
@@ -442,14 +457,14 @@ def analyze(manifest):
         "scan": scan,
         "transport": transport,
         "evidence": {
-            "interactions": _integer(diagnostics.get("totalInteractionEvents"), "interaction count"),
-            "attributedInteractions": _integer(diagnostics.get("attributedEvents"), "attributed interactions"),
-            "unattributedInteractions": _integer(diagnostics.get("unattributedEvents"), "unattributed interactions"),
-            "stateTransitions": _integer(workflow.get("uniqueStateEvents"), "state transitions"),
-            "guiTransitions": _integer(workflow.get("guiTransitions"), "GUI transitions"),
-            "linkedConfirmations": _integer(workflow.get("linkedConfirmations"), "linked confirmations"),
-            "corroboratedActionOutcomes": _integer(workflow.get("actionOutcomesCorroborated"), "corroborated outcomes"),
-            "completedWorkflowCandidates": _integer(workflow.get("completedCandidates"), "completed candidates"),
+            "interactions": interactions,
+            "attributedInteractions": attributed_interactions,
+            "unattributedInteractions": unattributed_interactions,
+            "stateTransitions": state_transitions,
+            "guiTransitions": gui_transitions,
+            "linkedConfirmations": linked_confirmations,
+            "corroboratedActionOutcomes": corroborated_outcomes,
+            "completedWorkflowCandidates": completed_candidates,
             "historyEventsAvailable": len(history),
             "historyEventsReported": history_total,
             "historyIsSubset": history_subset,

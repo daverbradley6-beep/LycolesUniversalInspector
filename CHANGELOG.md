@@ -4,7 +4,7 @@
 - Accept and classify cancelled upload snapshots in `manifest_readiness_v109` (`uploadStatus: cancelled`, `manifestSnapshotPhase: upload-cancelled`) while preserving partial-acknowledgement visibility.
 - Extend transport lifecycle fixtures and tests to cover cancelled states and keep legacy `uploadedParts: 0` interpreted as a pre-upload placeholder rather than automatic receiver failure.
 
-- Bump manifest-readiness schema to `109.manifest-readiness.3`, surface parsed `workflowGenerationDiagnostics` in evidence output, and map key workflow blockers into generation-readiness diagnostics.
+- Bump manifest-readiness schema to `109.manifest-readiness.3`, surface parsed `workflowGenerationDiagnostics` in evidence output, map key workflow blockers into generation-readiness diagnostics, and infer conservative workflow-linkage/attribution blockers for legacy manifests that predate explicit root-cause fields.
 - Update `tools/build_release.py` manifest-only CLI blocking logic to treat any `109.manifest-readiness.*` schema as blocked-release input, preventing schema-minor updates from silently returning success.
 
 ## v30.6.9 — Quick scan profile, stage timing, and cancellation recovery

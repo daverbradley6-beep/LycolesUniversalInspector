@@ -67,6 +67,19 @@ class ManifestReadinessTests(unittest.TestCase):
             "receiver_scan_id_unavailable",
             result["generationReadiness"]["blockers"],
         )
+        self.assertIn(
+            "workflow_linkage_not_observed",
+            result["generationReadiness"]["blockers"],
+        )
+        self.assertIn(
+            "completed_workflow_candidates_unavailable",
+            result["generationReadiness"]["blockers"],
+        )
+        self.assertIn(
+            "interaction_attribution_incomplete",
+            result["generationReadiness"]["blockers"],
+        )
+
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertFalse(result["claims"]["gameplayVerified"])
 

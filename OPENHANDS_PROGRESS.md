@@ -10,7 +10,7 @@
 - Added static UI regressions for quick profile controls, observation configuration, and cancellation paths.
 - Added `workflowGenerationDiagnostics` root-cause output in `interactionDiagnostics` so high interaction counts with zero linked/completed workflows are explicitly explained as missing linkage/corroboration evidence rather than implied transport failure.
 - Updated `tools/manifest_readiness_v109.py` and transport fixture/test matrix to accept cancelled upload lifecycle snapshots (`uploadStatus: cancelled`, `manifestSnapshotPhase: upload-cancelled`) while preserving partial acknowledgement visibility.
-- Extended manifest readiness output to `109.manifest-readiness.3`: includes parsed `workflowGenerationDiagnostics` evidence and maps key workflow blockers into `generationReadiness.blockers` for clearer root-cause reporting.
+- Extended manifest readiness output to `109.manifest-readiness.3`: includes parsed `workflowGenerationDiagnostics` evidence, maps key workflow blockers into `generationReadiness.blockers`, and adds conservative legacy fallback blockers when explicit root-cause diagnostics are unavailable.
 - Hardened `tools/build_release.py` CLI manifest-only detection to treat any `109.manifest-readiness.*` schema as blocked-release input, preventing false success when schema minor versions change.
 
 
