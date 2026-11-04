@@ -1,5 +1,13 @@
 # OpenHands Development Progress
 
+## Pause checkpoint — 2026-11-02 — Uncommitted v30.6.8 workflow recorder
+
+- Autonomous development was explicitly paused. The last fully verified implementation remains **v30.6.7**, commit `4c5c777`, with handover commit `b2775ee` pushed to `openhands-development`.
+- An unfinished **v30.6.8** working tree is intentionally preserved and must not be treated as released. It adds an operator-armed workflow recorder bounded to 60 seconds/eight events, explicit shared transaction/order provenance, fail-closed planner validation, readiness/result diagnostics, documentation, and focused regressions.
+- Modified uncommitted files: `AGENTS.md`, `CHANGELOG.md`, `LycolesUniversalInspector.lua`, `README.md`, `package-lock.json`, `package.json`, `tests/test_generated_workflow_planning.py`, `tests/test_inspector_ui.py`, `tools/assess_generation_readiness.py`, `tools/generate_guided_workflow.py`, `tools/generated_result.py`, `tools/plan_generated_workflows.py`, and `version.txt`.
+- Focused checks passed before the final downstream validation/documentation edits: **41** planner/inspector tests plus official Luau compilation; **44** generator/release/readiness integration tests also passed. The latest complete working tree has **not** received the full Python/Node/Luau/version/whitespace gate and is therefore not committed.
+- Resume by reviewing the full uncommitted diff, completing propagation/compatibility review, running the full local gate, fixing any failures, and only then committing/pushing v30.6.8. Preserve the two untracked user-provided files unchanged: `OpenHands-Project-Handover.md` and `Pasted text(20261102-152723).txt`.
+
 ## Update — 2026-11-02 — Exact GUI reveal followup episodes
 
 - Completed implementation commit `4c5c777` (`Add evidence-backed GUI reveal followups`) and released inspector **v30.6.7** on `openhands-development`.
