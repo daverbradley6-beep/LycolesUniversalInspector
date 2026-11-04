@@ -1,5 +1,14 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Workflow selection transparency
+
+- Completed implementation commit `30ac9c3` (`Explain workflow selection decisions`) on `openhands-development`.
+- Generation readiness now includes a bounded `workflowSelection` explanation with the selected candidate and up to 20 candidate summaries. Every non-selected candidate receives one deterministic reason: not execution-ready, lower request-evidence score, more user involvement on a score tie, or stable identity tiebreak.
+- The selected candidate is always retained even when more than 20 candidates exist. Final-result validation enforces counts, canonical matched terms, reason vocabulary, selected identity, and one-to-one consistency with the generated workflow capability.
+- Generated utility status now identifies the selected workflow and shows at most three non-selected alternatives with their reason, without implying runtime or gameplay verification.
+- Complete Python suite: **1,518 tests passed** with official Luau enabled. Node receiver and Luau parsing validation passed (**3/3**); compilation and whitespace gates passed.
+- No live Roblox execution was performed. Selection reasoning describes deterministic offline evidence ranking only.
+
 ## Update — 2026-11-02 — Request-ranked workflow generation
 
 - Completed implementation commit `c2c0a31` (`Rank workflows by request evidence`) on `openhands-development`.
