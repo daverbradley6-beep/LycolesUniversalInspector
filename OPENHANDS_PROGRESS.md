@@ -1,5 +1,14 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Generation-readiness timing provenance
+
+- Completed implementation commit `449b6e9` (`Propagate interaction timing into generation readiness`) and released inspector **v30.6.2** on `openhands-development`.
+- Pre-activation, activation-callback fallback, and legacy-unknown timing now flow from compiled interaction events through Prompt/Tool/GUI action targets, canonical mixed-workflow steps, generated capability summaries, strict generated-result validation, and the display-only Generated Script tab.
+- Generation readiness now reports scan-wide baseline/window coverage, including explicit pre-activation capture failures and possible evidence loss. This information is `limitations-only`: it never increases readiness, and accounted pre-activation coverage still does not prove causality, complete state observation, runtime behavior, gameplay, server authority, action outcomes, or source authenticity.
+- Independent bounded validation rejects partial, contradictory, non-finite, oversized, forged, and workflow-count-inconsistent timing provenance. Existing same-schema artifacts may omit the additive fields and remain timing-unknown rather than becoming verified.
+- Full local gate passed: **1,536 Python tests** with pinned official Luau 0.744 enabled; receiver checks and Luau parser suite passed (**3/3**); Python compilation, version consistency, whitespace, and credential-pattern checks passed. No live Roblox execution or production receiver change was performed.
+- Next priority: improve generation-ready workflow discovery when valid interactions lack explicit transaction linkage, without merging unrelated temporal events or weakening causality and user-review boundaries.
+
 ## Update — 2026-11-02 — Explicit report handoff lifecycle
 
 - Completed implementation commit `3cbb73b` (`Clarify report handoff lifecycle`) and released inspector **v30.6.1** on `openhands-development`.
