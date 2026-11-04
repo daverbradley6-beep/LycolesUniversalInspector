@@ -1,5 +1,18 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Request-ranked workflow generation
+
+- Completed implementation commit `c2c0a31` (`Rank workflows by request evidence`) on `openhands-development`.
+- `tools/plan_generated_workflows.py` now ranks multiple exact linked candidates by bounded canonical request terms matched against feature, action, control-label, path, and selected-outcome evidence. Ties prefer generation readiness, then bounded automatic execution, then stable transaction/candidate identity.
+- Candidate selection records exact matched/requested terms and a deterministic weighted score. `tools/generate_guided_workflow.py` independently recomputes these values from normalized candidate steps and rejects forged, malformed, noncanonical, or inconsistent ranking metadata.
+- Generation readiness now recomputes the entire workflow plan from the compiled plan and action capabilities before projecting a workflow capability. It exposes canonical request-match evidence, while generated-result and utility validators fail closed on inconsistent terms or scores.
+- Added controlled official-Luau GUI → Tool → ProximityPrompt execution. The GUI step uses only the normal `Activated` event, the Tool step uses official `Tool:Activate()`, and the Prompt step uses the bounded checked executor mechanism. Three ordered plan-bound feedback records are evaluated strictly as client observations; runtime, gameplay, causality, server-authority, and action-outcome claims stay false.
+- Complete Python suite: **1,517 tests passed** with official Luau enabled.
+- Node validation: receiver integrity passed; malformed Luau rejection, checked-in Luau parsing, and representative generated Luau parsing passed (**3/3**).
+- Compilation, whitespace, and credential-pattern gates passed.
+- No live Roblox execution was performed. Controlled Luau execution and offline generation remain distinct from live gameplay verification.
+- Next priorities: evaluate longer/multiple recurring workflow sequences across sessions without causal upgrades; improve user-facing display of ranked alternatives and why non-selected workflows were rejected; preserve exact evidence boundaries.
+
 ## Update — 2026-11-02 — Evidence-linked mixed workflow execution
 
 - Completed implementation commit `7518cb6` (`Execute evidence-linked mixed workflows`) on `openhands-development`.
