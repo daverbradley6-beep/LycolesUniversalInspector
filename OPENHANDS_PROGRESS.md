@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Bounded state-dependent workflow repetition
+
+- Completed implementation commit `1d3dda8` (`Add bounded state-dependent workflow repetition`) and released inspector **v30.6.4** on `openhands-development`.
+- Generated linked-workflow trials now provide an explicit `REPEAT: OFF/ON` control. An operator can run one sequence or arm at most five complete sequences; the existing 400-record feedback cap remains enforced.
+- The first sequence still requires every exact evidence-derived entry value. Later sequences do not reuse stale fixture values: each step must begin at the immediately prior observed value for its exact resolved state instance, preventing flat-path collisions and stopping on external state drift.
+- STOP and CLOSE remain immediate cancellation paths. Any missing target/state, metadata or prerequisite drift, activation failure, or unobserved selected scalar direction terminates repetition at once; each sequence receives its own ordered feedback run ID.
+- Controlled official-Luau execution observed exactly five ordered two-step sequences and ten digest-bound feedback records. This is simulated wiring evidence only; live Roblox runtime, gameplay success, causality, server authority, and action outcomes remain unverified.
+- Full local gate passed: **1,541 Python tests**, receiver and Luau parser checks (**3/3**), pinned official Luau 0.744 compilation of **7 files**, version consistency, whitespace, and credential-pattern checks.
+- Next priority: capture and preserve session-relative activation timing so strict reviewable workflow inference can distinguish adjacent interactions from unrelated events without treating temporal proximity as causation.
+
+
 ## Update — 2026-11-02 — Explicit workflow-link planning diagnostics
 
 - Completed implementation commit `5046e34` (`Expose workflow linkage planning blockers`) and released inspector **v30.6.3** on `openhands-development`.
