@@ -1,4 +1,4 @@
-"""Manual-only guided GUI workflow generator tests."""
+"""Bounded mixed-action workflow generator tests."""
 import copy
 import importlib.util
 import pathlib
@@ -41,6 +41,48 @@ def document():
             "automaticallyExecutable":False,"executionReady":False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False}]}
 
+
+def tool_step(sequence):
+    value=step("Sword",sequence)
+    value.update(targetPath="LocalPlayer.Backpack.Sword",targetLabel="Sword",
+        controlType="Tool.Activated",kind="official-tool-activation-trial",
+        activationMode="official-tool-activate",pathIdentity=[
+            {"name":"LocalPlayer","className":"Player","ordinal":1},
+            {"name":"Backpack","className":"Backpack","ordinal":1},
+            {"name":"Sword","className":"Tool","ordinal":1}],
+        prerequisiteMetadata={"tooltip":"Train","requiresHandle":True,
+            "canBeDropped":False,"enabled":True,"manualActivationOnly":False},
+        manualActivationRequired=False)
+    return value
+
+
+def prompt_step(sequence):
+    value=step("Prompt",sequence)
+    value.update(targetPath="Workspace.Shop.Door.Prompt",targetLabel="Shop Door",
+        controlType="ProximityPrompt.Triggered",kind="proximity-prompt-trial",
+        activationMode="executor-fireproximityprompt",pathIdentity=[
+            {"name":"Workspace","className":"Workspace","ordinal":1},
+            {"name":"Shop","className":"Model","ordinal":1},
+            {"name":"Door","className":"Part","ordinal":1},
+            {"name":"Prompt","className":"ProximityPrompt","ordinal":1}],
+        prerequisiteMetadata={"actionText":"Open","objectText":"Shop Door","enabled":True,
+            "holdDuration":0,"maxActivationDistance":10,"keyboardKeyCode":"E",
+            "gamepadKeyCode":"ButtonX","anchorPath":"Workspace.Shop.Door",
+            "anchorPosition":{"x":1,"y":2,"z":3}},manualActivationRequired=False)
+    return value
+
+
+def mixed_document(automatic=False):
+    value=document();steps=[tool_step(1),prompt_step(2)] if automatic else [
+        step("Select",1),tool_step(2),prompt_step(3)]
+    if not automatic:steps[0]["activationMode"]="normal-user-gui-activation"
+    candidate=value["workflowCandidates"][0];candidate.update(steps=steps,stepCount=len(steps),
+        manualGuiActivationRequired=not automatic,executionMode=(
+            "bounded-automatic" if automatic else "mixed-guided"),
+        automaticallyExecutable=automatic,executionReady=True)
+    return value
+
+
 class GuidedWorkflowGeneratorTests(unittest.TestCase):
     def test_generates_user_mediated_multi_step_trial(self):
         source=generator.render(document())
@@ -48,12 +90,43 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         self.assertIn('title.Text="Guided workflow (guided-flow)"',source)
         self.assertIn('button.Activated:Connect(function() activated=true end)',source)
         self.assertIn('for index,step in ipairs(steps) do',source)
-        self.assertIn('click highlighted',source)
+        self.assertIn('activate highlighted',source)
         self.assertIn('causality and gameplay remain unverified',source)
         self.assertNotIn("firesignal",source.lower())
         self.assertNotIn("virtualinput",source.lower())
         self.assertNotIn("button:Activate",source)
         self.assertNotIn("FireServer(",source)
+
+    def test_generates_mixed_gui_tool_prompt_execution(self):
+        source=generator.render(mixed_document())
+        self.assertIn('kind="guided-gui-activation-trial"',source)
+        self.assertIn('kind="official-tool-activation-trial"',source)
+        self.assertIn('kind="proximity-prompt-trial"',source)
+        self.assertIn('local activated=pcall(function() tool:Activate() end)',source)
+        self.assertIn('type(fireproximityprompt)~="function"',source)
+        self.assertIn('pcall(function() fireproximityprompt(prompt) end)',source)
+        self.assertIn('local function teleportToPrompt(prompt)',source)
+        self.assertIn('local function promptMetadataMatches(prompt,expected)',source)
+        self.assertNotIn('FireServer(',source)
+
+    def test_generates_operator_started_bounded_automatic_sequence(self):
+        source=generator.render(mixed_document(automatic=True))
+        self.assertIn('activationMode="official-tool-activate"',source)
+        self.assertIn('activationMode="executor-fireproximityprompt"',source)
+        self.assertNotIn('kind="guided-gui-activation-trial"',source)
+        self.assertIn('for index,step in ipairs(steps) do',source)
+    def test_prompt_anchor_metadata_and_activation_mode_fail_closed(self):
+        value=mixed_document();value["workflowCandidates"][0]["steps"][2][
+            "prerequisiteMetadata"].pop("anchorPosition")
+        with self.assertRaisesRegex(ValueError,"step contract"):
+            generator.render(value)
+        value=mixed_document();value["workflowCandidates"][0]["steps"][1][
+            "activationMode"]="synthetic-tool-event"
+        with self.assertRaisesRegex(ValueError,"step"):
+            generator.render(value)
+
+
+
 
     def test_automatic_or_incomplete_candidate_fails_closed(self):
         value=document();value["workflowCandidates"][0]["automaticallyExecutable"]=True
@@ -76,7 +149,7 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Missing guided workflow safeguard"):
             generator.validate_source(source.replace("No GUI event is synthesized","removed"),789)
         for unsafe in ("firesignal(button.Activated)","setclipboard(payload)",
-                "HttpService:PostAsync(url,payload)"):
+                "HttpService:PostAsync(url,payload)","untrusted:Activate()"):
             with self.subTest(unsafe=unsafe),self.assertRaisesRegex(
                     ValueError,"Forbidden guided workflow operation"):
                 generator.validate_source(source+"\n"+unsafe+"\n",789)
@@ -109,7 +182,8 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
             metadata["selectable"]=False;metadata["autoButtonColor"]=False
             metadata.pop("interactable")
         source=generator.render(value)
-        self.assertIn('controlClass="ImageButton",text=""',source)
+        self.assertIn('controlClass="ImageButton"',source)
+        self.assertIn('text=""',source)
 
     def test_no_eligible_candidate_returns_none_and_input_is_not_mutated(self):
         value=document();value["workflowCandidates"][0]["guidedTrialGenerationReady"]=False

@@ -103,6 +103,26 @@ class GeneratedResultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"guided GUI"):
             self.build(generation_readiness=forged)
 
+    def test_mixed_workflow_mode_and_step_contract_fail_closed(self):
+        readiness=self.readiness();readiness["generatedCapabilities"]=[{
+            "id":"linked-gameplay-workflow-trial","kind":"mixed-action-workflow-trial",
+            "candidateId":"workflow-1","transactionId":"transaction-1",
+            "executionMode":"bounded-automatic","stepCount":2,
+            "stepKinds":["official-tool-activation-trial","proximity-prompt-trial"],
+            "targetPaths":["LocalPlayer.Backpack.Sword","Workspace.Shop.Door.Prompt"],
+            "targetFeatures":["shops"],"manualGuiActivationRequired":False,
+            "automaticallyExecutable":True,"operatorStartRequired":True,
+            "stopOnFirstUnobservedOutcome":True,"runtimeVerified":False,
+            "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}]
+        readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
+        result=self.build(generation_readiness=readiness)
+        self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0][
+            "executionMode"],"bounded-automatic")
+        readiness["generatedCapabilities"][0]["executionMode"]="mixed-guided"
+        with self.assertRaisesRegex(ValueError,"workflow"):
+            self.build(generation_readiness=readiness)
+
+
     def test_guided_feedback_correlation_claims_fail_closed(self):
         readiness=self.readiness();readiness["guidedWorkflowFeedbackCorrelation"]={
             "available":False,"reason":"No digest-bound guided feedback was supplied",

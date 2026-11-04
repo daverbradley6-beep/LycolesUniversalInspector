@@ -124,15 +124,39 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
         raise ValueError("Invalid generation-readiness capabilities")
     for item in generated:
         if (not isinstance(item,dict) or not _bounded_text(item.get("id"),80)
-                or item.get("kind") not in ("proximity-prompt-trial","official-tool-activation-trial",
-                    "guided-gui-activation-trial")
-                or not _bounded_text(item.get("targetLabel"),120)
-                or not _bounded_text(item.get("selectedOutcomeKey"),200)
-                or item.get("expectedChange") not in ("increased","decreased","changed")
                 or any(item.get(field) is not False for field in
                        ("runtimeVerified","gameplayVerified","causalityProven","actionOutcomeVerified"))):
             raise ValueError("Invalid generation-readiness capability")
-        if (item.get("kind")=="guided-gui-activation-trial"
+        kind=item.get("kind")
+        if kind=="mixed-action-workflow-trial":
+            paths=item.get("targetPaths");step_kinds=item.get("stepKinds")
+            if (not _bounded_text(item.get("candidateId"),120)
+                    or not _bounded_text(item.get("transactionId"),200)
+                    or item.get("executionMode") not in ("mixed-guided","bounded-automatic")
+                    or not isinstance(item.get("stepCount"),int)
+                    or not 2<=item["stepCount"]<=128
+                    or not isinstance(paths,list) or len(paths)!=item["stepCount"]
+                    or any(not _bounded_text(path,500) for path in paths)
+                    or not isinstance(step_kinds,list) or len(step_kinds)!=item["stepCount"]
+                    or any(step_kind not in ("guided-gui-activation-trial",
+                        "official-tool-activation-trial","proximity-prompt-trial")
+                        for step_kind in step_kinds)
+                    or type(item.get("manualGuiActivationRequired")) is not bool
+                    or item.get("automaticallyExecutable") is not (
+                        not item["manualGuiActivationRequired"])
+                    or item["executionMode"]!=("mixed-guided"
+                        if item["manualGuiActivationRequired"] else "bounded-automatic")
+                    or item.get("operatorStartRequired") is not True
+                    or item.get("stopOnFirstUnobservedOutcome") is not True):
+                raise ValueError("Invalid workflow generation-readiness capability")
+            continue
+        if (kind not in ("proximity-prompt-trial","official-tool-activation-trial",
+                    "guided-gui-activation-trial")
+                or not _bounded_text(item.get("targetLabel"),120)
+                or not _bounded_text(item.get("selectedOutcomeKey"),200)
+                or item.get("expectedChange") not in ("increased","decreased","changed")):
+            raise ValueError("Invalid generation-readiness capability")
+        if (kind=="guided-gui-activation-trial"
                 and (item.get("automaticActivation") is not False
                     or item.get("manualActivationRequired") is not True
                     or item.get("exactControlHighlighting") is not True)):

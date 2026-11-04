@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"tools"))
-from controlled_guided_workflow import canonical,execute
+from controlled_guided_workflow import canonical,execute,execute_mixed
 
 PLACE=85896571713843
 DEFAULTS=(ROOT/"build"/"luau-0.744"/"luau",Path("/tmp/luau-0.744/luau"))
@@ -29,6 +29,20 @@ class ControlledGuidedWorkflowTests(unittest.TestCase):
         self.assertFalse(result["serverAuthorityVerified"])
         self.assertFalse(result["causalityProven"])
         self.assertFalse(result["gameplayVerified"])
+
+    def test_tool_and_prompt_steps_execute_in_order_with_bounded_feedback(self):
+        result=execute_mixed(PLACE,LUAU)
+        self.assertTrue(result["luauExecuted"])
+        self.assertEqual(result["orderedStepsObserved"],2)
+        self.assertEqual(result["toolActivationsObserved"],2)
+        self.assertEqual(result["promptActivationsObserved"],1)
+        self.assertEqual(result["expectedChangesObserved"],3)
+        self.assertTrue(result["metadataDriftRejected"])
+        self.assertTrue(result["feedbackPlanBound"])
+        self.assertFalse(result["normalUserActivationEventsUsed"])
+        self.assertFalse(result["robloxRuntimeVerified"])
+        self.assertFalse(result["gameplayVerified"])
+
 
     def test_execution_report_is_deterministic(self):
         self.assertEqual(canonical(execute(PLACE,LUAU)),canonical(execute(PLACE,LUAU)))

@@ -270,19 +270,31 @@ def generation_readiness_lines(plan,readiness):
         lines.append("Generated subset: "+item)
     for capability in generated[:5]:
         if not isinstance(capability,dict):raise ValueError("Malformed generated capability")
-        label=capability.get("targetLabel");kind=capability.get("kind")
+        kind=capability.get("kind")
+        if (capability.get("runtimeVerified") is not False
+                or capability.get("gameplayVerified") is not False):
+            raise ValueError("Malformed generated capability")
+        if kind=="mixed-action-workflow-trial":
+            label=capability.get("candidateId");mode=capability.get("executionMode")
+            if (not isinstance(label,str) or not 1<=len(label)<=120
+                    or mode not in ("mixed-guided","bounded-automatic")
+                    or not isinstance(capability.get("stepCount"),int)
+                    or not 2<=capability["stepCount"]<=128
+                    or capability.get("operatorStartRequired") is not True):
+                raise ValueError("Malformed generated workflow capability")
+            lines.append("Generated workflow: "+label+" ["+mode+", "+str(
+                capability["stepCount"])+" steps]")
+            continue
+        label=capability.get("targetLabel")
         if (not isinstance(label,str) or not 1<=len(label)<=120
                 or kind not in ("proximity-prompt-trial","official-tool-activation-trial",
-                    "guided-gui-activation-trial")
-                or capability.get("runtimeVerified") is not False
-                or capability.get("gameplayVerified") is not False):
+                    "guided-gui-activation-trial")):
             raise ValueError("Malformed generated capability")
         if (kind=="guided-gui-activation-trial"
                 and (capability.get("automaticActivation") is not False
                     or capability.get("manualActivationRequired") is not True
                     or capability.get("exactControlHighlighting") is not True)):
             raise ValueError("Malformed guided GUI capability")
-
         lines.append("Generated trial: "+label+" ["+kind+"]")
     for item in unavailable:
         identifier=item.get("id") if isinstance(item,dict) else None
@@ -506,8 +518,10 @@ def main():
         guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
 
         guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
-        guided_workflow_candidate_id=(guided_workflow_candidates[0]["id"]
+        guided_workflow_candidate=(guided_workflow_candidates[0]
             if guided_workflow_candidates else None)
+        guided_workflow_candidate_id=(guided_workflow_candidate["id"]
+            if guided_workflow_candidate else None)
 
         readiness_builder=load_local_module("lycoles_generation_readiness",
                                              "assess_generation_readiness.py")
@@ -584,15 +598,21 @@ def main():
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
           "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
             "schemaVersion":generated_workflows["schemaVersion"],
-            "summary":generated_workflows["summary"],"automaticallyExecutable":False,
+            "summary":generated_workflows["summary"],"automaticallyExecutable":
+                generated_workflows["summary"]["automaticallyExecutableWorkflows"]>0,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
             "candidateId":guided_workflow_candidate_id,
+            "executionMode":guided_workflow_candidate.get("executionMode")
+                if guided_workflow_candidate else None,
             "feedbackSchema":"115.guided-workflow-feedback.1" if guided_workflow_lua else None,
             "feedbackWorkflowPlanSHA256":guided_workflow_builder.digest(generated_workflows)
                 if guided_workflow_lua else None,
-            "generated":guided_workflow_lua is not None,"automaticActivation":False,
-            "manualActivationRequired":guided_workflow_lua is not None,
+            "generated":guided_workflow_lua is not None,
+            "automaticActivation":guided_workflow_candidate.get("automaticallyExecutable",False)
+                if guided_workflow_candidate else False,
+            "manualActivationRequired":guided_workflow_candidate.get(
+                "manualGuiActivationRequired",False) if guided_workflow_candidate else False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
             "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,

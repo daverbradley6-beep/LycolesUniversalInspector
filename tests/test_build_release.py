@@ -181,7 +181,7 @@ class ReleaseBuilderTests(unittest.TestCase):
                 "guided-gui-activation-trial")
             self.assertFalse(readiness["claims"]["runtimeVerified"])
 
-    def test_linked_generated_controls_emit_non_executable_workflow_plan(self):
+    def test_linked_generated_controls_emit_guided_workflow_trial(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
             metadata={"controlClass":"TextButton","visible":True,"active":True,
@@ -310,6 +310,67 @@ class ReleaseBuilderTests(unittest.TestCase):
                 self.assertNotIn("LycolesGuidedWorkflow.lua",archive.namelist())
                 self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
                 self.assertNotIn("guided-workflow-feedback-aggregate.json",archive.namelist())
+
+    def test_mixed_tool_prompt_workflow_generates_bounded_automatic_release_trial(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            state_identity=[{"name":"Data","className":"Folder","ordinal":1},
+                {"name":"Stage","className":"IntValue","ordinal":1}]
+            tool={"featureCandidate":"combat","path":"LocalPlayer.Backpack.Sword",
+                "controlType":"Tool.Activated","transactionId":"mixed-flow","sequence":1,
+                "outcomeVerified":False,"pathIdentity":[
+                    {"name":"LocalPlayer","className":"Player","ordinal":1},
+                    {"name":"Backpack","className":"Backpack","ordinal":1},
+                    {"name":"Sword","className":"Tool","ordinal":1}],
+                "controlMetadata":{"tooltip":"Train","requiresHandle":True,
+                    "canBeDropped":False,"enabled":True,"manualActivationOnly":False},
+                "stateChanges":[{"key":"Data.Stage","before":0,"after":1,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":state_identity}]}
+            prompt={"featureCandidate":"shops","path":"Workspace.Shop.Door.Prompt",
+                "controlType":"ProximityPrompt.Triggered","transactionId":"mixed-flow","sequence":2,
+                "outcomeVerified":False,"pathIdentity":[
+                    {"name":"Workspace","className":"Workspace","ordinal":1},
+                    {"name":"Shop","className":"Model","ordinal":1},
+                    {"name":"Door","className":"Part","ordinal":1},
+                    {"name":"Prompt","className":"ProximityPrompt","ordinal":1}],
+                "controlMetadata":{"actionText":"Open","objectText":"Shop Door","enabled":True,
+                    "holdDuration":0,"maxActivationDistance":10,"keyboardKeyCode":"E",
+                    "gamepadKeyCode":"ButtonX","anchorPath":"Workspace.Shop.Door",
+                    "anchorPosition":{"x":1,"y":2,"z":3}},
+                "stateChanges":[{"key":"Data.Stage","before":1,"after":2,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":state_identity}]}
+            make_parts(parts,event=tool,request="Run the observed training and shop workflow")
+            first=json.loads((parts/"1.json").read_text());first["featureEvidence"]={"combat":{},"shops":{}}
+            (parts/"1.json").write_text(json.dumps(first))
+            second=json.loads((parts/"2.json").read_text());second["interactionHistoryChunk"]=[tool,prompt]
+            (parts/"2.json").write_text(json.dumps(second))
+            manifest=builder.build(parts,base/"out")
+            workflow=json.loads((base/"out"/"generated-workflow-plan.json").read_text())
+            candidate=workflow["workflowCandidates"][0]
+            self.assertEqual(candidate["executionMode"],"bounded-automatic")
+            self.assertTrue(candidate["automaticallyExecutable"])
+            self.assertTrue(candidate["executionReady"])
+            self.assertEqual(workflow["summary"]["automaticallyExecutableWorkflows"],1)
+            self.assertTrue(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
+            self.assertTrue(manifest["guidedWorkflowTrial"]["automaticActivation"])
+            self.assertFalse(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
+            self.assertEqual(manifest["guidedWorkflowTrial"]["executionMode"],"bounded-automatic")
+            readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
+            linked=[item for item in readiness["generatedCapabilities"]
+                if item["id"]=="linked-gameplay-workflow-trial"]
+            self.assertEqual(len(linked),1)
+            self.assertEqual(linked[0]["executionMode"],"bounded-automatic")
+            self.assertIn("linked-gameplay-workflow-trial",
+                readiness["request"]["matchedGeneratedCapabilityIds"])
+            self.assertEqual(readiness["request"]["status"],"generated-bounded-subset")
+            utility=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
+            self.assertIn("Generated workflow:",utility)
+
+            guided=(base/"out"/"LycolesGuidedWorkflow.lua").read_text()
+            self.assertIn("tool:Activate()",guided)
+            self.assertIn("fireproximityprompt(prompt)",guided)
+            self.assertNotIn("FireServer(",guided)
+
 
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib

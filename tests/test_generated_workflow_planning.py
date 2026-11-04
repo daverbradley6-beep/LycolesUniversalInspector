@@ -38,6 +38,41 @@ def plan():
         "actionableObjects":[],"observedInteractionHistory":[
             event("Select",1,2,3),event("Confirm",2,3,4)]}
 
+
+def state_change(before,after):
+    return [{"key":"Data.ShopStage","before":before,"after":after,
+        "stateIdentityStatus":"component-resolved","stateIdentity":[
+            {"name":"Data","className":"Folder","ordinal":1},
+            {"name":"ShopStage","className":"IntValue","ordinal":1}]}]
+
+
+def tool_event(sequence,before,after,transaction="mixed-flow"):
+    return {"path":"LocalPlayer.Backpack.Sword","pathIdentity":[
+            {"name":"LocalPlayer","className":"Player","ordinal":1},
+            {"name":"Backpack","className":"Backpack","ordinal":1},
+            {"name":"Sword","className":"Tool","ordinal":1}],
+        "controlType":"Tool.Activated","featureCandidate":"combat",
+        "transactionId":transaction,"sequence":sequence,
+        "controlMetadata":{"tooltip":"Train","requiresHandle":True,"canBeDropped":False,
+            "enabled":True,"manualActivationOnly":False},
+        "stateChanges":state_change(before,after)}
+
+
+def prompt_event(sequence,before,after,transaction="mixed-flow"):
+    return {"path":"Workspace.Shop.Door.Prompt","pathIdentity":[
+            {"name":"Workspace","className":"Workspace","ordinal":1},
+            {"name":"Shop","className":"Model","ordinal":1},
+            {"name":"Door","className":"Part","ordinal":1},
+            {"name":"Prompt","className":"ProximityPrompt","ordinal":1}],
+        "controlType":"ProximityPrompt.Triggered","featureCandidate":"shops",
+        "transactionId":transaction,"sequence":sequence,
+        "controlMetadata":{"actionText":"Open","objectText":"Shop Door","enabled":True,
+            "holdDuration":0,"maxActivationDistance":10,"keyboardKeyCode":"E",
+            "gamepadKeyCode":"ButtonX","anchorPath":"Workspace.Shop.Door",
+            "anchorPosition":{"x":1,"y":2,"z":3}},
+        "stateChanges":state_change(before,after)}
+
+
 class GeneratedWorkflowPlanningTests(unittest.TestCase):
     def analyze(self,value):
         actions=discovery.analyze(value)
@@ -59,9 +94,10 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
             "stateKey":"Data.ShopStage","value":3,
             "classification":"observed-state-continuity","causalityProven":False}])
         self.assertFalse(candidate["automaticallyExecutable"])
-        self.assertFalse(candidate["executionReady"])
+        self.assertTrue(candidate["executionReady"])
+        self.assertEqual(candidate["executionMode"],"mixed-guided")
         self.assertFalse(result["claims"]["causalityProven"])
-        self.assertEqual(result["summary"]["executionReadyWorkflows"],0)
+        self.assertEqual(result["summary"]["executionReadyWorkflows"],1)
 
     def test_unlinked_or_partially_ready_events_do_not_form_workflow(self):
         value=plan()
@@ -79,6 +115,31 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         value=plan();actions=discovery.analyze(value);actions["claims"]["causalityProven"]=True
         with self.assertRaisesRegex(ValueError,"claims mismatch"):
             planner.plan(value,actions)
+
+
+    def test_mixed_gui_tool_prompt_workflow_is_generation_ready(self):
+        value=plan();value["observedInteractionHistory"]=[
+            event("Select",1,0,1,"mixed-flow"),tool_event(2,1,2),prompt_event(3,2,3)]
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertEqual([step["kind"] for step in candidate["steps"]],[
+            "guided-gui-activation-trial","official-tool-activation-trial",
+            "proximity-prompt-trial"])
+        self.assertTrue(candidate["guidedTrialGenerationReady"])
+        self.assertEqual(candidate["executionMode"],"mixed-guided")
+        self.assertTrue(candidate["executionReady"])
+        self.assertFalse(candidate["automaticallyExecutable"])
+        self.assertEqual(result["summary"]["executionReadyWorkflows"],1)
+
+    def test_tool_prompt_workflow_is_bounded_automatic_candidate(self):
+        value=plan();value["observedInteractionHistory"]=[
+            tool_event(1,0,1,"automatic-flow"),prompt_event(2,1,2,"automatic-flow")]
+        candidate=self.analyze(value)["workflowCandidates"][0]
+        self.assertTrue(candidate["guidedTrialGenerationReady"])
+        self.assertEqual(candidate["executionMode"],"bounded-automatic")
+        self.assertTrue(candidate["executionReady"])
+        self.assertTrue(candidate["automaticallyExecutable"])
+        self.assertFalse(candidate["runtimeVerified"])
+        self.assertFalse(candidate["gameplayVerified"])
 
     def test_exact_determinism(self):
         value=plan();actions=discovery.analyze(value)

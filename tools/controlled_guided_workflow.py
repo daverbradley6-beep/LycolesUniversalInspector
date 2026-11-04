@@ -163,5 +163,120 @@ def execute(place_id,luau_binary,timeout_seconds=2.0):
         "serverAuthorityVerified":False,"causalityProven":False,
         "gameplayVerified":False,"transcript":stdout.strip()}
 
+
+MIXED_SETUP=r'''
+local world=newInstance("Workspace","Workspace");world.CurrentCamera=workspace.CurrentCamera;workspace=world
+local backpack=newInstance("Backpack","Backpack");backpack.Parent=player
+local humanoid=player.Character:FindFirstChildOfClass("Humanoid")
+function humanoid:EquipTool(tool) tool.Parent=player.Character end
+local tool=newInstance("Tool","Sword");tool.ToolTip="Train";tool.RequiresHandle=true
+tool.CanBeDropped=false;tool.Enabled=true;tool.ManualActivationOnly=false;tool.Parent=backpack
+local stage=_G.__workflowTest.stage
+_G.__mixedToolActivations=0;_G.__mixedPromptActivations=0
+function tool:Activate() _G.__mixedToolActivations+=1;stage.Value+=1 end
+local shop=newInstance("Model","Shop");shop.Parent=workspace
+local door=newInstance("Part","Door");door.CFrame=CFrame.new(1,2,3);door.Position=Vector3.new(1,2,3);door.Parent=shop
+local prompt=newInstance("ProximityPrompt","Prompt");prompt.ActionText="Open";prompt.ObjectText="Shop Door"
+prompt.Enabled=true;prompt.HoldDuration=0;prompt.MaxActivationDistance=10
+prompt.KeyboardKeyCode={Name="E"};prompt.GamepadKeyCode={Name="ButtonX"};prompt.Parent=door
+function fireproximityprompt(target)
+    assert(target==prompt,"unexpected prompt target")
+    _G.__mixedPromptActivations+=1;stage.Value+=1
+end
+task.spawn=function(callback) callback() end
+task.wait=function() return 0 end
+_G.__mixedWorkflowTest={stage=stage,prompt=prompt}
+'''
+
+MIXED_DRIVER=r'''
+local guide=playerGui:FindFirstChild("LycolesGuidedWorkflow")
+assert(guide,"mixed workflow UI missing")
+local controls={}
+for _,item in ipairs(guide:GetDescendants()) do controls[item.Name]=item end
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__mixedToolActivations==1 and _G.__mixedPromptActivations==1,
+    "mixed workflow did not activate Tool then Prompt")
+assert(_G.__mixedWorkflowTest.stage.Value==2,"mixed workflow outcomes were not observed in order")
+local feedback=_G.LycolesGuidedWorkflowFeedback
+assert(#feedback.entries==2 and feedback.entries[1].stepSequence==1
+    and feedback.entries[2].stepSequence==2,"mixed feedback order drifted")
+assert(feedback.entries[1].status=="expected-change-observed"
+    and feedback.entries[2].status=="expected-change-observed","mixed feedback outcomes missing")
+assert(feedback.claims.runtimeVerified==false and feedback.claims.gameplayVerified==false
+    and feedback.claims.causalityProven==false,"mixed feedback claims were upgraded")
+_G.__mixedWorkflowTest.prompt.ActionText="Drifted"
+controls.StartGuidedWorkflow.Activated:Fire()
+assert(_G.__mixedToolActivations==2 and _G.__mixedPromptActivations==1
+    and _G.__mixedWorkflowTest.stage.Value==3,"Prompt drift did not stop after valid Tool step")
+assert(#feedback.entries==4 and feedback.entries[3].status=="expected-change-observed"
+    and feedback.entries[4].status=="metadata-drift","Prompt drift feedback missing")
+controls.CloseGuidedWorkflow.Activated:Fire()
+print("LYCOLES_MIXED_WORKFLOW|PASS|2|2|1")
+'''
+
+
+def _mixed_step(kind,sequence):
+    outcome={"key":"Data.Stage","change":"increased","stateIdentity":[
+        {"name":"Data","className":"Folder","ordinal":1},
+        {"name":"Stage","className":"IntValue","ordinal":1}],
+        "observedBefore":sequence-1,"observedAfter":sequence}
+    common={"sequence":sequence,"transactionOrder":sequence,"observedSequence":sequence,
+        "selectedOutcome":outcome,"manualActivationRequired":False,"runtimeVerified":False,
+        "gameplayVerified":False,"causalityProven":False}
+    if kind=="tool":
+        common.update(targetPath="LocalPlayer.Backpack.Sword",targetLabel="Sword",
+            controlType="Tool.Activated",kind="official-tool-activation-trial",
+            activationMode="official-tool-activate",pathIdentity=[
+                {"name":"LocalPlayer","className":"Player","ordinal":1},
+                {"name":"Backpack","className":"Backpack","ordinal":1},
+                {"name":"Sword","className":"Tool","ordinal":1}],
+            prerequisiteMetadata={"tooltip":"Train","requiresHandle":True,
+                "canBeDropped":False,"enabled":True,"manualActivationOnly":False})
+    else:
+        common.update(targetPath="Workspace.Shop.Door.Prompt",targetLabel="Shop Door",
+            controlType="ProximityPrompt.Triggered",kind="proximity-prompt-trial",
+            activationMode="executor-fireproximityprompt",pathIdentity=[
+                {"name":"Workspace","className":"Workspace","ordinal":1},
+                {"name":"Shop","className":"Model","ordinal":1},
+                {"name":"Door","className":"Part","ordinal":1},
+                {"name":"Prompt","className":"ProximityPrompt","ordinal":1}],
+            prerequisiteMetadata={"actionText":"Open","objectText":"Shop Door","enabled":True,
+                "holdDuration":0,"maxActivationDistance":10,"keyboardKeyCode":"E",
+                "gamepadKeyCode":"ButtonX","anchorPath":"Workspace.Shop.Door",
+                "anchorPosition":{"x":1,"y":2,"z":3}})
+    return common
+
+
+def mixed_workflow(place_id):
+    claims={field:False for field in ("sourceAuthenticityVerified","causalityProven",
+        "serverAuthorityVerified","runtimeVerified","gameplayVerified","actionOutcomesVerified")}
+    steps=[_mixed_step("tool",1),_mixed_step("prompt",2)]
+    return {"schemaVersion":"114.generated-workflow-plan.1","placeId":place_id,
+        "scanId":"controlled-mixed-workflow","claims":claims,"workflowCandidates":[{
+            "id":"controlled-mixed-flow","transactionId":"controlled-mixed-transaction",
+            "steps":steps,"stepCount":2,"unmappedLinkedEvents":0,"exactOrderObserved":True,
+            "allStepsGenerationReady":True,"operatorStartRequired":True,
+            "manualGuiActivationRequired":False,"guidedTrialGenerationReady":True,
+            "executionMode":"bounded-automatic","automaticallyExecutable":True,
+            "executionReady":True,"runtimeVerified":False,"gameplayVerified":False,
+            "causalityProven":False}]}
+
+
+def execute_mixed(place_id,luau_binary,timeout_seconds=2.0):
+    if type(place_id) is not int or place_id<1:raise ValueError("invalid place ID")
+    generated=render(mixed_workflow(place_id))
+    source=STUBS.replace("__RUNTIME_PLACE",str(place_id),1)+"\n"+SETUP+"\n"+MIXED_SETUP+"\n"+generated+"\n"+MIXED_DRIVER
+    stdout=run_bounded_program(source,Path(luau_binary),timeout_seconds=timeout_seconds)
+    if stdout.strip()!="LYCOLES_MIXED_WORKFLOW|PASS|2|2|1":
+        raise ControlledExecutionError("invalid controlled mixed workflow transcript")
+    return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
+        "simulatedEnvironment":True,"orderedStepsObserved":2,"toolActivationsObserved":2,
+        "promptActivationsObserved":1,"expectedChangesObserved":3,"metadataDriftRejected":True,
+        "feedbackPlanBound":True,
+        "normalUserActivationEventsUsed":False,"robloxRuntimeVerified":False,
+        "serverAuthorityVerified":False,"causalityProven":False,"gameplayVerified":False,
+        "transcript":stdout.strip()}
+
+
 def canonical(value):
     return json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False)+"\n"

@@ -129,6 +129,42 @@ def _generated_gui_capability(target):
         "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
 
 
+def _selected_workflow(workflow_plan):
+    if workflow_plan is None:return None
+    candidates=_load("generate_guided_workflow.py","readiness_workflow_generator").validate(
+        workflow_plan)
+    return candidates[0] if candidates else None
+
+
+def _generated_workflow_capability(candidate):
+    steps=candidate["steps"]
+    return {"id":"linked-gameplay-workflow-trial","kind":"mixed-action-workflow-trial",
+        "candidateId":candidate["id"],"transactionId":candidate["transactionId"],
+        "executionMode":candidate.get("executionMode","mixed-guided"),
+        "stepCount":len(steps),"stepKinds":[step["kind"] for step in steps],
+        "targetPaths":[step["targetPath"] for step in steps],
+        "targetFeatures":sorted({step.get("targetFeature") for step in steps
+            if isinstance(step.get("targetFeature"),str)}),
+        "manualGuiActivationRequired":candidate["manualGuiActivationRequired"],
+        "automaticallyExecutable":candidate["automaticallyExecutable"],
+        "operatorStartRequired":True,"stopOnFirstUnobservedOutcome":True,
+        "classification":"generated-evidence-bounded-workflow-trial",
+        "fullGameplayMechanicImplemented":False,"runtimeVerified":False,
+        "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}
+
+
+def _workflow_request_aligned(candidate,request):
+    requested=_tokens(request)
+    if not requested:return False
+    evidence=set()
+    for step in candidate["steps"]:
+        for value in (step.get("targetLabel"),step.get("targetPath"),
+                step.get("targetFeature"),step.get("actionCandidate")):
+            evidence.update(_tokens(value))
+    return bool(requested&evidence)
+
+
+
 
 def _unavailable_requested(request_words,actions,is_egg):
     if not is_egg:return []
@@ -218,17 +254,20 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
     guided_correlation=_guided_feedback_correlation(
         plan,actions,workflow_plan,guided_feedback_documents)
     target=_selected_prompt(actions);tool_target=_selected_tool(actions);gui_target=_selected_gui(actions)
+    workflow_target=_selected_workflow(workflow_plan)
     is_egg=_is_egg_target(actions,target)
-    generated=[];generated_sources=[]
-    if target:
-        generated.append(_generated_capability(target,is_egg));generated_sources.append(target)
-    if tool_target:
-        generated.append(_generated_tool_capability(tool_target));generated_sources.append(tool_target)
-    if gui_target:
-        generated.append(_generated_gui_capability(gui_target));generated_sources.append(gui_target)
+    generated=[];matched_generated=[]
+    for target_value,builder in ((target,lambda value:_generated_capability(value,is_egg)),
+            (tool_target,_generated_tool_capability),(gui_target,_generated_gui_capability)):
+        if target_value:
+            capability=builder(target_value);generated.append(capability)
+            if target_value.get("objective",{}).get("requestAligned") is True:
+                matched_generated.append(capability["id"])
+    if workflow_target:
+        generated.append(_generated_workflow_capability(workflow_target))
+        if _workflow_request_aligned(workflow_target,request):
+            matched_generated.append("linked-gameplay-workflow-trial")
     request_words=_tokens(request)
-    matched_generated=[capability["id"] for capability,source in zip(generated,generated_sources)
-        if source.get("objective",{}).get("requestAligned") is True]
     prompt_aligned=bool(target and target.get("objective",{}).get("requestAligned") is True)
     unavailable=_unavailable_requested(request_words,actions,is_egg and prompt_aligned)
     gameplay_request=gameplay.get("requestedCapabilityAssessment")
@@ -238,7 +277,7 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
         status="no-capability-requested"
     elif matched_generated:
         status="generated-bounded-subset"
-    elif evidence_matched or target or tool_target or gui_target:
+    elif evidence_matched or target or tool_target or gui_target or workflow_target:
         status="evidence-only-no-replay-contract"
     else:
         status="unsupported-by-current-evidence"
@@ -252,6 +291,11 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
     if "guided-gui-interaction-trial" in matched_generated:
         supported_subset.extend(["resolve and highlight one exact observed GUI control",
             "require the user to activate that game control through Roblox's normal input path"])
+    if "linked-gameplay-workflow-trial" in matched_generated:
+        supported_subset.extend(["run the exact observed linked action order as one bounded trial",
+            "check each exact target and prerequisite snapshot before activation",
+            "stop on the first unavailable target, prerequisite drift, activation failure, or unobserved outcome"])
+
 
     if matched_generated:
         supported_subset.extend(["run an operator-started bounded repeat trial",
@@ -282,6 +326,8 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
         "limitations":["Generation readiness describes emitted code, not successful gameplay",
             "Prompt and Tool outcomes remain temporal correlations without causal proof",
             "Executor-provided prompt activation is checked only at runtime",
+            "Linked workflow order and state continuity do not prove cross-step gameplay causality",
+            "Generated mixed workflows stop when a selected client-visible outcome is not observed",
             "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
             "Guided GUI trials highlight exact controls but require normal user activation because GuiButton has no public automatic Activate method",
             "Repeated guided feedback reports client-observed correlation only and cannot establish causality or implementation readiness",

@@ -46,6 +46,13 @@ def _targets(actions):
             if (target.get("identityMode")!="component" or _identity(target.get("pathIdentity")) is None
                     or not isinstance(outcome,dict) or _identity(outcome.get("stateIdentity")) is None):
                 continue
+            if kind=="proximity-prompt-trial":
+                metadata=target.get(metadata_key)
+                if (not isinstance(metadata,dict) or metadata.get("enabled") is not True
+                        or not isinstance(metadata.get("anchorPath"),str)
+                        or not isinstance(metadata.get("anchorPosition"),dict)
+                        or type(metadata.get("maxActivationDistance")) not in (int,float)):
+                    continue
             if (not _text(path,400) or not _text(control_type,80) or not _text(target.get("label"),120)
                     or not isinstance(target.get(metadata_key),dict)
                     or not _text(outcome.get("key"),200)
@@ -84,9 +91,14 @@ def _step(event,sequence,transaction_order,kind,metadata_key,target):
             and type(after) in (int,float) and after<before)
         or (expected=="changed" and after!=before))
     if not direction:raise ValueError("Workflow step outcome drift")
+    activation_mode={"guided-gui-activation-trial":"normal-user-gui-activation",
+        "official-tool-activation-trial":"official-tool-activate",
+        "proximity-prompt-trial":"executor-fireproximityprompt"}[kind]
     return {"sequence":sequence,"transactionOrder":transaction_order,
         "observedSequence":event["sequence"],"targetPath":target["path"],
-        "targetLabel":target["label"],"controlType":target["controlType"],"kind":kind,
+        "targetLabel":target["label"],"targetFeature":target.get("featureCandidate"),
+        "actionCandidate":target.get("actionCandidate"),
+        "controlType":target["controlType"],"kind":kind,"activationMode":activation_mode,
         "pathIdentity":copy.deepcopy(target["pathIdentity"]),
         "prerequisiteMetadata":copy.deepcopy(target[metadata_key]),
         "selectedOutcome":{"key":outcome["key"],"change":outcome["change"],
@@ -149,19 +161,25 @@ def plan(plan_document,actions):
         if len(mapped)!=len(events):
             blockers.append("One or more linked events lack exact generation-ready contracts")
 
-        if any(step["manualActivationRequired"] for step in steps):
+        manual_gui=any(step["manualActivationRequired"] for step in steps)
+        prompt_runtime=any(step["kind"]=="proximity-prompt-trial" for step in steps)
+        if manual_gui:
             blockers.append("At least one GUI step requires normal user activation")
-        guided_ready=(len(mapped)==len(events) and all(
-            step["kind"]=="guided-gui-activation-trial" for step in steps))
+        if prompt_runtime:
+            blockers.append("Prompt steps require fireproximityprompt availability at runtime")
+        guided_ready=len(mapped)==len(events)
+        automatic=guided_ready and not manual_gui
+        execution_mode=("bounded-automatic" if automatic else "mixed-guided" if guided_ready
+            else "review-only")
         candidates.append({"id":hashlib.sha256((transaction+"\0"+"\0".join(
                 step["targetPath"] for step in steps)).encode()).hexdigest()[:20],
             "transactionId":transaction,"steps":steps,"stepCount":len(steps),
             "unmappedLinkedEvents":len(events)-len(mapped),"exactOrderObserved":True,
             "allStepsGenerationReady":len(mapped)==len(events),
             "stateContinuityLinks":_continuity(steps),"operatorStartRequired":True,
-            "manualGuiActivationRequired":any(step["manualActivationRequired"] for step in steps),
-            "guidedTrialGenerationReady":guided_ready,
-            "automaticallyExecutable":False,"executionReady":False,
+            "manualGuiActivationRequired":manual_gui,
+            "guidedTrialGenerationReady":guided_ready,"executionMode":execution_mode,
+            "automaticallyExecutable":automatic,"executionReady":guided_ready,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
             "blockers":blockers})
     false_claims={field:False for field in FALSE_CLAIMS}
@@ -171,11 +189,15 @@ def plan(plan_document,actions):
             "guidedTrialGenerationReadyWorkflows":sum(
                 item["guidedTrialGenerationReady"] for item in candidates),
             "generationReadySteps":sum(item["stepCount"] for item in candidates),
-            "unlinkedEvents":unlinked,"executionReadyWorkflows":0},
+            "unlinkedEvents":unlinked,"executionReadyWorkflows":sum(
+                item["executionReady"] for item in candidates),
+            "automaticallyExecutableWorkflows":sum(
+                item["automaticallyExecutable"] for item in candidates)},
         "claims":false_claims,"limitations":[
             "Only explicit transaction IDs and recorded sequence values establish ordering",
             "State continuity is descriptive client-visible evidence, not causal proof",
-            "No multi-step workflow is emitted as executable gameplay automation"]}
+            "GUI steps require normal user activation because GuiButton has no public activation method",
+            "Tool and prompt steps are bounded runtime attempts; successful gameplay remains unverified"]}
 
 def main():
     import argparse,pathlib

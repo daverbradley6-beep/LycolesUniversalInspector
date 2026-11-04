@@ -101,8 +101,10 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     guided_workflow_builder=load_module(
         "generate_guided_workflow.py","lycoles_guided_workflow")
     guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
-    guided_workflow_candidate_id=(guided_workflow_candidates[0]["id"]
+    guided_workflow_candidate=(guided_workflow_candidates[0]
         if guided_workflow_candidates else None)
+    guided_workflow_candidate_id=(guided_workflow_candidate["id"]
+        if guided_workflow_candidate else None)
 
     guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
     guided_workflow_bytes=(guided_workflow_lua.encode("utf-8")
@@ -245,16 +247,22 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
             "schemaVersion":generated_workflows["schemaVersion"],
             "sha256":sha(generated_workflows_bytes),"summary":generated_workflows["summary"],
-            "automaticallyExecutable":False,"runtimeVerified":False,
+            "automaticallyExecutable":generated_workflows["summary"][
+                "automaticallyExecutableWorkflows"]>0,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False},
         "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
             "candidateId":guided_workflow_candidate_id,
+            "executionMode":guided_workflow_candidate.get("executionMode")
+                if guided_workflow_candidate else None,
             "sha256":sha(guided_workflow_bytes) if guided_workflow_bytes else None,
             "feedbackSchema":"115.guided-workflow-feedback.1" if guided_workflow_lua else None,
             "feedbackWorkflowPlanSHA256":guided_workflow_builder.digest(generated_workflows)
                 if guided_workflow_lua else None,
-            "generated":guided_workflow_lua is not None,"automaticActivation":False,
-            "manualActivationRequired":guided_workflow_lua is not None,
+            "generated":guided_workflow_lua is not None,
+            "automaticActivation":guided_workflow_candidate.get("automaticallyExecutable",False)
+                if guided_workflow_candidate else False,
+            "manualActivationRequired":guided_workflow_candidate.get(
+                "manualGuiActivationRequired",False) if guided_workflow_candidate else False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
         "guidedWorkflowFeedback":{"sessionCount":len(guided_paths),
             "artifact":"guided-workflow-evaluation.json" if guided_feedback is not None else None,
@@ -381,7 +389,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
           "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
-          "Reviewable linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; guided manual trials: "+str(generated_workflows["summary"]["guidedTrialGenerationReadyWorkflows"])+"; automatically executable: false.\n"
+          "Linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; bounded runnable trials: "+str(generated_workflows["summary"]["executionReadyWorkflows"])+"; operator-started automatic Tool/Prompt trials: "+str(generated_workflows["summary"]["automaticallyExecutableWorkflows"])+". Runtime and gameplay remain unverified.\n"
           "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"
           "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate a manual-only guided GUI workflow trial from exact linked evidence."""
+"""Generate a bounded mixed-action workflow trial from exact linked evidence."""
 import hashlib
 import json
 import math
+import re
 
 FALSE_CLAIMS=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
     "runtimeVerified","gameplayVerified","actionOutcomesVerified")
@@ -42,33 +43,70 @@ def _transition(before,after,change):
 
 def _step(value):
     path_identity=value.get("pathIdentity") if isinstance(value,dict) else None
-    if (not isinstance(value,dict) or value.get("kind")!="guided-gui-activation-trial"
-            or value.get("manualActivationRequired") is not True
+    kind=value.get("kind") if isinstance(value,dict) else None
+    contracts={"guided-gui-activation-trial":("GuiButton.Activated",
+            "normal-user-gui-activation",True,"PlayerGui","GuiButton"),
+        "official-tool-activation-trial":("Tool.Activated",
+            "official-tool-activate",False,"LocalPlayer","Tool"),
+        "proximity-prompt-trial":("ProximityPrompt.Triggered",
+            "executor-fireproximityprompt",False,"Workspace","ProximityPrompt")}
+    contract=contracts.get(kind)
+    if (not isinstance(value,dict) or contract is None
+            or value.get("manualActivationRequired") is not contract[2]
+            or value.get("activationMode",contract[1])!=contract[1]
             or value.get("runtimeVerified") is not False or value.get("gameplayVerified") is not False
             or value.get("causalityProven") is not False or not _text(value.get("targetPath"),400)
-            or not _text(value.get("targetLabel"),120) or value.get("controlType")!="GuiButton.Activated"
+            or not _text(value.get("targetLabel"),120) or value.get("controlType")!=contract[0]
             or type(value.get("sequence")) is not int or value["sequence"]<1
             or type(value.get("transactionOrder")) is not int or value["transactionOrder"]<1
             or type(value.get("observedSequence")) is not int or value["observedSequence"]<1
-            or not _identity(path_identity) or path_identity[0]!={"name":"PlayerGui",
-                "className":"PlayerGui","ordinal":1}):
+            or not _identity(path_identity) or path_identity[0]["name"]!=contract[3]
+            or path_identity[-1]["className"]!=contract[4]
+                and not (contract[4]=="GuiButton" and path_identity[-1]["className"] in
+                    ("TextButton","ImageButton"))):
         raise ValueError("Malformed guided workflow step")
     metadata=value.get("prerequisiteMetadata");outcome=value.get("selectedOutcome")
-    allowed={"controlClass","text",*BOOL_METADATA}
-    text=metadata.get("text") if isinstance(metadata,dict) else None
+    if not isinstance(metadata,dict):raise ValueError("Malformed guided workflow step contract")
+    if kind=="guided-gui-activation-trial":
+        allowed={"controlClass","text",*BOOL_METADATA};text=metadata.get("text")
+        valid_metadata=(not set(metadata)-allowed
+            and {"controlClass","text",*REQUIRED_BOOL_METADATA}.issubset(metadata)
+            and metadata.get("controlClass") in ("TextButton","ImageButton")
+            and path_identity[-1]["className"]==metadata.get("controlClass")
+            and isinstance(text,str) and len(text)<=100
+            and all(ord(character)>=32 and ord(character)!=127 for character in text)
+            and all(type(metadata.get(key)) is bool for key in REQUIRED_BOOL_METADATA)
+            and ("interactable" not in metadata or type(metadata["interactable"]) is bool)
+            and all(metadata[key] for key in AVAILABLE_TRUE)
+            and metadata.get("interactable") is not False)
+    elif kind=="official-tool-activation-trial":
+        valid_metadata=(set(metadata)=={"tooltip","requiresHandle","canBeDropped","enabled",
+                "manualActivationOnly"}
+            and isinstance(metadata.get("tooltip"),str) and len(metadata["tooltip"])<=120
+            and all(ord(character)>=32 and ord(character)!=127 for character in metadata["tooltip"])
+            and all(type(metadata.get(key)) is bool for key in
+                ("requiresHandle","canBeDropped","enabled","manualActivationOnly"))
+            and metadata.get("enabled") is True)
+    else:
+        allowed={"actionText","objectText","enabled","holdDuration","maxActivationDistance",
+            "keyboardKeyCode","gamepadKeyCode","anchorPath","anchorPosition"}
+        valid_metadata=not set(metadata)-allowed
+        for key in ("actionText","objectText","keyboardKeyCode","gamepadKeyCode","anchorPath"):
+            valid_metadata=valid_metadata and (key not in metadata or isinstance(metadata[key],str))
+        valid_metadata=valid_metadata and ("enabled" not in metadata or type(metadata["enabled"]) is bool)
+        valid_metadata=valid_metadata and metadata.get("enabled") is True
+        valid_metadata=valid_metadata and _text(metadata.get("anchorPath"),400)
+        valid_metadata=valid_metadata and type(metadata.get("maxActivationDistance")) in (int,float)
+        for key in ("holdDuration","maxActivationDistance"):
+            valid_metadata=valid_metadata and (key not in metadata or type(metadata[key]) in (int,float)
+                and math.isfinite(metadata[key]) and metadata[key]>=0)
+        position=metadata.get("anchorPosition")
+        valid_metadata=valid_metadata and (isinstance(position,dict)
+            and set(position)=={"x","y","z"} and all(type(position[key]) in (int,float)
+                and math.isfinite(position[key]) for key in ("x","y","z")))
     state_identity=outcome.get("stateIdentity") if isinstance(outcome,dict) else None
     change=outcome.get("change") if isinstance(outcome,dict) else None
-    if (not isinstance(metadata,dict) or set(metadata)-allowed
-            or not {"controlClass","text",*REQUIRED_BOOL_METADATA}.issubset(metadata)
-            or metadata.get("controlClass") not in ("TextButton","ImageButton")
-            or path_identity[-1]["className"]!=metadata.get("controlClass")
-            or not isinstance(text,str) or len(text)>100
-            or any(ord(character)<32 or ord(character)==127 for character in text)
-            or any(type(metadata.get(key)) is not bool for key in REQUIRED_BOOL_METADATA)
-            or ("interactable" in metadata and type(metadata["interactable"]) is not bool)
-            or not all(metadata[key] for key in AVAILABLE_TRUE)
-            or metadata.get("interactable") is False
-            or not isinstance(outcome,dict) or not _text(outcome.get("key"),200)
+    if (not valid_metadata or not isinstance(outcome,dict) or not _text(outcome.get("key"),200)
             or change not in ("increased","decreased","changed")
             or not _identity(state_identity) or state_identity[0]["name"] not in ("leaderstats","Data")
             or ".".join(item["name"] for item in state_identity)!=outcome["key"]
@@ -97,13 +135,24 @@ def validate(document):
                 or item.get("stepCount")!=len(steps) or item.get("unmappedLinkedEvents")!=0
                 or item.get("exactOrderObserved") is not True
                 or item.get("allStepsGenerationReady") is not True
-                or item.get("manualGuiActivationRequired") is not True
                 or item.get("operatorStartRequired") is not True
-                or item.get("automaticallyExecutable") is not False
-                or item.get("executionReady") is not False or item.get("runtimeVerified") is not False
+                or item.get("runtimeVerified") is not False
                 or item.get("gameplayVerified") is not False or item.get("causalityProven") is not False):
             raise ValueError("Malformed guided workflow candidate")
         normalized=[_step(step) for step in steps]
+        manual_gui=any(step["manualActivationRequired"] for step in normalized)
+        execution_mode=item.get("executionMode")
+        if execution_mode is None:
+            if (not all(step["kind"]=="guided-gui-activation-trial" for step in normalized)
+                    or item.get("manualGuiActivationRequired") is not True
+                    or item.get("automaticallyExecutable") is not False
+                    or item.get("executionReady") is not False):
+                raise ValueError("Malformed legacy guided workflow candidate")
+        elif (execution_mode!=("mixed-guided" if manual_gui else "bounded-automatic")
+                or item.get("manualGuiActivationRequired") is not manual_gui
+                or item.get("automaticallyExecutable") is not (not manual_gui)
+                or item.get("executionReady") is not True):
+            raise ValueError("Malformed guided workflow execution mode")
         expected_order=list(range(1,len(normalized)+1))
         observed=[step["observedSequence"] for step in normalized]
         if ([step["sequence"] for step in normalized]!=expected_order
@@ -121,13 +170,29 @@ def _identity_lua(value):
     return "{"+",".join("{name="+_lua(item["name"])+",className="+_lua(item["className"])
         +",ordinal="+str(item["ordinal"])+"}" for item in value)+"}"
 
+def _metadata_lua(metadata):
+    fields=[]
+    for key in sorted(metadata):
+        value=metadata[key]
+        if type(value) is bool:rendered=str(value).lower()
+        elif type(value) in (int,float):rendered=repr(value)
+        elif isinstance(value,str):rendered=_lua(value)
+        elif isinstance(value,dict) and set(value)=={"x","y","z"}:
+            rendered="{x="+repr(value["x"])+",y="+repr(value["y"])+",z="+repr(value["z"])+"}"
+        else:raise ValueError("Unsupported workflow prerequisite metadata")
+        fields.append(key+"="+rendered)
+    return "{"+",".join(fields)+"}"
+
+
 def _step_lua(step):
     metadata=step["prerequisiteMetadata"];outcome=step["selectedOutcome"]
-    metadata_lua="{"+",".join(["controlClass="+_lua(metadata["controlClass"]),
-        "text="+_lua(metadata["text"])] + [key+"="+str(metadata[key]).lower()
-            for key in BOOL_METADATA if key in metadata])+"}"
+    activation_mode=step.get("activationMode") or {
+        "guided-gui-activation-trial":"normal-user-gui-activation",
+        "official-tool-activation-trial":"official-tool-activate",
+        "proximity-prompt-trial":"executor-fireproximityprompt"}[step["kind"]]
     return ("{label="+_lua(step["targetLabel"])+",path="+_lua(step["targetPath"])
-        +",identity="+_identity_lua(step["pathIdentity"])+",metadata="+metadata_lua
+        +",kind="+_lua(step["kind"])+",activationMode="+_lua(activation_mode)
+        +",identity="+_identity_lua(step["pathIdentity"])+",metadata="+_metadata_lua(metadata)
         +",outcome={key="+_lua(outcome["key"])+",change="+_lua(outcome["change"])
         +",identity="+_identity_lua(outcome["stateIdentity"])+"}}")
 
@@ -136,6 +201,9 @@ def validate_source(source,place_id):
         raise ValueError("Guided workflow source missing or oversized")
     required=(f"assert(game.PlaceId == {place_id}",
         "button.Activated:Connect(function() activated=true end)",
+        "pcall(function() tool:Activate() end)",
+        "type(fireproximityprompt)~=\"function\"",
+        "pcall(function() fireproximityprompt(prompt) end)",
         "for index,step in ipairs(steps) do","normal user activation",
         "No GUI event is synthesized","115.guided-workflow-feedback.1",
         "_G.LycolesGuidedWorkflowFeedback=feedback","recordFeedback(",
@@ -143,14 +211,19 @@ def validate_source(source,place_id):
     for token in required:
         if token not in source:raise ValueError("Missing guided workflow safeguard: "+token)
     banned=("firesignal","virtualinput","virtualuser","fireclickdetector",
-        "fireproximityprompt","mouse1click","mouse1press",":Activate(","FireServer(",
+        "mouse1click","mouse1press","FireServer(",
         "InvokeServer(","loadstring(","getrawmetatable(","hookmetamethod(",
         "setclipboard(","PostAsync(","RequestAsync(","http_request(","syn.request(")
     lowered=source.lower()
     for token in banned:
         if token.lower() in lowered:raise ValueError("Forbidden guided workflow operation: "+token)
-    return {"placeGuard":True,"manualActivationRequired":True,
-        "automaticActivationFound":False,"unsafeOperationsFound":False,
+    activate_receivers=re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*:Activate\s*\(",source)
+    if any(receiver!="tool" for receiver in activate_receivers):
+        raise ValueError("Forbidden guided workflow operation: :Activate(")
+    return {"placeGuard":True,
+        "manualActivationRequired":'kind="guided-gui-activation-trial"' in source,
+        "automaticActivationFound":('kind="official-tool-activation-trial"' in source
+            or 'kind="proximity-prompt-trial"' in source),"unsafeOperationsFound":False,
         "note":"Structural safety checks only; live Roblox runtime and gameplay are unverified"}
 
 def render(document):
@@ -158,8 +231,8 @@ def render(document):
     if not candidates:return None
     candidate=candidates[0]
     steps="{\n"+",\n".join("  "+_step_lua(step) for step in candidate["steps"])+"\n}"
-    source=f'''-- Lycoles guided GUI workflow trial; static-generated, runtime/gameplay unverified.
--- Every GUI step requires normal user activation. No GUI event is synthesized.
+    source=f'''-- Lycoles mixed-action workflow trial; static-generated, runtime/gameplay unverified.
+-- Every GUI step requires normal user activation. Tool and Prompt steps are bounded attempts. No GUI event is synthesized.
 assert(game.PlaceId == {document["placeId"]}, "Wrong place for generated workflow trial")
 local Players=game:GetService("Players")
 local HttpService=game:GetService("HttpService")
@@ -176,6 +249,7 @@ local running=false
 local runId=0
 local activeConnection=nil
 local activeStroke=nil
+local status=nil
 local activationTimeoutSeconds=15
 local outcomeTimeoutSeconds=5
 
@@ -183,10 +257,10 @@ local function clearActive()
   if activeConnection then activeConnection:Disconnect(); activeConnection=nil end
   if activeStroke then activeStroke:Destroy(); activeStroke=nil end
 end
-local function resolve(root,identity)
-  if not root or root.Name~=identity[1].name or not root:IsA(identity[1].className) then return nil end
+local function resolveFrom(root,identity,startIndex)
+  if not root then return nil end
   local current=root
-  for index=2,#identity do
+  for index=startIndex,#identity do
     local wanted=identity[index]
     local ordinal=0
     local found=nil
@@ -201,11 +275,28 @@ local function resolve(root,identity)
   end
   return current
 end
-local function resolveButton(identity)
-  return resolve(player:FindFirstChildOfClass("PlayerGui"),identity)
+local function resolveTarget(identity)
+  local rootName=identity[1].name
+  local root=rootName=="PlayerGui" and player:FindFirstChildOfClass("PlayerGui")
+    or rootName=="LocalPlayer" and player or rootName=="Workspace" and workspace or nil
+  return resolveFrom(root,identity,2)
 end
 local function resolveState(identity)
-  return resolve(player:FindFirstChild(identity[1].name),identity)
+  return resolveFrom(player:FindFirstChild(identity[1].name),identity,2)
+end
+local function resolveTool(identity)
+  local exact=resolveTarget(identity)
+  if exact and exact:IsA("Tool") then return exact end
+  local expected=identity[#identity]
+  local matches={{}}
+  local function collect(container)
+    if not container then return end
+    for _,child in ipairs(container:GetChildren()) do
+      if child.Name==expected.name and child:IsA("Tool") then table.insert(matches,child) end
+    end
+  end
+  collect(player:FindFirstChildOfClass("Backpack"));collect(player.Character)
+  return #matches==1 and matches[1] or nil
 end
 local function currentMetadata(button)
   local visible=button.Visible
@@ -239,6 +330,108 @@ local function outcomeReached(change,before,after)
   if type(before)~="number" or type(after)~="number" then return false end
   return (change=="increased" and after>before) or (change=="decreased" and after<before)
 end
+local function toolMetadataMatches(tool,expected)
+  return tool.ToolTip==expected.tooltip and tool.RequiresHandle==expected.requiresHandle
+    and tool.CanBeDropped==expected.canBeDropped and tool.Enabled==expected.enabled
+    and tool.ManualActivationOnly==expected.manualActivationOnly
+end
+local function promptAnchor(prompt)
+  local node=prompt.Parent
+  for _=1,5 do
+    if not node then break end
+    if node:IsA("BasePart") then return node end
+    node=node.Parent
+  end
+  return nil
+end
+local function promptMetadataMatches(prompt,expected)
+  if expected.actionText~=nil and prompt.ActionText~=expected.actionText then return false end
+  if expected.objectText~=nil and prompt.ObjectText~=expected.objectText then return false end
+  if expected.enabled~=nil and prompt.Enabled~=expected.enabled then return false end
+  if expected.holdDuration~=nil and prompt.HoldDuration~=expected.holdDuration then return false end
+  if expected.maxActivationDistance~=nil
+      and prompt.MaxActivationDistance~=expected.maxActivationDistance then return false end
+  if expected.keyboardKeyCode~=nil and prompt.KeyboardKeyCode.Name~=expected.keyboardKeyCode then return false end
+  if expected.gamepadKeyCode~=nil and prompt.GamepadKeyCode.Name~=expected.gamepadKeyCode then return false end
+  local anchor=promptAnchor(prompt)
+  if not anchor or anchor:GetFullName()~=expected.anchorPath then return false end
+  local expectedPosition=expected.anchorPosition
+  if not expectedPosition or (anchor.Position-Vector3.new(
+      expectedPosition.x,expectedPosition.y,expectedPosition.z)).Magnitude>12 then return false end
+  return true
+end
+local function teleportToPrompt(prompt)
+  local character=player.Character
+  local root=character and character:FindFirstChild("HumanoidRootPart")
+  if not root then return false,"Character root unavailable" end
+  local anchor=promptAnchor(prompt)
+  if not anchor then return false,"Prompt has no nearby BasePart" end
+  root.CFrame=anchor.CFrame*CFrame.new(0,3,math.max(2,prompt.MaxActivationDistance*.4))
+  task.wait(.25)
+  return true,nil
+end
+local function activateStep(step,index,total)
+  if step.kind=="guided-gui-activation-trial" then
+    local button=resolveTarget(step.identity)
+    if not button or not button:IsA("GuiButton") then
+      return false,"control-or-state-unavailable","Exact GUI control identity unavailable"
+    end
+    if not sameMetadata(currentMetadata(button),step.metadata) then
+      return false,"metadata-drift","GUI control prerequisite metadata changed"
+    end
+    activeStroke=Instance.new("UIStroke");activeStroke.Name="LycolesGuidedHighlight"
+    activeStroke.Color=Color3.fromRGB(255,205,50);activeStroke.Thickness=3;activeStroke.Parent=button
+    local activated=false
+    activeConnection=button.Activated:Connect(function() activated=true end)
+    status.Text="Step "..index.."/"..total..": activate highlighted "..step.label.." normally."
+    local deadline=os.clock()+activationTimeoutSeconds
+    while running and not activated and os.clock()<deadline do task.wait(.05) end
+    clearActive()
+    if not activated then
+      return false,"activation-timeout","Normal user GUI activation was not observed within the bounded window"
+    end
+    return true,nil,nil
+  elseif step.kind=="official-tool-activation-trial" then
+    local tool=resolveTool(step.identity)
+    if not tool then return false,"control-or-state-unavailable","Exact Tool identity unavailable" end
+    if not toolMetadataMatches(tool,step.metadata) then
+      return false,"metadata-drift","Tool activation prerequisite metadata changed"
+    end
+    local character=player.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    local backpack=player:FindFirstChildOfClass("Backpack")
+    if not character or not humanoid then
+      return false,"control-or-state-unavailable","Character humanoid unavailable for Tool equip"
+    end
+    if tool.Parent==backpack then
+      local equipped=pcall(function() humanoid:EquipTool(tool) end)
+      if not equipped then return false,"activation-timeout","Bounded Tool equip failed" end
+      task.wait(.1)
+    end
+    if tool.Parent~=character or not tool.Enabled then
+      return false,"activation-timeout","Tool is not uniquely equipped and enabled"
+    end
+    local activated=pcall(function() tool:Activate() end)
+    if not activated then return false,"activation-timeout","Official Tool activation failed" end
+    return true,nil,nil
+  else
+    local prompt=resolveTarget(step.identity)
+    if not prompt or not prompt:IsA("ProximityPrompt") then
+      return false,"control-or-state-unavailable","Exact ProximityPrompt identity unavailable"
+    end
+    if not promptMetadataMatches(prompt,step.metadata) then
+      return false,"metadata-drift","Prompt activation prerequisite metadata changed"
+    end
+    if not prompt.Enabled or type(fireproximityprompt)~="function" then
+      return false,"activation-timeout","Prompt activation mechanism unavailable"
+    end
+    local moved,message=teleportToPrompt(prompt)
+    if not moved then return false,"activation-timeout",message end
+    local activated=pcall(function() fireproximityprompt(prompt) end)
+    if not activated then return false,"activation-timeout","Prompt activation failed" end
+    return true,nil,nil
+  end
+end
 local function recordFeedback(thisRun,index,step,before,after,activated,observed,resultStatus,message)
   feedbackSequence=feedbackSequence+1
   table.insert(feedback.entries,{{sequence=feedbackSequence,runId=thisRun,stepSequence=index,
@@ -254,9 +447,9 @@ local frame=Instance.new("Frame");frame.Size=UDim2.fromOffset(460,230);frame.Pos
 frame.BackgroundColor3=Color3.fromRGB(18,22,32);frame.Active=true;frame.Draggable=true;frame.Parent=gui
 local title=Instance.new("TextLabel");title.Size=UDim2.new(1,-20,0,34);title.Position=UDim2.fromOffset(10,8)
 title.BackgroundTransparency=1;title.TextColor3=Color3.fromRGB(235,240,255);title.Text={_lua("Guided workflow ("+candidate["id"]+")")};title.Parent=frame
-local status=Instance.new("TextLabel");status.Size=UDim2.new(1,-20,0,72);status.Position=UDim2.fromOffset(10,44)
+status=Instance.new("TextLabel");status.Size=UDim2.new(1,-20,0,72);status.Position=UDim2.fromOffset(10,44)
 status.BackgroundTransparency=1;status.TextWrapped=true;status.TextColor3=Color3.fromRGB(205,214,235)
-status.Text="Ready. You must click every highlighted game control normally.";status.Parent=frame
+status.Text="Ready. Start the bounded sequence; activate highlighted GUI controls normally.";status.Parent=frame
 local function makeButton(name,text,x)
   local button=Instance.new("TextButton");button.Name=name;button.Size=UDim2.fromOffset(135,38)
   button.Position=UDim2.fromOffset(x,134);button.Text=text;button.Parent=frame;return button
@@ -284,16 +477,11 @@ local function runWorkflow()
   running=true;runId=runId+1;local thisRun=runId
   for index,step in ipairs(steps) do
     if not running or runId~=thisRun then return end
-    local button=resolveButton(step.identity);local state=resolveState(step.outcome.identity)
-    if not button or not button:IsA("GuiButton") or not state then
+    local state=resolveState(step.outcome.identity)
+    if not state then
       recordFeedback(thisRun,index,step,nil,nil,false,false,"control-or-state-unavailable",
-        "Exact control or state identity unavailable")
-      finish("Stopped: exact control or state identity unavailable at step "..index);return
-    end
-    if not sameMetadata(currentMetadata(button),step.metadata) then
-      recordFeedback(thisRun,index,step,nil,nil,false,false,"metadata-drift",
-        "Control prerequisite metadata changed")
-      finish("Stopped: control prerequisites drifted at step "..index);return
+        "Exact selected state identity unavailable")
+      finish("Stopped: selected state identity unavailable at step "..index);return
     end
     local ok,before=pcall(function() return state.Value end)
     if not ok or type(before)~="number" and type(before)~="string" and type(before)~="boolean" then
@@ -301,22 +489,19 @@ local function runWorkflow()
         "Selected client-visible state is not readable scalar")
       finish("Stopped: selected state is not readable scalar at step "..index);return
     end
-    activeStroke=Instance.new("UIStroke");activeStroke.Name="LycolesGuidedHighlight"
-    activeStroke.Color=Color3.fromRGB(255,205,50);activeStroke.Thickness=3;activeStroke.Parent=button
-    local activated=false
-    activeConnection=button.Activated:Connect(function() activated=true end)
-    status.Text="Step "..index.."/"..#steps..": click highlighted "..step.label.." normally."
-    local deadline=os.clock()+activationTimeoutSeconds
-    while running and runId==thisRun and not activated and os.clock()<deadline do task.wait(.05) end
-    clearActive()
+    local activated,failureStatus,failureMessage=activateStep(step,index,#steps)
     if not running or runId~=thisRun then return end
     if not activated then
-      recordFeedback(thisRun,index,step,before,before,false,false,"activation-timeout",
-        "Normal user activation was not observed within the bounded window")
-      finish("Stopped: user activation timed out at step "..index);return
+      local sampled=failureStatus=="activation-timeout"
+      recordFeedback(thisRun,index,step,sampled and before or nil,sampled and before or nil,
+        false,false,failureStatus,failureMessage)
+      if failureStatus=="metadata-drift" then
+        finish("Stopped: control prerequisites drifted at step "..index)
+      else finish("Stopped at step "..index..": "..failureMessage) end
+      return
     end
-    status.Text="Step "..index..": activation observed; watching selected client-visible outcome."
-    local observed=false;local after=before;deadline=os.clock()+outcomeTimeoutSeconds
+    status.Text="Step "..index..": activation attempted; watching selected client-visible outcome."
+    local observed=false;local after=before;local deadline=os.clock()+outcomeTimeoutSeconds
     while running and runId==thisRun and os.clock()<deadline do
       local read,current=pcall(function() return state.Value end)
       if read then after=current end
@@ -329,7 +514,7 @@ local function runWorkflow()
       finish("Stopped: selected outcome not observed at step "..index);return
     end
     recordFeedback(thisRun,index,step,before,after,true,true,"expected-change-observed",
-      "Selected client-visible direction observed after normal user activation")
+      "Selected client-visible direction observed after the bounded step activation")
   end
   finish("Candidate completed with client-visible observations; causality and gameplay remain unverified.")
 end
