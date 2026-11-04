@@ -151,6 +151,8 @@ def plan(plan_document,actions):
 
         if any(step["manualActivationRequired"] for step in steps):
             blockers.append("At least one GUI step requires normal user activation")
+        guided_ready=(len(mapped)==len(events) and all(
+            step["kind"]=="guided-gui-activation-trial" for step in steps))
         candidates.append({"id":hashlib.sha256((transaction+"\0"+"\0".join(
                 step["targetPath"] for step in steps)).encode()).hexdigest()[:20],
             "transactionId":transaction,"steps":steps,"stepCount":len(steps),
@@ -158,6 +160,7 @@ def plan(plan_document,actions):
             "allStepsGenerationReady":len(mapped)==len(events),
             "stateContinuityLinks":_continuity(steps),"operatorStartRequired":True,
             "manualGuiActivationRequired":any(step["manualActivationRequired"] for step in steps),
+            "guidedTrialGenerationReady":guided_ready,
             "automaticallyExecutable":False,"executionReady":False,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
             "blockers":blockers})
@@ -165,6 +168,8 @@ def plan(plan_document,actions):
     return {"schemaVersion":SCHEMA,"placeId":integrity["placeId"],
         "scanId":integrity["scanId"],"workflowCandidates":candidates,
         "summary":{"linkedTransactions":len(groups),"workflowCandidates":len(candidates),
+            "guidedTrialGenerationReadyWorkflows":sum(
+                item["guidedTrialGenerationReady"] for item in candidates),
             "generationReadySteps":sum(item["stepCount"] for item in candidates),
             "unlinkedEvents":unlinked,"executionReadyWorkflows":0},
         "claims":false_claims,"limitations":[

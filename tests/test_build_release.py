@@ -69,6 +69,9 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue(manifest["promptInteractionTrial"]["generated"])
             self.assertTrue(manifest["promptInteractionTrial"]["automaticMovement"])
             self.assertFalse(manifest["promptInteractionTrial"]["gameplayVerified"])
+            self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertIsNone(manifest["guidedWorkflowTrial"]["artifact"])
+            self.assertFalse((base/"out"/"LycolesGuidedWorkflow.lua").exists())
             self.assertTrue(manifest["eggAutofarmTrial"]["compatibilityAlias"])
             source=(base/"out"/"LycolesGeneratedUtility.lua").read_text()
             readiness=json.loads((base/"out"/"generation-readiness.json").read_text())
@@ -208,15 +211,37 @@ class ReleaseBuilderTests(unittest.TestCase):
             manifest=builder.build(parts,base/"out")
             workflow=json.loads((base/"out"/"generated-workflow-plan.json").read_text())
             self.assertEqual(workflow["summary"]["workflowCandidates"],1)
+            self.assertEqual(workflow["summary"]["guidedTrialGenerationReadyWorkflows"],1)
             self.assertEqual(workflow["summary"]["generationReadySteps"],2)
             self.assertEqual(len(workflow["workflowCandidates"][0]["stateContinuityLinks"]),1)
             self.assertFalse(workflow["workflowCandidates"][0]["automaticallyExecutable"])
+            guided=(base/"out"/"LycolesGuidedWorkflow.lua").read_text()
+            self.assertIn("normal user activation",guided)
+            self.assertEqual(manifest["guidedWorkflowTrial"]["sha256"],
+                hashlib.sha256(guided.encode()).hexdigest())
+            self.assertNotIn("firesignal",guided.lower())
+            self.assertTrue(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertEqual(manifest["guidedWorkflowTrial"]["candidateId"],
+                workflow["workflowCandidates"][0]["id"])
+            self.assertFalse(manifest["guidedWorkflowTrial"]["automaticActivation"])
+            self.assertTrue(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflow["summary"])
             self.assertEqual(manifest["generatedWorkflowPlan"]["sha256"],
                 hashlib.sha256((base/"out"/"generated-workflow-plan.json").read_bytes()).hexdigest())
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertIn("generated-workflow-plan.json",archive.namelist())
+                self.assertIn("LycolesGuidedWorkflow.lua",archive.namelist())
+
+            unlinked=[dict(item) for item in events]
+            unlinked[1].pop("transactionId")
+            second["interactionHistoryChunk"]=unlinked
+            (parts/"2.json").write_text(json.dumps(second))
+            manifest=builder.build(parts,base/"out")
+            self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertFalse((base/"out"/"LycolesGuidedWorkflow.lua").exists())
+            with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
+                self.assertNotIn("LycolesGuidedWorkflow.lua",archive.namelist())
 
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib

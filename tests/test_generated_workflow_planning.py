@@ -53,6 +53,8 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertTrue(candidate["exactOrderObserved"])
         self.assertTrue(candidate["allStepsGenerationReady"])
         self.assertTrue(candidate["manualGuiActivationRequired"])
+        self.assertTrue(candidate["guidedTrialGenerationReady"])
+        self.assertEqual(result["summary"]["guidedTrialGenerationReadyWorkflows"],1)
         self.assertEqual(candidate["stateContinuityLinks"],[{"fromStep":1,"toStep":2,
             "stateKey":"Data.ShopStage","value":3,
             "classification":"observed-state-continuity","causalityProven":False}])
@@ -97,6 +99,7 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
             "path":"PlayerGui.HUD.Shop.Unknown","controlType":"GuiButton.Activated"})
         candidate=self.analyze(value)["workflowCandidates"][0]
         self.assertFalse(candidate["allStepsGenerationReady"])
+        self.assertFalse(candidate["guidedTrialGenerationReady"])
         self.assertEqual(candidate["unmappedLinkedEvents"],1)
         self.assertEqual([step["transactionOrder"] for step in candidate["steps"]],[1,3])
         self.assertEqual(candidate["stateContinuityLinks"],[])

@@ -99,6 +99,7 @@ class GeneratorTests(unittest.TestCase):
     def test_standalone_generation_emits_gameplay_and_commands(self):
         with tempfile.TemporaryDirectory() as temp:
             root=pathlib.Path(temp);plan_path=root/"plan.json";output=root/"out"
+            output.mkdir();(output/"LycolesGuidedWorkflow.lua").write_text("stale")
             plan=self.plan();plan["requestedCapability"]="Automatically hatch selected egg"
             plan_path.write_text(json.dumps(plan),encoding="utf-8")
             with mock.patch.object(sys,"argv",["generate_script.py",str(plan_path),
@@ -131,7 +132,11 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflows["summary"])
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
             self.assertFalse(workflows["claims"]["causalityProven"])
-
+            self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertFalse(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
+            self.assertIsNone(manifest["guidedWorkflowTrial"]["candidateId"])
+            self.assertIsNone(manifest["guidedWorkflowTrial"]["artifact"])
+            self.assertFalse((output/"LycolesGuidedWorkflow.lua").exists())
             self.assertEqual(readiness["request"]["status"],
                              "evidence-only-no-replay-contract")
             self.assertEqual(readiness["generatedCapabilities"],[])

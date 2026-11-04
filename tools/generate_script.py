@@ -427,6 +427,13 @@ def main():
         workflow_planner=load_local_module("lycoles_generated_workflows",
                                            "plan_generated_workflows.py")
         generated_workflows=workflow_planner.plan(plan,action_discovery)
+        guided_workflow_builder=load_local_module("lycoles_guided_workflow",
+                                                  "generate_guided_workflow.py")
+        guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
+
+        guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
+        guided_workflow_candidate_id=(guided_workflow_candidates[0]["id"]
+            if guided_workflow_candidates else None)
 
         readiness_builder=load_local_module("lycoles_generation_readiness",
                                              "assess_generation_readiness.py")
@@ -457,6 +464,9 @@ def main():
         generation_readiness_bytes=(json.dumps(
             generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
+        if guided_workflow_lua is None:
+            (out/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
+
         script=out/"LycolesGeneratedUtility.lua"
         script.write_text(lua,encoding="utf-8")
         (out/"LycolesAdminCommands.lua").write_text(admin_lua,encoding="utf-8")
@@ -466,6 +476,10 @@ def main():
             action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
         (out/"generated-workflow-plan.json").write_text(json.dumps(
             generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        if guided_workflow_lua is not None:
+            (out/"LycolesGuidedWorkflow.lua").write_text(
+                guided_workflow_lua,encoding="utf-8")
+
         (out/"generation-readiness.json").write_bytes(generation_readiness_bytes)
         if prompt_interactions_lua is not None:
             (out/"LycolesPromptInteractions.lua").write_text(prompt_interactions_lua,encoding="utf-8")
@@ -496,6 +510,11 @@ def main():
           "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
             "schemaVersion":generated_workflows["schemaVersion"],
             "summary":generated_workflows["summary"],"automaticallyExecutable":False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "candidateId":guided_workflow_candidate_id,
+            "generated":guided_workflow_lua is not None,"automaticActivation":False,
+            "manualActivationRequired":guided_workflow_lua is not None,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
             "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,

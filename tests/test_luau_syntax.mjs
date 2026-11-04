@@ -44,6 +44,8 @@ from integrated_pipeline_v106 import generate as integrated
 from integrated_pipeline_v107 import generate as identity_integrated
 from generate_admin_commands import render as admin_commands
 from generate_prompt_interactions import render as egg_autofarm
+from generate_guided_workflow import render as guided_workflow
+
 place=85896571713843
 inspection={'placeId':place,'objects':[
  {'path':['PlayerGui','HUD','Coins'],'className':'TextLabel'},
@@ -67,6 +69,33 @@ egg=egg_autofarm({'schemaVersion':'111.action-capabilities.1','placeId':place,
   'observedTriggers':1,'incrementObservations':1,'outcomeKeys':['leaderstats.🥚 Hatches'],
   'causalityProven':False,'runtimeVerified':False,'gameplayVerified':False} ]}})
 (out/'egg.luau').write_text(egg,encoding='utf-8')
+gui_meta={'controlClass':'TextButton','text':'Next','visible':True,'active':True,
+ 'selectable':True,'autoButtonColor':True,'interactable':True,'ancestorVisible':True,
+ 'screenEnabled':True,'withinScrollingBounds':True,'effectiveVisible':True}
+def workflow_step(name,sequence):
+ metadata=dict(gui_meta,text=name)
+ return {'sequence':sequence,'transactionOrder':sequence,'observedSequence':sequence,
+  'targetPath':'PlayerGui.HUD.'+name,'targetLabel':name,'controlType':'GuiButton.Activated',
+  'kind':'guided-gui-activation-trial','pathIdentity':[
+   {'name':'PlayerGui','className':'PlayerGui','ordinal':1},
+   {'name':'HUD','className':'ScreenGui','ordinal':1},
+   {'name':name,'className':'TextButton','ordinal':1}],
+  'prerequisiteMetadata':metadata,'selectedOutcome':{'key':'Data.Stage','change':'increased',
+   'stateIdentity':[{'name':'Data','className':'Folder','ordinal':1},
+    {'name':'Stage','className':'IntValue','ordinal':1}],
+   'observedBefore':sequence-1,'observedAfter':sequence},'manualActivationRequired':True,
+  'runtimeVerified':False,'gameplayVerified':False,'causalityProven':False}
+workflow={'schemaVersion':'114.generated-workflow-plan.1','placeId':place,'scanId':'syntax',
+ 'claims':{'sourceAuthenticityVerified':False,'causalityProven':False,
+  'serverAuthorityVerified':False,'runtimeVerified':False,'gameplayVerified':False,
+  'actionOutcomesVerified':False},'workflowCandidates':[{'id':'syntax-flow',
+  'transactionId':'syntax-transaction','steps':[workflow_step('Select',1),workflow_step('Confirm',2)],'stepCount':2,
+  'unmappedLinkedEvents':0,'exactOrderObserved':True,'allStepsGenerationReady':True,
+  'operatorStartRequired':True,'manualGuiActivationRequired':True,
+  'guidedTrialGenerationReady':True,'automaticallyExecutable':False,'executionReady':False,
+  'runtimeVerified':False,'gameplayVerified':False,'causalityProven':False}]}
+(out/'guided-workflow.luau').write_text(guided_workflow(workflow),encoding='utf-8')
+
 (out/'egg-admin.luau').write_text(egg+'\n'+admin_commands(place),encoding='utf-8')
 integrated(inspection,place,out/'v106')
 identity_integrated({'placeId':place,'observations':[
@@ -93,6 +122,7 @@ identity_integrated({'placeId':place,'observations':[
 
     path.join(output, "v106", "LycolesFunctionalObserver.client.lua"),
     path.join(output, "v107", "LycolesFunctionalObserver.client.lua"),
+    path.join(output, "guided-workflow.luau"),
   ];
   assertValid(await validateFiles(files));
 });

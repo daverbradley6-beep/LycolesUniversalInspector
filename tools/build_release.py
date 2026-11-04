@@ -59,6 +59,7 @@ def build_manifest_readiness(manifest_path,output):
     return result
 
 
+
 def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
           audit_path=None,prompt_feedback_path=None):
     parts_path=pathlib.Path(parts_dir)
@@ -96,6 +97,15 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     generated_workflows=workflow_planner.plan(plan,action_discovery)
     generated_workflows_bytes=(json.dumps(
         generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    guided_workflow_builder=load_module(
+        "generate_guided_workflow.py","lycoles_guided_workflow")
+    guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
+    guided_workflow_candidate_id=(guided_workflow_candidates[0]["id"]
+        if guided_workflow_candidates else None)
+
+    guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
+    guided_workflow_bytes=(guided_workflow_lua.encode("utf-8")
+        if guided_workflow_lua is not None else None)
 
     readiness_builder=load_module(
         "assess_generation_readiness.py","lycoles_generation_readiness")
@@ -174,6 +184,9 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     lua=utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")+admin_lua
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
+    if guided_workflow_bytes is None:
+        (output/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
+
     output.mkdir(parents=True,exist_ok=True)
     manifest={
         "schemaVersion":"30.0","placeId":place,"scanId":plan["integrity"]["scanId"],
@@ -200,6 +213,12 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "sha256":sha(generated_workflows_bytes),"summary":generated_workflows["summary"],
             "automaticallyExecutable":False,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False},
+        "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "candidateId":guided_workflow_candidate_id,
+            "sha256":sha(guided_workflow_bytes) if guided_workflow_bytes else None,
+            "generated":guided_workflow_lua is not None,"automaticActivation":False,
+            "manualActivationRequired":guided_workflow_lua is not None,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
         "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
             "artifact":"generation-readiness.json",
             "sha256":sha(generation_readiness_bytes),
@@ -312,7 +331,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
           "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
-          "Reviewable linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; automatically executable: false.\n"
+          "Reviewable linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; guided manual trials: "+str(generated_workflows["summary"]["guidedTrialGenerationReadyWorkflows"])+"; automatically executable: false.\n"
           "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"
           "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
           "Command wiring is statically checked but not verified in the live Roblox engine.\n"
@@ -323,6 +342,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     }
     if prompt_interactions_lua is not None:
         files["LycolesPromptInteractions.lua"]=prompt_interactions_lua.encode("utf-8")
+    if guided_workflow_bytes is not None:
+        files["LycolesGuidedWorkflow.lua"]=guided_workflow_bytes
 
     if audit_evaluation is not None:
         files["action-audit-evaluation.json"]=(json.dumps(audit_evaluation,indent=2,sort_keys=True)+"\n").encode()
