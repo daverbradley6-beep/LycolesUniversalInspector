@@ -1,6 +1,18 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Bounded official Tool activation generation
+
+- Committed `6daa627` (`Generate bounded Tool activation trials`) on `openhands-development`. Exact unambiguous LocalPlayer Tool evidence with one enabled, stable prerequisite snapshot and one selected resolvable scalar outcome now produces a distinct operator-started `official-tool-activation-trial`; incomplete, disabled, ambiguous, or metadata-drifted evidence remains discovery-only.
+- Generated Luau uniquely resolves the observed Tool across Backpack/Character movement, rejects runtime ToolTip/RequiresHandle/CanBeDropped/ManualActivationOnly drift, equips through `Humanoid:EquipTool()`, checks `Tool.Enabled`, calls official `Tool:Activate()`, and monitors only the selected scalar direction. It invokes no discovered remote.
+- Shared prompt/Tool trials now expose attempt state and stop after three uncorroborated attempts or 25 total attempts. GUI, Admin Commands, cleanup, request matching, generated-result display validation, feedback evaluation, standalone generation, and release manifests all distinguish bounded Tool activation from prompt movement and egg-specific generation.
+- Digest-bound feedback accepts Tool-disabled, equip-failed, and metadata-drift outcomes without upgrading claims. Python and in-game validators accept only the official Tool-trial capability kind alongside prompt trials; all runtime, gameplay, causality, action-outcome, authenticity, and server-authority claims remain false.
+- Added a strict controlled official-Luau harness covering unique resolution, equip, activation, selected counter observation, synchronized controls, cleanup, disabled-state shutdown, metadata-drift rejection, and the exact 25-successful-attempt cap. This is deterministic simulated execution, not live Roblox verification.
+- Final local gate passed: **1,452 Python tests**, **3 Node/Luau parser tests**, pinned official Luau 0.744 controlled execution, Python compilation, credential-pattern scan, and `git diff --check`.
+- Bubble Gum multipart scan retrieval remains externally blocked by the configured pre-multipart receiver deployment; the supplied handover and manifest remain untouched and untracked. No receiver configuration, production infrastructure, or credentials changed.
+- Next priorities after review: capture/validate GUI replay prerequisites for safe bounded GUI trials; add evidence-grounded workflow sequencing across multiple generated controls; then add explicit validated execution controls to the unified Generated Script tab without converting temporal correlation into gameplay or causal claims.
+
+
 ## Update — 2026-11-02 — Deterministic generation readiness and synchronized controls
 
 - Committed `b468780` (`Add evidence-bounded generation readiness`) on `openhands-development`. `tools/assess_generation_readiness.py` recomputes schema `113.generation-readiness.1` from the exact compiled capability plan, gameplay understanding, and action-capability discovery rather than trusting asserted readiness.
