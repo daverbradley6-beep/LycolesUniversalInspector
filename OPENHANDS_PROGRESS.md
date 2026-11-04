@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Pre-activation interaction evidence
+
+- Completed implementation commit `59c0759` (`Capture pre-activation interaction evidence`) and released inspector **v30.6.0** on `openhands-development`.
+- Confirmed the supplied Bubble Gum Simulator INFINITY manifest was produced by inspector v30.0.0. Subsequent v30.1 logic had already made feature-consistent observable candidates reachable; this milestone addresses an additional timing blind spot: the prior primary `Activated`/`Triggered` callback could sample its “before” state after a synchronous game callback had already changed client-visible state.
+- Supported GUI buttons, ProximityPrompts, and newly equipped Tools now take bounded pre-activation snapshots from `InputBegan`, `PromptButtonHoldBegan`, or `Equipped`. Every event/window labels pre-activation versus callback fallback timing; ClickDetector, stale, absent, unsupported, or failed captures remain explicit callback fallbacks and imply possible evidence loss.
+- Replaced the hardcoded `pendingObservationEvents=0` diagnostic with exact scheduled/completed/failed/pending window accounting. Exports disclose callback fallbacks, capture failures, pending windows, and a conservative possible-loss flag rather than inflating completion counts or lowering verification standards.
+- Offline compilation accepts older reports as timing-unknown, fail-closes on malformed timing/counter claims, preserves per-feature and per-workflow baseline coverage, and emits exact incompleteness limitations. Causality, server authority, live Roblox runtime, gameplay success, and action-outcome verification remain false/unverified.
+- Full local gate passed: **1,526 Python tests** with pinned official Luau 0.744 enabled; receiver integrity and Luau parser suite passed (**3/3**); whitespace validation passed. No live Roblox session or production receiver deployment was performed.
+- Next priority: improve upload/downstream handoff diagnostics where lifecycle ambiguity remains, then continue generation-readiness integration using the stronger attribution provenance.
+
 ## Update — 2026-11-02 — Integrated generated workflow feedback
 
 - Completed implementation commit `9063889` (`Integrate workflow feedback results`) and released inspector patch **v30.5.2** on `openhands-development`.
