@@ -10,6 +10,14 @@ from generate_guided_workflow import render
 SCHEMA="115.controlled-guided-workflow.1"
 
 SETUP=r'''
+local previousGetService=game.GetService
+local controlledHttpService={}
+function controlledHttpService:GenerateGUID() return "controlled-guided-session" end
+function controlledHttpService:JSONEncode() return "{}" end
+function game:GetService(name)
+    if name=="HttpService" then return controlledHttpService end
+    return previousGetService(self,name)
+end
 local previousIsA=methods.IsA
 function methods:IsA(className)
     if className=="ValueBase" then
@@ -67,6 +75,16 @@ assert(_G.__workflowClicks==2 and _G.__workflowTest.stage.Value==2,
     "two-step guided workflow did not observe both user activations")
 assert(table.concat(_G.__workflowOrder,",")=="Select,Confirm","guided workflow order drifted")
 assert(_G.__workflowHighlightCount==2,"exact step highlights were not observed")
+local feedback=_G.LycolesGuidedWorkflowFeedback
+assert(feedback and feedback.schemaVersion=="115.guided-workflow-feedback.1",
+    "guided feedback schema missing")
+assert(#feedback.entries==2 and feedback.entries[1].runId==1 and feedback.entries[1].stepSequence==1
+    and feedback.entries[2].stepSequence==2,"complete run feedback order drifted")
+assert(feedback.entries[1].status=="expected-change-observed"
+    and feedback.entries[2].status=="expected-change-observed",
+    "complete run feedback statuses drifted")
+assert(feedback.claims.runtimeVerified==false and feedback.claims.gameplayVerified==false
+    and feedback.claims.causalityProven==false,"feedback claims were upgraded")
 local completed=false
 for _,item in ipairs(guide:GetDescendants()) do
     if item.ClassName=="TextLabel" and type(item.Text)=="string"
@@ -87,6 +105,10 @@ for _,item in ipairs(guide:GetDescendants()) do
         and string.find(item.Text,"prerequisites drifted at step 2",1,true) then drifted=true end
 end
 assert(drifted,"step-specific metadata drift was not reported")
+assert(#feedback.entries==4 and feedback.entries[3].runId==2
+    and feedback.entries[3].status=="expected-change-observed"
+    and feedback.entries[4].stepSequence==2 and feedback.entries[4].status=="metadata-drift",
+    "failed run feedback contract drifted")
 controls.CloseGuidedWorkflow.Activated:Fire()
 assert(playerGui:FindFirstChild("LycolesGuidedWorkflow")==nil,"guided workflow UI did not close")
 print("LYCOLES_GUIDED_WORKFLOW|PASS|2|1|1")
@@ -136,6 +158,7 @@ def execute(place_id,luau_binary,timeout_seconds=2.0):
     return {"schemaVersion":SCHEMA,"placeId":place_id,"luauExecuted":True,
         "simulatedEnvironment":True,"orderedStepsObserved":2,"exactHighlightsObserved":2,
         "metadataDriftRejected":True,"normalUserActivationEventsUsed":True,
+        "feedbackRecordsObserved":4,"feedbackPlanBound":True,
         "automaticGuiActivationUsed":False,"robloxRuntimeVerified":False,
         "serverAuthorityVerified":False,"causalityProven":False,
         "gameplayVerified":False,"transcript":stdout.strip()}

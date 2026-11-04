@@ -75,8 +75,11 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         source=generator.render(document())
         with self.assertRaisesRegex(ValueError,"Missing guided workflow safeguard"):
             generator.validate_source(source.replace("No GUI event is synthesized","removed"),789)
-        with self.assertRaisesRegex(ValueError,"Forbidden guided workflow operation"):
-            generator.validate_source(source+"\nfiresignal(button.Activated)\n",789)
+        for unsafe in ("firesignal(button.Activated)","setclipboard(payload)",
+                "HttpService:PostAsync(url,payload)"):
+            with self.subTest(unsafe=unsafe),self.assertRaisesRegex(
+                    ValueError,"Forbidden guided workflow operation"):
+                generator.validate_source(source+"\n"+unsafe+"\n",789)
 
     def test_candidate_id_is_luau_escaped(self):
         value=document();value["workflowCandidates"][0]["id"]='guided"\\flow'

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate a manual-only guided GUI workflow trial from exact linked evidence."""
+import hashlib
 import json
 import math
 
@@ -23,6 +24,11 @@ def _identity(value):
 def _scalar(value):
     return (value is None or type(value) in (str,bool,int)
         or type(value) is float and math.isfinite(value))
+
+
+def digest(document):
+    raw=json.dumps(document,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _transition(before,after,change):
@@ -131,12 +137,15 @@ def validate_source(source,place_id):
     required=(f"assert(game.PlaceId == {place_id}",
         "button.Activated:Connect(function() activated=true end)",
         "for index,step in ipairs(steps) do","normal user activation",
-        "No GUI event is synthesized")
+        "No GUI event is synthesized","115.guided-workflow-feedback.1",
+        "_G.LycolesGuidedWorkflowFeedback=feedback","recordFeedback(",
+        "HttpService:JSONEncode(feedback)","actionOutcomesVerified=false")
     for token in required:
         if token not in source:raise ValueError("Missing guided workflow safeguard: "+token)
     banned=("firesignal","virtualinput","virtualuser","fireclickdetector",
         "fireproximityprompt","mouse1click","mouse1press",":Activate(","FireServer(",
-        "InvokeServer(","loadstring(","getrawmetatable(","hookmetamethod(")
+        "InvokeServer(","loadstring(","getrawmetatable(","hookmetamethod(",
+        "setclipboard(","PostAsync(","RequestAsync(","http_request(","syn.request(")
     lowered=source.lower()
     for token in banned:
         if token.lower() in lowered:raise ValueError("Forbidden guided workflow operation: "+token)
@@ -153,8 +162,16 @@ def render(document):
 -- Every GUI step requires normal user activation. No GUI event is synthesized.
 assert(game.PlaceId == {document["placeId"]}, "Wrong place for generated workflow trial")
 local Players=game:GetService("Players")
+local HttpService=game:GetService("HttpService")
 local player=Players.LocalPlayer
 local steps={steps}
+local feedbackSequence=0
+local feedback={{schemaVersion="115.guided-workflow-feedback.1",placeId={document["placeId"]},
+  scanId={_lua(document["scanId"])},workflowPlanSHA256={_lua(digest(document))},
+  candidateId={_lua(candidate["id"])},sessionId=HttpService:GenerateGUID(false),entries={{}},
+  claims={{sourceAuthenticityVerified=false,causalityProven=false,serverAuthorityVerified=false,
+    runtimeVerified=false,gameplayVerified=false,actionOutcomesVerified=false}}}}
+_G.LycolesGuidedWorkflowFeedback=feedback
 local running=false
 local runId=0
 local activeConnection=nil
@@ -222,10 +239,18 @@ local function outcomeReached(change,before,after)
   if type(before)~="number" or type(after)~="number" then return false end
   return (change=="increased" and after>before) or (change=="decreased" and after<before)
 end
+local function recordFeedback(thisRun,index,step,before,after,activated,observed,resultStatus,message)
+  feedbackSequence=feedbackSequence+1
+  table.insert(feedback.entries,{{sequence=feedbackSequence,runId=thisRun,stepSequence=index,
+    targetPath=step.path,outcomeKey=step.outcome.key,expected=step.outcome.change,
+    before=before,after=after,activationObserved=activated==true,
+    observedExpectedChange=observed==true,status=resultStatus,
+    message=tostring(message or ""):sub(1,240),observedAtUnix=os.time()}})
+end
 
 local gui=Instance.new("ScreenGui");gui.Name="LycolesGuidedWorkflow";gui.ResetOnSpawn=false
 gui.Parent=player:WaitForChild("PlayerGui")
-local frame=Instance.new("Frame");frame.Size=UDim2.fromOffset(460,190);frame.Position=UDim2.new(.5,-230,.5,-95)
+local frame=Instance.new("Frame");frame.Size=UDim2.fromOffset(460,230);frame.Position=UDim2.new(.5,-230,.5,-115)
 frame.BackgroundColor3=Color3.fromRGB(18,22,32);frame.Active=true;frame.Draggable=true;frame.Parent=gui
 local title=Instance.new("TextLabel");title.Size=UDim2.new(1,-20,0,34);title.Position=UDim2.fromOffset(10,8)
 title.BackgroundTransparency=1;title.TextColor3=Color3.fromRGB(235,240,255);title.Text={_lua("Guided workflow ("+candidate["id"]+")")};title.Parent=frame
@@ -239,23 +264,41 @@ end
 local startButton=makeButton("StartGuidedWorkflow","START",10)
 local stopButton=makeButton("StopGuidedWorkflow","STOP",162)
 local closeButton=makeButton("CloseGuidedWorkflow","CLOSE",314)
+local feedbackButton=Instance.new("TextButton");feedbackButton.Name="ExportGuidedWorkflowFeedback"
+feedbackButton.Size=UDim2.new(1,-20,0,34);feedbackButton.Position=UDim2.fromOffset(10,184)
+feedbackButton.Text="PRINT DIGEST-BOUND FEEDBACK JSON";feedbackButton.Parent=frame
+feedbackButton.Activated:Connect(function()
+  local ok,payload=pcall(function() return HttpService:JSONEncode(feedback) end)
+  if ok then print("LYCOLES_GUIDED_WORKFLOW_FEEDBACK|"..payload)
+    status.Text="Feedback JSON printed locally; all verification claims remain false."
+  else status.Text="Feedback JSON encoding failed; no data was sent." end
+end)
 local function finish(message)
   running=false;clearActive();status.Text=message
 end
 local function runWorkflow()
   if running then return end
+  if #feedback.entries+#steps>400 then
+    finish("Stopped: feedback record limit reached; export before rerunning.");return
+  end
   running=true;runId=runId+1;local thisRun=runId
   for index,step in ipairs(steps) do
     if not running or runId~=thisRun then return end
     local button=resolveButton(step.identity);local state=resolveState(step.outcome.identity)
     if not button or not button:IsA("GuiButton") or not state then
+      recordFeedback(thisRun,index,step,nil,nil,false,false,"control-or-state-unavailable",
+        "Exact control or state identity unavailable")
       finish("Stopped: exact control or state identity unavailable at step "..index);return
     end
     if not sameMetadata(currentMetadata(button),step.metadata) then
+      recordFeedback(thisRun,index,step,nil,nil,false,false,"metadata-drift",
+        "Control prerequisite metadata changed")
       finish("Stopped: control prerequisites drifted at step "..index);return
     end
     local ok,before=pcall(function() return state.Value end)
     if not ok or type(before)~="number" and type(before)~="string" and type(before)~="boolean" then
+      recordFeedback(thisRun,index,step,nil,nil,false,false,"state-unreadable",
+        "Selected client-visible state is not readable scalar")
       finish("Stopped: selected state is not readable scalar at step "..index);return
     end
     activeStroke=Instance.new("UIStroke");activeStroke.Name="LycolesGuidedHighlight"
@@ -267,15 +310,26 @@ local function runWorkflow()
     while running and runId==thisRun and not activated and os.clock()<deadline do task.wait(.05) end
     clearActive()
     if not running or runId~=thisRun then return end
-    if not activated then finish("Stopped: user activation timed out at step "..index);return end
+    if not activated then
+      recordFeedback(thisRun,index,step,before,before,false,false,"activation-timeout",
+        "Normal user activation was not observed within the bounded window")
+      finish("Stopped: user activation timed out at step "..index);return
+    end
     status.Text="Step "..index..": activation observed; watching selected client-visible outcome."
-    local observed=false;deadline=os.clock()+outcomeTimeoutSeconds
+    local observed=false;local after=before;deadline=os.clock()+outcomeTimeoutSeconds
     while running and runId==thisRun and os.clock()<deadline do
       local read,current=pcall(function() return state.Value end)
+      if read then after=current end
       if read and outcomeReached(step.outcome.change,before,current) then observed=true;break end
       task.wait(.05)
     end
-    if not observed then finish("Stopped: selected outcome not observed at step "..index);return end
+    if not observed then
+      recordFeedback(thisRun,index,step,before,after,true,false,"outcome-not-observed",
+        "Selected client-visible direction was not observed within the bounded window")
+      finish("Stopped: selected outcome not observed at step "..index);return
+    end
+    recordFeedback(thisRun,index,step,before,after,true,true,"expected-change-observed",
+      "Selected client-visible direction observed after normal user activation")
   end
   finish("Candidate completed with client-visible observations; causality and gameplay remain unverified.")
 end

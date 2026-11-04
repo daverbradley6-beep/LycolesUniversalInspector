@@ -223,6 +223,12 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue(manifest["guidedWorkflowTrial"]["generated"])
             self.assertEqual(manifest["guidedWorkflowTrial"]["candidateId"],
                 workflow["workflowCandidates"][0]["id"])
+            feedback_evaluator=builder.load_module(
+                "evaluate_guided_workflow_feedback.py","test_release_guided_feedback")
+            self.assertEqual(manifest["guidedWorkflowTrial"]["feedbackSchema"],
+                feedback_evaluator.SCHEMA)
+            self.assertEqual(manifest["guidedWorkflowTrial"]["feedbackWorkflowPlanSHA256"],
+                feedback_evaluator.digest(workflow))
             self.assertFalse(manifest["guidedWorkflowTrial"]["automaticActivation"])
             self.assertTrue(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
@@ -232,6 +238,32 @@ class ReleaseBuilderTests(unittest.TestCase):
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertIn("generated-workflow-plan.json",archive.namelist())
                 self.assertIn("LycolesGuidedWorkflow.lua",archive.namelist())
+                self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
+
+            feedback_entries=[]
+            for sequence,item in enumerate(workflow["workflowCandidates"][0]["steps"],1):
+                feedback_entries.append({"sequence":sequence,"runId":1,
+                    "stepSequence":sequence,"targetPath":item["targetPath"],
+                    "outcomeKey":item["selectedOutcome"]["key"],
+                    "expected":item["selectedOutcome"]["change"],"before":sequence+1,
+                    "after":sequence+2,"activationObserved":True,
+                    "observedExpectedChange":True,"status":"expected-change-observed",
+                    "message":"Client-visible direction observed","observedAtUnix":1793635200+sequence})
+            guided_feedback={"schemaVersion":feedback_evaluator.SCHEMA,
+                "placeId":workflow["placeId"],"scanId":workflow["scanId"],
+                "workflowPlanSHA256":feedback_evaluator.digest(workflow),
+                "candidateId":workflow["workflowCandidates"][0]["id"],
+                "sessionId":"release-guided-session","entries":feedback_entries,
+                "claims":{key:False for key in feedback_evaluator.FALSE_CLAIMS}}
+            guided_feedback_path=base/"guided-feedback.json"
+            guided_feedback_path.write_text(json.dumps(guided_feedback))
+            manifest=builder.build(parts,base/"out",guided_feedback_path=guided_feedback_path)
+            evaluated=json.loads((base/"out"/"guided-workflow-evaluation.json").read_text())
+            self.assertEqual(evaluated["summary"]["completeClientObservationSequences"],1)
+            self.assertFalse(evaluated["runtimeVerified"])
+            self.assertEqual(manifest["guidedWorkflowFeedback"]["summary"],evaluated["summary"])
+            with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
+                self.assertIn("guided-workflow-evaluation.json",archive.namelist())
 
             unlinked=[dict(item) for item in events]
             unlinked[1].pop("transactionId")
@@ -240,8 +272,10 @@ class ReleaseBuilderTests(unittest.TestCase):
             manifest=builder.build(parts,base/"out")
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertFalse((base/"out"/"LycolesGuidedWorkflow.lua").exists())
+            self.assertFalse((base/"out"/"guided-workflow-evaluation.json").exists())
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
                 self.assertNotIn("LycolesGuidedWorkflow.lua",archive.namelist())
+                self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
 
     def test_prompt_feedback_is_evaluated_and_bundled_without_verification_upgrade(self):
         import hashlib

@@ -22,6 +22,8 @@ class ControlledGuidedWorkflowTests(unittest.TestCase):
         self.assertEqual(result["exactHighlightsObserved"],2)
         self.assertTrue(result["metadataDriftRejected"])
         self.assertTrue(result["normalUserActivationEventsUsed"])
+        self.assertEqual(result["feedbackRecordsObserved"],4)
+        self.assertTrue(result["feedbackPlanBound"])
         self.assertFalse(result["automaticGuiActivationUsed"])
         self.assertFalse(result["robloxRuntimeVerified"])
         self.assertFalse(result["serverAuthorityVerified"])

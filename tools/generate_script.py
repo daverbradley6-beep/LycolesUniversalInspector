@@ -513,6 +513,9 @@ def main():
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
             "candidateId":guided_workflow_candidate_id,
+            "feedbackSchema":"115.guided-workflow-feedback.1" if guided_workflow_lua else None,
+            "feedbackWorkflowPlanSHA256":guided_workflow_builder.digest(generated_workflows)
+                if guided_workflow_lua else None,
             "generated":guided_workflow_lua is not None,"automaticActivation":False,
             "manualActivationRequired":guided_workflow_lua is not None,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},

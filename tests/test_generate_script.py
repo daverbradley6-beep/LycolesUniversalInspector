@@ -135,6 +135,8 @@ class GeneratorTests(unittest.TestCase):
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["candidateId"])
+            self.assertIsNone(manifest["guidedWorkflowTrial"]["feedbackSchema"])
+            self.assertIsNone(manifest["guidedWorkflowTrial"]["feedbackWorkflowPlanSHA256"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["artifact"])
             self.assertFalse((output/"LycolesGuidedWorkflow.lua").exists())
             self.assertEqual(readiness["request"]["status"],
