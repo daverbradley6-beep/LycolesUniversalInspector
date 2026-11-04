@@ -1,3 +1,11 @@
+## v30.5.1 — Self-consistent report export lifecycle
+
+- Initialize local export status in every manifest and distinguish file-unavailable, partial-part, initial-manifest, and final-manifest failures.
+- Finalize `SAVE REPORT` with a second manifest write so `complete` is present in the manifest actually saved to disk only after every numbered part and the matching final manifest succeed.
+- Surface numbered-part and manifest-save status separately in the Generated Script handoff.
+- Upgrade manifest-readiness output to schema `109.manifest-readiness.2`, preserving v109.1 release routing while validating local export accounting, reporting explicit lifecycle stages, and recommending local or receiver recovery without treating a manifest-only claim as retrieved multipart evidence.
+- Keep receiver integrity, source authenticity, causality, server authority, runtime behavior, gameplay, and script-generation readiness unverified.
+
 ## v30.5.0 — Actionable gameplay discovery and prompt interaction trials
 
 - Preserve bounded prompt, GUI-control, ClickDetector, and Tool metadata from complete multipart scans for downstream action discovery without retaining the full object inventory in generated plans.

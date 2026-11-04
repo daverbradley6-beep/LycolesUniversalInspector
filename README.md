@@ -1,6 +1,6 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.5.0**
+Current inspector release: **v30.5.1**
 
 Current integrated offline pipeline: **v108**
 
@@ -10,7 +10,7 @@ The repository has two version tracks. `LycolesUniversalInspector.lua` and the d
 
 - Read-only inspection of bounded, client-visible Roblox instance metadata across replicated services, the local player, character, GUI, lighting, teams, sound, and workspace.
 - A two-tab in-game interface keeps inspection controls and Generated Script status in one panel. `PRODUCE SCRIPT` records a bounded client-visible capability request and captures a complete scan for offline compilation; it does not generate or execute gameplay behavior in the target session. The Generated Script tab distinguishes request text from evidence and tracks scan identity, numbered parts, local export, receiver acknowledgements, and pending offline validation while keeping receiver integrity and gameplay unverified. Offline generation emits a place-bound `Lycoles-PLACE-generated-result.json`; schema 113 embeds validated generation readiness so `LOAD RESULT` can display generated bounded capabilities, exact target/outcome evidence, unavailable requested behavior, static-validation status, and verification limits alongside code. The loader retains display-only schema 110 compatibility, never executes imported code, and explicitly treats package authenticity and runtime/gameplay behavior as unverified.
-- Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, explicit local transport lifecycle status, and a separately deployed Cloudflare Worker integrity endpoint. `SAVE REPORT` exports every exact numbered part plus a matching manifest, so offline generation is not limited to the small manifest summary when upload is unavailable.
+- Multipart JSON upload with acknowledgement, retry, scan identity, object accounting, explicit local transport lifecycle status, and a separately deployed Cloudflare Worker integrity endpoint. `SAVE REPORT` exports every exact numbered part and finalizes a self-consistent matching manifest; partial part or manifest writes remain explicitly incomplete/failed. Manifest-readiness v109.2 distinguishes scan, report generation, local export, upload, receiver integrity, and downstream availability stages and recommends local-part or receiver recovery without assuming an unavailable or failed receiver.
 - Passive observation of normal user interactions and bounded before/after client-state evidence from leaderstats, Data, and privacy-filtered LocalPlayer numeric/boolean ValueBase candidates. v30.1 distinguishes generic temporal changes from feature-consistent observable outcome candidates; neither proves causality, server authority, or gameplay success.
 - Deterministic offline compilation of complete scans into capability plans, workflow evidence, reviewed read-only client actions, manifests, reproducible release archives, and normalized source-provenance status. Generated utility UI exposes retrieval integrity and its explicit trust limits without claiming authenticity or gameplay verification.
 - v109 manifest readiness analysis explains upload ambiguity, interaction evidence, outcome-candidate lower bounds, missing multipart data, and generation blockers without treating the local manifest as a full report.

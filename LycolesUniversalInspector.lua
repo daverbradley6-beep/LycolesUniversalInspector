@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.5.0
+-- Lycoles Universal Inspector v30.5.1
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.5.0"
+local VERSION = "30.5.1"
 
 local endpoint = ""
 local autoSend = true
@@ -843,8 +843,11 @@ local function refreshGeneratedHandoff(phase)
     local exported=pendingManifest.localExport
     local exportLine="Local export: not attempted"
     if type(exported)=="table" then
+        local manifestState=exported.manifestSaved==true and "saved"
+            or (exported.manifestSaved==false and "not saved" or "unknown")
         exportLine="Local export: "..tostring(exported.status).." "
-            ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0).." parts"
+            ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0)
+            .." parts; manifest "..manifestState
     end
     generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
         .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
@@ -2999,6 +3002,9 @@ local function inspect(requestType, featureRequest)
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
                 reportTransport = uploadSnapshot("pre-upload"),
+                localExport = {attempted=false,status="not-attempted",exportedParts=0,
+                    expectedParts=#parts,manifestSaved=false,manifestWriteAttempts=0,
+                    localPartContentDigestsComputed=false},
                 localPerformance = result.localPerformance,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
                 note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
@@ -3157,6 +3163,11 @@ save.MouseButton1Click:Connect(function()
         return
     end
     if type(writefile) ~= "function" then
+        pendingManifest.localExport={attempted=true,status="failed",exportedParts=0,
+            expectedParts=#pendingParts,manifestSaved=false,manifestWriteAttempts=0,
+            localPartContentDigestsComputed=false,lastError="file writing unavailable"}
+        refreshLocalManifest("local-export")
+        refreshGeneratedHandoff("Local export finished")
         status.Text = "File saving unavailable"
         return
     end
@@ -3170,19 +3181,55 @@ save.MouseButton1Click:Connect(function()
         if ok then exported=exported+1 elseif not firstError then firstError=tostring(err) end
     end
     pendingManifest.localExport={
-        attempted=true,status=exported==#pendingParts and "complete" or "failed",
+        attempted=true,status=exported==#pendingParts and "incomplete" or "failed",
         exportedParts=exported,expectedParts=#pendingParts,
-        filenamePrefix=prefix,localPartContentDigestsComputed=false,
+        filenamePrefix=prefix,manifestSaved=false,manifestWriteAttempts=1,
+        localPartContentDigestsComputed=false,
+        lastError=exported==#pendingParts and "manifest finalization pending" or "one or more part writes failed",
         note="Raw numbered part bytes are preserved; compare offline SHA-256 with receiver acknowledgement digests when available"
     }
     refreshLocalManifest("local-export")
     local manifestOk,manifestError=pcall(writefile,prefix.."_manifest.json",last)
-    if not manifestOk and not firstError then firstError=tostring(manifestError) end
-    if exported==#pendingParts and manifestOk then
-        status.Text="Saved complete report: "..exported.." part(s) + manifest"
-    else
+    if manifestOk and exported==#pendingParts then
+        pendingManifest.localExport.status="complete"
+        pendingManifest.localExport.manifestSaved=true
+        pendingManifest.localExport.manifestWriteAttempts=2
+        pendingManifest.localExport.lastError=nil
+        refreshLocalManifest("local-export")
+        local finalOk,finalError=pcall(writefile,prefix.."_manifest.json",last)
+        if finalOk then
+            status.Text="Saved complete report: "..exported.." part(s) + manifest"
+        else
+            manifestOk=false;manifestError=finalError
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.manifestSaved=false
+            pendingManifest.localExport.lastError="final manifest write failed"
+            refreshLocalManifest("local-export")
+        end
+    end
+    if not manifestOk or exported~=#pendingParts then
+        if manifestOk then
+            pendingManifest.localExport.status="incomplete"
+            pendingManifest.localExport.manifestSaved=true
+            pendingManifest.localExport.manifestWriteAttempts=2
+            pendingManifest.localExport.lastError="one or more numbered parts were not saved"
+            refreshLocalManifest("local-export")
+            local partialOk,partialError=pcall(writefile,prefix.."_manifest.json",last)
+            if not partialOk then
+                manifestOk=false;manifestError=partialError
+                pendingManifest.localExport.status="failed"
+                pendingManifest.localExport.manifestSaved=false
+                pendingManifest.localExport.lastError="final manifest write failed"
+                refreshLocalManifest("local-export")
+            end
+        else
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.lastError="manifest write failed"
+            refreshLocalManifest("local-export")
+        end
         status.Text="Report save incomplete: "..exported.."/"..#pendingParts
         if firstError then warn("Lycoles local report export failed",firstError) end
+        if manifestError then warn("Lycoles local manifest export failed",tostring(manifestError)) end
     end
     refreshGeneratedHandoff("Local export finished")
 end)

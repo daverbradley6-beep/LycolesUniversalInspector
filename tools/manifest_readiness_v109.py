@@ -164,6 +164,57 @@ def _transport(manifest):
     }
 
 
+def _local_export(manifest, expected):
+    export = manifest.get("localExport")
+    if export is None:
+        return {"attempted": False, "status": "not-attempted", "exportedParts": 0,
+                "expectedParts": expected, "manifestSaved": None,
+                "manifestWriteAttempts": None, "completeNumberedPartsClaimed": False,
+                "partContentDigestsComputed": False, "diagnostic": None}
+    export = _mapping(export, "local export")
+    attempted = export.get("attempted")
+    if type(attempted) is not bool:
+        raise ValueError("invalid local export attempted status")
+    status = export.get("status")
+    if status not in {"not-attempted", "complete", "incomplete", "failed"}:
+        raise ValueError("invalid local export status")
+    exported = _integer(export.get("exportedParts"), "local exported parts")
+    export_expected = _integer(export.get("expectedParts"), "local export expected parts", minimum=1)
+    if export_expected != expected or exported > expected:
+        raise ValueError("invalid local export part accounting")
+    prefix = export.get("filenamePrefix")
+    if (prefix is not None and (not isinstance(prefix, str) or not 1 <= len(prefix) <= 200
+            or re.fullmatch(r"[A-Za-z0-9_.-]+", prefix) is None)):
+        raise ValueError("invalid local export filename prefix")
+    manifest_saved = export.get("manifestSaved")
+    if manifest_saved is not None and type(manifest_saved) is not bool:
+        raise ValueError("invalid local manifest saved status")
+    write_attempts = export.get("manifestWriteAttempts")
+    if write_attempts is not None:
+        _integer(write_attempts, "local manifest write attempts")
+        if write_attempts > 2:
+            raise ValueError("invalid local manifest write attempts")
+    digests = export.get("localPartContentDigestsComputed", False)
+    if type(digests) is not bool:
+        raise ValueError("invalid local part digest status")
+    if status == "not-attempted" and (attempted or exported != 0):
+        raise ValueError("inconsistent local export status")
+    if status in {"complete", "incomplete", "failed"} and not attempted:
+        raise ValueError("inconsistent local export status")
+    if status == "complete" and (exported != expected or manifest_saved is False):
+        raise ValueError("incomplete local export marked complete")
+    if manifest_saved is True and (write_attempts is not None and write_attempts < 1):
+        raise ValueError("inconsistent local manifest write status")
+    diagnostic = export.get("lastError")
+    if diagnostic is not None and (not isinstance(diagnostic, str) or len(diagnostic) > 200):
+        raise ValueError("invalid local export diagnostic")
+    return {"attempted": attempted, "status": status, "exportedParts": exported,
+            "expectedParts": expected, "manifestSaved": manifest_saved,
+            "manifestWriteAttempts": write_attempts,
+            "completeNumberedPartsClaimed": status == "complete" and exported == expected,
+            "partContentDigestsComputed": digests, "diagnostic": diagnostic}
+
+
 def _state_candidate(feature, changes):
     terms = STATE_TERMS.get(feature, ())
     for change in changes or ():
@@ -225,10 +276,22 @@ def analyze(manifest):
     scan_id = _scan_id(manifest)
     scan = _object_accounting(manifest)
     transport = _transport(manifest)
+    local_export = _local_export(manifest, transport["expectedParts"])
+    transport["localExport"] = local_export
     transport["receiverIntegrityLookupAvailable"] = scan_id is not None
     transport["receiverIntegrityPath"] = (
         f"/reports/READ_KEY/{scan_id}/integrity" if scan_id else None
     )
+    transport["lifecycleStages"] = {
+        "scanComplete": scan["complete"],
+        "reportGenerated": transport["reportGenerated"],
+        "localExportAttempted": local_export["attempted"],
+        "completeLocalNumberedPartsClaimed": local_export["completeNumberedPartsClaimed"],
+        "uploadAttempted": transport["uploadAttempted"],
+        "uploadAcknowledged": transport["uploadStatus"] == "acknowledged",
+        "receiverIntegrityVerified": transport["receiverIntegrityVerified"],
+        "downstreamReportAvailable": transport["downstreamReportAvailable"],
+    }
     diagnostics = _mapping(manifest.get("interactionDiagnostics"), "interaction diagnostics")
     workflow = _mapping(diagnostics.get("workflowStats"), "workflow stats")
     history = diagnostics.get("recentInteractions") or []
@@ -270,8 +333,20 @@ def analyze(manifest):
         blockers.append("complete_interaction_history_unavailable")
     if scan_id is None:
         blockers.append("receiver_scan_id_unavailable")
+    if local_export["completeNumberedPartsClaimed"]:
+        recovery = "provide_complete_local_numbered_parts"
+        next_artifact = "complete locally exported numbered parts plus their matching manifest"
+    elif transport["uploadStatus"] == "acknowledged":
+        recovery = "verify_receiver_integrity_or_save_numbered_parts"
+        next_artifact = "verified receiver integrity result or complete local numbered parts"
+    elif transport["uploadFailed"]:
+        recovery = "retry_upload_or_save_numbered_parts"
+        next_artifact = "successful receiver integrity result or complete local numbered parts"
+    else:
+        recovery = "save_numbered_parts_or_upload"
+        next_artifact = "complete numbered multipart report from local export or verified receiver retrieval"
     return {
-        "schemaVersion": "109.manifest-readiness.1",
+        "schemaVersion": "109.manifest-readiness.2",
         "scanId": scan_id,
         "placeId": place_id,
         "inspectorVersion": manifest.get("version"),
@@ -297,8 +372,10 @@ def analyze(manifest):
             "scriptGenerationReady": False,
             "v108SourceCompatible": False,
             "fullMultipartReportAvailable": False,
+            "completeLocalNumberedPartsClaimed": local_export["completeNumberedPartsClaimed"],
             "blockers": blockers,
-            "nextRequiredArtifact": "complete numbered multipart report with verified receiver integrity",
+            "recommendedRecovery": recovery,
+            "nextRequiredArtifact": next_artifact,
         },
         "claims": {
             "readOnly": True,

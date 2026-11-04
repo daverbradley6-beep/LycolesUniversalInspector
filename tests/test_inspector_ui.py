@@ -50,6 +50,10 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('exportedParts=exported,expectedParts=#pendingParts',SRC)
         self.assertIn('localPartContentDigestsComputed=false',SRC)
         self.assertIn('Saved complete report:',SRC)
+        self.assertIn('manifestSaved=false,manifestWriteAttempts=0',SRC)
+        self.assertIn('pendingManifest.localExport.manifestSaved=true',SRC)
+        self.assertIn('pendingManifest.localExport.status="incomplete"',SRC)
+        self.assertIn('pendingManifest.localExport.status="failed"',SRC)
 
     def test_two_tab_generation_request_ui(self):
         self.assertIn('Name = "InspectorTab"',SRC)

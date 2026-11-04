@@ -37,7 +37,7 @@ class ManifestReadinessTests(unittest.TestCase):
 
     def test_real_manifest_explains_evidence_and_generation_blockers(self):
         result = MODULE.analyze(self.manifest)
-        self.assertEqual(result["schemaVersion"], "109.manifest-readiness.1")
+        self.assertEqual(result["schemaVersion"], "109.manifest-readiness.2")
         self.assertEqual(result["placeId"], 85896571713843)
         self.assertTrue(result["scan"]["complete"])
         self.assertTrue(result["scan"]["objectAccountingValid"])
@@ -78,6 +78,48 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport["manifestSnapshotPhase"], "legacy-unspecified")
         self.assertFalse(transport["receiverIntegrityVerified"])
         self.assertFalse(transport["downstreamReportAvailable"])
+
+    def test_missing_local_export_has_actionable_recovery(self):
+        result = MODULE.analyze(self.manifest)
+        export = result["transport"]["localExport"]
+        self.assertFalse(export["attempted"])
+        self.assertEqual(export["status"], "not-attempted")
+        self.assertFalse(export["completeNumberedPartsClaimed"])
+        self.assertEqual(result["generationReadiness"]["recommendedRecovery"],
+                         "save_numbered_parts_or_upload")
+
+    def test_complete_local_export_is_recoverable_but_not_manifest_only_ready(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["localExport"] = {
+            "attempted": True, "status": "complete",
+            "exportedParts": manifest["expectedParts"],
+            "expectedParts": manifest["expectedParts"],
+            "filenamePrefix": "Lycoles_85896571713843_scan-123",
+            "manifestSaved": True, "manifestWriteAttempts": 2,
+            "localPartContentDigestsComputed": False,
+        }
+        result = MODULE.analyze(manifest)
+        export = result["transport"]["localExport"]
+        self.assertTrue(export["completeNumberedPartsClaimed"])
+        self.assertTrue(export["manifestSaved"])
+        self.assertEqual(result["generationReadiness"]["recommendedRecovery"],
+                         "provide_complete_local_numbered_parts")
+        self.assertFalse(result["generationReadiness"]["scriptGenerationReady"])
+        self.assertIn("full_multipart_report_unavailable",
+                      result["generationReadiness"]["blockers"])
+
+    def test_local_export_part_accounting_mismatch_is_rejected(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["localExport"] = {
+            "attempted": True, "status": "complete",
+            "exportedParts": manifest["expectedParts"],
+            "expectedParts": manifest["expectedParts"] + 1,
+            "filenamePrefix": "Lycoles_scan",
+            "manifestSaved": True, "manifestWriteAttempts": 2,
+            "localPartContentDigestsComputed": False,
+        }
+        with self.assertRaisesRegex(ValueError, "local export part accounting"):
+            MODULE.analyze(manifest)
 
     def test_explicit_transport_status_is_preserved(self):
         manifest = copy.deepcopy(self.manifest)
@@ -120,6 +162,15 @@ class ManifestReadinessTests(unittest.TestCase):
                     transport["receiverIntegrityPath"],
                     f"/reports/READ_KEY/{self.transport_scan_id}/integrity",
                 )
+                stages = transport["lifecycleStages"]
+                self.assertTrue(stages["scanComplete"])
+                self.assertTrue(stages["reportGenerated"])
+                self.assertFalse(stages["localExportAttempted"])
+                self.assertIs(stages["uploadAttempted"], expected["uploadAttempted"])
+                self.assertIs(stages["uploadAcknowledged"],
+                              expected["uploadStatus"] == "acknowledged")
+                self.assertFalse(stages["receiverIntegrityVerified"])
+                self.assertFalse(stages["downstreamReportAvailable"])
 
     def test_v302_acknowledgement_digest_coverage_is_diagnostic_only(self):
         manifest = copy.deepcopy(self.manifest)
