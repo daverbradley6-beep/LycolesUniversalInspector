@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.5
+-- Lycoles Universal Inspector v30.6.6
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.5"
+local VERSION = "30.6.6"
 
 local endpoint = ""
 local autoSend = true
@@ -134,6 +134,7 @@ local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
 local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil, preActivationListenersAttached=0, preActivationCaptures=0, preActivationBaselinesUsed=0, callbackBaselinesUsed=0, stalePreActivationCaptures=0, preActivationCaptureFailures=0}
 local sessionId = HttpService:GenerateGUID(false)
+local sessionStartedClock = os.clock()
 local snapshotId = nil
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
@@ -2539,6 +2540,7 @@ local function observeInteractionObject(obj, root, label)
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
         local activationClock=os.clock()
+        local sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000
         autoEvidenceLastInteraction = activationClock
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -2580,6 +2582,7 @@ local function observeInteractionObject(obj, root, label)
             path=path:sub(1,400), pathIdentity=interactionPathIdentity(obj,root,label),
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
+            sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
             controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
             baselineTiming=baselineSource=="activation-callback-fallback"
@@ -2625,7 +2628,8 @@ local function observeInteractionObject(obj, root, label)
             baselineTiming=historyItem.baselineTiming,
             preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
+            evidence = "manual-user-interaction", sessionId = sessionId,
+            sessionElapsedSeconds=sessionElapsedSeconds,snapshotId = snapshotId, sequence = observationSequence
         }
         local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
         historyItem.transactionId=transactionId

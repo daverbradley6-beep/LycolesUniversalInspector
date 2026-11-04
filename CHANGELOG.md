@@ -1,3 +1,11 @@
+## v30.6.6 — Session-relative interaction timing diagnostics
+
+- Record monotonic millisecond session-relative timestamps and session identity on interaction history and change-queue events while preserving UTC display timestamps.
+- Validate optional timing fields during scan compilation, report timing coverage, and preserve legacy reports that predate the fields.
+- Surface bounded adjacent unlinked event pairs in observed-workflow and generated-workflow plans for review without creating transaction links, generation candidates, causality claims, or automatic execution.
+- Propagate timing coverage and explicit non-linkage status into standalone and deterministic release manifests.
+
+
 ## v30.6.5 — Integrated linked-workflow utility controls
 
 - Embed the selected evidence-linked workflow trial directly in `LycolesGeneratedUtility.lua` for both standalone generation and deterministic release builds.

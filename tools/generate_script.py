@@ -635,7 +635,10 @@ def main():
             "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
           "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
             "schemaVersion":generated_workflows["schemaVersion"],
-            "summary":generated_workflows["summary"],"automaticallyExecutable":
+            "summary":generated_workflows["summary"],
+            "temporalAdjacency":{field:generated_workflows["temporalAdjacency"][field]
+                for field in ("timedEvents","unlinkedAdjacentPairs","usedForWorkflowLinkage")},
+            "automaticallyExecutable":
                 generated_workflows["summary"]["automaticallyExecutableWorkflows"]>0,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
           "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,

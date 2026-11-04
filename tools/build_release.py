@@ -248,6 +248,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
             "schemaVersion":generated_workflows["schemaVersion"],
             "sha256":sha(generated_workflows_bytes),"summary":generated_workflows["summary"],
+            "temporalAdjacency":{field:generated_workflows["temporalAdjacency"][field]
+                for field in ("timedEvents","unlinkedAdjacentPairs","usedForWorkflowLinkage")},
             "automaticallyExecutable":generated_workflows["summary"][
                 "automaticallyExecutableWorkflows"]>0,"runtimeVerified":False,
             "gameplayVerified":False,"causalityProven":False},

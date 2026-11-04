@@ -114,6 +114,22 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
             generator.validate(forged)
 
 
+    def test_session_timing_is_review_only_and_does_not_create_linkage(self):
+        value=plan();first,second=value["observedInteractionHistory"]
+        first.update(transactionId="event-one",sessionId="session",sessionElapsedSeconds=20.0)
+        second.update(transactionId="event-two",sessionId="session",sessionElapsedSeconds=23.125)
+        result=self.analyze(value);adjacency=result["temporalAdjacency"]
+        self.assertEqual(result["summary"]["planningStatus"],"singleton-transactions-only")
+        self.assertEqual(result["summary"]["workflowCandidates"],0)
+        self.assertEqual(adjacency["unlinkedAdjacentPairs"],1)
+        self.assertEqual(adjacency["candidates"][0]["gapSeconds"],3.125)
+        self.assertFalse(adjacency["usedForWorkflowLinkage"])
+        self.assertFalse(adjacency["candidates"][0]["causalityProven"])
+        second["sessionElapsedSeconds"]=float("inf")
+        with self.assertRaisesRegex(ValueError,"session timing"):
+            self.analyze(value)
+
+
 
     def test_request_alignment_ranks_executable_workflows_before_lexical_order(self):
         value=plan();value["requestedCapability"]="Train with the sword in combat"

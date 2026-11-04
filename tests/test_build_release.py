@@ -237,6 +237,9 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertFalse(manifest["guidedWorkflowTrial"]["automaticActivation"])
             self.assertTrue(manifest["guidedWorkflowTrial"]["manualActivationRequired"])
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
+            self.assertEqual(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["timedEvents"],0)
+            self.assertFalse(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["usedForWorkflowLinkage"])
+
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflow["summary"])
             self.assertEqual(manifest["generatedWorkflowPlan"]["sha256"],
                 hashlib.sha256((base/"out"/"generated-workflow-plan.json").read_bytes()).hexdigest())

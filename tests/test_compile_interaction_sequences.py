@@ -36,6 +36,21 @@ class SequenceTests(unittest.TestCase):
         p=self.plan()
         for event in p["observedInteractionHistory"]:event.pop("transactionId")
         self.assertEqual(m.compile_sequences(p)["workflowCount"],2)
+
+    def test_session_timing_surfaces_adjacency_without_linking(self):
+        plan=self.plan();first,second=plan["observedInteractionHistory"]
+        first.update(transactionId="one",sessionId="session",sessionElapsedSeconds=10.125)
+        second.update(transactionId="two",sessionId="session",sessionElapsedSeconds=12.5)
+        result=m.compile_sequences(plan);adjacency=result["temporalAdjacency"]
+        self.assertEqual(result["workflowCount"],2)
+        self.assertEqual(adjacency["unlinkedAdjacentPairs"],1)
+        self.assertEqual(adjacency["candidates"][0]["gapSeconds"],2.375)
+        self.assertFalse(adjacency["usedForAutomaticLinkage"])
+        self.assertFalse(adjacency["candidates"][0]["causalityProven"])
+        second.pop("sessionElapsedSeconds")
+        with self.assertRaisesRegex(ValueError,"session timing"):
+            m.compile_sequences(plan)
+
     def test_invalid_scan(self):
         p=self.plan();p["integrity"]["scanComplete"]=False
         with self.assertRaises(ValueError):m.compile_sequences(p)

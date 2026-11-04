@@ -10,6 +10,8 @@ import unicodedata
 SCHEMA="114.generated-workflow-plan.1"
 MAX_EVENTS=2000
 MAX_WORKFLOW_STEPS=64
+MAX_ADJACENCY_CANDIDATES=100
+ADJACENCY_WINDOW_SECONDS=15
 FALSE_CLAIMS=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
     "runtimeVerified","gameplayVerified","actionOutcomesVerified")
 
@@ -171,6 +173,45 @@ def _continuity(steps):
                 "causalityProven":False})
     return links
 
+def _temporal_adjacency(history):
+    timed=[]
+    for index,event in enumerate(history):
+        present="sessionId" in event or "sessionElapsedSeconds" in event
+        if not present:continue
+        session=event.get("sessionId");elapsed=event.get("sessionElapsedSeconds")
+        if (not _text(session,80) or type(elapsed) not in (int,float) or type(elapsed) is bool
+                or not math.isfinite(elapsed) or not 0<=elapsed<=604_800):
+            raise ValueError("Malformed interaction session timing")
+        transaction=event.get("transactionId")
+        marker=(str(transaction) if type(transaction) in (int,str) and _text(str(transaction),80)
+            else "unlinked-"+str(index))
+        sequence=event.get("sequence") if type(event.get("sequence")) is int else None
+        timed.append({"sessionId":session,"elapsed":elapsed,"transaction":marker,
+            "sequence":sequence,"path":event.get("path") if _text(event.get("path"),400) else None,
+            "controlType":event.get("controlType") if _text(event.get("controlType"),120) else None})
+    timed.sort(key=lambda item:(item["sessionId"],item["elapsed"],item["sequence"] is None,
+        item["sequence"] or 0,item["path"] or ""))
+    candidates=[];count=0
+    for previous,current in zip(timed,timed[1:]):
+        gap=current["elapsed"]-previous["elapsed"]
+        if (previous["sessionId"]!=current["sessionId"]
+                or previous["transaction"]==current["transaction"]
+                or not 0<=gap<=ADJACENCY_WINDOW_SECONDS):continue
+        count+=1
+        if len(candidates)<MAX_ADJACENCY_CANDIDATES:
+            candidates.append({"gapSeconds":round(gap,3),
+                "first":{"sequence":previous["sequence"],"path":previous["path"],
+                    "controlType":previous["controlType"]},
+                "second":{"sequence":current["sequence"],"path":current["path"],
+                    "controlType":current["controlType"]},
+                "classification":"unlinked-temporal-adjacency",
+                "usedForWorkflowLinkage":False,"causalityProven":False})
+    return {"timedEvents":len(timed),"windowSeconds":ADJACENCY_WINDOW_SECONDS,
+        "unlinkedAdjacentPairs":count,"candidates":candidates,
+        "candidatesTruncated":count>len(candidates),"usedForWorkflowLinkage":False,
+        "causalityProven":False}
+
+
 def plan(plan_document,actions):
     integrity=plan_document.get("integrity") if isinstance(plan_document,dict) else None
     if (not isinstance(integrity,dict) or integrity.get("scanComplete") is not True
@@ -197,6 +238,7 @@ def plan(plan_document,actions):
                 or type(sequence) is not int or not 1<=sequence<=10_000_000):
             unlinked+=1;continue
         groups.setdefault(str(transaction),[]).append(event)
+    temporal_adjacency=_temporal_adjacency(history)
     candidates=[];insufficient_contracts=0;partially_mapped=0;over_step_bound=0
     singleton_transactions=sum(len(events)==1 for events in groups.values())
     multi_event_transactions=sum(len(events)>1 for events in groups.values())
@@ -273,8 +315,10 @@ def plan(plan_document,actions):
                 item["automaticallyExecutable"] for item in candidates),
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
             "selectedExecutionCandidateId":selected["id"] if selected else None},
+        "temporalAdjacency":temporal_adjacency,
         "claims":false_claims,"limitations":[
             "Only explicit shared transaction IDs and recorded sequence values establish ordering",
+            "Session-relative temporal adjacency is review evidence and never creates workflow linkage",
             "A transaction ID present on only one event does not establish cross-event linkage",
             "State continuity is descriptive client-visible evidence, not causal proof",
             "GUI steps require normal user activation because GuiButton has no public activation method",

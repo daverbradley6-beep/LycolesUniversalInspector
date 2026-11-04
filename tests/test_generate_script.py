@@ -151,6 +151,9 @@ class GeneratorTests(unittest.TestCase):
                              "114.generated-workflow-plan.1")
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflows["summary"])
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
+            self.assertEqual(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["timedEvents"],0)
+            self.assertFalse(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["usedForWorkflowLinkage"])
+
             self.assertFalse(workflows["claims"]["causalityProven"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["integratedInGeneratedUtility"])

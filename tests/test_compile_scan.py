@@ -108,6 +108,24 @@ class ScanCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"observation diagnostics"):
                 compiler.compile_scan(path)
 
+    def test_session_relative_interaction_timing_is_validated(self):
+        event={"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated",
+            "featureCandidate":"shops","evidenceLevel":"interaction-observed",
+            "outcomeVerified":False,"sessionId":"session-a","sessionElapsedSeconds":12.345}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path,event=event)
+            first=json.loads((path/"1.json").read_text());first["sessionId"]="session-a"
+            (path/"1.json").write_text(json.dumps(first))
+            result=compiler.compile_scan(path)
+            self.assertEqual(result["sourceDiagnostics"]["sessionTimedInteractionEvents"],1)
+            self.assertTrue(result["sourceDiagnostics"]["sessionTimingComplete"])
+            self.assertEqual(result["observedInteractionHistory"][0]["sessionElapsedSeconds"],12.345)
+            event["sessionId"]="session-b";self.parts(path,event=event)
+            first=json.loads((path/"1.json").read_text());first["sessionId"]="session-a"
+            (path/"1.json").write_text(json.dumps(first))
+            with self.assertRaisesRegex(ValueError,"session timing"):
+                compiler.compile_scan(path)
+
     def test_callback_baseline_discloses_possible_synchronous_loss(self):
         diagnostics={"callbacksFired":1,"preActivationListenersAttached":0,
             "preActivationCaptures":0,"preActivationBaselinesUsed":0,

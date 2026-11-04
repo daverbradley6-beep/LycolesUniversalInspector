@@ -156,6 +156,10 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('preActivationBaselineAvailable=baselineSource~="activation-callback-fallback"',SRC)
         self.assertIn('preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed',SRC)
         self.assertIn('callbackBaselinesUsed=observerStats.callbackBaselinesUsed',SRC)
+        self.assertIn('local sessionStartedClock = os.clock()',SRC)
+        self.assertIn('sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000',SRC)
+        self.assertIn('sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds',SRC)
+
         self.assertIn('pendingObservationEvents=pendingObservationEvents+1',SRC)
         self.assertIn('pendingObservationEvents=math.max(0,pendingObservationEvents-1)',SRC)
         self.assertIn('observationWindowAccountingValid=',SRC)

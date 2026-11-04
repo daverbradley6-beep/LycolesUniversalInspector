@@ -3,7 +3,7 @@
 No third-party packages, Roblox credentials, or game-specific hardcoding required.
 Usage: python3 tools/compile_scan.py scan-parts-dir --output build
 """
-import argparse, collections, hashlib, json, pathlib, sys, unicodedata
+import argparse, collections, hashlib, json, math, pathlib, sys, unicodedata
 
 def fail(message):
     raise ValueError(message)
@@ -77,6 +77,17 @@ def _baseline_evidence(event):
                 or not 0<=age<=3600))):
         fail("Malformed interaction baseline timing")
     return {"timing":timing,"preActivationBaselineAvailable":available}
+
+def _session_timing(event,expected_session):
+    fields=("sessionId","sessionElapsedSeconds")
+    if not any(field in event for field in fields):return None
+    session=event.get("sessionId");elapsed=event.get("sessionElapsedSeconds")
+    if (not isinstance(session,str) or not 1<=len(session)<=80
+            or expected_session is not None and session!=expected_session
+            or type(elapsed) not in (int,float) or type(elapsed) is bool
+            or not math.isfinite(elapsed) or not 0<=elapsed<=604_800):
+        fail("Malformed interaction session timing")
+    return {"sessionId":session,"sessionElapsedSeconds":elapsed}
 
 
 def _interaction_observation_summary(diagnostics):
@@ -437,7 +448,12 @@ def compile_scan(directory):
         history=interaction_diagnostics.get("recentInteractions") or []
     if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
     if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
+    expected_session=metadata.get("sessionId")
+    if expected_session is not None and not isinstance(expected_session,str):
+        fail("Malformed scan session identity")
+    timed_interactions=0
     for event in history:
+        if _session_timing(event,expected_session) is not None:timed_interactions+=1
         if "pathIdentity" in event:
             identity=bounded_path_identity(event["pathIdentity"])
             if (identity is None or not isinstance(event.get("path"),str)
@@ -533,7 +549,9 @@ def compile_scan(directory):
           "sourceDiagnostics":{"omittedObjects":metadata["scanStats"].get("omitted"),
               "rootAccountingValid":source_diagnostics.get("rootAccountingValid"),
               "scanMode":metadata["scanStats"].get("mode"),
-              "snapshotId":metadata.get("snapshotId")},
+              "snapshotId":metadata.get("snapshotId"),
+              "sessionTimedInteractionEvents":timed_interactions,
+              "sessionTimingComplete":bool(history) and timed_interactions==len(history)},
           "interactionDiagnostics":interaction_diagnostics,
           "interactionObservationSummary":interaction_observation_summary,
           "observedInteractionHistory":history,
