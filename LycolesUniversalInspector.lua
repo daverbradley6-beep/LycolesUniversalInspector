@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.8
+-- Lycoles Universal Inspector v30.6.9
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.8"
+local VERSION = "30.6.9"
 
 local endpoint = ""
 local autoSend = true
@@ -34,6 +34,9 @@ local function uploadAttemptStage()
         return uploadState.attempted and "attempted-previously-currently-blocked"
             or "blocked-before-attempt"
     end
+    if uploadState.status=="cancelled" then
+        return uploadState.attempted and "attempted-cancelled" or "cancelled-before-attempt"
+    end
     if uploadState.attempted then return "attempted" end
     return "not-attempted"
 end
@@ -43,6 +46,9 @@ local function receiverReportStatus()
         return "acknowledged-awaiting-integrity"
     end
     if uploadState.status=="uploading" then return "upload-in-progress" end
+    if uploadState.status=="cancelled" and uploadState.acknowledgedParts==0 then
+        return "upload-cancelled"
+    end
     if uploadState.acknowledgedParts>0 then return "partially-acknowledged" end
     if uploadState.status=="failed" or uploadState.status=="incomplete" then
         return "upload-incomplete"
@@ -91,6 +97,9 @@ local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
 local lastGameName = nil
+local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
+local QUICK_ROOT_LABELS = {"ReplicatedStorage", "Workspace", "PlayerGui", "LocalPlayer", "Character"}
+
 local WATCH_INTERVAL = 30
 local watchSeen = {}
 local watchSkippedCharacters = 0
@@ -106,9 +115,26 @@ local changeUploaded = 0
 local WATCH_BATCH = 1500
 local interactionObserveEnabled = true
 local AUTO_EVIDENCE_ENABLED = true
-local AUTO_EVIDENCE_IDLE_SECONDS = 12
+local OBSERVATION_IDLE_OPTIONS = {8, 12, 20, 30}
+local observationIdleIndex = 2
+local SCAN_PROFILES = {
+    full = {
+        label = "FULL", scanMode = "universal-snapshot-v4.1", rootLabels = ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 4, defaultObservationSeconds = 12, quickTargeted = false,
+        recordingPolicy = "full-client-visible-root-inventory"
+    },
+    quick = {
+        label = "QUICK", scanMode = "quick-targeted-snapshot-v1", rootLabels = QUICK_ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 1, defaultObservationSeconds = 8, quickTargeted = true,
+        recordingPolicy = "targeted-client-visible-evidence-not-full-inventory"
+    }
+}
+local activeScanProfileId = "full"
+local AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
 local AUTO_EVIDENCE_COOLDOWN_SECONDS = 45
-local AUTO_EVIDENCE_MAX_RESCANS = 4
+local AUTO_EVIDENCE_MAX_RESCANS = SCAN_PROFILES[activeScanProfileId].maxAutomaticRescans
 local autoEvidenceLastInteraction = 0
 local autoEvidenceLastScan = 0
 local autoEvidenceLastSequence = 0
@@ -141,6 +167,9 @@ local workflowRecording = {active=false,id=nil,startedClock=nil,startedElapsed=n
 local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
     recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil}
 local refreshWorkflowRecorder = nil
+local refreshEvidenceControls = nil
+local scanGeneration = 0
+
 local function stopWorkflowRecording(reason)
     if not workflowRecording.active then return end
     workflowRecording.active=false
@@ -666,11 +695,71 @@ local function buildFeatureEvidence(objects)
     end
     return features
 end
-local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
-
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
+local QUICK_PROFILE_PATH_TERMS = {
+    "egg", "hatch", "pet", "shop", "sell", "quest", "reward", "rebirth",
+    "portal", "teleport", "travel", "inventory", "equip", "upgrade", "currency",
+    "coins", "gems", "gold", "bubble", "capacity", "train", "index"
+}
+
+local function activeScanProfile()
+    return SCAN_PROFILES[activeScanProfileId] or SCAN_PROFILES.full
+end
+
+local function setObservationIdleSeconds(seconds)
+    for i, value in ipairs(OBSERVATION_IDLE_OPTIONS) do
+        if value == seconds then
+            observationIdleIndex = i
+            break
+        end
+    end
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+end
+
+local function applyScanProfile(profileId)
+    activeScanProfileId = profileId == "quick" and "quick" or "full"
+    local profile = activeScanProfile()
+    AUTO_EVIDENCE_MAX_RESCANS = profile.maxAutomaticRescans
+    setObservationIdleSeconds(profile.defaultObservationSeconds)
+    autoEvidenceRescans = 0
+    autoEvidenceLastFailure = nil
+    autoEvidenceLastScan = 0
+    if refreshEvidenceControls then refreshEvidenceControls("profile-changed") end
+end
+
+local function cycleObservationIdleSeconds()
+    observationIdleIndex = (observationIdleIndex % #OBSERVATION_IDLE_OPTIONS) + 1
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+    if refreshEvidenceControls then refreshEvidenceControls("observation-seconds") end
+end
+
+local function quickPathHint(path)
+    local lower = string.lower(path)
+    for _, token in ipairs(QUICK_PROFILE_PATH_TERMS) do
+        if lower:find(token, 1, true) then return true end
+    end
+    return false
+end
+
+local function shouldRecordObjectForProfile(profile, obj, path, label)
+    if not profile or profile.quickTargeted ~= true then return true end
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent")
+        or obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector")
+        or obj:IsA("Tool") or obj:IsA("ValueBase")
+        or obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
+        return true
+    end
+    if label == "PlayerGui" and (obj:IsA("LayerCollector") or obj:IsA("GuiObject")) then
+        return true
+    end
+    return quickPathHint(path)
+end
+
+applyScanProfile(activeScanProfileId)
+
+
 
 local function validEndpoint(value)
     if type(value) ~= "string" then return false end
@@ -1013,7 +1102,15 @@ local function refreshGeneratedHandoff(phase)
     elseif receiverReportStatus()=="acknowledged-awaiting-integrity" then
         downstreamLine="Downstream: receiver integrity verification required"
     end
+    local snapshotLine = "Snapshot: pending"
+    local profileLine = "Scan profile: unknown"
+    if type(pendingManifest.scanStats)=="table" then
+        snapshotLine = "Snapshot: "..(pendingManifest.scanStats.complete==true and "complete" or "partial")
+        profileLine = "Scan profile: "..tostring(pendingManifest.scanStats.profile or "unknown")
+    end
     generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
+        .."\n"..profileLine
+        .."\n"..snapshotLine
         .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
         ..tostring(uploadState.expectedParts).." numbered parts"
         .."\n"..exportLine
@@ -1686,6 +1783,29 @@ local function transmit()
     end)
 end
 
+local function cancelActiveOperation()
+    if running then
+        scanGeneration = scanGeneration + 1
+        running = false
+        status.Text = "Scan cancelled; start a new snapshot when ready"
+        refreshGeneratedHandoff("Scan cancelled")
+        return true
+    end
+    if uploading then
+        uploadGeneration = uploadGeneration + 1
+        uploading = false
+        uploadState.status = "cancelled"
+        uploadState.lastError = "operator cancelled"
+        refreshLocalManifest("upload-cancelled")
+        refreshGeneratedHandoff("Upload cancelled")
+        status.Text = "Upload cancelled; SEND JSON to resume from acknowledged parts"
+        return true
+    end
+    status.Text = "No active scan or upload to cancel"
+    return false
+end
+
+
 -- Convert inspection data to JSON-safe primitives without circular references.
 local function jsonSafe(value, active, depth)
     local kind = typeof(value)
@@ -1944,7 +2064,8 @@ end
 
 -- v4.0: bounded, read-only metadata. Never inspect script source or private player text.
 local siblingContextCache = nil
-local function enrichEntry(entry, obj)
+local function enrichEntry(entry, obj, profile)
+    local quick = profile and profile.quickTargeted == true
     local function privateKey(k)
         k = string.lower(tostring(k))
         return k:find("password",1,true) or k:find("token",1,true)
@@ -1959,17 +2080,19 @@ local function enrichEntry(entry, obj)
         if t == "string" then return v:sub(1,100):gsub("[%c]"," ") end
         return nil
     end
-    local ok, attrs = pcall(function() return obj:GetAttributes() end)
-    if ok and type(attrs) == "table" then
-        local safe, n = {}, 0
-        for k,v in pairs(attrs) do
-            if n >= 24 then break end
-            if not privateKey(k) then
-                local value = scalar(v)
-                if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+    if not quick then
+        local ok, attrs = pcall(function() return obj:GetAttributes() end)
+        if ok and type(attrs) == "table" then
+            local safe, n = {}, 0
+            for k,v in pairs(attrs) do
+                if n >= 24 then break end
+                if not privateKey(k) then
+                    local value = scalar(v)
+                    if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+                end
             end
+            if n > 0 then entry.attributes = safe end
         end
-        if n > 0 then entry.attributes = safe end
     end
     local isQuestCurrency =
         obj.Name == "Tokens"
@@ -2075,23 +2198,25 @@ local function enrichEntry(entry, obj)
             class = parent.ClassName,
             path = parentPath
         }
-        local ancestors, current = {}, parent
-        for depth = 1, 4 do
-            if not current then break end
-            local fullName = nil
-            pcall(function() fullName = current:GetFullName() end)
-            ancestors[#ancestors + 1] = {
-                name = tostring(current.Name):sub(1,100),
-                class = current.ClassName,
-                path = fullName
-            }
-            current = current.Parent
+        if not quick then
+            local ancestors, current = {}, parent
+            for depth = 1, 4 do
+                if not current then break end
+                local fullName = nil
+                pcall(function() fullName = current:GetFullName() end)
+                ancestors[#ancestors + 1] = {
+                    name = tostring(current.Name):sub(1,100),
+                    class = current.ClassName,
+                    path = fullName
+                }
+                current = current.Parent
+            end
+            if #ancestors > 0 then entry.ancestorContext = ancestors end
         end
-        if #ancestors > 0 then entry.ancestorContext = ancestors end
     end
 
     -- Bounded sibling ValueBase context supports cross-system relationship mapping.
-    if obj:IsA("ValueBase") and parent then
+    if not quick and obj:IsA("ValueBase") and parent then
         local cached = siblingContextCache and siblingContextCache[parent]
         if not cached then
             local related, total = {}, 0
@@ -3232,7 +3357,7 @@ end)
 
 local function inspect(requestType, featureRequest)
     if running or uploading then
-        status.Text = "Wait for current scan/upload to finish"
+        status.Text = "Wait for current scan/upload or press SCAN to cancel"
         return false
     end
     if pendingParts and #pendingParts > 0 then
@@ -3249,9 +3374,12 @@ local function inspect(requestType, featureRequest)
     scanRequestType = requestType == "startup-baseline" and "startup-baseline"
         or (requestType == "auto-evidence" and "auto-evidence"
         or (requestType == "feature-request" and "feature-request" or "manual"))
+    scanGeneration = scanGeneration + 1
+    local generation = scanGeneration
     running = true
     siblingContextCache = setmetatable({}, {__mode="k"})
-    status.Text = "Scanning..."
+    local profile = activeScanProfile()
+    status.Text = "Scanning (" .. profile.label .. ")..."
 
     task.spawn(function()
         local scanStarted = os.clock()
@@ -3279,32 +3407,43 @@ local function inspect(requestType, featureRequest)
             end
 
 
-            -- Universal snapshot: collect every instance in the three client-visible roots.
-            -- Names, hierarchy, spatial data, and interaction metadata only.
-            -- Never collect chat text, player identifiers, script source, or remote payloads.
-            local roots = {
-                {instance = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
-                {instance = game:GetService("ReplicatedFirst"), label = "ReplicatedFirst"},
-                {instance = workspace, label = "Workspace"},
-                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"},
-                {instance = player, label = "LocalPlayer"},
-                {instance = player.Character, label = "Character"},
-                {instance = game:GetService("Lighting"), label = "Lighting"},
-                {instance = game:GetService("Teams"), label = "Teams"},
-                {instance = game:GetService("SoundService"), label = "SoundService"}
+            local rootInstances = {
+                ReplicatedStorage = game:GetService("ReplicatedStorage"),
+                ReplicatedFirst = game:GetService("ReplicatedFirst"),
+                Workspace = workspace,
+                PlayerGui = player:FindFirstChild("PlayerGui"),
+                LocalPlayer = player,
+                Character = player.Character,
+                Lighting = game:GetService("Lighting"),
+                Teams = game:GetService("Teams"),
+                SoundService = game:GetService("SoundService")
             }
+            local roots = {}
+            local plannedRoots = {}
+            for _, label in ipairs(profile.rootLabels) do
+                plannedRoots[#plannedRoots + 1] = label
+                roots[#roots + 1] = {instance = rootInstances[label], label = label}
+            end
             report.scanStats = {
                 scanned = 0, eligible = 0, recorded = 0, omitted = 0,
-                mode = "universal-snapshot-v4.1", byCategory = {}, byRoot = {},
+                mode = profile.scanMode, profile = activeScanProfileId,
+                quickTargeted = profile.quickTargeted == true,
+                recordingPolicy = profile.recordingPolicy,
+                plannedRoots = plannedRoots,
+                byCategory = {}, byRoot = {},
                 rootCoverage = {}, byClass = {},
                 valueBase = {scanned = 0, recorded = 0, byClass = {}},
                 guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
-                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
+                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0, profileFiltered = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
                 pathCollisionsResolved = 0,
-                siblingContextLimit = 8,
-                limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
+                siblingContextLimit = profile.quickTargeted and 0 or 8,
+                limitations = {
+                    scriptSource = "not-read", serverState = "not-visible", remotePayloads = "not-collected",
+                    coverage = profile.quickTargeted and "quick-targeted-not-full-object-inventory"
+                        or "full-client-visible-root-inventory"
+                }
             }
             local function categoryOf(obj)
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
@@ -3355,7 +3494,7 @@ local function inspect(requestType, featureRequest)
                     z = math.floor(v.Z * 100) / 100}
             end
             report.scanStats.rootAvailability = {}
-            local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
+            local requiredRoots = profile.requiredRoots
             local scanAborted = false
             local pathOccurrences = {}
             local nextInstanceId = 0
@@ -3375,7 +3514,7 @@ local function inspect(requestType, featureRequest)
                     if okDescendants and type(descendants) == "table" then
                         coverage.success = true
                         for i, obj in ipairs(descendants) do
-                        if not alive then break end
+                        if not alive or generation ~= scanGeneration then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
                         coverage.scanned = coverage.scanned + 1
                         report.scanStats.byRoot[spec.label] = (report.scanStats.byRoot[spec.label] or 0) + 1
@@ -3408,9 +3547,16 @@ local function inspect(requestType, featureRequest)
                             report.scanStats.omissions.inspectorSelf = report.scanStats.omissions.inspectorSelf + 1
                         end
                         if path then
-                            -- Roblox permits identically named siblings. Preserve each object
-                            -- with an unambiguous scan-local occurrence suffix.
-                            local count = (pathOccurrences[path] or 0) + 1
+                            local includeByProfile = shouldRecordObjectForProfile(profile, obj, path, spec.label)
+                            if not includeByProfile then
+                                report.scanStats.omitted = report.scanStats.omitted + 1
+                                coverage.omitted = coverage.omitted + 1
+                                report.scanStats.omissions.profileFiltered =
+                                    report.scanStats.omissions.profileFiltered + 1
+                            else
+                                -- Roblox permits identically named siblings. Preserve each object
+                                -- with an unambiguous scan-local occurrence suffix.
+                                local count = (pathOccurrences[path] or 0) + 1
                             pathOccurrences[path] = count
                             if count > 1 then
                                 path = path:sub(1, 380) .. "[occurrence:" .. tostring(count) .. "]"
@@ -3449,7 +3595,7 @@ local function inspect(requestType, featureRequest)
                                     "ReplicatedStorage%.([%w_]+)") or "other"
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
-                            enrichEntry(entry, obj)
+                            enrichEntry(entry, obj, profile)
                             if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
                                 local n = string.lower(obj.Name)
                                 if n:find("controller",1,true) or n:find("manager",1,true)
@@ -3458,13 +3604,15 @@ local function inspect(requestType, featureRequest)
                                     entry.controllerEvidence = "name-based-candidate-only"
                                 end
                             end
-                            local tagOk, tags = pcall(function()
-                                return game:GetService("CollectionService"):GetTags(obj)
-                            end)
-                            if tagOk and type(tags) == "table" and #tags > 0 then
-                                entry.tags = {}
-                                for ti = 1, math.min(#tags, 20) do
-                                    entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                            if not profile.quickTargeted then
+                                local tagOk, tags = pcall(function()
+                                    return game:GetService("CollectionService"):GetTags(obj)
+                                end)
+                                if tagOk and type(tags) == "table" and #tags > 0 then
+                                    entry.tags = {}
+                                    for ti = 1, math.min(#tags, 20) do
+                                        entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                                    end
                                 end
                             end
                             table.insert(report.objects, entry)
@@ -3484,17 +3632,22 @@ local function inspect(requestType, featureRequest)
                             end
                             cat.eligible = cat.eligible + 1
                             cat.recorded = cat.recorded + 1
+                            end
                         else
                             report.scanStats.omitted = report.scanStats.omitted + 1
                             coverage.omitted = coverage.omitted + 1
                             if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
                         if os.clock() >= yieldDeadline then
-                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects (" .. profile.label .. ")..."
                             report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
                             yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
                         end
+                        end
+                        if generation ~= scanGeneration then
+                            coverage.error = "scan cancelled"
+                            scanAborted = true
                         end
                     else
                         coverage.error = tostring(descendants)
@@ -3505,6 +3658,7 @@ local function inspect(requestType, featureRequest)
                 end
                 if coverage.required and not coverage.success then scanAborted = true end
                 report.scanStats.performance.rootSeconds[spec.label] = math.floor((os.clock()-rootStarted)*1000+0.5)/1000
+                if generation ~= scanGeneration then break end
             end
             report.scanStats.performance.scanSeconds = math.floor((os.clock()-scanStarted)*1000+0.5)/1000
             report.scanStats.recorded = #report.objects
@@ -3521,6 +3675,8 @@ local function inspect(requestType, featureRequest)
                     requiredRootsPresent = false
                 end
             end
+            local scanCancelled = generation ~= scanGeneration
+            if scanCancelled then scanAborted = true end
             local scanComplete = not scanAborted and requiredRootsPresent
                 and rootAccountingValid
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
@@ -3529,6 +3685,9 @@ local function inspect(requestType, featureRequest)
             report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
             report.interactionDiagnostics = {
                 scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
+                scanProfile=activeScanProfileId, scanMode=profile.scanMode,
+                quickTargeted=profile.quickTargeted==true,
+                profileFilteredObjects=report.scanStats.omissions.profileFiltered,
                 observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
@@ -3575,6 +3734,8 @@ local function inspect(requestType, featureRequest)
                 stateSnapshotCandidateCount=#stateSnapshotCandidates,
                 stateSnapshotMaxValues=MAX_STATE_SNAPSHOT_CANDIDATES,
                 observationWindowsSeconds=OBSERVATION_WINDOWS,
+                observationIdleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
+                scanCancelled=scanCancelled,
                 stateChangeLimit=MAX_STATE_CHANGES,
                 featureEvidenceRules={"feature-key-changed","reward-status-became-visible"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
@@ -3588,6 +3749,8 @@ local function inspect(requestType, featureRequest)
             report.automationDiagnostics = {
                 enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
+                scanProfile=activeScanProfileId, quickTargeted=profile.quickTargeted==true,
+                coveragePolicy=profile.recordingPolicy,
                 automaticRescans=autoEvidenceRescans, lastFailure=autoEvidenceLastFailure,
                 capturedInteractionCount=interactionEventCount,
                 indexIntegrityWarning="Use receiver GET /reports/READ_KEY/SCAN_ID/integrity to verify object indexing",
@@ -3595,12 +3758,16 @@ local function inspect(requestType, featureRequest)
             }
             report.diagnostics = {
                 complete = scanComplete,
+                scanCancelled = scanCancelled,
                 completenessBasis = "required-root-success-and-object-accounting",
                 requiredRootsPresent = requiredRootsPresent,
                 rootAccountingValid = rootAccountingValid,
                 scannedObjects = report.scanStats.scanned,
                 recordedObjects = report.scanStats.recorded,
                 omittedObjects = report.scanStats.omitted,
+                profileFilteredObjects = report.scanStats.omissions.profileFiltered,
+                scanProfile = activeScanProfileId,
+                targetedCoverage = profile.quickTargeted == true,
                 completeButLimitedToClientVisibleRoots = true,
                 scanMode = "client-visible-read-only",
                 rootsScanned = report.scanStats.byRoot,
@@ -3628,12 +3795,18 @@ local function inspect(requestType, featureRequest)
             return report
         end)
 
-        if not alive then return end
+        if not alive or generation ~= scanGeneration then return end
 
         if not ok then
             status.Text = "Scan error: " .. tostring(result)
             siblingContextCache = nil
-        running = false
+            running = false
+            return
+        end
+        if result and result.diagnostics and result.diagnostics.scanCancelled then
+            status.Text = "Scan cancelled"
+            siblingContextCache = nil
+            running = false
             return
         end
 
@@ -3662,29 +3835,44 @@ local function inspect(requestType, featureRequest)
                     localPartContentDigestsComputed=false},
                 localPerformance = result.localPerformance,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
-                note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
+                note = "Inspection snapshot is uploaded in numbered parts; manifest includes scan profile and coverage diagnostics"
             }
             local manifest = encodeStage("scan-manifest", manifestData)
             return {json=manifest,parts=parts,manifest=manifestData,scanId=reportScanId}
         end)
+        if generation ~= scanGeneration then
+            running = false
+            return
+        end
         if encoded then
             snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
             pendingManifest = resultData.manifest
             pendingAcknowledged = {}
-            status.Text = (result.diagnostics.complete and "Scan complete - " or "PARTIAL SCAN - ")
-                .. #result.objects .. " entries in " .. #pendingParts .. " part(s)"
+            local scanSeconds = result.scanStats and result.scanStats.performance
+                and result.scanStats.performance.scanSeconds or 0
+            local packageSeconds = result.localPerformance and result.localPerformance.serializationSeconds or 0
+            local plannedRootCount = result.scanStats and type(result.scanStats.plannedRoots)=="table"
+                and #result.scanStats.plannedRoots or #ROOT_LABELS
+            status.Text = (result.diagnostics.complete and "Snapshot complete - " or "SNAPSHOT PARTIAL - ")
+                .. #result.objects .. " entries in " .. #pendingParts .. " part(s); snapshot "
+                .. tostring(scanSeconds) .. "s; packaging " .. tostring(packageSeconds)
+                .. "s; upload " .. uploadAttemptStage()
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
                 .. "\\nScan ID: " .. tostring(resultData.scanId)
+                .. "\\nScan profile: " .. tostring(result.scanStats and result.scanStats.profile or activeScanProfileId)
                 .. "\\nEntries: " .. #result.objects
                 .. "\\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0) .. " events, "
                 .. tostring(result.counts.RemoteFunction or 0) .. " functions"
                 .. "\\nParts: " .. #pendingParts
-                .. "\\nRoots: " .. tostring(result.scanStats and result.scanStats.byRoot and #ROOT_LABELS or 0)
+                .. "\\nRoots: " .. tostring(plannedRootCount)
+                .. "\\nSnapshot stage: " .. (result.diagnostics.complete and "complete" or "partial")
+                .. "\\nPackaging stage: prepared " .. #pendingParts .. " numbered parts"
+                .. "\\nUpload stage: " .. uploadAttemptStage()
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
                 .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
@@ -3751,11 +3939,23 @@ workflowRecordToggle.MouseButton1Click:Connect(function()
     end
 end)
 
+local scanModeToggle = create("TextButton", {
+    Name = "ScanModeToggle", Text = "SCAN MODE: FULL",
+    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 232),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, panel)
+local observationToggle = create("TextButton", {
+    Name = "ObservationWindowToggle", Text = "OBSERVE: 12s",
+    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 263),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, panel)
 local evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
     Text = "Auto rescans: 0/4",
-    Position = UDim2.fromOffset(379, 232),
-    Size = UDim2.fromOffset(121, 26),
+    Position = UDim2.fromOffset(379, 294),
+    Size = UDim2.fromOffset(121, 36),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
     TextSize = 10,
@@ -3765,8 +3965,8 @@ local evidenceHint = create("TextLabel", {
 local uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
-    Position = UDim2.fromOffset(379, 263),
-    Size = UDim2.fromOffset(121, 65),
+    Position = UDim2.fromOffset(379, 332),
+    Size = UDim2.fromOffset(121, 18),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
     TextSize = 10,
@@ -3774,16 +3974,38 @@ local uploadHint = create("TextLabel", {
     TextYAlignment = Enum.TextYAlignment.Top
 }, panel)
 
-autoEvidenceToggle.MouseButton1Click:Connect(function()
-    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+refreshEvidenceControls = function(reason)
+    local profile = activeScanProfile()
     autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
     autoEvidenceToggle.BackgroundColor3 = AUTO_EVIDENCE_ENABLED
         and Color3.fromRGB(50,105,85) or Color3.fromRGB(85,85,105)
+    scanModeToggle.Text = "SCAN MODE: " .. profile.label
+    observationToggle.Text = "OBSERVE: " .. tostring(AUTO_EVIDENCE_IDLE_SECONDS) .. "s"
+    evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+        .. "\nCoverage: " .. (profile.quickTargeted and "targeted" or "full")
+    if reason=="profile-changed" then
+        status.Text = "Scan mode " .. profile.label .. " | auto rescans "
+            .. AUTO_EVIDENCE_MAX_RESCANS .. " | observation " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+    end
+end
+
+autoEvidenceToggle.MouseButton1Click:Connect(function()
+    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+    refreshEvidenceControls("evidence-toggle")
     status.Text = AUTO_EVIDENCE_ENABLED and "Automatic evidence enabled" or "Automatic evidence paused"
 end)
+scanModeToggle.MouseButton1Click:Connect(function()
+    local nextProfile = activeScanProfileId == "full" and "quick" or "full"
+    applyScanProfile(nextProfile)
+end)
+observationToggle.MouseButton1Click:Connect(function()
+    cycleObservationIdleSeconds()
+    status.Text = "Observation window set to " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+end)
+refreshEvidenceControls("initial")
 
 -- Existing observer already captures pre/post state and GUI transitions. This
--- scheduler consolidates those records into full reports after activity settles.
+-- scheduler consolidates those records into profile-selected reports after activity settles.
 task.spawn(function()
     while alive do
         task.wait(3)
@@ -3804,10 +4026,11 @@ task.spawn(function()
                 autoEvidenceLastSequence=interactionEventCount
                 autoEvidenceLastScan=os.clock()
                 autoEvidenceRescans=autoEvidenceRescans+1
-                evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+                refreshEvidenceControls("auto-rescan")
                 inspect("auto-evidence")
             else
                 autoEvidenceLastFailure="Previous scan parts not acknowledged"
+                refreshEvidenceControls("auto-rescan-blocked")
             end
         end
     end
@@ -3823,6 +4046,10 @@ produceScript.MouseButton1Click:Connect(function()
         return
     end
     featureRequestInput.Text = request
+    if activeScanProfileId ~= "full" then
+        applyScanProfile("full")
+        status.Text = "Feature request capture switched to FULL scan for complete evidence"
+    end
     if inspect("feature-request", request) then
         generatedStatus.Text = "Capturing a complete evidence package for offline generation.\n\nNo gameplay implementation or outcome is verified in-game."
     else
@@ -3830,7 +4057,13 @@ produceScript.MouseButton1Click:Connect(function()
     end
 end)
 
-scan.MouseButton1Click:Connect(function() inspect("manual") end)
+scan.MouseButton1Click:Connect(function()
+    if running or uploading then
+        cancelActiveOperation()
+    else
+        inspect("manual")
+    end
+end)
 
 copy.MouseButton1Click:Connect(function()
     if not last then

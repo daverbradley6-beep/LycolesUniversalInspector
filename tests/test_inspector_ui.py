@@ -24,7 +24,25 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("Upload blocked: malformed first part",SRC)
     def test_budget_visible(self):
         self.assertIn("Auto rescans: ",SRC)
-        self.assertIn("AUTO_EVIDENCE_MAX_RESCANS = 4",SRC)
+        self.assertIn("maxAutomaticRescans = 4",SRC)
+        self.assertIn("maxAutomaticRescans = 1",SRC)
+
+    def test_quick_scan_profile_and_observation_controls(self):
+        self.assertIn('Name = "ScanModeToggle"',SRC)
+        self.assertIn('Name = "ObservationWindowToggle"',SRC)
+        self.assertIn('SCAN MODE: FULL',SRC)
+        self.assertIn('OBSERVE: 12s',SRC)
+        self.assertIn('quick-targeted-snapshot-v1',SRC)
+        self.assertIn('quick-targeted-not-full-object-inventory',SRC)
+        self.assertIn('scanProfile=activeScanProfileId',SRC)
+        self.assertIn('profileFilteredObjects=report.scanStats.omissions.profileFiltered',SRC)
+
+    def test_scan_cancel_and_upload_cancel_paths_exist(self):
+        self.assertIn('status.Text = "Wait for current scan/upload or press SCAN to cancel"',SRC)
+        self.assertIn('local function cancelActiveOperation()',SRC)
+        self.assertIn('uploadState.status = "cancelled"',SRC)
+        self.assertIn('scanGeneration = scanGeneration + 1',SRC)
+        self.assertIn('scanCancelled = generation ~= scanGeneration',SRC)
     def test_manifest_reports_upload_lifecycle(self):
         self.assertIn("reportTransport = uploadSnapshot(\"pre-upload\")",SRC)
         self.assertIn("uploadAttempted = uploadState.attempted",SRC)

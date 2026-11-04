@@ -1,3 +1,12 @@
+## v30.6.9 — Quick scan profile, stage timing, and cancellation recovery
+
+- Add explicit Inspector controls for `SCAN MODE` (FULL/QUICK) and configurable auto-evidence observation delay (`OBSERVE: Ns`).
+- Introduce a bounded QUICK profile (`quick-targeted-snapshot-v1`) with targeted object capture, reduced per-object enrichment, and default auto-rescan budget of one; FULL profile remains available for comprehensive evidence packages.
+- Preserve fail-closed accounting while disclosing profile-filtered omissions and scan profile metadata in scan stats, diagnostics, automation diagnostics, and Generated Script handoff status.
+- Split handoff visibility into snapshot, packaging, and upload stages with local timing output, so local completion is not conflated with export/upload completion.
+- Add operator cancellation and recovery paths: `SCAN` now cancels active scan/upload work, records cancelled lifecycle state, and keeps resumable upload retries explicit.
+- Force `PRODUCE SCRIPT` captures to FULL mode to prioritize complete generation evidence over quick targeted snapshots.
+
 ## v30.6.8 — Explicit bounded workflow recording
 
 - Add an Inspector-tab control that lets the operator explicitly arm one workflow recording for at most 60 seconds or eight normal observed interactions.

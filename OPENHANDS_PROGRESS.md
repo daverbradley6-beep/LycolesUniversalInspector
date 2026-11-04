@@ -1,5 +1,15 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Quick scan profile and lifecycle separation (v30.6.9)
+
+- Added explicit FULL/QUICK scan profiles to the in-game inspector. QUICK uses targeted evidence capture (`quick-targeted-snapshot-v1`) with reduced metadata enrichment and explicit profile-filtered omission accounting; FULL remains available for comprehensive snapshots.
+- Added configurable observation delay control for auto-evidence scheduling and bound QUICK defaults to one automatic rescan while retaining bounded idle/cooldown scheduling.
+- Added cancellation/recovery behavior: pressing `SCAN` during active scan/upload now cancels the running operation, marks cancellation lifecycle state, and keeps resumable upload retry behavior explicit.
+- Separated snapshot/packaging/upload status in inspector output and Generated Script handoff text, with local scan and packaging timing surfaced independently from receiver upload lifecycle.
+- Forced `PRODUCE SCRIPT` requests to switch to FULL mode so requested generation captures remain complete rather than quick-targeted.
+- Added static UI regressions for quick profile controls, observation configuration, and cancellation paths.
+
+
 ## Update — 2026-11-02 — Explicit bounded workflow recording (v30.6.8)
 
 - Completed and verified the v30.6.8 recorder release work preserved from pause: operator-armed workflow recording bounded to 60 seconds and eight events, explicit shared transaction ordering metadata, lifecycle stop reasons, and non-causal/non-verified claims.
