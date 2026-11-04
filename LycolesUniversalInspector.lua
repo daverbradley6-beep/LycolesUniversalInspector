@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.5.1
+-- Lycoles Universal Inspector v30.5.2
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.5.1"
+local VERSION = "30.5.2"
 
 local endpoint = ""
 local autoSend = true
@@ -862,6 +862,146 @@ local function boundedResultText(value,limit)
     return type(value)=="string" and #value>=1 and #value<=limit
         and value:find("[%c]")==nil
 end
+local function boundedResultInteger(value,maximum)
+    return type(value)=="number" and value>=0 and value<=maximum and value%1==0
+end
+local function falseResultClaims(claims)
+    return type(claims)=="table" and claims.sourceAuthenticityVerified==false
+        and claims.causalityProven==false and claims.serverAuthorityVerified==false
+        and claims.runtimeVerified==false and claims.gameplayVerified==false
+        and claims.actionOutcomesVerified==false
+end
+local function validateWorkflowSelection(selection)
+    if type(selection)~="table" or type(selection.available)~="boolean"
+        or type(selection.candidates)~="table" or #selection.candidates>20
+        or not boundedResultInteger(selection.totalCandidates,1000000)
+        or not boundedResultInteger(selection.shownCandidates,20)
+        or not boundedResultInteger(selection.omittedCandidates,1000000)
+        or selection.shownCandidates~=#selection.candidates
+        or selection.totalCandidates~=#selection.candidates+selection.omittedCandidates then
+        return false
+    end
+    local selectedId=selection.selectedCandidateId
+    if selectedId~=nil and not boundedResultText(selectedId,120) then return false end
+    local validReason={
+        ["selected-highest-ranked-execution-ready-candidate"]=true,
+        ["not-execution-ready"]=true,["lower-request-evidence-score"]=true,
+        ["more-user-involvement-tiebreak"]=true,["stable-identity-tiebreak"]=true
+    }
+    local validMode={["review-only"]=true,["mixed-guided"]=true,["bounded-automatic"]=true}
+    local selectedCount=0
+    for _,item in ipairs(selection.candidates) do
+        if type(item)~="table" or not boundedResultText(item.candidateId,120)
+            or not boundedResultInteger(item.requestScore,10000)
+            or type(item.matchedTerms)~="table" or #item.matchedTerms>128
+            or validMode[item.executionMode]~=true or type(item.executionReady)~="boolean"
+            or type(item.selected)~="boolean" or validReason[item.selectionReason]~=true then
+            return false
+        end
+        local previous=nil
+        for _,term in ipairs(item.matchedTerms) do
+            if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                or previous~=nil and term<=previous then return false end
+            previous=term
+        end
+        if (item.requestScore>0)~=(#item.matchedTerms>0) then return false end
+        if item.selected then
+            selectedCount=selectedCount+1
+            if item.candidateId~=selectedId
+                or item.selectionReason~="selected-highest-ranked-execution-ready-candidate" then
+                return false
+            end
+        end
+    end
+    if selectedCount~=(selectedId~=nil and 1 or 0) then return false end
+    if selection.available==false and (selection.totalCandidates~=0 or selectedId~=nil) then
+        return false
+    end
+    return true
+end
+local function validateGuidedFeedbackCorrelation(correlation,selectedWorkflowId)
+    if correlation==nil then return true end
+    if type(correlation)~="table" or type(correlation.available)~="boolean"
+        or not falseResultClaims(correlation.claims) then return false end
+    if correlation.available==false then
+        return correlation.readinessImpact=="none" and boundedResultText(correlation.reason,160)
+    end
+    if correlation.schemaVersion~="116.guided-workflow-feedback-aggregate.1"
+        or correlation.readinessImpact~="informational-only"
+        or correlation.candidateId~=selectedWorkflowId
+        or not boundedResultText(correlation.candidateId,160)
+        or type(correlation.workflowPlanSHA256)~="string"
+        or #correlation.workflowPlanSHA256~=64
+        or correlation.workflowPlanSHA256:match("^[a-f0-9]+$")==nil
+        or type(correlation.completeSequenceRecurrenceObserved)~="boolean"
+        or type(correlation.summary)~="table" or type(correlation.steps)~="table"
+        or #correlation.steps<1 or #correlation.steps>64 then return false end
+    local summary=correlation.summary
+    local summaryFields={"sessions","runs","submittedEntries","activationEventsObserved",
+        "expectedChangesObserved","completeClientObservationSequences",
+        "sessionsWithCompleteClientObservationSequence","stepsWithStatusConflict"}
+    for _,field in ipairs(summaryFields) do
+        if not boundedResultInteger(summary[field],1000000) then return false end
+    end
+    if correlation.completeSequenceRecurrenceObserved
+            ~=(summary.sessionsWithCompleteClientObservationSequence>=2)
+        or summary.sessions<1
+        or summary.sessionsWithCompleteClientObservationSequence>summary.sessions
+        or summary.completeClientObservationSequences>summary.runs
+        or summary.expectedChangesObserved>summary.activationEventsObserved
+        or summary.activationEventsObserved>summary.submittedEntries then return false end
+    local validStatus={["expected-change-observed"]=true,["outcome-not-observed"]=true,
+        ["activation-timeout"]=true,["control-or-state-unavailable"]=true,
+        ["metadata-drift"]=true,["state-unreadable"]=true}
+    local validExpected={increased=true,decreased=true,changed=true}
+    local validScalar={boolean=true,number=true,string=true}
+    local totalAttempts,totalActivations,totalChanges,totalConflicts=0,0,0,0
+    for index,step in ipairs(correlation.steps) do
+        if type(step)~="table" or step.stepSequence~=index
+            or not boundedResultText(step.targetPath,512)
+            or not boundedResultText(step.outcomeKey,256)
+            or validExpected[step.expected]~=true or type(step.statuses)~="table"
+            or type(step.observedScalarTypes)~="table"
+            or type(step.statusConflictObserved)~="boolean"
+            or type(step.statusConflictAcrossSessions)~="boolean"
+            or type(step.scalarTypeConflictObserved)~="boolean"
+            or type(step.expectedDirectionAcrossMultipleSessions)~="boolean" then return false end
+        local countFields={"attempts","sessionsObserved","activationEventsObserved",
+            "expectedChangesObserved","sessionsWithExpectedChange"}
+        for _,field in ipairs(countFields) do
+            if not boundedResultInteger(step[field],1000000) then return false end
+        end
+        local statusKinds,statusCount=0,0
+        for statusValue,count in pairs(step.statuses) do
+            if validStatus[statusValue]~=true or not boundedResultInteger(count,1000000)
+                or count<1 then return false end
+            statusKinds=statusKinds+1;statusCount=statusCount+count
+        end
+        local previous=nil
+        for _,scalarType in ipairs(step.observedScalarTypes) do
+            if validScalar[scalarType]~=true or previous~=nil and scalarType<=previous then return false end
+            previous=scalarType
+        end
+        if statusCount~=step.attempts
+            or step.expectedChangesObserved>step.activationEventsObserved
+            or step.activationEventsObserved>step.attempts
+            or step.sessionsWithExpectedChange>step.sessionsObserved
+            or step.statusConflictObserved~=(statusKinds>1)
+            or step.scalarTypeConflictObserved~=(#step.observedScalarTypes>1)
+            or step.expectedDirectionAcrossMultipleSessions~=(step.sessionsWithExpectedChange>=2) then
+            return false
+        end
+        totalAttempts=totalAttempts+step.attempts
+        totalActivations=totalActivations+step.activationEventsObserved
+        totalChanges=totalChanges+step.expectedChangesObserved
+        if step.statusConflictObserved then totalConflicts=totalConflicts+1 end
+    end
+    return totalAttempts==summary.submittedEntries
+        and totalActivations==summary.activationEventsObserved
+        and totalChanges==summary.expectedChangesObserved
+        and totalConflicts==summary.stepsWithStatusConflict
+end
+
 local function validateGeneratedReadiness(result)
     if result.schemaVersion=="110.generated-result.1" then return true,nil end
     if result.schemaVersion~="113.generated-result.1" then return false,nil end
@@ -877,6 +1017,10 @@ local function validateGeneratedReadiness(result)
         or claims.actionOutcomesVerified~=false then
         return false,nil
     end
+    local workflowSelection=readiness.workflowSelection
+    if not validateWorkflowSelection(workflowSelection)
+        or not validateGuidedFeedbackCorrelation(readiness.guidedWorkflowFeedbackCorrelation,
+            workflowSelection.selectedCandidateId) then return false,nil end
     local request=readiness.request
     local validStatus={
         ["no-capability-requested"]=true,["generated-bounded-subset"]=true,
@@ -909,23 +1053,55 @@ local function validateGeneratedReadiness(result)
         return false,nil
     end
     local generatedSeen={}
+    local workflowCapabilityId=nil
+    local validStepKind={["guided-gui-activation-trial"]=true,
+        ["official-tool-activation-trial"]=true,["proximity-prompt-trial"]=true}
     for _,item in ipairs(generated) do
         if type(item)~="table" or not boundedResultText(item.id,80) or generatedSeen[item.id]
-            or (item.kind~="proximity-prompt-trial" and item.kind~="official-tool-activation-trial"
-                and item.kind~="guided-gui-activation-trial")
-            or (item.kind=="guided-gui-activation-trial" and
-                (item.automaticActivation~=false or item.manualActivationRequired~=true
-                    or item.exactControlHighlighting~=true))
-            or not boundedResultText(item.targetLabel,120)
-            or not boundedResultText(item.selectedOutcomeKey,200)
-            or (item.expectedChange~="increased" and item.expectedChange~="decreased"
-                and item.expectedChange~="changed")
             or item.runtimeVerified~=false or item.gameplayVerified~=false
             or item.causalityProven~=false or item.actionOutcomeVerified~=false then
             return false,nil
         end
+        if item.kind=="mixed-action-workflow-trial" then
+            local expectedMode=item.manualGuiActivationRequired and "mixed-guided" or "bounded-automatic"
+            if workflowCapabilityId~=nil or not boundedResultText(item.candidateId,120)
+                or not boundedResultText(item.transactionId,200)
+                or item.executionMode~=expectedMode
+                or not boundedResultInteger(item.stepCount,64) or item.stepCount<2
+                or type(item.stepKinds)~="table" or #item.stepKinds~=item.stepCount
+                or type(item.targetPaths)~="table" or #item.targetPaths~=item.stepCount
+                or type(item.requestMatchedTerms)~="table" or #item.requestMatchedTerms>128
+                or not boundedResultInteger(item.requestMatchScore,10000)
+                or type(item.manualGuiActivationRequired)~="boolean"
+                or item.automaticallyExecutable~=(not item.manualGuiActivationRequired)
+                or item.operatorStartRequired~=true or item.stopOnFirstUnobservedOutcome~=true then
+                return false,nil
+            end
+            for index,stepKind in ipairs(item.stepKinds) do
+                if validStepKind[stepKind]~=true
+                    or not boundedResultText(item.targetPaths[index],500) then return false,nil end
+            end
+            local previous=nil
+            for _,term in ipairs(item.requestMatchedTerms) do
+                if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                    or previous~=nil and term<=previous then return false,nil end
+                previous=term
+            end
+            if (item.requestMatchScore>0)~=(#item.requestMatchedTerms>0) then return false,nil end
+            workflowCapabilityId=item.candidateId
+        else
+            if validStepKind[item.kind]~=true
+                or item.kind=="guided-gui-activation-trial" and
+                    (item.automaticActivation~=false or item.manualActivationRequired~=true
+                        or item.exactControlHighlighting~=true)
+                or not boundedResultText(item.targetLabel,120)
+                or not boundedResultText(item.selectedOutcomeKey,200)
+                or (item.expectedChange~="increased" and item.expectedChange~="decreased"
+                    and item.expectedChange~="changed") then return false,nil end
+        end
         generatedSeen[item.id]=true
     end
+    if workflowCapabilityId~=workflowSelection.selectedCandidateId then return false,nil end
     local generatedStatus=request.status=="generated-bounded-subset"
     if ((result.requestedCapability==nil)~=(request.status=="no-capability-requested"))
         or generatedStatus~=request.generatedSubsetAvailable
@@ -989,12 +1165,51 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
             "Readiness: "..readiness.request.status,
             "Generated bounded capabilities: "..tostring(#generated),
             "Full request implemented: false | Runtime/gameplay verified: false"}
-        if #generated>0 then
-            local item=generated[1]
-            details[#details+1]="Evidence: "..item.targetLabel.." -> "
-                ..item.selectedOutcomeKey.." "..item.expectedChange
+        local workflowCapability=nil
+        local singleCapability=nil
+        for _,item in ipairs(generated) do
+            if item.kind=="mixed-action-workflow-trial" then workflowCapability=item
+            elseif singleCapability==nil then singleCapability=item end
+        end
+        if workflowCapability then
+            details[#details+1]="Workflow: "..workflowCapability.candidateId.." | "
+                ..workflowCapability.executionMode.." | "..tostring(workflowCapability.stepCount).." steps"
+        elseif singleCapability then
+            details[#details+1]="Evidence: "..singleCapability.targetLabel.." -> "
+                ..singleCapability.selectedOutcomeKey.." "..singleCapability.expectedChange
         else
             details[#details+1]="Evidence: no generated replay capability"
+        end
+        local correlation=readiness.guidedWorkflowFeedbackCorrelation
+        if type(correlation)=="table" and correlation.available then
+            local summary=correlation.summary
+            details[#details+1]="Workflow feedback: "..tostring(summary.sessions).." sessions | "
+                ..tostring(summary.completeClientObservationSequences)
+                .." complete client-observation sequences | informational only"
+            local statusOrder={"expected-change-observed","outcome-not-observed",
+                "activation-timeout","control-or-state-unavailable","metadata-drift","state-unreadable"}
+            for index,step in ipairs(correlation.steps) do
+                if index>4 then break end
+                local statuses={}
+                for _,statusValue in ipairs(statusOrder) do
+                    local count=step.statuses[statusValue]
+                    if type(count)=="number" and count>0 then
+                        statuses[#statuses+1]=statusValue.."="..tostring(count)
+                    end
+                end
+                local path=step.targetPath
+                if #path>72 then path=path:sub(1,69).."..." end
+                details[#details+1]="Step "..tostring(index).." "..path..": "
+                    ..(#statuses>0 and table.concat(statuses,", ") or "not observed")
+                    .." | expected changes "..tostring(step.expectedChangesObserved)
+                    .."/"..tostring(step.attempts)
+            end
+            if #correlation.steps>4 then
+                details[#details+1]="Workflow feedback: "..tostring(#correlation.steps-4)
+                    .." additional steps omitted from this display"
+            end
+        elseif type(correlation)=="table" then
+            details[#details+1]="Workflow feedback: unavailable ("..correlation.reason..")"
         end
         details[#details+1]="Unsupported: "
             ..(#unavailable>0 and table.concat(unavailable,", ") or "see packaged limitations")

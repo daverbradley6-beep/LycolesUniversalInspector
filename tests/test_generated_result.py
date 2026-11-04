@@ -28,6 +28,28 @@ class GeneratedResultTests(unittest.TestCase):
                 "serverAuthorityVerified":False,"runtimeVerified":False,
                 "gameplayVerified":False,"actionOutcomesVerified":False}}
 
+    def workflow_readiness(self,step_count=2):
+        readiness=self.readiness();readiness["generatedCapabilities"]=[{
+            "id":"linked-gameplay-workflow-trial","kind":"mixed-action-workflow-trial",
+            "candidateId":"workflow-1","transactionId":"transaction-1",
+            "executionMode":"bounded-automatic","stepCount":step_count,
+            "stepKinds":["official-tool-activation-trial"]*step_count,
+            "targetPaths":["LocalPlayer.Backpack.Sword"]*step_count,
+            "targetFeatures":["shops"],"requestMatchedTerms":["shop"],
+            "requestMatchScore":5,"manualGuiActivationRequired":False,
+            "automaticallyExecutable":True,"operatorStartRequired":True,
+            "stopOnFirstUnobservedOutcome":True,"runtimeVerified":False,
+            "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}]
+        readiness["workflowSelection"]={"available":True,"totalCandidates":1,
+            "shownCandidates":1,"omittedCandidates":0,"selectedCandidateId":"workflow-1",
+            "candidates":[{"candidateId":"workflow-1","requestScore":5,
+                "matchedTerms":["shop"],"executionMode":"bounded-automatic",
+                "executionReady":True,"selected":True,
+                "selectionReason":"selected-highest-ranked-execution-ready-candidate"}]}
+        readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
+        return readiness
+
+
     def build(self,**changes):
         values={"place_id":123,"scan_id":"scan12345",
             "code":"assert(game.PlaceId == 123, \"Incorrect Roblox place\")",
@@ -106,24 +128,7 @@ class GeneratedResultTests(unittest.TestCase):
             self.build(generation_readiness=forged)
 
     def test_mixed_workflow_mode_and_step_contract_fail_closed(self):
-        readiness=self.readiness();readiness["generatedCapabilities"]=[{
-            "id":"linked-gameplay-workflow-trial","kind":"mixed-action-workflow-trial",
-            "candidateId":"workflow-1","transactionId":"transaction-1",
-            "executionMode":"bounded-automatic","stepCount":2,
-            "stepKinds":["official-tool-activation-trial","proximity-prompt-trial"],
-            "targetPaths":["LocalPlayer.Backpack.Sword","Workspace.Shop.Door.Prompt"],
-            "targetFeatures":["shops"],"requestMatchedTerms":["shop"],
-            "requestMatchScore":5,"manualGuiActivationRequired":False,
-            "automaticallyExecutable":True,"operatorStartRequired":True,
-            "stopOnFirstUnobservedOutcome":True,"runtimeVerified":False,
-            "gameplayVerified":False,"causalityProven":False,"actionOutcomeVerified":False}]
-        readiness["workflowSelection"]={"available":True,"totalCandidates":1,
-            "shownCandidates":1,"omittedCandidates":0,"selectedCandidateId":"workflow-1",
-            "candidates":[{"candidateId":"workflow-1","requestScore":5,
-                "matchedTerms":["shop"],"executionMode":"bounded-automatic",
-                "executionReady":True,"selected":True,
-                "selectionReason":"selected-highest-ranked-execution-ready-candidate"}]}
-        readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
+        readiness=self.workflow_readiness()
         result=self.build(generation_readiness=readiness)
         self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0][
             "executionMode"],"bounded-automatic")
@@ -148,6 +153,38 @@ class GeneratedResultTests(unittest.TestCase):
             "guidedWorkflowFeedbackCorrelation"]["available"])
         readiness["guidedWorkflowFeedbackCorrelation"]["claims"]["runtimeVerified"]=True
         with self.assertRaisesRegex(ValueError,"correlation claims"):
+            self.build(generation_readiness=readiness)
+
+    def test_sixty_four_step_feedback_is_displayable_and_identity_bound(self):
+        readiness=self.workflow_readiness(64)
+        claims={field:False for field in module._FALSE_CLAIMS}
+        steps=[{"stepSequence":sequence,"targetPath":"LocalPlayer.Backpack.Sword",
+            "outcomeKey":"Data.Stage","expected":"increased","attempts":1,
+            "sessionsObserved":1,"activationEventsObserved":1,"expectedChangesObserved":1,
+            "sessionsWithExpectedChange":1,"statuses":{"expected-change-observed":1},
+            "statusConflictObserved":False,"statusConflictAcrossSessions":False,
+            "observedScalarTypes":["number"],"scalarTypeConflictObserved":False,
+            "expectedDirectionAcrossMultipleSessions":False}
+            for sequence in range(1,65)]
+        readiness["guidedWorkflowFeedbackCorrelation"]={"available":True,
+            "schemaVersion":"116.guided-workflow-feedback-aggregate.1",
+            "workflowPlanSHA256":"a"*64,"candidateId":"workflow-1",
+            "readinessImpact":"informational-only","completeSequenceRecurrenceObserved":False,
+            "summary":{"sessions":1,"runs":1,"submittedEntries":64,
+                "activationEventsObserved":64,"expectedChangesObserved":64,
+                "completeClientObservationSequences":1,
+                "sessionsWithCompleteClientObservationSequence":1,
+                "stepsWithStatusConflict":0},"steps":steps,"claims":claims}
+        result=self.build(generation_readiness=readiness)
+        self.assertEqual(len(result["generationReadiness"][
+            "guidedWorkflowFeedbackCorrelation"]["steps"]),64)
+        readiness["guidedWorkflowFeedbackCorrelation"]["candidateId"]="other"
+        with self.assertRaisesRegex(ValueError,"feedback and selected workflow"):
+            self.build(generation_readiness=readiness)
+        readiness["guidedWorkflowFeedbackCorrelation"]["candidateId"]="workflow-1"
+        readiness["guidedWorkflowFeedbackCorrelation"]["steps"].append(dict(steps[-1],
+            stepSequence=65))
+        with self.assertRaisesRegex(ValueError,"correlation summary"):
             self.build(generation_readiness=readiness)
 
     def test_deterministic(self):

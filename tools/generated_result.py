@@ -43,7 +43,7 @@ def _validate_feedback_correlation(correlation):
         "sessionsWithCompleteClientObservationSequence","stepsWithStatusConflict")
     if (not isinstance(summary,dict) or any(type(summary.get(field)) is not int
             or not 0<=summary[field]<=1_000_000 for field in summary_fields)
-            or not isinstance(steps,list) or not 1<=len(steps)<=40
+            or not isinstance(steps,list) or not 1<=len(steps)<=64
             or correlation["completeSequenceRecurrenceObserved"]
                 is not (summary["sessionsWithCompleteClientObservationSequence"]>=2)):
         raise ValueError("Invalid guided feedback correlation summary")
@@ -177,7 +177,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or not _bounded_text(item.get("transactionId"),200)
                     or item.get("executionMode") not in ("mixed-guided","bounded-automatic")
                     or not isinstance(item.get("stepCount"),int)
-                    or not 2<=item["stepCount"]<=128
+                    or not 2<=item["stepCount"]<=64
                     or not isinstance(paths,list) or len(paths)!=item["stepCount"]
                     or any(not _bounded_text(path,500) for path in paths)
                     or not isinstance(step_kinds,list) or len(step_kinds)!=item["stepCount"]
@@ -213,6 +213,10 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or item.get("exactControlHighlighting") is not True)):
             raise ValueError("Invalid guided GUI generation-readiness capability")
     selected_workflow=readiness["workflowSelection"]["selectedCandidateId"]
+    correlation=readiness.get("guidedWorkflowFeedbackCorrelation")
+    if (isinstance(correlation,dict) and correlation.get("available") is True
+            and correlation.get("candidateId")!=selected_workflow):
+        raise ValueError("Guided feedback and selected workflow mismatch")
     if (len(workflow_capability_ids)>1
             or (workflow_capability_ids[0] if workflow_capability_ids else None)!=selected_workflow):
         raise ValueError("Workflow selection and generated capability mismatch")

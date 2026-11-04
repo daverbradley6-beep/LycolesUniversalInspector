@@ -1,3 +1,9 @@
+## v30.5.2 — Integrated workflow result feedback
+
+- Accepts exact `mixed-action-workflow-trial` capabilities in display-only generated results with selected-candidate identity, bounded step-kind/path, execution-mode, and all-negative verification checks.
+- Validates digest-bound guided workflow feedback through 64 steps and requires the feedback candidate to match the selected generated workflow.
+- Shows the selected workflow plus up to four per-step status/error summaries in the Generated Script tab; additional steps are explicitly omitted from display and all feedback remains informational-only.
+
 ## v30.5.1 — Self-consistent report export lifecycle
 
 - Initialize local export status in every manifest and distinguish file-unavailable, partial-part, initial-manifest, and final-manifest failures.

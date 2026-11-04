@@ -1,6 +1,6 @@
 # Lycoles Universal Inspector
 
-Current inspector release: **v30.5.1**
+Current inspector release: **v30.5.2**
 
 Current integrated offline pipeline: **v108**
 
