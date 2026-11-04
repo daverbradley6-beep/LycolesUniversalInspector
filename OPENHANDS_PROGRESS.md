@@ -1,5 +1,17 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Session-relative interaction timing diagnostics
+
+- Completed implementation commit `3079078` (`Add session-relative interaction timing diagnostics`) and released inspector **v30.6.6** on `openhands-development`.
+- Interaction history and live change-queue records now include bounded millisecond `sessionElapsedSeconds` measured from a monotonic per-session origin, plus the existing session identity and UTC display timestamp.
+- Scan compilation validates optional timing fields, rejects partial/non-finite/out-of-session values, reports coverage, and remains compatible with older reports that lack timing.
+- Observed-workflow and generated-workflow plans surface at most 100 adjacent unlinked pairs within a 15-second review window. These records explicitly remain unlinked and non-causal; they do not create transactions, workflow candidates, execution readiness, or verification claims.
+- Standalone and deterministic release manifests expose timing coverage and `usedForWorkflowLinkage: false` so downstream tools can distinguish unavailable timing from timing deliberately excluded from generation.
+- Full local gate passed: **1,544 Python tests** (17 skipped), receiver and Luau parser checks (**3/3**), pinned official Luau 0.744 compilation of **7 files**, version consistency, and whitespace checks.
+- No Roblox runtime, gameplay, causality, server-authority, action-outcome, or production receiver verification was performed. The historical Bubble Gum manifest predates these timing fields and cannot retroactively provide them.
+- Next priority: capture and validate bounded GUI-reveal-to-followup evidence (observed transition plus descendant target, not timing alone) so review-only interaction episodes can be reconstructed before considering any generated workflow linkage.
+
+
 ## Update — 2026-11-02 — Linked workflows integrated into the primary generated utility
 
 - Completed implementation commit `df1a944` (`Integrate linked workflows into generated utility`) and released inspector **v30.6.5** on `openhands-development`.
