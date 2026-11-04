@@ -13,6 +13,16 @@
 - Pushed implementation and documentation through `e4cee54` to authorized `origin/openhands-development`; local and remote SHA matched, and all `21/21` GitHub Actions workflows passed for that head.
 - Next priority: aggregate multiple digest-bound guided feedback sessions into conflict-aware outcome-correlation summaries without treating repetition or temporal order as causality, then feed those conservative summaries into generation readiness.
 
+## 2026-11-02 — Conflict-aware guided workflow feedback aggregation
+
+- Added `tools/aggregate_guided_workflow_feedback.py` (`116.guided-workflow-feedback-aggregate.1`) to independently re-evaluate up to 100 uniquely identified digest-bound guided sessions, reject duplicate sessions and forged positive claims, and deterministically summarize per-step recurrence, status conflicts, cross-session conflicts, and scalar-type drift.
+- Extended release builds with repeatable `--guided-feedback` inputs while retaining single-input compatibility. One session still emits `guided-workflow-evaluation.json`; every non-empty inventory emits `guided-workflow-feedback-aggregate.json`; stale single and aggregate artifacts are removed when inputs change or disappear.
+- Integrated a strictly informational aggregate projection into `generation-readiness.json`, release manifests, bundles, generated-result validation, and the generated utility readiness panel. Repeated client observations never change request status or `implementationReady`, and all source-authenticity, causality, server-authority, runtime, gameplay, and action-outcome verification claims remain false.
+- Added deterministic aggregation, CLI, malformed inventory, duplicate session, forged claim, readiness drift, display validation, release compatibility, ZIP inclusion, stale cleanup, and generated UI regressions.
+- Implementation commit: `4c6b6a8` (`Aggregate guided workflow feedback`).
+- Verification: full Python suite **1493 passed, 17 skipped**; receiver duplicate/conflict/count/integrity checks passed; checked-in and representative generated Luau parsed; `py_compile`/`compileall`, `git diff --check`, and targeted credential-pattern scans passed.
+- Scope remains offline/client-observation only. No live Roblox execution, source authenticity, causality, server authority, gameplay semantics, or successful action outcome was verified.
+
 ## Update — 2026-11-02 — Manual-only guided multi-step GUI trials
 
 - Committed `f9c52dd` (`Generate manual guided GUI workflows`) on `openhands-development`. `114.generated-workflow-plan.1` now marks a trial generation-ready only when every linked event maps to an exact generation-ready guided GUI control, no linked event is omitted, source order is preserved, and every step remains normal-user-activation only.
