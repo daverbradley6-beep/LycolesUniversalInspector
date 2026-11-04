@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Explicit workflow-link planning diagnostics
+
+- Completed implementation commit `5046e34` (`Expose workflow linkage planning blockers`) and released inspector **v30.6.3** on `openhands-development`.
+- Workflow planning now distinguishes all transaction groups from genuine shared multi-event links, singleton per-event IDs, absent linkage, insufficient exact action contracts, partial mappings, and over-bound sequences. Unique per-event IDs no longer inflate `linkedTransactions` or appear to explain a workflow that was never observed.
+- Recomputed planning status and bounded counts propagate into generation readiness and the display-only Generated Script tab as `limitations-only` evidence. Readiness, packaged-result, and in-game validators independently reject forged status/count relationships while retaining all causality, runtime, gameplay, server-authority, action-outcome, and source-authenticity claims as false.
+- This milestone explains the major structural reason ordinary live events yield no workflow candidate without inventing inferred links. It deliberately does **not** merge events by temporal proximity or same-feature naming; safe evidence-based inference remains under investigation.
+- Full local gate passed: **1,539 Python tests** (**17 skipped**), receiver and Luau parser checks (**3/3**), pinned official Luau 0.744 compilation of **7 files**, version consistency, whitespace, and credential-pattern checks. No live Roblox execution or production receiver change was performed.
+- Exact-head verification for prior remote head `159ac0006c071731aecc858661237a3b00122c67` converged successfully: **21/21 GitHub Actions runs passed**.
+- Next priority: add session-relative activation timing and evaluate strict same-session/same-snapshot/adjacent-state continuity as reviewable inferred linkage, with explicit provenance and no causal upgrade; do not infer or invoke remotes.
+
+
 ## Update — 2026-11-02 — Generation-readiness timing provenance
 
 - Completed implementation commit `449b6e9` (`Propagate interaction timing into generation readiness`) and released inspector **v30.6.2** on `openhands-development`.
