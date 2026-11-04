@@ -1,5 +1,17 @@
 # OpenHands Development Progress
 
+## Update — 2026-11-02 — Provider-independent game profile expansion
+
+- Expanded canonical gameplay understanding to schema `110.gameplay-understanding.2` while retaining `110.gameplay-understanding.1` readers in generated utility/Admin Commands consumers.
+- Added versioned `110.game-profile-index.1` inventories for systems, resources, observed actions, temporal relationships, progression loops, objective candidates, automation opportunities, and unresolved evidence gaps. Profile inventories remain explicitly non-genre, non-causal, not implementation-ready, and not runtime/gameplay verified.
+- Preserved previously unknown discovered feature categories as stable generic structural systems instead of dropping them. Recognized and interaction-backed systems receive deterministic priority inside a 128-system bound; omitted candidates are counted and truncation is explicit.
+- Replaced label-based resource references with canonical path-and-component-identity-derived IDs. Duplicate terminal labels and duplicate flat paths with distinct class/name/sibling ordinals remain separate across action effects, relationships, loops, objectives, and request matches; identity-free legacy observations retain an explicit flat-path mode.
+- Added structured evidence gaps with source opportunity IDs, request relevance, observation/review categories, and all-negative verification/readiness claims. Structural-only systems now explicitly report missing observed interaction evidence.
+- Generated utilities surface the provider-independent profile and unresolved gap counts, validate profile/truncation claims fail-closed, and preserve legacy v110.1 display compatibility.
+- Implementation commit: `c1283d0` (`Expand provider-independent game profiles`).
+- Verification: full Python suite **1497 passed, 17 skipped**; receiver duplicate/conflict/count/integrity checks passed; checked-in and representative generated Luau parsed; targeted integration suites, `py_compile`/`compileall`, `git diff --check`, and credential-pattern checks passed.
+- Scope remains offline/client-observation only. No live Roblox execution, source authenticity, causality, server authority, gameplay semantics, successful action outcome, or implementation readiness was verified.
+
 ## 2026-11-04 — Digest-bound guided workflow feedback
 
 - Completed implementation commit `626ec46` (`Evaluate guided workflow feedback`).
