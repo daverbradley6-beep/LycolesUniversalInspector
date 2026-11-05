@@ -287,6 +287,25 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertIn("train",selected["matchedTerms"])
         self.assertGreaterEqual(selected["requestScore"],4)
 
+
+    def test_workflow_gerund_label_alignment_remains_assessable(self):
+        value=workflow_fixtures.plan();value["requestedCapability"]="Automate training"
+        value["observedInteractionHistory"]= [
+            workflow_fixtures.event("Training",1,0,1,"train-label-flow"),
+            workflow_fixtures.event("Continue",2,1,2,"train-label-flow")]
+        for item in value["observedInteractionHistory"]:
+            item["featureCandidate"]=None
+        gameplay=understanding.analyze(value)
+        actions=discovery.analyze(value)
+        workflow=workflow_fixtures.planner.plan(value,actions)
+        result=readiness.assess(value,gameplay,actions,workflow)
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        selected=result["workflowSelection"]["candidates"][0]
+        self.assertEqual(selected["matchedTerms"],["train"])
+        self.assertEqual(result["requestFeatureReadiness"]["requestedTerms"],["train"])
+        self.assertNotIn("traine",result["requestFeatureReadiness"]["requestedTerms"])
+
+
     def test_inconsistent_observation_coverage_fails_closed(self):
         value=egg_plan();value["interactionObservationSummary"]={"available":True,
             "callbacksFired":1,"preActivationBaselinesUsed":1,"callbackBaselinesUsed":0,

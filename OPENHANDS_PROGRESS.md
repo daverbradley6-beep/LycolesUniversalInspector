@@ -1,6 +1,20 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Workflow selection normalization consistency hardening (v30.6.20)
+
+- Fixed cross-module request-term normalization drift between `tools/plan_generated_workflows.py`, `tools/assess_generation_readiness.py`, and `tools/generate_guided_workflow.py`.
+- Removed synthetic `stem+"e"` derivations from gerund/past normalization to prevent invalid tokens (for example `traine`) from contaminating request matching.
+- Added `travelling -> travel` alias support across planner/readiness/validator normalization tables.
+- Added regressions:
+  - `test_gerund_label_alignment_stays_validator_compatible` (`tests/test_generated_workflow_planning.py`)
+  - `test_workflow_gerund_label_alignment_remains_assessable` (`tests/test_generation_readiness.py`)
+- Full local gate passed after this change:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,581 tests, all passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Paused v30.6.19 request-term alignment completion checkpoint
 
 - Preserved and completed the paused uncommitted change set across exactly four tracked files:

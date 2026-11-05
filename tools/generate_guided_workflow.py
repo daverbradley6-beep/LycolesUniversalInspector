@@ -42,15 +42,44 @@ def _transition(before,after,change):
 
 
 
-_STOP_WORDS={"a","an","and","complete","do","for","from","in","of","observed","please",
+_STOP_WORDS={"a","an","and","auto","automate","automated","automatic",
+    "automatically","complete","do","for","from","in","of","observed","please",
     "the","to","with","workflow","flow"}
+_TOKEN_ALIASES={
+    "attacking":"attack","attacked":"attack","buying":"buy",
+    "claiming":"claim","claimed":"claim","collecting":"collect",
+    "collected":"collect","fighting":"fight","hatching":"hatch",
+    "hatched":"hatch","purchasing":"purchase","purchased":"purchase",
+    "rebirthing":"rebirth","selling":"sell","sold":"sell",
+    "training":"train","trained":"train","traveling":"travel",
+    "travelled":"travel","travelling":"travel","upgrading":"upgrade",
+    "upgraded":"upgrade",
+}
+
+
+def _token_forms(token):
+    forms={token}
+    if len(token)>4 and token.endswith("ies"):
+        forms.add(token[:-3]+"y")
+    if len(token)>4 and token.endswith("es"):
+        forms.add(token[:-2])
+    if len(token)>4 and token.endswith("s") and not token.endswith("ss"):
+        forms.add(token[:-1])
+    if len(token)>5 and token.endswith("ing"):
+        forms.add(token[:-3])
+    if len(token)>4 and token.endswith("ed"):
+        forms.add(token[:-2])
+    return forms
+
 
 def _tokens(value):
     if not isinstance(value,str):return set()
     result=set()
-    for token in re.findall(r"[a-z0-9]+",value.lower())[:128]:
-        if len(token)>4 and token.endswith("s") and not token.endswith("ss"):token=token[:-1]
-        if len(token)>=2 and token not in _STOP_WORDS:result.add(token)
+    for token in re.findall(r"[a-z0-9]+",value.casefold())[:128]:
+        for form in _token_forms(token):
+            canonical=_TOKEN_ALIASES.get(form,form)
+            if len(canonical)>=2 and canonical not in _STOP_WORDS:
+                result.add(canonical)
     return result
 
 def _selection(steps,requested_terms):

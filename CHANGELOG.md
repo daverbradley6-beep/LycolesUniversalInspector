@@ -1,3 +1,9 @@
+## v30.6.20 — Workflow selection normalization consistency hardening
+
+- Align request-term token normalization across `tools/plan_generated_workflows.py`, `tools/assess_generation_readiness.py`, and `tools/generate_guided_workflow.py` so planner selection scoring and guided-workflow validation use the same canonical term rules.
+- Remove invalid synthetic `*e` stems from gerund/past normalization (for example, preventing artifacts like `traine`) while preserving conservative plural/gerund/past normalization and bounded alias mapping.
+- Add regression coverage for gerund-label request alignment compatibility between planner and guided workflow validation (`tests/test_generated_workflow_planning.py`) and readiness synthesis (`tests/test_generation_readiness.py`).
+
 ## v30.6.19 — Deterministic workflow-candidate artifact integration
 
 - Add deterministic interaction-history normalization to `tools/release_pipeline_v104.py` so bounded `observedInteractionHistory` records are preserved as typed workflow evidence (`observedInteractionHistory*` counters included) without inventing server-side outcomes.

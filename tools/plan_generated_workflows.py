@@ -32,7 +32,8 @@ _TOKEN_ALIASES={
     "hatched":"hatch","purchasing":"purchase","purchased":"purchase",
     "rebirthing":"rebirth","selling":"sell","sold":"sell",
     "training":"train","trained":"train","traveling":"travel",
-    "travelled":"travel","upgrading":"upgrade","upgraded":"upgrade",
+    "travelled":"travel","travelling":"travel","upgrading":"upgrade",
+    "upgraded":"upgrade",
 }
 
 
@@ -45,9 +46,9 @@ def _token_forms(token):
     if len(token)>4 and token.endswith("s") and not token.endswith("ss"):
         forms.add(token[:-1])
     if len(token)>5 and token.endswith("ing"):
-        stem=token[:-3];forms.update((stem,stem+"e"))
+        forms.add(token[:-3])
     if len(token)>4 and token.endswith("ed"):
-        stem=token[:-2];forms.update((stem,stem+"e"))
+        forms.add(token[:-2])
     return forms
 
 

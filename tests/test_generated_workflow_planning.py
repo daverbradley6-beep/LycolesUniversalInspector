@@ -245,6 +245,22 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertGreaterEqual(candidate["selection"]["requestScore"],4)
         self.assertEqual(result["summary"]["requestAlignedWorkflows"],1)
 
+
+    def test_gerund_label_alignment_stays_validator_compatible(self):
+        value=plan();value["requestedCapability"]="Automate training"
+        value["observedInteractionHistory"]=[
+            event("Training",1,0,1,"train-label-flow"),
+            event("Continue",2,1,2,"train-label-flow")]
+        for item in value["observedInteractionHistory"]:
+            item["featureCandidate"]=None
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertTrue(candidate["selection"]["requestAligned"])
+        self.assertEqual(candidate["selection"]["matchedTerms"],["train"])
+        self.assertEqual(candidate["selection"]["requestedTerms"],["train"])
+        self.assertNotIn("traine",candidate["selection"]["requestedTerms"])
+        self.assertEqual(len(generator.validate(result)),1)
+
+
     def test_malformed_requested_capability_fails_closed(self):
         value=plan();value["requestedCapability"]="x"*1001
         with self.assertRaisesRegex(ValueError,"requested capability"):
