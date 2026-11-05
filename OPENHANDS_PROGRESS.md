@@ -1,6 +1,25 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-readiness adds legacy outcome-candidate coverage diagnostics (v30.6.34)
+
+- Extended `tools/manifest_readiness_v109.py` with `interactionCoverageDiagnostics` under `evidence`, including counts for:
+  - available interaction events
+  - attributed events
+  - events with state/gui changes
+  - observable-change events
+  - explicit `observableOutcomeCandidate` field/candidate presence
+  - `featureStateEvidence` and `outcomeVerified` events
+- Added fail-closed readiness blockers for legacy manifests that show observable interaction changes without explicit outcome-candidate fields:
+  - `legacy_manifest_missing_outcome_candidate_field`
+  - `explicit_outcome_candidate_events_unavailable`
+- Extended `tests/test_manifest_readiness_v109.py` to validate new diagnostics and blocker emission on the sanitized Bubble Gum fixture subset.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_manifest_readiness_v109 tests.test_build_release tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-assisted Lua displays transport-readiness context (v30.6.33)
 
 - Extended `tools/build_release.py` manifest-assisted Lua template so `renderStatus` prepends transport context in every view:

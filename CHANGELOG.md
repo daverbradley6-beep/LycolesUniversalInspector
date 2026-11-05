@@ -1,3 +1,16 @@
+## v30.6.34 — Manifest-readiness exposes legacy outcome-candidate coverage gaps
+
+- Extend `tools/manifest_readiness_v109.py` with `interactionCoverageDiagnostics`, reporting interaction-signal density over available history:
+  - events with state changes
+  - events with GUI changes
+  - observable-change events
+  - explicit `observableOutcomeCandidate` field/candidate counts
+  - `featureStateEvidence` and `outcomeVerified` event counts
+- Add fail-closed generation-readiness blockers when legacy manifests show observable interaction changes but no explicit outcome-candidate fields:
+  - `legacy_manifest_missing_outcome_candidate_field`
+  - `explicit_outcome_candidate_events_unavailable`
+- Extend `tests/test_manifest_readiness_v109.py` regression coverage for the real Bubble Gum fixture subset and new blockers/diagnostics.
+
 ## v30.6.33 — Manifest-assisted Lua UI shows upload/readiness context
 
 - Extend `tools/build_release.py` manifest-assisted Lua generation so every status view includes:

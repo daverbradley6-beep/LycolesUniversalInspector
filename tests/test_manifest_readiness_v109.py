@@ -48,6 +48,16 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(result["evidence"]["completedWorkflowCandidates"], 0)
         self.assertTrue(result["evidence"]["historyIsSubset"])
         self.assertEqual(result["evidence"]["featureConsistentOutcomeCandidatesLowerBound"], 3)
+        coverage = result["evidence"]["interactionCoverageDiagnostics"]
+        self.assertEqual(coverage["events"], result["evidence"]["historyEventsAvailable"])
+        self.assertEqual(coverage["attributedEvents"], 6)
+        self.assertEqual(coverage["eventsWithStateChanges"], 5)
+        self.assertEqual(coverage["eventsWithGuiChanges"], 5)
+        self.assertEqual(coverage["observableChangeEvents"], 8)
+        self.assertEqual(coverage["outcomeCandidateFieldEvents"], 0)
+        self.assertEqual(coverage["explicitOutcomeCandidateEvents"], 0)
+        self.assertTrue(coverage["legacyOutcomeCandidateFieldMissing"])
+        self.assertTrue(coverage["observableChangeWithoutExplicitOutcomeCandidate"])
         self.assertEqual(result["evidence"]["workflowGenerationDiagnostics"],
                          {"available": False, "blockers": []})
 
@@ -83,6 +93,15 @@ class ManifestReadinessTests(unittest.TestCase):
             "feature_attributed_transitions_without_outcome_contract",
             result["generationReadiness"]["blockers"],
         )
+        self.assertIn(
+            "legacy_manifest_missing_outcome_candidate_field",
+            result["generationReadiness"]["blockers"],
+        )
+        self.assertIn(
+            "explicit_outcome_candidate_events_unavailable",
+            result["generationReadiness"]["blockers"],
+        )
+
 
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertFalse(result["claims"]["gameplayVerified"])

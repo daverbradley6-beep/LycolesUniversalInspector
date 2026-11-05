@@ -678,6 +678,61 @@ def _outcome_candidates(history):
     return candidates
 
 
+def _interaction_coverage_diagnostics(history):
+    total = 0
+    attributed = 0
+    state_events = 0
+    gui_events = 0
+    observable_events = 0
+    outcome_field_events = 0
+    explicit_outcome_events = 0
+    feature_state_events = 0
+    outcome_verified_events = 0
+    for event in history:
+        if not isinstance(event, dict):
+            continue
+        total += 1
+        feature = event.get("featureCandidate")
+        if isinstance(feature, str) and feature and feature != "unattributed":
+            attributed += 1
+        state_count = event.get("stateChangeCount")
+        gui_count = event.get("guiStateChangeCount")
+        if type(state_count) is not int or state_count < 0:
+            state_count = 0
+        if type(gui_count) is not int or gui_count < 0:
+            gui_count = 0
+        if state_count > 0:
+            state_events += 1
+        if gui_count > 0:
+            gui_events += 1
+        if state_count + gui_count > 0:
+            observable_events += 1
+        if "observableOutcomeCandidate" in event:
+            outcome_field_events += 1
+        if isinstance(event.get("observableOutcomeCandidate"), dict):
+            explicit_outcome_events += 1
+        if isinstance(event.get("featureStateEvidence"), dict):
+            feature_state_events += 1
+        if event.get("outcomeVerified") is True:
+            outcome_verified_events += 1
+    return {
+        "events": total,
+        "attributedEvents": attributed,
+        "eventsWithStateChanges": state_events,
+        "eventsWithGuiChanges": gui_events,
+        "observableChangeEvents": observable_events,
+        "outcomeCandidateFieldEvents": outcome_field_events,
+        "explicitOutcomeCandidateEvents": explicit_outcome_events,
+        "featureStateEvidenceEvents": feature_state_events,
+        "outcomeVerifiedEvents": outcome_verified_events,
+        "legacyOutcomeCandidateFieldMissing": total > 0 and outcome_field_events == 0,
+        "observableChangeWithoutExplicitOutcomeCandidate": (
+            observable_events > 0 and explicit_outcome_events == 0
+        ),
+    }
+
+
+
 def analyze(manifest):
     if not isinstance(manifest, dict):
         raise ValueError("manifest must be an object")
@@ -717,6 +772,7 @@ def analyze(manifest):
     interactions = _integer(diagnostics.get("totalInteractionEvents"), "interaction count")
     attributed_interactions = _integer(diagnostics.get("attributedEvents"), "attributed interactions")
     unattributed_interactions = _integer(diagnostics.get("unattributedEvents"), "unattributed interactions")
+    interaction_coverage = _interaction_coverage_diagnostics(history)
     state_transitions = _integer(workflow.get("uniqueStateEvents"), "state transitions")
     gui_transitions = _integer(workflow.get("guiTransitions"), "GUI transitions")
     linked_confirmations = _integer(workflow.get("linkedConfirmations"), "linked confirmations")
@@ -785,6 +841,13 @@ def analyze(manifest):
         blockers.append("feature_attributed_transitions_without_outcome_contract")
     if history_subset:
         blockers.append("complete_interaction_history_unavailable")
+    if (interaction_coverage["legacyOutcomeCandidateFieldMissing"]
+            and "legacy_manifest_missing_outcome_candidate_field" not in blockers):
+        blockers.append("legacy_manifest_missing_outcome_candidate_field")
+    if (interaction_coverage["observableChangeWithoutExplicitOutcomeCandidate"]
+            and "explicit_outcome_candidate_events_unavailable" not in blockers):
+        blockers.append("explicit_outcome_candidate_events_unavailable")
+
     if scan_id is None:
         blockers.append("receiver_scan_id_unavailable")
     if local_export["completeNumberedPartsClaimed"]:
@@ -823,6 +886,7 @@ def analyze(manifest):
             "historyEventsReported": history_total,
             "historyIsSubset": history_subset,
             "featureConsistentOutcomeCandidatesLowerBound": len(outcomes),
+            "interactionCoverageDiagnostics": interaction_coverage,
             "workflowGenerationDiagnostics": workflow_generation,
             "workflowLinkageDiagnostics": workflow_linkage,
             "uploadLifecycle": {
