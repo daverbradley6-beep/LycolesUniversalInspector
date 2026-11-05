@@ -140,7 +140,7 @@ def _manifest_observed_targets(document):
     return targets[:18]
 
 
-def _manifest_assisted_workflow_lua(place_id,targets):
+def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,transport_blockers=None):
     entries=[]
     for index,target in enumerate(targets,1):
         hints=", ".join(_lua_string(hint) for hint in target["stateHints"])
@@ -155,6 +155,17 @@ def _manifest_assisted_workflow_lua(place_id,targets):
             +",observableChange="+str(bool(target["observableChange"])).lower()
             +",stateHints={"+hints+"}}")
     target_table="{\n"+",\n".join(entries)+"\n}"
+    status_text=(transport_status.strip() if isinstance(transport_status,str) and transport_status.strip()
+        else "unknown")
+    blocker_tokens=[]
+    if isinstance(transport_blockers,list):
+        for blocker in transport_blockers:
+            if isinstance(blocker,str) and blocker and len(blocker)<=120 and blocker not in blocker_tokens:
+                blocker_tokens.append(blocker)
+            if len(blocker_tokens)>=6:
+                break
+    blocker_text=", ".join(blocker_tokens) if blocker_tokens else "none"
+
     template='''-- Lycoles manifest-assisted observed workflow trial (client-visible evidence only).
 -- This artifact is generated when numbered multipart object parts are unavailable.
 -- Runtime, causality, server authority, and gameplay outcomes remain unverified.
@@ -246,10 +257,18 @@ local function collectHints(target)
   if #lines==0 then lines={"No state hints captured for this target."} end
   return lines
 end
+local TRANSPORT_READINESS_STATUS=__TRANSPORT_STATUS__
+local TRANSPORT_READINESS_BLOCKERS=__TRANSPORT_BLOCKERS__
 local index=1
 local function current() return targets[index] end
 local function renderStatus(title,lines)
-  output.Text=title.."\\n\\n"..table.concat(lines,"\\n")
+  local merged={
+    "Transport readiness: "..tostring(TRANSPORT_READINESS_STATUS),
+    "Transport blockers: "..tostring(TRANSPORT_READINESS_BLOCKERS),
+    "",
+  }
+  for _,line in ipairs(lines) do merged[#merged+1]=line end
+  output.Text=title.."\\n\\n"..table.concat(merged,"\\n")
 end
 local function showTarget(prefix)
   local target=current()
@@ -386,7 +405,11 @@ end)
 makeButton("Close",function() gui:Destroy() end)
 showTarget("Ready")
 '''
-    return template.replace("__PLACE_ID__",str(place_id)).replace("__TARGET_TABLE__",target_table)
+    return (template
+        .replace("__PLACE_ID__",str(place_id))
+        .replace("__TARGET_TABLE__",target_table)
+        .replace("__TRANSPORT_STATUS__",_lua_string(status_text))
+        .replace("__TRANSPORT_BLOCKERS__",_lua_string(blocker_text)))
 
 
 
@@ -401,8 +424,6 @@ def build_manifest_readiness(manifest_path,output):
     analyzer.write(result,target)
     observed_targets=_manifest_observed_targets(document)
     if observed_targets:
-        assisted=_manifest_assisted_workflow_lua(result["placeId"],observed_targets)
-        (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
         transport_readiness=(result.get("transportReadiness")
             if isinstance(result.get("transportReadiness"),dict) else {})
         transport_blockers=transport_readiness.get("blockers")
@@ -410,6 +431,13 @@ def build_manifest_readiness(manifest_path,output):
             transport_blockers=[]
         generation_readiness=(result.get("generationReadiness")
             if isinstance(result.get("generationReadiness"),dict) else {})
+        assisted=_manifest_assisted_workflow_lua(
+            result["placeId"],
+            observed_targets,
+            transport_readiness.get("status"),
+            transport_blockers,
+        )
+        (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
         (output/"manifest-assisted-workflow.json").write_text(json.dumps({
             "schemaVersion":"30.6.manifest-assisted-workflow.4",
             "placeId":result["placeId"],

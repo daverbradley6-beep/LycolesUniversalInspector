@@ -1,6 +1,20 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted Lua displays transport-readiness context (v30.6.33)
+
+- Extended `tools/build_release.py` manifest-assisted Lua template so `renderStatus` prepends transport context in every view:
+  - `Transport readiness: <status>`
+  - `Transport blockers: <comma-separated blockers>`
+- Added bounded sanitization for injected transport status/blockers before template substitution.
+- Routed `transportReadiness.status` and bounded `transportReadiness.blockers` from manifest-readiness analysis into `_manifest_assisted_workflow_lua(...)`.
+- Extended `tests/test_build_release.py` to assert rendered Lua contains expected readiness status and blocker diagnostics from the regression fixture.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-assisted metadata carries upload-readiness context (v30.6.32)
 
 - Extended `tools/build_release.py` manifest-only artifact metadata (`manifest-assisted-workflow.json`) with:

@@ -1,3 +1,12 @@
+## v30.6.33 — Manifest-assisted Lua UI shows upload/readiness context
+
+- Extend `tools/build_release.py` manifest-assisted Lua generation so every status view includes:
+  - transport readiness status
+  - transport blockers summary
+- Feed `transportReadiness.status` and bounded `transportReadiness.blockers` through the template as sanitized constants.
+- Keep execution bounded and fail-closed: this change is diagnostic/context only and does not alter activation authority, causality, runtime, or gameplay verification claims.
+- Extend `tests/test_build_release.py` to assert transport readiness status/blocker visibility in `LycolesManifestAssistedWorkflow.lua`.
+
 ## v30.6.32 — Manifest-assisted metadata includes upload-readiness context
 
 - Extend `tools/build_release.py` manifest-only artifact emission so `manifest-assisted-workflow.json` includes:
