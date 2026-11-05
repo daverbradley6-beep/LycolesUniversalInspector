@@ -1,6 +1,22 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Paused v30.6.19 request-term alignment completion checkpoint
+
+- Preserved and completed the paused uncommitted change set across exactly four tracked files:
+  - `tools/plan_generated_workflows.py`
+  - `tools/assess_generation_readiness.py`
+  - `tests/test_generated_workflow_planning.py`
+  - `tests/test_generation_readiness.py`
+- Functional effect: tighter normalized request-term matching (including gerund-style alignment and stop-word handling) across workflow planning and readiness diagnostics, while preserving egg-mode fail-closed behavior.
+- Validation results (post-resume full gate):
+  - `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,571 tests, 17 skipped; passing**)
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,571 tests; passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+- Version metadata remains internally consistent at **v30.6.19** (`version.txt`, `package.json`, `package-lock.json`, `LycolesUniversalInspector.lua`).
+
+
 ## Update — 2026-11-05 — Request-feature readiness compatibility hardening (v30.6.19)
 
 - Current inspector version: **v30.6.19**.
