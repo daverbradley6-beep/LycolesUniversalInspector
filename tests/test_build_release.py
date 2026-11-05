@@ -580,10 +580,20 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("makeButton(\"Activate\"",assisted)
             self.assertIn("target.controlType==\"ProximityPrompt.Triggered\"",assisted)
             self.assertIn("target.controlType==\"Tool.Activated\"",assisted)
+            self.assertIn("Observed state changes:",assisted)
+            self.assertIn("Observed GUI changes:",assisted)
             self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
             assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
+            self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.2")
             self.assertEqual(assisted_metadata["placeId"],85896571713843)
             self.assertGreater(assisted_metadata["targetCount"],0)
+            self.assertTrue(any(t.get("observableChange") is True for t in assisted_metadata["targets"]))
+            for target in assisted_metadata["targets"]:
+                self.assertIn("stateChangeCount",target)
+                self.assertIn("guiStateChangeCount",target)
+                self.assertIn("observableChange",target)
+                if target["feature"]=="unattributed":
+                    self.assertTrue(target["observableChange"])
             self.assertFalse(assisted_metadata["runtimeVerified"])
             self.assertFalse(assisted_metadata["gameplayVerified"])
     def test_manifest_only_cli_returns_blocked_status_with_artifact(self):

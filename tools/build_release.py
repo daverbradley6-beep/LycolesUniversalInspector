@@ -94,6 +94,15 @@ def _manifest_observed_targets(document):
         feature=event.get("featureCandidate")
         if not isinstance(feature,str) or not 1<=len(feature)<=80:
             feature="unattributed"
+        state_change_count=event.get("stateChangeCount")
+        gui_change_count=event.get("guiStateChangeCount")
+        if type(state_change_count) is not int or state_change_count<0:
+            state_change_count=0
+        if type(gui_change_count) is not int or gui_change_count<0:
+            gui_change_count=0
+        observable_change=(state_change_count+gui_change_count)>0
+        if feature=="unattributed" and not observable_change:
+            continue
         dedupe=(path,control)
         if dedupe in seen:
             continue
@@ -110,11 +119,17 @@ def _manifest_observed_targets(document):
             "controlType":control,
             "stateHints":hints,
             "stateHintCount":len(hints),
+            "stateChangeCount":state_change_count,
+            "guiStateChangeCount":gui_change_count,
+            "observableChange":observable_change,
             "sequence":sequence,
             "attributed":feature!="unattributed",
         })
     targets.sort(key=lambda item:(
         0 if item["attributed"] else 1,
+        0 if item["observableChange"] else 1,
+        -item["stateChangeCount"],
+        -item["guiStateChangeCount"],
         -item["stateHintCount"],
         -item["sequence"],
         item["feature"],
@@ -131,6 +146,9 @@ def _manifest_assisted_workflow_lua(place_id,targets):
             +",label="+_lua_string(target["label"])
             +",path="+_lua_string(target["path"])
             +",controlType="+_lua_string(target["controlType"])
+            +",stateChangeCount="+str(target["stateChangeCount"])
+            +",guiStateChangeCount="+str(target["guiStateChangeCount"])
+            +",observableChange="+str(bool(target["observableChange"])).lower()
             +",stateHints={"+hints+"}}")
     target_table="{\n"+",\n".join(entries)+"\n}"
     template='''-- Lycoles manifest-assisted observed workflow trial (client-visible evidence only).
@@ -236,6 +254,9 @@ local function showTarget(prefix)
     "Feature: "..target.feature,
     "Control: "..target.controlType,
     "Path: "..target.path,
+    "Observed state changes: "..tostring(target.stateChangeCount or 0),
+    "Observed GUI changes: "..tostring(target.guiStateChangeCount or 0),
+    "Observable change captured: "..tostring(target.observableChange==true),
     "",
     "Hints:",
     table.concat(collectHints(target),"\\n")
@@ -378,7 +399,7 @@ def build_manifest_readiness(manifest_path,output):
         assisted=_manifest_assisted_workflow_lua(result["placeId"],observed_targets)
         (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
         (output/"manifest-assisted-workflow.json").write_text(json.dumps({
-            "schemaVersion":"30.6.manifest-assisted-workflow.1",
+            "schemaVersion":"30.6.manifest-assisted-workflow.2",
             "placeId":result["placeId"],
             "targetCount":len(observed_targets),
             "targets":observed_targets,

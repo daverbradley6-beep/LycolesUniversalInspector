@@ -1,6 +1,21 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted target ranking and metadata quality (v30.6.28)
+
+- Improved `tools/build_release.py` manifest-assisted target extraction for manifest-only sessions:
+  - Prioritize feature-attributed interactions that include observed GUI/state transitions.
+  - Filter out unattributed interactions with zero observed GUI/state transitions.
+  - Preserve deterministic ordering while adding explicit ranking context (`stateChangeCount`, `guiStateChangeCount`, `observableChange`).
+- Enhanced generated `LycolesManifestAssistedWorkflow.lua` target display with observed state/GUI change counts so operators can focus on change-bearing targets.
+- Bumped `manifest-assisted-workflow.json` schema to `30.6.manifest-assisted-workflow.2` and propagated new per-target fields.
+- Extended `tests/test_build_release.py` regressions to assert schema bump, observable-change metadata fields, unattributed-no-change filtering behavior, and generated Lua evidence-count rendering.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_integrated_pipeline_v108 tests.test_manifest_readiness_v109`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Transition-contract root-cause diagnostics (v30.6.27)
 
 - Extended `tools/manifest_readiness_v109.py` with derived transition diagnostics from `interactionDiagnostics.recentInteractions` so manifest-only sessions can expose why completed workflow candidates remain zero without lowering verification standards.

@@ -1,3 +1,15 @@
+## v30.6.28 — Manifest-assisted target ranking prioritizes observable feature transitions
+
+- Refine `tools/build_release.py` manifest-only target extraction so generated manifest-assisted workflows prioritize feature-attributed interactions that include observed state/GUI transitions.
+- Add bounded target metadata fields for manifest-assisted generation:
+  - `stateChangeCount`
+  - `guiStateChangeCount`
+  - `observableChange`
+- Filter out unattributed interactions with no observed state/GUI transition from manifest-assisted target selection to reduce non-actionable noise.
+- Surface observed state/GUI change counts in generated `LycolesManifestAssistedWorkflow.lua` target status text for clearer evidence review.
+- Bump `manifest-assisted-workflow.json` schema version to `30.6.manifest-assisted-workflow.2`.
+- Extend `tests/test_build_release.py` to verify new metadata fields, schema bump, unattributed-no-change filtering guarantees, and rendered evidence-count lines.
+
 ## v30.6.27 — Workflow root-cause diagnostics for feature-attributed transitions without outcome contracts
 
 - Extend `tools/manifest_readiness_v109.py` with derived transition diagnostics from `interactionDiagnostics.recentInteractions`:
