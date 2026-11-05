@@ -1,6 +1,21 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted metadata carries upload-readiness context (v30.6.32)
+
+- Extended `tools/build_release.py` manifest-only artifact metadata (`manifest-assisted-workflow.json`) with:
+  - `transportReadinessStatus`
+  - `transportReadinessBlockers`
+  - `scriptGenerationReady`
+- Bumped manifest-assisted metadata schema to `30.6.manifest-assisted-workflow.4`.
+- Preserved fail-closed semantics (`runtimeVerified`, `gameplayVerified`, `causalityProven` remain false in manifest-assisted metadata output).
+- Extended `tests/test_build_release.py` to assert schema `.4` plus expected transport-readiness status/blocker content and `scriptGenerationReady=false` for manifest-only blocked sessions.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_integrated_pipeline_v108 tests.test_manifest_readiness_v109`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Outcome-candidate-aware manifest target ranking (v30.6.31)
 
 - Enhanced `tools/build_release.py` manifest-assisted target extraction to consume event-level `observableOutcomeCandidate` evidence when selecting and ranking controls for generated workflows.

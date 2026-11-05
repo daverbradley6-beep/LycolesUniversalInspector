@@ -1,3 +1,13 @@
+## v30.6.32 — Manifest-assisted metadata includes upload-readiness context
+
+- Extend `tools/build_release.py` manifest-only artifact emission so `manifest-assisted-workflow.json` includes:
+  - `transportReadinessStatus`
+  - `transportReadinessBlockers`
+  - `scriptGenerationReady`
+- Bump manifest-assisted workflow metadata schema to `30.6.manifest-assisted-workflow.4`.
+- Preserve existing fail-closed verification claims (`runtimeVerified`, `gameplayVerified`, `causalityProven` remain false).
+- Extend `tests/test_build_release.py` coverage to verify new metadata fields and expected legacy upload-readiness context from real fixture input.
+
 ## v30.6.31 — Outcome-candidate-aware manifest target prioritization
 
 - Extend `tools/build_release.py` manifest-assisted target extraction to consider event-level `observableOutcomeCandidate` evidence when selecting and ranking controls.

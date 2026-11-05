@@ -403,11 +403,21 @@ def build_manifest_readiness(manifest_path,output):
     if observed_targets:
         assisted=_manifest_assisted_workflow_lua(result["placeId"],observed_targets)
         (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
+        transport_readiness=(result.get("transportReadiness")
+            if isinstance(result.get("transportReadiness"),dict) else {})
+        transport_blockers=transport_readiness.get("blockers")
+        if not isinstance(transport_blockers,list):
+            transport_blockers=[]
+        generation_readiness=(result.get("generationReadiness")
+            if isinstance(result.get("generationReadiness"),dict) else {})
         (output/"manifest-assisted-workflow.json").write_text(json.dumps({
-            "schemaVersion":"30.6.manifest-assisted-workflow.3",
+            "schemaVersion":"30.6.manifest-assisted-workflow.4",
             "placeId":result["placeId"],
             "targetCount":len(observed_targets),
             "targets":observed_targets,
+            "transportReadinessStatus":transport_readiness.get("status"),
+            "transportReadinessBlockers":transport_blockers,
+            "scriptGenerationReady":bool(generation_readiness.get("scriptGenerationReady")),
             "runtimeVerified":False,
             "gameplayVerified":False,
             "causalityProven":False,

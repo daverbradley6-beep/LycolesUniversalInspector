@@ -623,9 +623,18 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("Observable outcome candidate:",assisted)
             self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
             assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
-            self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.3")
+            self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.4")
             self.assertEqual(assisted_metadata["placeId"],85896571713843)
             self.assertGreater(assisted_metadata["targetCount"],0)
+            self.assertEqual(
+                assisted_metadata["transportReadinessStatus"],
+                "legacy-local-export-observed-upload-state-unknown",
+            )
+            self.assertIn(
+                "upload_attempt_status_unknown_legacy_manifest",
+                assisted_metadata["transportReadinessBlockers"],
+            )
+            self.assertFalse(assisted_metadata["scriptGenerationReady"])
             self.assertTrue(any(t.get("observableChange") is True for t in assisted_metadata["targets"]))
             for target in assisted_metadata["targets"]:
                 self.assertIn("stateChangeCount",target)
