@@ -1,3 +1,10 @@
+## v30.6.12 — Linked transaction outcome inheritance for generation readiness
+
+- Extend `tools/discover_action_capabilities.py` to inherit resolvable state-outcome signals from later events in the same linked transaction when the initiating control has no direct scalar outcome evidence.
+- Preserve provenance for inherited signals (`inheritedFromLinkedTransaction`, `sourcePath`, `sourceSequence`) and expose per-event `outcomeEvidenceSource` in `observedActions`.
+- Enable initiating GUI controls to become trial-generation-ready when an exact linked confirmation step carries the only resolvable scalar outcome, improving practical script-generation coverage for confirmation-driven UI flows.
+- Add regression coverage proving linked transaction inheritance can unlock a GUI target without introducing positive causality/runtime/gameplay claims.
+
 ## v30.6.11 — Interaction attribution and workflow-correlation improvements
 
 - Improve interaction attribution with bounded context scoring: combine control name, control text, ancestor names, and path segments while requiring a strong unique score before assigning a feature.

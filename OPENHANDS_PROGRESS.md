@@ -1,6 +1,15 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Linked transaction outcome inheritance (v30.6.12)
+
+- Extended `tools/discover_action_capabilities.py` so initiating controls can inherit resolvable scalar state-outcome signals from later events in the same linked transaction when no direct scalar outcome was captured on the initiating event.
+- Added explicit provenance fields for inherited evidence (`inheritedFromLinkedTransaction`, `sourcePath`, `sourceSequence`) and per-event `outcomeEvidenceSource` in observed action summaries.
+- Added regression `test_linked_transaction_outcome_can_enable_initiating_gui_target` proving a GUI initiator can become trial-generation-ready from linked confirmation outcome evidence while preserving all-negative verification claims.
+- Focused discovery/inspector regressions passed after this change set.
+
+
+
 ## Update — 2026-11-02 — Interaction attribution and correlation upgrade (v30.6.11)
 
 - Implemented bounded context-scored feature attribution in the inspector (`control name/text + ancestor names + path segments`) with a strong-unique-score requirement before assigning a feature.

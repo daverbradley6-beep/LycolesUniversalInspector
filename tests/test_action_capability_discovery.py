@@ -81,6 +81,49 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
 
 
 
+    def test_linked_transaction_outcome_can_enable_initiating_gui_target(self):
+        metadata={"controlClass":"TextButton","text":"Buy","visible":True,
+            "active":True,"selectable":True,"autoButtonColor":True,"interactable":True,
+            "ancestorVisible":True,"screenEnabled":True,"withinScrollingBounds":True,
+            "effectiveVisible":True}
+        plan={"integrity":{"scanComplete":True,"placeId":123,"scanId":"linked-gui"},
+            "requestedCapability":"buy upgrade","actionableObjects":[],
+            "observedInteractionHistory":[
+                {"path":"PlayerGui.HUD.Shop.Buy.Button","controlType":"GuiButton.Activated",
+                 "transactionId":"txn-1","sequence":10,
+                 "pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Shop","className":"Frame","ordinal":1},
+                    {"name":"Buy","className":"Frame","ordinal":1},
+                    {"name":"Button","className":"TextButton","ordinal":1}],
+                 "controlMetadata":metadata,
+                 "stateChanges":[]},
+                {"path":"PlayerGui.HUD.Shop.Confirm.Yes","controlType":"GuiButton.Activated",
+                 "transactionId":"txn-1","sequence":11,
+                 "pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Shop","className":"Frame","ordinal":1},
+                    {"name":"Confirm","className":"Frame","ordinal":1},
+                    {"name":"Yes","className":"TextButton","ordinal":1}],
+                 "stateChanges":[{"key":"Data.Upgrades","before":2,"after":3,
+                    "stateIdentityStatus":"component-resolved","stateIdentity":[
+                        {"name":"Data","className":"Folder","ordinal":1},
+                        {"name":"Upgrades","className":"IntValue","ordinal":1}]}]}]}
+        result=discovery.analyze(plan)
+        target=next(item for item in result["guiInteractions"]["targets"]
+            if item["path"]=="PlayerGui.HUD.Shop.Buy.Button")
+        self.assertTrue(target["trialGenerationReady"])
+        self.assertEqual(target["selectedOutcome"]["key"],"Data.Upgrades")
+        self.assertTrue(target["selectedOutcome"]["inheritedFromLinkedTransaction"])
+        self.assertEqual(target["selectedOutcome"]["sourcePath"],
+                         "PlayerGui.HUD.Shop.Confirm.Yes")
+        observed=next(item for item in result["observedActions"]
+            if item["path"]=="PlayerGui.HUD.Shop.Buy.Button")
+        self.assertEqual(observed["outcomeEvidenceSource"],"linked-transaction-followup")
+
+
 
     def test_real_rainbow_egg_prompt_becomes_correlated_trial_target(self):
         result=discovery.analyze(self.real_plan())

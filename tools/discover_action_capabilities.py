@@ -167,6 +167,49 @@ def _rank_outcomes(signals,request,context):
     return ranked
 
 
+
+def _state_signals(changes_with_identity):
+    state_signals=[]
+    for change,state_identity in changes_with_identity:
+        key=change.get("key")
+        if not isinstance(key,str) or not SAFE_PATH.fullmatch(key):
+            raise ValueError("Malformed state transition evidence")
+        direction=change.get("transition") or ("increased" if _increased(change) else
+            "decreased" if type(change.get("before")) in (int,float)
+                and type(change.get("after")) in (int,float) and change["after"]<change["before"]
+            else "changed")
+        state_signals.append({"key":key,"change":direction,
+            "stateIdentity":state_identity if isinstance(state_identity,list) else None,
+            "generationResolvable":state_identity is not False})
+    return state_signals
+
+
+def _linked_transaction_signals(history):
+    linked={}
+    for event in history:
+        path=event.get("path");control=event.get("controlType")
+        transaction=event.get("transactionId");sequence=event.get("sequence")
+        if (not isinstance(path,str) or not SAFE_PATH.fullmatch(path)
+                or not isinstance(control,str)
+                or type(transaction) not in (int,str)
+                or type(sequence) is not int):
+            continue
+        changes=_event_changes(event)
+        changes_with_identity=[(change,_state_identity(change)) for change in changes]
+        signals=_state_signals(changes_with_identity)
+        if not signals:
+            continue
+        linked.setdefault(str(transaction),[]).append({
+            "sequence":sequence,
+            "path":path,
+            "signals":signals,
+        })
+    for values in linked.values():
+        values.sort(key=lambda item:item["sequence"])
+    return linked
+
+
+
 def _prompt_metadata(value):
     if not isinstance(value,dict):return {}
     allowed={"actionText","objectText","enabled","holdDuration","maxActivationDistance",
@@ -276,6 +319,7 @@ def analyze(plan):
     request=plan.get("requestedCapability")
     if request is not None and (not isinstance(request,str) or len(request)>500):
         raise ValueError("Malformed requested capability")
+    linked_transaction_signals=_linked_transaction_signals(history)
     observed_actions=[];egg_targets={};prompt_targets={};tool_targets={};gui_targets={}
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
@@ -287,18 +331,25 @@ def analyze(plan):
             raise ValueError("Malformed interaction path identity")
         changes=_event_changes(event);gui_changes=_event_gui_changes(event)
         changes_with_identity=[(change,_state_identity(change)) for change in changes]
-        state_signals=[]
-        for change,state_identity in changes_with_identity:
-            key=change.get("key")
-            if not isinstance(key,str) or not SAFE_PATH.fullmatch(key):
-                raise ValueError("Malformed state transition evidence")
-            direction=change.get("transition") or ("increased" if _increased(change) else
-                "decreased" if type(change.get("before")) in (int,float)
-                    and type(change.get("after")) in (int,float) and change["after"]<change["before"]
-                else "changed")
-            state_signals.append({"key":key,"change":direction,
-                "stateIdentity":state_identity if isinstance(state_identity,list) else None,
-                "generationResolvable":state_identity is not False})
+        direct_state_signals=_state_signals(changes_with_identity)
+        inherited_state_signals=[]
+        transaction=event.get("transactionId");sequence=event.get("sequence")
+        if (not direct_state_signals and type(transaction) in (int,str)
+                and type(sequence) is int):
+            inherited_seen=set()
+            for linked in linked_transaction_signals.get(str(transaction),[]):
+                if linked["sequence"]<sequence or linked["path"]==path:
+                    continue
+                for signal in linked["signals"]:
+                    marker=(signal["key"],signal["change"])
+                    if marker in inherited_seen:
+                        continue
+                    inherited_seen.add(marker)
+                    inherited_state_signals.append({**signal,
+                        "inheritedFromLinkedTransaction":True,
+                        "sourcePath":linked["path"],
+                        "sourceSequence":linked["sequence"]})
+        state_signals=direct_state_signals or inherited_state_signals
         gui_signals=[{"path":change["path"],"change":change.get("transition") or
             ("visibility-changed" if change.get("beforeVisible")!=change.get("afterVisible")
                 else "active-changed")} for change in gui_changes]
@@ -310,6 +361,9 @@ def analyze(plan):
                 if isinstance(event.get("workflow"),dict) else None,
             "evidenceTier":tier,"observableOutcomeCandidate":bool(state_signals or gui_signals),
             "stateChanges":changes,"stateOutcomeSignals":state_signals,
+            "linkedTransactionOutcomeSignals":inherited_state_signals,
+            "outcomeEvidenceSource":"direct-event" if direct_state_signals
+                else "linked-transaction-followup" if inherited_state_signals else "none",
             "guiOutcomeSignals":gui_signals,"baselineEvidence":baseline,
             "replayContractAvailable":False,
             "causalityProven":False,"outcomeVerified":False})
