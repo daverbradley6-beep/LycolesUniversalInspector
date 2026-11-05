@@ -261,9 +261,14 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('classification="feature-consistent-observable-change"',SRC)
         self.assertIn("causalityProven=false",SRC)
         self.assertIn("historyItem.outcomeVerified=false",SRC)
+        self.assertIn("local function backfillObservableOutcomeCandidates(history)",SRC)
+        self.assertIn("workflowStats.backfilledOutcomeCandidates=workflowStats.backfilledOutcomeCandidates+1",SRC)
+        self.assertIn("backfilledOutcomeCandidates=recoveredOutcomeCandidates",SRC)
     def test_feature_readiness_uses_relevant_state_only(self):
         self.assertIn("local featureStateEvidence=featureConsistentStateEvidence(feature,transactionFresh)",SRC)
         self.assertIn("if featureStateEvidence then item.stateChanges=item.stateChanges+1 end",SRC)
+        self.assertIn("local recoveredOutcomeCandidates=backfillObservableOutcomeCandidates(interactionHistory)",SRC)
+        self.assertIn('"post-capture-window-evidence-backfill"',SRC)
         self.assertIn("observable-outcome-candidate-needs-causal-validation",SRC)
     def test_state_snapshots_include_bounded_local_player_values(self):
         self.assertIn("MAX_STATE_SNAPSHOT_CANDIDATES = 1000",SRC)

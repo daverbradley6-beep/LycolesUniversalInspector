@@ -1,3 +1,11 @@
+## v30.6.29 — Conservative post-capture outcome-candidate backfill for interaction history
+
+- Add a bounded post-capture fallback pass in `LycolesUniversalInspector.lua` that derives missing `observableOutcomeCandidate` entries from already-captured interaction evidence when feature-consistent state/GUI changes are present in the event or its observation windows.
+- Preserve fail-closed semantics: backfilled outcomes remain `feature-consistent-observable-change` candidates with `causalityProven=false`, `serverAuthorityVerified=false`, and `gameplayVerified=false`.
+- Add `workflowStats.backfilledOutcomeCandidates` and export `interactionDiagnostics.backfilledOutcomeCandidates` for explicit reporting of recovered candidates.
+- Record fallback provenance in `featureEvidenceRules` via `post-capture-window-evidence-backfill`.
+- Extend `tests/test_inspector_ui.py` static regressions to assert fallback function presence, diagnostics wiring, and provenance rule export.
+
 ## v30.6.28 — Manifest-assisted target ranking prioritizes observable feature transitions
 
 - Refine `tools/build_release.py` manifest-only target extraction so generated manifest-assisted workflows prioritize feature-attributed interactions that include observed state/GUI transitions.

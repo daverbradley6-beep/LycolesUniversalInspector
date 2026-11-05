@@ -1,6 +1,21 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Conservative post-capture outcome backfill (v30.6.29)
+
+- Added a bounded fallback pass in `LycolesUniversalInspector.lua` (`backfillObservableOutcomeCandidates`) that recovers missing `observableOutcomeCandidate` entries from already-captured feature-consistent state/GUI evidence across event-level and observation-window changes.
+- Preserved fail-closed semantics for all recovered entries (`causalityProven=false`, `serverAuthorityVerified=false`, `gameplayVerified=false`, `outcomeVerified=false`).
+- Added explicit diagnostics accounting:
+  - `workflowStats.backfilledOutcomeCandidates`
+  - `interactionDiagnostics.backfilledOutcomeCandidates`
+  - `featureEvidenceRules` now includes `post-capture-window-evidence-backfill`
+- Extended static regressions in `tests/test_inspector_ui.py` to assert fallback function presence and diagnostics wiring.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_inspector_ui tests.test_build_release tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-assisted target ranking and metadata quality (v30.6.28)
 
 - Improved `tools/build_release.py` manifest-assisted target extraction for manifest-only sessions:

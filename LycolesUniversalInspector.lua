@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.28
+-- Lycoles Universal Inspector v30.6.29
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.28"
+local VERSION = "30.6.29"
 
 local endpoint = ""
 local autoSend = true
@@ -160,7 +160,7 @@ local MAX_PENDING_GUI_REVEALS = 100
 local GUI_REVEAL_FOLLOWUP_SECONDS = 15
 local FOLLOWUP_LINK_MAX_AGE_SECONDS = 6
 local FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP = 3
-local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
+local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, backfilledOutcomeCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local sessionId = HttpService:GenerateGUID(false)
 local sessionStartedClock = os.clock()
 local WORKFLOW_RECORDING_SECONDS = 60
@@ -2520,6 +2520,57 @@ local function featureConsistentGuiEvidence(feature, changes)
         status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
         causalityProven=false,serverVerified=false,gameplayVerified=false}
 end
+
+local function collectOutcomeChanges(historyItem, primaryKey, windowKey)
+    local merged={}
+    local function append(list)
+        if type(list)~="table" then return end
+        for _,item in ipairs(list) do
+            if type(item)=="table" then merged[#merged+1]=item end
+        end
+    end
+    append(historyItem and historyItem[primaryKey])
+    local windows=historyItem and historyItem.observationWindows
+    if type(windows)=="table" then
+        for _,window in ipairs(windows) do
+            if type(window)=="table" then append(window[windowKey]) end
+        end
+    end
+    return merged
+end
+
+local function backfillObservableOutcomeCandidates(history)
+    local recovered=0
+    if type(history)~="table" then return recovered end
+    for _,historyItem in ipairs(history) do
+        local feature=historyItem and historyItem.featureCandidate
+        if type(historyItem)=="table" and not historyItem.observableOutcomeCandidate
+            and type(feature)=="string" and feature~="" then
+            local mergedState=collectOutcomeChanges(historyItem,"stateChanges","stateChanges")
+            local mergedGui=collectOutcomeChanges(historyItem,"guiStateChanges","guiChanges")
+            local stateEvidence=featureConsistentStateEvidence(feature,mergedState)
+            local guiEvidence=featureConsistentGuiEvidence(feature,mergedGui)
+            if stateEvidence or guiEvidence then
+                if stateEvidence then historyItem.featureStateEvidence=stateEvidence end
+                if guiEvidence then historyItem.featureGuiEvidence=guiEvidence end
+                historyItem.observableOutcomeCandidate={feature=feature,
+                    classification="feature-consistent-observable-change",
+                    evidenceKinds={stateEvidence and "state-change" or "gui-change",
+                        stateEvidence and guiEvidence and "gui-change" or nil},
+                    overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                    causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                historyItem.outcomeVerified=false
+                recovered=recovered+1
+                workflowStats.backfilledOutcomeCandidates=workflowStats.backfilledOutcomeCandidates+1
+                workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                local item=featureInteractions[feature]
+                if item then item.outcomeCandidates=(item.outcomeCandidates or 0)+1 end
+            end
+        end
+    end
+    return recovered
+end
+
 local function actionKind(name)
     local n=name:lower()
     if n:find("unequipall",1,true) then return "unequip-all" end
@@ -3880,6 +3931,7 @@ local function inspect(requestType, featureRequest)
             report.scanStats.complete = scanComplete
             report.featureEvidence = buildFeatureEvidence(report.objects)
             report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
+            local recoveredOutcomeCandidates=backfillObservableOutcomeCandidates(interactionHistory)
             report.interactionDiagnostics = {
                 scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
                 scanProfile=activeScanProfileId, scanMode=profile.scanMode,
@@ -3912,6 +3964,7 @@ local function inspect(requestType, featureRequest)
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
                 workflowStats=workflowStats,
+                backfilledOutcomeCandidates=recoveredOutcomeCandidates,
                 workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
                     interactionEventCount, attributedInteractionCount, unattributedInteractionCount),
                 pendingWorkflowCount=#pendingActions,
@@ -3937,7 +3990,8 @@ local function inspect(requestType, featureRequest)
                 observationIdleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 scanCancelled=scanCancelled,
                 stateChangeLimit=MAX_STATE_CHANGES,
-                featureEvidenceRules={"feature-key-changed","reward-status-became-visible"},
+                featureEvidenceRules={"feature-key-changed","reward-status-became-visible",
+                    "post-capture-window-evidence-backfill"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
