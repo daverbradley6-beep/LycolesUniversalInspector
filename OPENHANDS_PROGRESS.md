@@ -1,6 +1,29 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Request-feature readiness compatibility hardening (v30.6.19)
+
+- Current inspector version: **v30.6.19**.
+- Verified baseline commit before this change set: `6eca1bc` on `openhands-development`.
+- Completed functionality:
+  - `tools/assess_generation_readiness.py` now emits bounded `requestFeatureReadiness` request statuses/blockers aligned to generated-subset semantics and explicit mode-selection limitations.
+  - `tools/generate_script.py` and `tools/build_release.py` now propagate `generationReadiness.requestFeatureReadiness` into generated metadata and release manifests.
+  - `tools/generated_result.py` now fail-closes on incompatible request-feature readiness payloads (generated-evidence ID mismatches, non-subset matched IDs, and promoted verification claims).
+  - Regression coverage expanded in `tests/test_generation_readiness.py`, `tests/test_generate_script.py`, `tests/test_build_release.py`, and `tests/test_generated_result.py`.
+- Validation results:
+  - `python -m unittest tests.test_generation_readiness tests.test_generated_result tests.test_generate_script tests.test_build_release` (**56 tests, all passing**).
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests` (**1,570 tests, all passing**).
+  - `npm test` (**receiver checks pass + Luau parser 3/3**).
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest -v tests.test_controlled_luau_v108` (**24 tests, all passing**).
+  - `git diff --check` (clean).
+- Remaining priority tasks:
+  - Improve request-to-workflow attribution so more candidates reach evidence-backed completed status without relaxing strict verification claims.
+  - Increase generated capability coverage for bounded, request-aligned gameplay utilities.
+  - Re-profile Quick Scan only when new measurements identify actionable bottlenecks.
+- Known blockers: no live Roblox execution evidence captured in this run; gameplay/runtime/server-authority verification remains false.
+- Next implementation action: improve request-term alignment between workflow candidate ranking and generation-readiness blockers to convert more observed linked workflows into bounded generated utilities.
+
+
 ## Update — 2026-11-05 — Workflow-candidate pipeline integration (v30.6.19)
 
 - Integrated deterministic workflow-candidate generation into the v106 integrated pipeline: `tools/integrated_pipeline_v106.py` now emits `workflow-candidates.json`, augments diagnostics with workflow/completed/review-only counters, and verifies workflow artifacts fail-closed.

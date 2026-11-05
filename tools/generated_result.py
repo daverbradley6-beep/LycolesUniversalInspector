@@ -242,6 +242,110 @@ def _validate_observation_coverage(value):
         raise ValueError("Inconsistent interaction observation coverage")
 
 
+def _validate_request_feature_readiness(value,requested_capability,generated_ids):
+    if value is None:return
+    if (not isinstance(value,dict)
+            or value.get("schemaVersion")!="113.request-feature-readiness.1"
+            or value.get("request")!=requested_capability
+            or value.get("status") not in ("no-capability-requested","bounded-generated-subset",
+                "evidence-aligned-no-generated-contract","unsupported-by-current-evidence")
+            or value.get("nameMatchingSufficientForImplementation") is not False
+            or value.get("temporalCorrelationSufficientForImplementation") is not False
+            or value.get("implementationReady") is not False
+            or any(value.get(field) is not False for field in
+                   ("runtimeVerified","gameplayVerified","causalityProven",
+                    "actionOutcomesVerified"))):
+        raise ValueError("Invalid request-feature readiness")
+    terms=value.get("requestedTerms")
+    if (not isinstance(terms,list) or len(terms)>128
+            or any(not _bounded_text(term,80) or not all(
+                "a"<=character<="z" or "0"<=character<="9" for character in term)
+                for term in terms)
+            or terms!=sorted(set(terms))):
+        raise ValueError("Invalid request-feature readiness terms")
+
+    feature=value.get("featureEvidence")
+    if (not isinstance(feature,dict) or type(feature.get("omittedMatches")) is not int
+            or feature["omittedMatches"]<0 or feature.get("matchSignalsBounded") is not True
+            or not isinstance(feature.get("matchedFeatures"),list)
+            or len(feature["matchedFeatures"])>32):
+        raise ValueError("Invalid request-feature readiness feature evidence")
+    classifications={"temporal-client-outcome-correlation",
+        "observable-outcome-candidate-unverified",
+        "interaction-observed-no-outcome-contract",
+        "discovered-no-interaction-evidence","unrecognized-feature-status"}
+    for item in feature["matchedFeatures"]:
+        matched_terms=item.get("matchedTerms") if isinstance(item,dict) else None
+        if (not isinstance(item,dict) or not _bounded_text(item.get("feature"),120)
+                or not _bounded_text(item.get("status"),120)
+                or item.get("evidenceClassification") not in classifications
+                or not isinstance(matched_terms,list) or len(matched_terms)>32
+                or any(not _bounded_text(term,80) or not all(
+                    "a"<=character<="z" or "0"<=character<="9" for character in term)
+                    for term in matched_terms)
+                or matched_terms!=sorted(set(matched_terms))
+                or any(type(item.get(field)) is not int or not 0<=item[field]<=10_000_000
+                    for field in ("interactionEvents","observableOutcomeCandidates",
+                                  "featureStateCorrelations","featureGuiCorrelations"))
+                or item.get("tokenEvidenceOnly") is not True
+                or item.get("implementationReady") is not False):
+            raise ValueError("Invalid request-feature readiness feature match")
+
+    workflow=value.get("workflowEvidence")
+    if (not isinstance(workflow,dict) or type(workflow.get("available")) is not bool
+            or workflow.get("planningStatus") not in (None,"execution-ready-candidates",
+                "review-only-candidates","no-multi-step-generation-ready-contract",
+                "singleton-transactions-only","no-explicit-linkage","no-interaction-events")
+            or type(workflow.get("executionReadyCandidates")) is not int
+            or type(workflow.get("requestAlignedExecutionReadyCandidates")) is not int
+            or not 0<=workflow["requestAlignedExecutionReadyCandidates"]<=
+                workflow["executionReadyCandidates"]<=20
+            or workflow.get("selectedCandidateId") is not None and
+                not _bounded_text(workflow["selectedCandidateId"],120)
+            or type(workflow.get("selectedCandidateRequestAligned")) is not bool
+            or workflow.get("temporalCorrelationOnly") is not True):
+        raise ValueError("Invalid request-feature readiness workflow evidence")
+    if (workflow["available"] is not bool(workflow.get("planningStatus")
+            or workflow["executionReadyCandidates"]
+            or workflow.get("selectedCandidateId") is not None)):
+        raise ValueError("Inconsistent request-feature readiness workflow evidence")
+
+    generated=value.get("generatedEvidence")
+    matched=generated.get("matchedGeneratedCapabilityIds") if isinstance(generated,dict) else None
+    generated_capabilities=(generated.get("generatedCapabilityIds")
+        if isinstance(generated,dict) else None)
+    if (not isinstance(generated,dict) or not isinstance(matched,list)
+            or len(matched)>64 or not isinstance(generated_capabilities,list)
+            or len(generated_capabilities)>64
+            or type(generated.get("generatedCapabilityCount")) is not int
+            or generated["generatedCapabilityCount"]!=len(generated_capabilities)
+            or any(not _bounded_text(identifier,80) for identifier in matched+generated_capabilities)
+            or len(set(matched))!=len(matched)
+            or len(set(generated_capabilities))!=len(generated_capabilities)
+            or any(identifier not in generated_capabilities for identifier in matched)
+            or any(identifier not in generated_ids for identifier in generated_capabilities)):
+        raise ValueError("Invalid request-feature readiness generation evidence")
+
+    blockers=value.get("explicitBlockers")
+    if (not isinstance(blockers,list) or len(blockers)>128
+            or any(not _bounded_text(blocker,160) for blocker in blockers)
+            or blockers!=sorted(set(blockers))):
+        raise ValueError("Invalid request-feature readiness blockers")
+
+    summary=value.get("summary")
+    if (not isinstance(summary,dict)
+            or any(type(summary.get(field)) is not int or summary[field]<0 for field in
+                   ("matchedFeatures","matchedSystems","matchedObservedActions",
+                    "matchedResources","requestAlignedExecutionReadyWorkflows","blockers"))
+            or summary["matchedFeatures"]!=len(feature["matchedFeatures"])
+            or summary["requestAlignedExecutionReadyWorkflows"]!=
+                workflow["requestAlignedExecutionReadyCandidates"]
+            or summary["blockers"]!=len(blockers)):
+        raise ValueError("Invalid request-feature readiness summary")
+    if (requested_capability is None)!=(value["status"]=="no-capability-requested"):
+        raise ValueError("Inconsistent request-feature readiness status")
+
+
 def _validate_generation_readiness(place_id,scan_id,requested_capability,readiness):
     if (not isinstance(readiness,dict)
             or readiness.get("schemaVersion")!="113.generation-readiness.1"
@@ -338,6 +442,8 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
 
 
     generated_ids=[item["id"] for item in generated]
+    _validate_request_feature_readiness(
+        readiness.get("requestFeatureReadiness"),requested_capability,generated_ids)
     status=request["status"]
     if (len(set(generated_ids))!=len(generated_ids) or len(set(matched))!=len(matched)
             or any(identifier not in generated_ids for identifier in matched)

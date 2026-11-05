@@ -145,6 +145,8 @@ class GeneratorTests(unittest.TestCase):
                           gameplay["requestedCapabilityAssessment"]["blockers"])
             self.assertEqual(manifest["generationReadiness"]["schemaVersion"],
                              "113.generation-readiness.1")
+            self.assertEqual(manifest["generationReadiness"]["requestFeatureReadiness"],
+                             readiness["requestFeatureReadiness"])
             self.assertEqual(manifest["generationReadiness"]["sha256"],
                 generator.hashlib.sha256((output/"generation-readiness.json").read_bytes()).hexdigest())
             self.assertEqual(manifest["generatedWorkflowPlan"]["schemaVersion"],

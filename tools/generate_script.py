@@ -679,7 +679,8 @@ def main():
             "schemaVersion":generation_readiness["schemaVersion"],
             "sha256":hashlib.sha256(generation_readiness_bytes).hexdigest(),
             "summary":generation_readiness["summary"],
-            "request":generation_readiness["request"]},
+            "request":generation_readiness["request"],
+            "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,
           "sourceFeatureCandidates":len(plan["features"]),
           "releaseStatus":"GENERATED_PROMPT_TRIAL_STATIC_CHECKED_NOT_LIVE_TESTED"

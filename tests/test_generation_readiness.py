@@ -76,6 +76,14 @@ class GenerationReadinessTests(unittest.TestCase):
         unavailable={item["id"]:item for item in result["unavailableRequestedBehavior"]}
         self.assertIn("multi-game-mode",unavailable)
         self.assertIn("auto-game-mode",unavailable)
+        request_feature=result["requestFeatureReadiness"]
+        self.assertEqual(request_feature["schemaVersion"],"113.request-feature-readiness.1")
+        self.assertEqual(request_feature["status"],"bounded-generated-subset")
+        self.assertIn("request-assessment:mode_selection_observation",
+                      request_feature["explicitBlockers"])
+        self.assertIn("unavailable:auto-game-mode",request_feature["explicitBlockers"])
+        self.assertFalse(request_feature["nameMatchingSufficientForImplementation"])
+        self.assertFalse(request_feature["temporalCorrelationSufficientForImplementation"])
         self.assertFalse(result["claims"]["runtimeVerified"])
         self.assertFalse(result["claims"]["gameplayVerified"])
 
@@ -115,6 +123,10 @@ class GenerationReadinessTests(unittest.TestCase):
         result=assess(value)
         self.assertEqual(result["generatedCapabilities"],[])
         self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
+        self.assertEqual(result["requestFeatureReadiness"]["status"],
+            "evidence-aligned-no-generated-contract")
+        self.assertIn("bounded_generated_contract_unavailable",
+                      result["requestFeatureReadiness"]["explicitBlockers"])
         self.assertEqual(result["discoveryOnlyCapabilities"][0]["family"],"combat-tool-action")
         self.assertFalse(result["discoveryOnlyCapabilities"][0]["replayContractAvailable"])
 
@@ -191,6 +203,17 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["generatedCapabilities"],[])
         self.assertFalse(result["request"]["generatedSubsetAvailable"])
         self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
+
+
+    def test_no_request_produces_empty_request_feature_readiness(self):
+        value=egg_plan();value["requestedCapability"]=None
+        result=assess(value)
+        request_feature=result["requestFeatureReadiness"]
+        self.assertEqual(result["request"]["status"],"no-capability-requested")
+        self.assertEqual(request_feature["status"],"no-capability-requested")
+        self.assertEqual(request_feature["requestedTerms"],[])
+        self.assertEqual(request_feature["explicitBlockers"],[])
+        self.assertEqual(request_feature["summary"]["blockers"],0)
 
     def test_source_artifact_drift_is_rejected(self):
         value=egg_plan();gameplay=understanding.analyze(value);actions=discovery.analyze(value)

@@ -14,6 +14,32 @@ class GeneratedResultTests(unittest.TestCase):
                 "fullRequestImplemented":False,"implementationReady":False,
                 "runtimeVerified":False,"gameplayVerified":False,
                 "causalityProven":False,"actionOutcomesVerified":False},
+            "requestFeatureReadiness":{"schemaVersion":"113.request-feature-readiness.1",
+                "request":"show pet evidence","status":"bounded-generated-subset",
+                "requestedTerms":["evidence","pet","show"],
+                "featureEvidence":{"matchedFeatures":[{"feature":"pets",
+                    "status":"temporal-state-correlation","matchedTerms":["pet"],
+                    "interactionEvents":1,"observableOutcomeCandidates":1,
+                    "featureStateCorrelations":1,"featureGuiCorrelations":0,
+                    "evidenceClassification":"temporal-client-outcome-correlation",
+                    "tokenEvidenceOnly":True,"implementationReady":False}],
+                    "omittedMatches":0,"matchSignalsBounded":True},
+                "workflowEvidence":{"available":False,"planningStatus":None,
+                    "executionReadyCandidates":0,"requestAlignedExecutionReadyCandidates":0,
+                    "selectedCandidateId":None,"selectedCandidateRequestAligned":False,
+                    "temporalCorrelationOnly":True},
+                "generatedEvidence":{"generatedCapabilityCount":1,
+                    "generatedCapabilityIds":["prompt-interaction-trial"],
+                    "matchedGeneratedCapabilityIds":["prompt-interaction-trial"]},
+                "explicitBlockers":["request-assessment:mode_selection_observation"],
+                "nameMatchingSufficientForImplementation":False,
+                "temporalCorrelationSufficientForImplementation":False,
+                "implementationReady":False,"runtimeVerified":False,
+                "gameplayVerified":False,"causalityProven":False,
+                "actionOutcomesVerified":False,
+                "summary":{"matchedFeatures":1,"matchedSystems":0,
+                    "matchedObservedActions":0,"matchedResources":0,
+                    "requestAlignedExecutionReadyWorkflows":0,"blockers":1}},
             "generatedCapabilities":[{"id":"prompt-interaction-trial",
                 "kind":"proximity-prompt-trial","targetLabel":"Rainbow Egg",
                 "selectedOutcomeKey":"leaderstats.Hatches","expectedChange":"increased",
@@ -47,6 +73,14 @@ class GeneratedResultTests(unittest.TestCase):
                 "executionReady":True,"selected":True,
                 "selectionReason":"selected-highest-ranked-execution-ready-candidate"}]}
         readiness["request"]["matchedGeneratedCapabilityIds"]=["linked-gameplay-workflow-trial"]
+        readiness["requestFeatureReadiness"]["workflowEvidence"].update({
+            "available":True,"planningStatus":"execution-ready-candidates",
+            "executionReadyCandidates":1,"requestAlignedExecutionReadyCandidates":1,
+            "selectedCandidateId":"workflow-1","selectedCandidateRequestAligned":True})
+        readiness["requestFeatureReadiness"]["generatedEvidence"].update({
+            "generatedCapabilityIds":["linked-gameplay-workflow-trial"],
+            "matchedGeneratedCapabilityIds":["linked-gameplay-workflow-trial"]})
+        readiness["requestFeatureReadiness"]["summary"]["requestAlignedExecutionReadyWorkflows"]=1
         return readiness
 
     def workflow_diagnostics(self):
@@ -76,6 +110,8 @@ class GeneratedResultTests(unittest.TestCase):
         self.assertTrue(result["staticValidationPassed"])
         self.assertEqual(result["generationReadiness"]["request"]["status"],
                          "generated-bounded-subset")
+        self.assertEqual(result["generationReadiness"]["requestFeatureReadiness"]["status"],
+                         "bounded-generated-subset")
         self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0]["targetLabel"],
                          "Rainbow Egg")
         for claim in ("packageAuthenticityVerified","runtimeVerified","gameplayVerified",
@@ -102,6 +138,9 @@ class GeneratedResultTests(unittest.TestCase):
         contradictory=self.readiness();contradictory["request"]["generatedSubsetAvailable"]=False
         with self.assertRaisesRegex(ValueError,"subset"):
             self.build(generation_readiness=contradictory)
+        forged_feature=self.readiness();forged_feature["requestFeatureReadiness"]["implementationReady"]=True
+        with self.assertRaisesRegex(ValueError,"request-feature readiness"):
+            self.build(generation_readiness=forged_feature)
         malformed=self.readiness();malformed["generatedCapabilities"][0]["targetLabel"]="x"*121
         with self.assertRaisesRegex(ValueError,"capability"):
             self.build(generation_readiness=malformed)
@@ -140,6 +179,9 @@ class GeneratedResultTests(unittest.TestCase):
         capability.update({"id":"tool-activation-trial","kind":"official-tool-activation-trial",
             "targetLabel":"Training Sword"})
         readiness["request"]["matchedGeneratedCapabilityIds"]=["tool-activation-trial"]
+        readiness["requestFeatureReadiness"]["generatedEvidence"].update({
+            "generatedCapabilityIds":["tool-activation-trial"],
+            "matchedGeneratedCapabilityIds":["tool-activation-trial"]})
         result=self.build(generation_readiness=readiness)
         self.assertEqual(result["generationReadiness"]["generatedCapabilities"][0]["kind"],
             "official-tool-activation-trial")
@@ -152,6 +194,9 @@ class GeneratedResultTests(unittest.TestCase):
             "automaticActivation":False,"manualActivationRequired":True,
             "exactControlHighlighting":True})
         readiness["request"]["matchedGeneratedCapabilityIds"]=["guided-gui-interaction-trial"]
+        readiness["requestFeatureReadiness"]["generatedEvidence"].update({
+            "generatedCapabilityIds":["guided-gui-interaction-trial"],
+            "matchedGeneratedCapabilityIds":["guided-gui-interaction-trial"]})
         result=self.build(generation_readiness=readiness)
         generated=result["generationReadiness"]["generatedCapabilities"][0]
         self.assertTrue(generated["manualActivationRequired"])
@@ -160,6 +205,9 @@ class GeneratedResultTests(unittest.TestCase):
             "kind":"guided-gui-activation-trial","automaticActivation":True,
             "manualActivationRequired":False,"exactControlHighlighting":True})
         forged["request"]["matchedGeneratedCapabilityIds"]=["guided-gui-interaction-trial"]
+        forged["requestFeatureReadiness"]["generatedEvidence"].update({
+            "generatedCapabilityIds":["guided-gui-interaction-trial"],
+            "matchedGeneratedCapabilityIds":["guided-gui-interaction-trial"]})
         with self.assertRaisesRegex(ValueError,"guided GUI"):
             self.build(generation_readiness=forged)
 

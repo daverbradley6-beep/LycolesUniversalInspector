@@ -8,10 +8,17 @@ import re
 import sys
 
 SCHEMA_VERSION="113.generation-readiness.1"
+_REQUEST_FEATURE_SCHEMA="113.request-feature-readiness.1"
 _FALSE_CLAIMS={
     "sourceAuthenticityVerified":False,"causalityProven":False,
     "serverAuthorityVerified":False,"runtimeVerified":False,
     "gameplayVerified":False,"actionOutcomesVerified":False,
+}
+_FEATURE_EVIDENCE_CLASSIFICATION={
+    "client-outcome-observed":"temporal-client-outcome-correlation",
+    "observable-outcome-candidate-unverified":"observable-outcome-candidate-unverified",
+    "interaction-observed":"interaction-observed-no-outcome-contract",
+    "discovered":"discovered-no-interaction-evidence",
 }
 
 def _load(filename,name):
@@ -339,6 +346,112 @@ def _discovery_only(actions):
     return values
 
 
+def _request_feature_matches(plan,request_words):
+    features=plan.get("features")
+    if not isinstance(features,list) or len(features)>5000:
+        raise ValueError("compiled plan has malformed feature inventory")
+    if not request_words:return []
+    values=[]
+    for feature in features:
+        if not isinstance(feature,dict):
+            raise ValueError("compiled plan has malformed feature evidence")
+        name=feature.get("feature")
+        if not isinstance(name,str) or not 1<=len(name)<=120:
+            raise ValueError("compiled plan has malformed feature evidence")
+        matched_terms=sorted(request_words&_tokens(name))
+        if not matched_terms:continue
+        counts={field:feature.get(field,0) for field in ("interactionEvents",
+            "observableOutcomeCandidates","featureStateCorrelations","featureGuiCorrelations")}
+        if any(type(value) is not int or not 0<=value<=10_000_000 for value in counts.values()):
+            raise ValueError("compiled plan has malformed feature evidence")
+        status=feature.get("status")
+        if not isinstance(status,str) or not 1<=len(status)<=120:
+            raise ValueError("compiled plan has malformed feature evidence")
+        values.append({"feature":name,"status":status,
+            "evidenceClassification":_FEATURE_EVIDENCE_CLASSIFICATION.get(
+                status,"unrecognized-feature-status"),
+            "matchedTerms":matched_terms,**counts,
+            "tokenEvidenceOnly":True,"implementationReady":False})
+    values.sort(key=lambda item:(-item["observableOutcomeCandidates"],
+        -item["featureStateCorrelations"],-item["interactionEvents"],item["feature"]))
+    return values
+
+
+
+def _request_feature_readiness(plan,request,status,generated,matched_generated,gameplay_request,
+        unavailable,discovery_only,workflow_selection,workflow_target):
+    request_words=sorted(_tokens(request))
+    feature_matches=_request_feature_matches(plan,set(request_words))
+    feature_values=feature_matches[:32]
+    gameplay_systems=gameplay_request.get("matchedSystems",[]) if isinstance(gameplay_request,dict) else []
+    gameplay_actions=(gameplay_request.get("matchedObservedActions",[])
+        if isinstance(gameplay_request,dict) else [])
+    gameplay_resources=(gameplay_request.get("matchedResources",[])
+        if isinstance(gameplay_request,dict) else [])
+    request_blockers=gameplay_request.get("blockers",[]) if isinstance(gameplay_request,dict) else []
+    if any(not isinstance(values,list) for values in
+           (gameplay_systems,gameplay_actions,gameplay_resources,request_blockers)):
+        raise ValueError("gameplay requested capability assessment is malformed")
+    if any(not isinstance(value,str) or not 1<=len(value)<=160 for values in
+           (gameplay_systems,gameplay_actions,gameplay_resources,request_blockers)
+           for value in values):
+        raise ValueError("gameplay requested capability assessment is malformed")
+    workflow_candidates=(workflow_selection.get("candidates",[])
+        if isinstance(workflow_selection,dict) and workflow_selection.get("available") is True else [])
+    execution_ready_workflows=sum(item.get("executionReady") is True for item in workflow_candidates)
+    request_aligned_workflows=sum(item.get("executionReady") is True and bool(
+        item.get("matchedTerms")) for item in workflow_candidates)
+    if request is None:
+        request_status="no-capability-requested"
+    elif status=="generated-bounded-subset":
+        request_status="bounded-generated-subset"
+    elif status=="evidence-only-no-replay-contract":
+        request_status="evidence-aligned-no-generated-contract"
+    else:
+        request_status="unsupported-by-current-evidence"
+
+    blockers=[]
+    if request is not None:
+        blockers.extend("request-assessment:"+value for value in request_blockers)
+        blockers.extend("unavailable:"+item["id"] for item in unavailable)
+        blockers.extend("discovery-only:"+item["family"] for item in discovery_only)
+        if not matched_generated:blockers.append("bounded_generated_contract_unavailable")
+        if not feature_values:blockers.append("no_request_feature_token_overlap")
+        if execution_ready_workflows==0:blockers.append("no_execution_ready_workflow_candidates")
+        if request_status=="unsupported-by-current-evidence":
+            blockers.append("request_evidence_alignment_unresolved")
+    blockers=sorted(set(blockers))
+    generated_ids=[item["id"] for item in generated]
+    return {"schemaVersion":_REQUEST_FEATURE_SCHEMA,"request":request,
+        "status":request_status,"requestedTerms":request_words,
+        "featureEvidence":{"matchedFeatures":feature_values,
+            "omittedMatches":max(0,len(feature_matches)-len(feature_values)),
+            "matchSignalsBounded":True},
+        "workflowEvidence":{"available":workflow_selection["available"],
+            "planningStatus":workflow_selection.get("planningDiagnostics",{}).get("status"),
+            "executionReadyCandidates":execution_ready_workflows,
+            "requestAlignedExecutionReadyCandidates":request_aligned_workflows,
+            "selectedCandidateId":workflow_selection.get("selectedCandidateId"),
+            "selectedCandidateRequestAligned":bool(workflow_target and _workflow_request_aligned(
+                workflow_target,request)) if request is not None else False,
+            "temporalCorrelationOnly":True},
+        "generatedEvidence":{"generatedCapabilityIds":generated_ids,
+            "matchedGeneratedCapabilityIds":list(matched_generated),
+            "generatedCapabilityCount":len(generated_ids)},
+        "explicitBlockers":blockers,
+        "summary":{"matchedFeatures":len(feature_values),
+            "matchedSystems":len(gameplay_systems),
+            "matchedObservedActions":len(gameplay_actions),
+            "matchedResources":len(gameplay_resources),
+            "requestAlignedExecutionReadyWorkflows":request_aligned_workflows,
+            "blockers":len(blockers)},
+        "nameMatchingSufficientForImplementation":False,
+        "temporalCorrelationSufficientForImplementation":False,
+        "implementationReady":False,"runtimeVerified":False,
+        "gameplayVerified":False,"causalityProven":False,
+        "actionOutcomesVerified":False}
+
+
 def _interaction_observation_coverage(plan):
     value=plan.get("interactionObservationSummary")
     if value is None or isinstance(value,dict) and value.get("available") is False:
@@ -488,6 +601,10 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
         "runtimeVerified":False,"gameplayVerified":False,
         "causalityProven":False,"actionOutcomesVerified":False}
     discovery_only=_discovery_only(actions)
+    workflow_selection=_workflow_selection(workflow_plan,workflow_target)
+    request_feature_readiness=_request_feature_readiness(
+        plan,request,status,generated,matched_generated,gameplay_request,
+        unavailable,discovery_only,workflow_selection,workflow_target)
     if observation_coverage["available"] is False:
         observation_limit="Interaction baseline/window coverage is unavailable for this legacy evidence"
     elif observation_coverage["evidenceLossPossible"]:
@@ -499,14 +616,17 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
 
     result={"schemaVersion":SCHEMA_VERSION,"placeId":integrity["placeId"],
         "scanId":integrity.get("scanId"),"request":request_result,
+        "requestFeatureReadiness":request_feature_readiness,
         "generatedCapabilities":generated,
         "unavailableRequestedBehavior":unavailable,
         "discoveryOnlyCapabilities":discovery_only,
-        "workflowSelection":_workflow_selection(workflow_plan,workflow_target),
+        "workflowSelection":workflow_selection,
         "interactionObservationCoverage":observation_coverage,
         "guidedWorkflowFeedbackCorrelation":guided_correlation,
         "summary":{"generatedCapabilities":len(generated),
             "requestMatchedGeneratedCapabilities":len(matched_generated),
+            "requestFeatureMatches":request_feature_readiness["summary"]["matchedFeatures"],
+            "requestFeatureBlockers":request_feature_readiness["summary"]["blockers"],
             "unavailableRequestedBehavior":len(unavailable),
             "discoveryOnlyCapabilityFamilies":len(discovery_only),
             "guidedFeedbackSessions":guided_correlation.get("summary",{}).get("sessions",0),

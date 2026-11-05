@@ -82,6 +82,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in readiness["unavailableRequestedBehavior"]],
                 ["auto-game-mode","multi-game-mode"])
             self.assertEqual(manifest["generationReadiness"]["summary"],readiness["summary"])
+            self.assertEqual(manifest["generationReadiness"]["requestFeatureReadiness"],
+                readiness["requestFeatureReadiness"])
             self.assertRegex(manifest["generationReadiness"]["sha256"],r"^[a-f0-9]{64}$")
             self.assertEqual(manifest["generationReadiness"]["sha256"],
                 hashlib.sha256((base/"out"/"generation-readiness.json").read_bytes()).hexdigest())

@@ -288,6 +288,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "sha256":sha(generation_readiness_bytes),
             "summary":generation_readiness["summary"],
             "request":generation_readiness["request"],
+            "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"],
             "runtimeVerified":False,"gameplayVerified":False,
             "causalityProven":False,"actionOutcomesVerified":False},
         "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
