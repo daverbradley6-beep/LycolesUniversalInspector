@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 
+from action_registry_v107 import build_registry, normalize_runtime_evidence
 from artifact_contract_v107 import validate_source_semantics
 from feature_planner_v107 import plan, validate_feature_plan
 from feature_quality_v107 import assess
@@ -32,12 +33,23 @@ REPORT = "inspection-report.json"
 QUALITY = "quality-report.json"
 DIAGNOSTICS = "inspection-diagnostics.json"
 API_COMPATIBILITY = "api-compatibility.json"
+ACTION_REGISTRY = "action-registry.json"
+RUNTIME_EVIDENCE = "runtime-evidence.json"
 API_SNAPSHOT = (
     Path(__file__).resolve().parents[1]
     / "api-definitions"
     / "roblox-api-version-d0e8cfcd943d4ae2-v107.json"
 )
-ARTIFACTS = (REPORT, PLAN, QUALITY, DIAGNOSTICS, API_COMPATIBILITY, SCRIPT)
+ARTIFACTS = (
+    REPORT,
+    PLAN,
+    QUALITY,
+    DIAGNOSTICS,
+    API_COMPATIBILITY,
+    RUNTIME_EVIDENCE,
+    ACTION_REGISTRY,
+    SCRIPT,
+)
 
 
 def _luau_string(value):
@@ -240,7 +252,7 @@ def _resolution_counts(feature_plan):
     return full, legacy
 
 
-def generate(source, place_id, output):
+def generate(source, place_id, output, runtime_evidence=None):
     if type(place_id) is not int or place_id <= 0:
         raise ValueError("invalid place ID")
     report = _coerce_report(source, place_id)
@@ -250,6 +262,8 @@ def generate(source, place_id, output):
     api_compatibility = assess_compatibility(load_snapshot(API_SNAPSHOT), feature_plan)
     if not api_compatibility["compatible"]:
         raise ValueError("Roblox API incompatibility")
+    normalized_evidence = normalize_runtime_evidence(runtime_evidence, place_id)
+    action_registry = build_registry(feature_plan, normalized_evidence)
     luau_source = emit_luau(feature_plan)
     api_compatibility["emittedSourceMembers"] = validate_emitted_source_members(luau_source)
     script = luau_source.encode("utf-8")
@@ -261,6 +275,8 @@ def generate(source, place_id, output):
         QUALITY: canonical(quality),
         DIAGNOSTICS: canonical(diagnostics),
         API_COMPATIBILITY: canonical(api_compatibility),
+        RUNTIME_EVIDENCE: canonical(normalized_evidence),
+        ACTION_REGISTRY: canonical(action_registry),
         SCRIPT: script,
     }
     for name, payload in files.items():
@@ -279,6 +295,9 @@ def generate(source, place_id, output):
         "functionalControlsGenerated": len(feature_plan["features"]) + 3,
         "fullIdentityFeatures": full,
         "legacyFeatures": legacy,
+        "runtimeEvidenceRecords": len(normalized_evidence["records"]),
+        "runtimeObservedActions": action_registry["summary"]["runtimeObservedActions"],
+        "completedWorkflowCandidates": action_registry["summary"]["completedWorkflowCandidates"],
         "files": {
             name: hashlib.sha256(payload).hexdigest()
             for name, payload in sorted(files.items())
@@ -309,12 +328,15 @@ def verify(output):
         quality = json.loads((root / QUALITY).read_bytes())
         diagnostics = json.loads((root / DIAGNOSTICS).read_bytes())
         api_compatibility = json.loads((root / API_COMPATIBILITY).read_bytes())
+        runtime_evidence = json.loads((root / RUNTIME_EVIDENCE).read_bytes())
+        action_registry = json.loads((root / ACTION_REGISTRY).read_bytes())
         validate_report(report)
         validate_feature_plan(feature_plan)
         manifest_fields = {
             "schemaVersion", "pathIdentityVersion", "placeId", "readOnly",
             "runtimeVerified", "gameplayVerified", "functionalControlsGenerated",
-            "fullIdentityFeatures", "legacyFeatures", "files",
+            "fullIdentityFeatures", "legacyFeatures", "runtimeEvidenceRecords",
+            "runtimeObservedActions", "completedWorkflowCandidates", "files",
         }
         files = manifest.get("files")
         if set(manifest) != manifest_fields or manifest.get("schemaVersion") != "107.integrated-manifest":
@@ -337,11 +359,15 @@ def verify(output):
         if not expected_api["compatible"]:
             raise ValueError("Roblox API incompatibility")
         expected_api["emittedSourceMembers"] = validate_emitted_source_members(expected_source)
+        normalized_evidence = normalize_runtime_evidence(runtime_evidence, report["placeId"])
+        expected_registry = build_registry(feature_plan, normalized_evidence)
         if any((
             feature_plan != expected_plan,
             quality != assess(report, feature_plan),
             diagnostics != analyze(report, feature_plan),
             api_compatibility != expected_api,
+            runtime_evidence != normalized_evidence,
+            action_registry != expected_registry,
         )):
             raise ValueError("derived artifact mismatch")
         full, legacy = _resolution_counts(feature_plan)
@@ -349,12 +375,20 @@ def verify(output):
             raise ValueError("control count mismatch")
         if manifest.get("fullIdentityFeatures") != full or manifest.get("legacyFeatures") != legacy:
             raise ValueError("resolution count mismatch")
+        if manifest.get("runtimeEvidenceRecords") != len(runtime_evidence["records"]):
+            raise ValueError("runtime evidence count mismatch")
+        if manifest.get("runtimeObservedActions") != action_registry["summary"]["runtimeObservedActions"]:
+            raise ValueError("runtime observed count mismatch")
+        if manifest.get("completedWorkflowCandidates") != action_registry["summary"]["completedWorkflowCandidates"]:
+            raise ValueError("workflow candidate count mismatch")
         expected = {
             REPORT: canonical(report),
             PLAN: canonical(feature_plan),
             QUALITY: canonical(quality),
             DIAGNOSTICS: canonical(diagnostics),
             API_COMPATIBILITY: canonical(api_compatibility),
+            RUNTIME_EVIDENCE: canonical(normalized_evidence),
+            ACTION_REGISTRY: canonical(expected_registry),
             SCRIPT: expected_source.encode("utf-8"),
         }
         actual_source = (root / SCRIPT).read_bytes().decode("utf-8")
@@ -376,6 +410,8 @@ def verify(output):
             "fullIdentityFeatures": full,
             "legacyFeatures": legacy,
             "apiCompatible": True,
+            "runtimeObservedActions": action_registry["summary"]["runtimeObservedActions"],
+            "completedWorkflowCandidates": action_registry["summary"]["completedWorkflowCandidates"],
             "runtimeVerified": False,
         }
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
@@ -387,6 +423,7 @@ def main():
     parser.add_argument("--inspection", type=Path)
     parser.add_argument("--place-id", type=int)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--runtime-evidence", type=Path)
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     if args.verify_only:
@@ -395,7 +432,10 @@ def main():
         if args.inspection is None or args.place_id is None:
             parser.error("--inspection and --place-id are required")
         source = json.loads(args.inspection.read_text(encoding="utf-8-sig"))
-        result = generate(source, args.place_id, args.output)
+        runtime_evidence = None
+        if args.runtime_evidence is not None:
+            runtime_evidence = json.loads(args.runtime_evidence.read_text(encoding="utf-8-sig"))
+        result = generate(source, args.place_id, args.output, runtime_evidence=runtime_evidence)
     print(json.dumps(result, sort_keys=True))
     if not result["ok"]:
         raise SystemExit(1)

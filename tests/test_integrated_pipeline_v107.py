@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
+from action_registry_v107 import normalize_runtime_evidence
 from feature_planner_v107 import plan
 from integrated_pipeline_v107 import emit_luau, generate, verify
 from luau_contract_v107 import validate_source
@@ -54,6 +55,54 @@ class IntegratedPipelineV107Tests(unittest.TestCase):
             self.assertEqual(result["legacyFeatures"], 0)
             report = json.loads((Path(tmp) / "inspection-report.json").read_text())
             self.assertEqual(report["schemaVersion"], "107.release")
+            self.assertTrue(verify(tmp)["ok"])
+
+
+    def test_runtime_evidence_writes_registry_and_manifest_counts(self):
+        features = plan(build(rich_fixture(), PLACE))["features"]
+        evidence = {
+            "schemaVersion": "107.runtime-evidence",
+            "placeId": PLACE,
+            "records": [
+                {
+                    "featureId": features[0]["id"],
+                    "status": "success",
+                    "timestamp": 1,
+                    "workflowId": "wf_cycle",
+                    "stepIndex": 1,
+                    "stepCount": 2,
+                },
+                {
+                    "featureId": features[1]["id"],
+                    "status": "success",
+                    "timestamp": 2,
+                    "workflowId": "wf_cycle",
+                    "stepIndex": 2,
+                    "stepCount": 2,
+                },
+                {
+                    "featureId": features[0]["id"],
+                    "status": "success",
+                    "timestamp": 3,
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            result = generate(rich_fixture(), PLACE, tmp, runtime_evidence=evidence)
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["runtimeObservedActions"], 1)
+            self.assertEqual(result["completedWorkflowCandidates"], 1)
+
+            runtime_data = json.loads((Path(tmp) / "runtime-evidence.json").read_text())
+            registry = json.loads((Path(tmp) / "action-registry.json").read_text())
+            manifest = json.loads((Path(tmp) / "manifest.json").read_text())
+
+            self.assertEqual(runtime_data, normalize_runtime_evidence(evidence, PLACE))
+            self.assertEqual(registry["summary"]["runtimeObservedActions"], 1)
+            self.assertEqual(registry["summary"]["completedWorkflowCandidates"], 1)
+            self.assertEqual(manifest["runtimeEvidenceRecords"], 3)
+            self.assertEqual(manifest["runtimeObservedActions"], 1)
+            self.assertEqual(manifest["completedWorkflowCandidates"], 1)
             self.assertTrue(verify(tmp)["ok"])
 
     def test_duplicate_names_with_distinct_ordinals_are_emitted(self):
@@ -118,6 +167,7 @@ class IntegratedPipelineV107Tests(unittest.TestCase):
             for name in (
                 "inspection-report.json", "feature-plan.json", "quality-report.json",
                 "inspection-diagnostics.json", "api-compatibility.json",
+                "runtime-evidence.json", "action-registry.json",
                 "LycolesFunctionalObserver.client.lua", "manifest.json",
             ):
                 self.assertEqual((Path(a) / name).read_bytes(), (Path(b) / name).read_bytes())
@@ -137,6 +187,16 @@ class IntegratedPipelineV107Tests(unittest.TestCase):
             data["features"][0]["pathIdentity"][-1]["ordinal"] = 99
             path.write_text(json.dumps(data))
             self.assertFalse(verify(tmp)["ok"])
+
+    def test_action_registry_tampering_is_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generate(rich_fixture(), PLACE, tmp)
+            path = Path(tmp) / "action-registry.json"
+            data = json.loads(path.read_text())
+            data["summary"]["runtimeObservedActions"] = 999
+            path.write_text(json.dumps(data))
+            self.assertFalse(verify(tmp)["ok"])
+
 
     def test_static_contract_requires_full_identity_resolution(self):
         script = emit_luau(plan(build(rich_fixture(), PLACE)))

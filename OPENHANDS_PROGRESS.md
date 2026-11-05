@@ -12,6 +12,30 @@
   - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest -v tests.test_controlled_luau_v108` (**24 tests, all passing**)
   - `git diff --check` (clean)
 
+## Update — 2026-11-05 — v107 runtime-evidence action registry integration (v30.6.20)
+
+- Current inspector version: **30.6.18** (`version.txt`).
+- Latest verified pre-run commit on `openhands-development`: `6eca1bc`.
+- Completed v107 runtime-evidence/action-registry downstream integration for deterministic generation and verification:
+  - Added registry module: `tools/action_registry_v107.py`.
+  - Added dedicated unit coverage: `tests/test_action_registry_v107.py`.
+  - Extended integrated pipeline tests for new artifacts and manifest counters:
+    - runtime evidence normalization persistence
+    - action-registry tamper detection
+    - deterministic artifact set including `runtime-evidence.json` and `action-registry.json`
+  - Added targeted CI workflow: `.github/workflows/v107-integrated.yml`.
+  - Correlated completed workflow spans back into per-action readiness: actions now expose `runtimeEvidence.completedWorkflowHits` / `partialWorkflowHits`, summary includes `workflowCorrelatedActions`, and generation readiness can be high when workflow-complete evidence exists even with single-step per-action observations.
+
+- Validation completed in this run:
+  - Focused regression: `python -m unittest tests.test_action_registry_v107 tests.test_integrated_pipeline_v107 tests.test_compile_interaction_sequences` → **28 passed**.
+  - Full Python gate with pinned Luau runtime: `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests -v` → **1569 passed**.
+  - Node receiver + Luau parser gate: `npm test` → **all checks passed**.
+  - Additional gates: `python -m compileall -q tools tests`, `git diff --check` → passed.
+  - End-to-end v107 CLI smoke: generate + verify-only + repeated generate deterministic comparison (`diff -rq`) → passed.
+- Known blockers: none.
+- Remaining priority focus: increase evidence-backed completed workflow candidates and actionable runtime-observed coverage without weakening causality/server-authority boundaries.
+
+
 
 ## Update — 2026-11-02 — Review-only GUI outcome diagnostics (v30.6.18)
 
