@@ -1,5 +1,16 @@
 # OpenHands Development Progress
 
+
+## Update — 2026-11-02 — Interaction attribution and correlation upgrade (v30.6.11)
+
+- Implemented bounded context-scored feature attribution in the inspector (`control name/text + ancestor names + path segments`) with a strong-unique-score requirement before assigning a feature.
+- Added deterministic menu hints for Bubble Gum INFINITY-style UI surfaces (`season`, `dailyperks`, `runecrafting`, `enchants`, `gemgenie`, `powerups`, `boxcondenser`, `potions`, `shadowleviathan`, `robuxshop`) to reduce unattributed interactions.
+- Added bounded confirmation-link fallback using context-token overlap across recent pending initiators, improving multi-step workflow correlation when exact feature/kind matching is insufficient.
+- Added unambiguous action-kind default feature inference for pending workflow context (`purchase`, `claim`, `hatch`, `travel`, `rebirth`, `sell`, `blow/craft`) without adding server-authority claims.
+- Added static regressions in `tests/test_inspector_ui.py` for context-scored attribution and context-token linking.
+- Full local gate passed after these changes: **1,555 Python tests** and Node receiver/Luau parser tests (**3/3**).
+
+
 ## Update — 2026-11-02 — Quick scan profile, workflow diagnostics, and lifecycle separation (v30.6.10)
 
 - Added explicit FULL/QUICK scan profiles to the in-game inspector. QUICK uses targeted evidence capture (`quick-targeted-snapshot-v1`) with reduced metadata enrichment and explicit profile-filtered omission accounting; FULL remains available for comprehensive snapshots.

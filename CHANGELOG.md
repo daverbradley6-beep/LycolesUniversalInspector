@@ -1,3 +1,11 @@
+## v30.6.11 — Interaction attribution and workflow-correlation improvements
+
+- Improve interaction attribution with bounded context scoring: combine control name, control text, ancestor names, and path segments while requiring a strong unique score before assigning a feature.
+- Expand deterministic menu feature hints for real Bubble Gum INFINITY UI contexts (`season`, `dailyperks`, `runecrafting`, `enchants`, `gemgenie`, `powerups`, `boxcondenser`, `potions`, `shadowleviathan`, `robuxshop`) to reduce unattributed interactions without fabricating authority.
+- Add bounded context-token overlap linking for confirmation dialogs, so generic yes/no confirmations can link to the most recent compatible initiator when feature/kind matching alone is insufficient.
+- Carry inferred feature defaults from unambiguous action kinds (`purchase`, `claim`, `hatch`, `travel`, `rebirth`, etc.) into pending workflow context and linked followups.
+- Add inspector regressions that lock context-scored attribution and context-token confirmation linking semantics.
+
 ## v30.6.10 — Workflow-gap root causes and cancelled-upload compatibility
 
 - Add `workflowGenerationDiagnostics` into inspector `interactionDiagnostics` with deterministic blockers (for example: explicit recording not armed, no linked confirmations, no corroborated outcomes), so high interaction counts with zero completed workflow candidates are explained without lowering evidence standards.

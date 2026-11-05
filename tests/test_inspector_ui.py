@@ -51,6 +51,17 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('no-completed-workflow-candidates',SRC)
         self.assertIn('workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics',SRC)
 
+    def test_interaction_attribution_uses_context_scoring_and_token_linking(self):
+        self.assertIn('local function scoredFeatureFromInteractionContext(obj,path)',SRC)
+        self.assertIn('return first.feature,#ranked,"context-score-heuristic"',SRC)
+        self.assertIn('runecrafting="progression"',SRC)
+        self.assertIn('season="rewards"',SRC)
+        self.assertIn('local function contextTokensForNames(names)',SRC)
+        self.assertIn('local function contextTokenOverlap(left,right)',SRC)
+        self.assertIn('matchConfidence="context-token-overlap-heuristic"',SRC)
+        self.assertIn('local inferredFeature=feature or defaultFeatureForActionKind(kind)',SRC)
+
+
     def test_manifest_reports_upload_lifecycle(self):
         self.assertIn("reportTransport = uploadSnapshot(\"pre-upload\")",SRC)
         self.assertIn("uploadAttempted = uploadState.attempted",SRC)

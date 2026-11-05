@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.10
+-- Lycoles Universal Inspector v30.6.11
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.10"
+local VERSION = "30.6.11"
 
 local endpoint = ""
 local autoSend = true
@@ -2396,13 +2396,81 @@ end
 local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
     rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
-    freegiftsgui="rewards", freegiftsnewmenu="rewards",
+    freegiftsgui="rewards", freegiftsnewmenu="rewards", season="rewards",
+    dailyperks="rewards", shadowleviathan="bosses",
     shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel",
     travelareanewmenu="travel", petsrightbase="pets", petsbutton="pets",
     confirmSellNewMenu="inventory", confirmsellnewmenu="inventory",
     fortunewheelmenugui="rewards", fortuneothermenusgui="rewards",
-    buyspinsmenu="shops"
+    robuxshop="shops", buyspinsmenu="shops",
+    runecrafting="progression", enchants="progression", gemgenie="progression",
+    powerups="progression", boxcondenser="progression", potions="progression"
 }
+local CONTEXT_TOKEN_IGNORES = {
+    button=true, frame=true, main=true, inner=true, top=true, bottom=true,
+    left=true, right=true, close=true, template=true, item=true, items=true,
+    hud=true, players=true, playergui=true, screengui=true, localplayer=true,
+    scrollingframe=true, screen=true, gui=true, label=true, text=true,
+    image=true, content=true, action=true, buttons=true
+}
+local function contextTokensForNames(names)
+    local seen,tokens={},{}
+    if type(names)~="table" then return tokens end
+    for _,name in ipairs(names) do
+        for token in tostring(name):lower():gmatch("[%a%d]+") do
+            if #token>=3 and not CONTEXT_TOKEN_IGNORES[token] and not seen[token] then
+                seen[token]=true
+                tokens[#tokens+1]=token
+            end
+        end
+    end
+    table.sort(tokens)
+    return tokens
+end
+local function contextTokenOverlap(left,right)
+    if type(left)~="table" or type(right)~="table" then return 0 end
+    local seen,score={},0
+    for _,token in ipairs(left) do seen[token]=true end
+    for _,token in ipairs(right) do if seen[token] then score=score+1 end end
+    return score
+end
+local function scoredFeatureFromInteractionContext(obj,path)
+    local scores={}
+    local function add(feature,weight)
+        if feature then scores[feature]=(scores[feature] or 0)+weight end
+    end
+    local function scan(value,weight)
+        local text=tostring(value)
+        local hint=MENU_FEATURE_HINTS[text:lower()]
+        if hint then add(hint,weight+1) end
+        local feature=featureForName(text)
+        if feature then add(feature,weight) end
+    end
+    scan(obj.Name,2)
+    if obj:IsA("GuiButton") then
+        local ok,text=pcall(function() return obj.Text end)
+        if ok and type(text)=="string" and #text>0 then scan(text:sub(1,80),2) end
+    end
+    local node=obj.Parent
+    for depth=1,9 do
+        if not node then break end
+        scan(node.Name,1)
+        if node:IsA("ScreenGui") then break end
+        node=node.Parent
+    end
+    for segment in tostring(path or ""):gmatch("[^%.]+") do scan(segment,1) end
+    local ranked={}
+    for feature,score in pairs(scores) do ranked[#ranked+1]={feature=feature,score=score} end
+    table.sort(ranked,function(a,b)
+        return a.score==b.score and a.feature<b.feature or a.score>b.score
+    end)
+    if #ranked==0 then return nil,0,nil end
+    local first,second=ranked[1],ranked[2]
+    if first.score>=3 and (not second or first.score>=second.score+2) then
+        return first.feature,#ranked,"context-score-heuristic"
+    end
+    return nil,#ranked,nil
+end
 local function featureConsistentStateEvidence(feature, changes)
     if not feature then return nil end
     local matched={}
@@ -2489,6 +2557,16 @@ local function semanticActionKind(obj, feature)
     end
     return nil,nil
 end
+local function defaultFeatureForActionKind(kind)
+    if kind=="hatch" then return "pets" end
+    if kind=="rebirth" then return "rebirth" end
+    if kind=="travel" then return "travel" end
+    if kind=="claim" then return "rewards" end
+    if kind=="purchase" then return "shops" end
+    if kind=="sell" then return "inventory" end
+    if kind=="blow" or kind=="craft" then return "progression" end
+    return nil
+end
 local function workflowContext(obj, feature, kind, actionSource)
     local names, node={},obj
     for i=1,9 do
@@ -2497,9 +2575,10 @@ local function workflowContext(obj, feature, kind, actionSource)
         node=node.Parent
     end
     return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
+        contextTokens=contextTokensForNames(names),
         kind=kind, actionSource=actionSource, clientOnly=true}
 end
-local function classifyInteraction(obj)
+local function classifyInteraction(obj,path)
     -- Specific local menu context wins over generic controls like EquipButton.
     local node=obj.Parent
     local depth=0
@@ -2532,7 +2611,12 @@ local function classifyInteraction(obj)
     local lower=obj.Name:lower()
     if lower=="items" then return "inventory",1,"known-navigation-control" end
     if lower=="claim" then return "rewards",1,"known-navigation-control" end
-    return nil,0,"unattributed"
+    local contextualFeature, contextualCount, contextualSource =
+        scoredFeatureFromInteractionContext(obj,path)
+    if contextualFeature then
+        return contextualFeature,contextualCount,contextualSource
+    end
+    return nil,contextualCount or 0,"unattributed"
 end
 local function linkWorkflow(obj, feature, sequence)
     local name=obj.Name:lower()
@@ -2551,8 +2635,10 @@ local function linkWorkflow(obj, feature, sequence)
     local contextFeature=feature
     local dialog=false
     local menuName=nil
+    local contextNames={}
     for i=1,9 do
         if not node then break end
+        contextNames[#contextNames+1]=node.Name
         local n=node.Name:lower()
         if n:find("confirm",1,true) or n:find("confim",1,true)
             or n:find("choice",1,true) or n=="travelareanewmenu"
@@ -2564,6 +2650,7 @@ local function linkWorkflow(obj, feature, sequence)
     end
     if (isYes or isNo) and dialog then
         local bestIndex=nil
+        local matchConfidence="context-and-time-heuristic"
         for i=#pendingActions,1,-1 do
             local pending=pendingActions[i]
             if (contextFeature and pending.feature==contextFeature)
@@ -2573,13 +2660,35 @@ local function linkWorkflow(obj, feature, sequence)
                 break
             end
         end
+        if not bestIndex then
+            local contextTokens=contextTokensForNames(contextNames)
+            local bestScore=0
+            if #contextTokens>0 then
+                for i=#pendingActions,1,-1 do
+                    local pending=pendingActions[i]
+                    local age=now-pending.clock
+                    if age<=8 and (not contextFeature or not pending.feature or pending.feature==contextFeature) then
+                        local overlap=contextTokenOverlap(contextTokens,pending.contextTokens)
+                        if overlap>bestScore then
+                            bestScore=overlap
+                            bestIndex=i
+                        end
+                    end
+                end
+            end
+            if bestIndex and bestScore>=2 then
+                matchConfidence="context-token-overlap-heuristic"
+            else
+                bestIndex=nil
+            end
+        end
         if bestIndex then
             local previous=table.remove(pendingActions,bestIndex)
             if isNo then workflowStats.cancelled=workflowStats.cancelled+1
             else workflowStats.linkedConfirmations=workflowStats.linkedConfirmations+1 end
             return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
                 inferredFeature=previous.feature,action=previous.kind,context=previous.context,
-                dialog=menuName,confidence="context-and-time-heuristic",verified=false}
+                dialog=menuName,confidence=matchConfidence,verified=false}
         end
         if contextFeature=="travel" and isYes then
             return {phase="travel-confirmed-unlinked",action="travel",
@@ -2593,10 +2702,13 @@ local function linkWorkflow(obj, feature, sequence)
     end
     local kind, actionSource = semanticActionKind(obj,feature)
     if kind then
-        local context=workflowContext(obj,feature,kind,actionSource)
-        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
+        local inferredFeature=feature or defaultFeatureForActionKind(kind)
+        local context=workflowContext(obj,inferredFeature,kind,actionSource)
+        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=inferredFeature,
+            kind=kind,context=context,contextTokens=context.contextTokens}
         if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
         return {phase="initiated",action=kind,actionSource=actionSource,
+            inferredFeature=inferredFeature,
             confidence="bounded-name-context-heuristic",verified=false}
     end
     return nil
@@ -2827,7 +2939,7 @@ local function observeInteractionObject(obj, root, label)
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
-        local feature, matchCount, attributionSource = classifyInteraction(obj)
+        local feature, matchCount, attributionSource = classifyInteraction(obj,path)
         if feature then
             attributedInteractionCount = attributedInteractionCount + 1
         else
