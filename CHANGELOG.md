@@ -1,3 +1,12 @@
+## v30.6.26 — Manifest-assisted activation support expanded to Prompt and Tool controls
+
+- Extend `tools/build_release.py` manifest-assisted workflow Lua fallback so **Activate** now supports three bounded observed control contracts:
+  - `GuiButton.Activated` via official `GuiButton:Activate()`
+  - `ProximityPrompt.Triggered` via optional executor-provided `fireproximityprompt` when available
+  - `Tool.Activated` via bounded official equip (`Humanoid:EquipTool`) + `Tool:Activate()`
+- Preserve fail-closed behavior and explicit negative verification claims: every branch reports before/after state-hint snapshots and still labels runtime/gameplay evidence as unverified.
+- Extend `tests/test_build_release.py` manifest fallback assertions to cover Prompt and Tool branch emission in generated Lua.
+
 ## v30.6.25 — Manifest-assisted functional script fallback and integrated v108 manifest handling
 
 - Extend `tools/build_release.py` manifest-only flow to emit a functional, game-specific assisted script (`LycolesManifestAssistedWorkflow.lua`) and structured target metadata (`manifest-assisted-workflow.json`) from observed interaction evidence while preserving fail-closed release blocking when numbered multipart object parts are unavailable.
@@ -8,7 +17,6 @@
   - `tests/test_build_release.py` verifies manifest-only assisted Lua + metadata artifacts while release ZIP generation remains blocked.
   - `tests/test_integrated_pipeline_v108.py` verifies CLI manifest-only blocked summary plus fallback artifact emission.
   - `tests/test_luau_syntax.mjs` now parses manifest-assisted fallback Lua to prevent syntax regressions.
-
 
 ## v30.6.24 — Workflow linkage root-cause diagnostics for single-use transaction IDs
 

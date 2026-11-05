@@ -1,6 +1,21 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted Prompt/Tool activation support (v30.6.26)
+
+- Expanded `tools/build_release.py` manifest-assisted fallback activation logic so generated `LycolesManifestAssistedWorkflow.lua` now supports bounded attempts for:
+  - `GuiButton.Activated`
+  - `ProximityPrompt.Triggered` (optional `fireproximityprompt` when available)
+  - `Tool.Activated` (bounded official equip + `Tool:Activate()`)
+- Preserved fail-closed semantics: activation branches still report explicit before/after state-hint snapshots and never upgrade runtime/gameplay verification claims.
+- Extended regressions in `tests/test_build_release.py` to assert Prompt/Tool activation branches are emitted in manifest-assisted generated Lua.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+- Audited historical v108 drift-attribution defect (`value_type_drift` wrongly including `property_read_succeeds`): current code already fails closed correctly with empty `failedRuntimeChecks` for resolved type drift, and regression remains covered by `tests/test_runtime_contract_v108.py::test_resolved_value_type_drift_fails_closed`.
+
 ## Update — 2026-11-05 — Manifest-assisted functional generation fallback (v30.6.25)
 
 - Completed Bubble Gum INFINITY manifest-only end-to-end audit on both:

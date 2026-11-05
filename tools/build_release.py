@@ -296,6 +296,59 @@ makeButton("Activate",function()
       "",
       "Result remains unverified gameplay evidence."
     })
+  elseif target.controlType=="ProximityPrompt.Triggered" and node:IsA("ProximityPrompt") then
+    local before=collectHints(target)
+    local trigger=(typeof(fireproximityprompt)=="function" and fireproximityprompt)
+      or (typeof(_G.fireproximityprompt)=="function" and _G.fireproximityprompt)
+    local ok=false
+    local call_err="fireproximityprompt unavailable"
+    if trigger then
+      ok,call_err=pcall(function() trigger(node) end)
+    end
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "ProximityPrompt trigger attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
+  elseif target.controlType=="Tool.Activated" and node:IsA("Tool") then
+    local before=collectHints(target)
+    local character=player.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    local equipped=false
+    if humanoid then
+      pcall(function() humanoid:EquipTool(node) end)
+      equipped=(node.Parent==character)
+    end
+    local ok=false
+    local call_err=nil
+    if equipped then
+      ok,call_err=pcall(function() node:Activate() end)
+    else
+      call_err="Tool equip unavailable"
+    end
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "Tool activation attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
   else
     renderStatus("Activate",{
       "Unsupported bounded activation for control type: "..target.controlType,

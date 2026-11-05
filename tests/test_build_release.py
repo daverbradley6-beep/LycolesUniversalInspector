@@ -578,6 +578,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             assisted=(output/"LycolesManifestAssistedWorkflow.lua").read_text(encoding="utf-8")
             self.assertIn("manifest-assisted observed workflow trial",assisted)
             self.assertIn("makeButton(\"Activate\"",assisted)
+            self.assertIn("target.controlType==\"ProximityPrompt.Triggered\"",assisted)
+            self.assertIn("target.controlType==\"Tool.Activated\"",assisted)
             self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
             assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
             self.assertEqual(assisted_metadata["placeId"],85896571713843)
