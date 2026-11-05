@@ -89,6 +89,9 @@ Current v30.3 capability-request contract: the in-game Generated Script tab stag
 - v30.6.34 manifest-readiness evidence contract: emit `evidence.interactionCoverageDiagnostics` and fail-closed legacy blockers (`legacy_manifest_missing_outcome_candidate_field`, `explicit_outcome_candidate_events_unavailable`) when observable interaction changes exist without explicit outcome-candidate fields.
 
 
+- v30.6.35 manifest-assisted output contract: `manifest-assisted-workflow.json` now uses schema `30.6.manifest-assisted-workflow.5` and includes `generationReadinessBlockers` plus `interactionCoverageDiagnostics`; generated `LycolesManifestAssistedWorkflow.lua` status views should display both transport and generation readiness/blocker summaries.
+
+
 
 - v30.6.10 introduces FULL/QUICK scan profiles plus configurable observation delay and explicit cancellation/recovery. QUICK scans are targeted and must disclose profile-filtered omissions; they default to one auto-rescan. `PRODUCE SCRIPT` must force FULL profile capture so generation requests remain complete. Interaction diagnostics now include `workflowGenerationDiagnostics` root-cause blockers, and manifest-readiness accepts `upload-cancelled` snapshots without hiding partial ACK progress. Manifest-readiness now emits schema `109.manifest-readiness.3`; build-release manifest-only blocking must treat any `109.manifest-readiness.*` schema as non-release input.
 - v30.6.11 strengthens functional interaction interpretation: context-scored feature attribution (name/text/ancestor/path), Bubble Gum-oriented menu hints, bounded context-token confirmation linking fallback, and default feature inference from unambiguous action kinds. This is evidence-ranking only: no new causality, runtime, server-authority, or gameplay verification claims.

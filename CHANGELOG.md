@@ -1,3 +1,14 @@
+## v30.6.35 — Manifest-assisted output surfaces generation blockers and coverage diagnostics
+
+- Extend `tools/build_release.py` manifest-assisted Lua status rendering to include:
+  - generation readiness status (`ready`/`blocked`)
+  - bounded generation blocker summary
+- Propagate readiness-analysis context into `manifest-assisted-workflow.json`:
+  - `generationReadinessBlockers`
+  - `interactionCoverageDiagnostics`
+- Bump manifest-assisted metadata schema to `30.6.manifest-assisted-workflow.5`.
+- Extend `tests/test_build_release.py` to validate the new Lua status context and schema `.5` metadata contract.
+
 ## v30.6.34 — Manifest-readiness exposes legacy outcome-candidate coverage gaps
 
 - Extend `tools/manifest_readiness_v109.py` with `interactionCoverageDiagnostics`, reporting interaction-signal density over available history:

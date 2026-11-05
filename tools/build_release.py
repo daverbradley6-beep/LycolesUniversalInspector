@@ -140,7 +140,8 @@ def _manifest_observed_targets(document):
     return targets[:18]
 
 
-def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,transport_blockers=None):
+def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,transport_blockers=None,
+                                    generation_ready=False,generation_blockers=None):
     entries=[]
     for index,target in enumerate(targets,1):
         hints=", ".join(_lua_string(hint) for hint in target["stateHints"])
@@ -165,6 +166,19 @@ def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,trans
             if len(blocker_tokens)>=6:
                 break
     blocker_text=", ".join(blocker_tokens) if blocker_tokens else "none"
+    generation_blocker_tokens=[]
+    if isinstance(generation_blockers,list):
+        for blocker in generation_blockers:
+            if (isinstance(blocker,str) and blocker and len(blocker)<=120
+                    and blocker not in generation_blocker_tokens):
+                generation_blocker_tokens.append(blocker)
+            if len(generation_blocker_tokens)>=8:
+                break
+    generation_blocker_text=(", ".join(generation_blocker_tokens)
+        if generation_blocker_tokens else "none")
+    generation_readiness_text="ready" if generation_ready else "blocked"
+
+
 
     template='''-- Lycoles manifest-assisted observed workflow trial (client-visible evidence only).
 -- This artifact is generated when numbered multipart object parts are unavailable.
@@ -259,12 +273,16 @@ local function collectHints(target)
 end
 local TRANSPORT_READINESS_STATUS=__TRANSPORT_STATUS__
 local TRANSPORT_READINESS_BLOCKERS=__TRANSPORT_BLOCKERS__
+local GENERATION_READINESS_STATUS=__GENERATION_READINESS_STATUS__
+local GENERATION_READINESS_BLOCKERS=__GENERATION_READINESS_BLOCKERS__
 local index=1
 local function current() return targets[index] end
 local function renderStatus(title,lines)
   local merged={
     "Transport readiness: "..tostring(TRANSPORT_READINESS_STATUS),
     "Transport blockers: "..tostring(TRANSPORT_READINESS_BLOCKERS),
+    "Generation readiness: "..tostring(GENERATION_READINESS_STATUS),
+    "Generation blockers: "..tostring(GENERATION_READINESS_BLOCKERS),
     "",
   }
   for _,line in ipairs(lines) do merged[#merged+1]=line end
@@ -409,7 +427,9 @@ showTarget("Ready")
         .replace("__PLACE_ID__",str(place_id))
         .replace("__TARGET_TABLE__",target_table)
         .replace("__TRANSPORT_STATUS__",_lua_string(status_text))
-        .replace("__TRANSPORT_BLOCKERS__",_lua_string(blocker_text)))
+        .replace("__TRANSPORT_BLOCKERS__",_lua_string(blocker_text))
+        .replace("__GENERATION_READINESS_STATUS__",_lua_string(generation_readiness_text))
+        .replace("__GENERATION_READINESS_BLOCKERS__",_lua_string(generation_blocker_text)))
 
 
 
@@ -431,21 +451,32 @@ def build_manifest_readiness(manifest_path,output):
             transport_blockers=[]
         generation_readiness=(result.get("generationReadiness")
             if isinstance(result.get("generationReadiness"),dict) else {})
+        generation_blockers=generation_readiness.get("blockers")
+        if not isinstance(generation_blockers,list):
+            generation_blockers=[]
+        interaction_coverage=((result.get("evidence") or {}).get("interactionCoverageDiagnostics")
+            if isinstance(result.get("evidence"),dict) else None)
+        if not isinstance(interaction_coverage,dict):
+            interaction_coverage={}
         assisted=_manifest_assisted_workflow_lua(
             result["placeId"],
             observed_targets,
             transport_readiness.get("status"),
             transport_blockers,
+            bool(generation_readiness.get("scriptGenerationReady")),
+            generation_blockers,
         )
         (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
         (output/"manifest-assisted-workflow.json").write_text(json.dumps({
-            "schemaVersion":"30.6.manifest-assisted-workflow.4",
+            "schemaVersion":"30.6.manifest-assisted-workflow.5",
             "placeId":result["placeId"],
             "targetCount":len(observed_targets),
             "targets":observed_targets,
             "transportReadinessStatus":transport_readiness.get("status"),
             "transportReadinessBlockers":transport_blockers,
             "scriptGenerationReady":bool(generation_readiness.get("scriptGenerationReady")),
+            "generationReadinessBlockers":generation_blockers,
+            "interactionCoverageDiagnostics":interaction_coverage,
             "runtimeVerified":False,
             "gameplayVerified":False,
             "causalityProven":False,

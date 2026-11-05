@@ -1,6 +1,23 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted schema .5 surfaces generation blockers and coverage (v30.6.35)
+
+- Extended `tools/build_release.py` manifest-assisted Lua status text to include generation-readiness context:
+  - `Generation readiness: ready|blocked`
+  - `Generation blockers: ...` (bounded summary)
+- Extended `manifest-assisted-workflow.json` emission with:
+  - schema `30.6.manifest-assisted-workflow.5`
+  - `generationReadinessBlockers`
+  - `interactionCoverageDiagnostics`
+- Wired these values from analyzed manifest-readiness output to preserve fail-closed context in both JSON and Lua display artifacts.
+- Extended `tests/test_build_release.py` regression coverage for schema `.5` and rendered generation-readiness diagnostics.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-readiness adds legacy outcome-candidate coverage diagnostics (v30.6.34)
 
 - Extended `tools/manifest_readiness_v109.py` with `interactionCoverageDiagnostics` under `evidence`, including counts for:

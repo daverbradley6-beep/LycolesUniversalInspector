@@ -622,11 +622,13 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("Observed GUI changes:",assisted)
             self.assertIn("Observable outcome candidate:",assisted)
             self.assertIn("Transport readiness:",assisted)
+            self.assertIn("Generation readiness:",assisted)
+            self.assertIn("Generation blockers:",assisted)
             self.assertIn("legacy-local-export-observed-upload-state-unknown",assisted)
             self.assertIn("upload_attempt_status_unknown_legacy_manifest",assisted)
             self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
             assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
-            self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.4")
+            self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.5")
             self.assertEqual(assisted_metadata["placeId"],85896571713843)
             self.assertGreater(assisted_metadata["targetCount"],0)
             self.assertEqual(
@@ -638,6 +640,13 @@ class ReleaseBuilderTests(unittest.TestCase):
                 assisted_metadata["transportReadinessBlockers"],
             )
             self.assertFalse(assisted_metadata["scriptGenerationReady"])
+            self.assertIn(
+                "legacy_manifest_missing_outcome_candidate_field",
+                assisted_metadata["generationReadinessBlockers"],
+            )
+            coverage=assisted_metadata["interactionCoverageDiagnostics"]
+            self.assertEqual(coverage["events"],8)
+            self.assertTrue(coverage["legacyOutcomeCandidateFieldMissing"])
             self.assertTrue(any(t.get("observableChange") is True for t in assisted_metadata["targets"]))
             for target in assisted_metadata["targets"]:
                 self.assertIn("stateChangeCount",target)
