@@ -12,7 +12,7 @@
   - Regression coverage expanded in `tests/test_generation_readiness.py`, `tests/test_generate_script.py`, `tests/test_build_release.py`, and `tests/test_generated_result.py`.
 - Validation results:
   - `python -m unittest tests.test_generation_readiness tests.test_generated_result tests.test_generate_script tests.test_build_release` (**56 tests, all passing**).
-  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests` (**1,570 tests, all passing**).
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests` (**1,577 tests, all passing**).
   - `npm test` (**receiver checks pass + Luau parser 3/3**).
   - `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest -v tests.test_controlled_luau_v108` (**24 tests, all passing**).
   - `git diff --check` (clean).
