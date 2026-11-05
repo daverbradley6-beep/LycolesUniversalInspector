@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Generate and verify evidence-bounded v108 system/runtime artifact bundles."""
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import re
 import tempfile
@@ -67,6 +69,44 @@ def _prepare_output(output):
     else:
         root.mkdir(parents=True)
     return root
+
+
+def _is_manifest_only_source(source):
+    if not isinstance(source, dict):
+        return False
+    if isinstance(source.get("observations"), list) or isinstance(source.get("objects"), list):
+        return False
+    expected = source.get("expectedParts", source.get("partCount"))
+    return (
+        type(expected) is int and expected > 0
+        and isinstance(source.get("interactionDiagnostics"), dict)
+        and isinstance(source.get("featureReadiness"), dict)
+        and isinstance(source.get("scanStats"), dict)
+    )
+
+
+def _manifest_only_result(readiness, output_root):
+    output_root = Path(output_root)
+    assisted_path = output_root / "LycolesManifestAssistedWorkflow.lua"
+    metadata_path = output_root / "manifest-assisted-workflow.json"
+    return {
+        "ok": False,
+        "blocked": "manifest-only-input",
+        "reason": "numbered_multipart_object_parts_unavailable",
+        "placeId": readiness.get("placeId"),
+        "scriptGenerationReady": readiness.get("generationReadiness", {}).get("scriptGenerationReady"),
+        "generationBlockers": list(readiness.get("generationReadiness", {}).get("blockers", [])),
+        "manifestReadinessArtifact": "manifest-readiness-v109.json",
+        "manifestAssistedWorkflowGenerated": assisted_path.is_file(),
+        "manifestAssistedWorkflowArtifact": (
+            "LycolesManifestAssistedWorkflow.lua" if assisted_path.is_file() else None
+        ),
+        "manifestAssistedWorkflowMetadataArtifact": (
+            "manifest-assisted-workflow.json" if metadata_path.is_file() else None
+        ),
+        "runtimeVerified": False,
+        "gameplayVerified": False,
+    }
 
 
 def _system_plan(interpretation, check_plan, comparison):
@@ -430,19 +470,36 @@ def main():
         if args.inspection is None or args.place_id is None:
             parser.error("--inspection/--source and --place-id are required")
         source = _load_json(args.inspection)
-        relationships = (
-            _load_json(args.relationship_evidence)
-            if args.relationship_evidence else None
-        )
-        observation = (
-            _load_json(args.runtime_observation)
-            if args.runtime_observation else None
-        )
-        result = generate(
-            source, args.place_id, args.output,
-            relationship_evidence=relationships,
-            runtime_observation=observation,
-        )
+        if _is_manifest_only_source(source):
+            manifest_place = source.get("placeId")
+            if type(manifest_place) is int and manifest_place != args.place_id:
+                raise ValueError("manifest place ID mismatch")
+            from build_release import build_manifest_readiness
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture):
+                readiness = build_manifest_readiness(args.inspection, args.output)
+            result = _manifest_only_result(readiness, args.output)
+            ignored = []
+            if args.relationship_evidence is not None:
+                ignored.append("relationship-evidence")
+            if args.runtime_observation is not None:
+                ignored.append("runtime-observation")
+            if ignored:
+                result["ignoredInputs"] = ignored
+        else:
+            relationships = (
+                _load_json(args.relationship_evidence)
+                if args.relationship_evidence else None
+            )
+            observation = (
+                _load_json(args.runtime_observation)
+                if args.runtime_observation else None
+            )
+            result = generate(
+                source, args.place_id, args.output,
+                relationship_evidence=relationships,
+                runtime_observation=observation,
+            )
     print(json.dumps(result, sort_keys=True))
     comparison_failed = (
         not args.verify_only

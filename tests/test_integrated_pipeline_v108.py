@@ -16,7 +16,9 @@ from integrated_pipeline_v108 import ARTIFACTS, generate, verify
 from path_identity_v107 import build
 from release_pipeline_v104 import build as build_v104, canonical
 
+ROOT = Path(__file__).resolve().parents[1]
 PLACE = 85896571713843
+MANIFEST_FIXTURE = ROOT / "tests" / "fixtures" / "bubble_gum_infinity_manifest_v30_sanitized.json"
 
 
 def observation(path, classes, class_name):
@@ -357,6 +359,35 @@ class IntegratedPipelineV108Tests(unittest.TestCase):
             self.assertTrue(summary["driftDetected"])
             self.assertFalse(summary["runtimeVerified"])
             self.assertTrue(verify(output)["ok"])
+
+    def test_cli_manifest_only_source_emits_blocked_summary_and_assisted_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "manifest-only-output"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "tools" / "integrated_pipeline_v108.py"),
+                    "--source", str(MANIFEST_FIXTURE),
+                    "--place-id", str(PLACE),
+                    "--output", str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertFalse(summary["ok"])
+            self.assertEqual(summary["blocked"], "manifest-only-input")
+            self.assertEqual(summary["reason"], "numbered_multipart_object_parts_unavailable")
+            self.assertFalse(summary["scriptGenerationReady"])
+            self.assertTrue(summary["manifestAssistedWorkflowGenerated"])
+            self.assertTrue((output / "manifest-readiness-v109.json").is_file())
+            self.assertTrue((output / "LycolesManifestAssistedWorkflow.lua").is_file())
+            self.assertTrue((output / "manifest-assisted-workflow.json").is_file())
+            self.assertFalse((output / "manifest.json").exists())
 
 
 if __name__ == "__main__":

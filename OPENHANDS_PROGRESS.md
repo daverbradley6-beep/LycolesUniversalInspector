@@ -1,6 +1,38 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Manifest-assisted functional generation fallback (v30.6.25)
+
+- Completed Bubble Gum INFINITY manifest-only end-to-end audit on both:
+  - `tests/fixtures/bubble_gum_infinity_manifest_v30_sanitized.json`
+  - `Pasted text(20261102-152723).txt` (protected local evidence file)
+- Confirmed available real-world evidence remained manifest-only (`partCount/expectedParts present`, `uploadedParts: 0`, no complete local numbered parts in workspace), so full multipart release stayed fail-closed.
+- Implemented functional manifest-only generation fallback in `tools/build_release.py`:
+  - Emits `LycolesManifestAssistedWorkflow.lua` (game-specific operational GUI helper)
+  - Emits `manifest-assisted-workflow.json` (structured observed targets)
+  - Preserves blocked full-release behavior and no positive runtime/gameplay/authenticity claims
+- Added bounded deterministic observed-target extraction from manifest interaction evidence (exact path, feature candidate, control contract, bounded state-hint keys, per-feature caps).
+- Added integrated pipeline handling in `tools/integrated_pipeline_v108.py`:
+  - Detects manifest-only inspection sources
+  - Routes through manifest readiness + assisted workflow emission
+  - Returns structured blocked summary (`blocked=manifest-only-input`) instead of crashing with `ValueError: invalid inspection`
+- Bubble Gum audit outcome after implementation:
+  - Manifest-only build now produces 3 artifacts instead of readiness-only:
+    - `manifest-readiness-v109.json`
+    - `LycolesManifestAssistedWorkflow.lua`
+    - `manifest-assisted-workflow.json`
+  - Sanitized fixture generated 8 observed targets across `{pets, inventory, shops, rewards, unattributed}`
+  - Live manifest generated 18 observed targets across `{quests, pets, inventory, shops, rewards}`
+- Added regression coverage:
+  - `tests/test_build_release.py` manifest-only fallback artifact assertions
+  - `tests/test_integrated_pipeline_v108.py` CLI manifest-only blocked-summary + artifact assertions
+  - `tests/test_luau_syntax.mjs` manifest-assisted fallback Lua parse test
+- Full local validation gate passed:
+  - `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,586 tests passing, 17 skipped**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 4/4**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Transaction ID reuse linkage root-cause diagnostics (v30.6.24)
 
 - Extended `tools/manifest_readiness_v109.py` workflow linkage diagnostics with bounded transaction-ID reuse analysis from captured interaction history.

@@ -126,3 +126,19 @@ identity_integrated({'placeId':place,'observations':[
   ];
   assertValid(await validateFiles(files));
 });
+
+
+test("manifest-assisted fallback Luau parses", async t => {
+  const output = fs.mkdtempSync(path.join(os.tmpdir(), "lycoles-manifest-luau-"));
+  t.after(() => fs.rmSync(output, { recursive: true, force: true }));
+  const manifest = path.join(ROOT, "tests", "fixtures", "bubble_gum_infinity_manifest_v30_sanitized.json");
+  const generated = spawnSync("python", ["-B", path.join(ROOT, "tools", "build_release.py"), manifest, "--output", output], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+  });
+  assert.equal(generated.status, 2, generated.stderr || generated.stdout);
+  const assisted = path.join(output, "LycolesManifestAssistedWorkflow.lua");
+  assert.equal(fs.existsSync(assisted), true);
+  assertValid(await validateFiles([assisted]));
+});

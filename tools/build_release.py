@@ -46,6 +46,271 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
+
+def _lua_string(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _manifest_observed_targets(document):
+    diagnostics=document.get("interactionDiagnostics")
+    history=(diagnostics.get("recentInteractions")
+        if isinstance(diagnostics,dict) else [])
+    if not isinstance(history,list):
+        return []
+    limits={}
+    seen=set();targets=[]
+    def collect_state_hints(event):
+        hints=[]
+        for source in (event.get("stateChanges"),):
+            if isinstance(source,list):
+                for change in source:
+                    key=change.get("key") if isinstance(change,dict) else None
+                    if isinstance(key,str) and 1<=len(key)<=200 and key not in hints:
+                        hints.append(key)
+        windows=event.get("observationWindows")
+        if isinstance(windows,list):
+            for window in windows[:2]:
+                changes=window.get("stateChanges") if isinstance(window,dict) else None
+                if not isinstance(changes,list):
+                    continue
+                for change in changes:
+                    key=change.get("key") if isinstance(change,dict) else None
+                    if isinstance(key,str) and 1<=len(key)<=200 and key not in hints:
+                        hints.append(key)
+        return hints[:6]
+
+    for event in history:
+        if not isinstance(event,dict):
+            continue
+        path=event.get("path")
+        if not isinstance(path,str) or not 1<=len(path)<=400:
+            continue
+        root=path.split(".",1)[0]
+        if root not in {"LocalPlayer","Workspace","ReplicatedStorage","Lighting"}:
+            continue
+        control=event.get("controlType")
+        if not isinstance(control,str) or not 1<=len(control)<=120:
+            control="unknown"
+        feature=event.get("featureCandidate")
+        if not isinstance(feature,str) or not 1<=len(feature)<=80:
+            feature="unattributed"
+        dedupe=(path,control)
+        if dedupe in seen:
+            continue
+        if limits.get(feature,0)>=4:
+            continue
+        seen.add(dedupe);limits[feature]=limits.get(feature,0)+1
+        sequence=event.get("sequence") if type(event.get("sequence")) is int else 0
+        hints=collect_state_hints(event)
+        label=path.split(".")[-1]
+        targets.append({
+            "path":path,
+            "label":label,
+            "feature":feature,
+            "controlType":control,
+            "stateHints":hints,
+            "stateHintCount":len(hints),
+            "sequence":sequence,
+            "attributed":feature!="unattributed",
+        })
+    targets.sort(key=lambda item:(
+        0 if item["attributed"] else 1,
+        -item["stateHintCount"],
+        -item["sequence"],
+        item["feature"],
+        item["path"]))
+    return targets[:18]
+
+
+def _manifest_assisted_workflow_lua(place_id,targets):
+    entries=[]
+    for index,target in enumerate(targets,1):
+        hints=", ".join(_lua_string(hint) for hint in target["stateHints"])
+        entries.append("  {id="+_lua_string(f"target-{index:03d}")
+            +",feature="+_lua_string(target["feature"])
+            +",label="+_lua_string(target["label"])
+            +",path="+_lua_string(target["path"])
+            +",controlType="+_lua_string(target["controlType"])
+            +",stateHints={"+hints+"}}")
+    target_table="{\n"+",\n".join(entries)+"\n}"
+    template='''-- Lycoles manifest-assisted observed workflow trial (client-visible evidence only).
+-- This artifact is generated when numbered multipart object parts are unavailable.
+-- Runtime, causality, server authority, and gameplay outcomes remain unverified.
+assert(game.PlaceId == __PLACE_ID__, "Wrong place for manifest-assisted script")
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+if not player then return end
+local targets=__TARGET_TABLE__
+if #targets==0 then return end
+local gui=Instance.new("ScreenGui")
+gui.Name="LycolesManifestWorkflow"
+gui.ResetOnSpawn=false
+gui.Parent=player:WaitForChild("PlayerGui")
+local frame=Instance.new("Frame",gui)
+frame.Size=UDim2.fromOffset(560,390)
+frame.Position=UDim2.new(0.5,-280,0.08,0)
+frame.BackgroundColor3=Color3.fromRGB(26,29,34)
+local heading=Instance.new("TextLabel",frame)
+heading.Size=UDim2.new(1,-44,0,34)
+heading.Position=UDim2.fromOffset(12,8)
+heading.BackgroundTransparency=1
+heading.Text="Manifest-assisted workflow targets"
+heading.TextXAlignment=Enum.TextXAlignment.Left
+heading.TextColor3=Color3.fromRGB(236,241,255)
+heading.TextSize=18
+local close=Instance.new("TextButton",frame)
+close.Size=UDim2.fromOffset(30,30)
+close.Position=UDim2.new(1,-38,0,8)
+close.Text="X"
+close.BackgroundColor3=Color3.fromRGB(70,74,82)
+close.TextColor3=Color3.new(1,1,1)
+local output=Instance.new("TextLabel",frame)
+output.Position=UDim2.fromOffset(12,52)
+output.Size=UDim2.new(1,-24,1,-116)
+output.BackgroundColor3=Color3.fromRGB(34,38,45)
+output.TextColor3=Color3.fromRGB(226,234,240)
+output.TextXAlignment=Enum.TextXAlignment.Left
+output.TextYAlignment=Enum.TextYAlignment.Top
+output.TextWrapped=true
+output.TextSize=13
+output.Text="Select Probe to inspect a target, or Activate for bounded GUI activation."
+local controls=Instance.new("Frame",frame)
+controls.BackgroundTransparency=1
+controls.Position=UDim2.new(0,12,1,-54)
+controls.Size=UDim2.new(1,-24,0,40)
+local layout=Instance.new("UIListLayout",controls)
+layout.FillDirection=Enum.FillDirection.Horizontal
+layout.Padding=UDim.new(0,6)
+local function splitPath(path)
+  local parts={}
+  for token in string.gmatch(path,"[^%.]+") do table.insert(parts,token) end
+  return parts
+end
+local function resolvePath(path)
+  local parts=splitPath(path)
+  local root=parts[1]
+  local node=nil
+  if root=="LocalPlayer" then node=player
+  elseif root=="Workspace" then node=workspace
+  elseif root=="ReplicatedStorage" then node=game:GetService("ReplicatedStorage")
+  elseif root=="Lighting" then node=game:GetService("Lighting")
+  else return nil,"Unsupported root: "..tostring(root) end
+  for i=2,#parts do
+    node=node and node:FindFirstChild(parts[i]) or nil
+    if not node then return nil,"Missing segment: "..parts[i] end
+  end
+  return node,nil
+end
+local function resolveHint(key)
+  local probe={key,"LocalPlayer."..key,"LocalPlayer.leaderstats."..key,"LocalPlayer.Data."..key}
+  for _,entry in ipairs(probe) do
+    local obj=resolvePath(entry)
+    if obj then return obj end
+  end
+  return nil
+end
+local function describeValue(obj)
+  if not obj then return "unavailable" end
+  if obj:IsA("ValueBase") then return tostring(obj.Value) end
+  if obj:IsA("GuiObject") then return "Visible="..tostring(obj.Visible)..", Active="..tostring(obj.Active) end
+  return "class="..obj.ClassName
+end
+local function collectHints(target)
+  local lines={}
+  for _,hint in ipairs(target.stateHints) do
+    local obj=resolveHint(hint)
+    lines[#lines+1]=hint..": "..describeValue(obj)
+  end
+  if #lines==0 then lines={"No state hints captured for this target."} end
+  return lines
+end
+local index=1
+local function current() return targets[index] end
+local function renderStatus(title,lines)
+  output.Text=title.."\\n\\n"..table.concat(lines,"\\n")
+end
+local function showTarget(prefix)
+  local target=current()
+  renderStatus(prefix,{
+    "Target "..tostring(index).." / "..tostring(#targets),
+    "Feature: "..target.feature,
+    "Control: "..target.controlType,
+    "Path: "..target.path,
+    "",
+    "Hints:",
+    table.concat(collectHints(target),"\\n")
+  })
+end
+local function makeButton(name,callback)
+  local b=Instance.new("TextButton",controls)
+  b.Size=UDim2.new(0.2,-6,1,0)
+  b.Text=name
+  b.TextSize=12
+  b.BackgroundColor3=Color3.fromRGB(48,78,103)
+  b.TextColor3=Color3.new(1,1,1)
+  b.MouseButton1Click:Connect(function()
+    local ok,err=pcall(callback)
+    if not ok then renderStatus(name.." failed",{tostring(err)}) end
+  end)
+  return b
+end
+makeButton("Prev",function() index=(index<=1) and #targets or (index-1);showTarget("Selected") end)
+makeButton("Next",function() index=(index>=#targets) and 1 or (index+1);showTarget("Selected") end)
+makeButton("Probe",function()
+  local target=current()
+  local node,err=resolvePath(target.path)
+  if not node then
+    renderStatus("Probe",{"Path unavailable: "..err,target.path})
+    return
+  end
+  renderStatus("Probe",{
+    "Found: "..target.path,
+    "Class: "..node.ClassName,
+    "Control contract: "..target.controlType,
+    "",
+    "State hints:",
+    table.concat(collectHints(target),"\\n")
+  })
+end)
+makeButton("Activate",function()
+  local target=current()
+  local node,err=resolvePath(target.path)
+  if not node then
+    renderStatus("Activate",{"Path unavailable: "..err,target.path})
+    return
+  end
+  if target.controlType=="GuiButton.Activated" and node:IsA("GuiButton") then
+    local before=collectHints(target)
+    local ok,call_err=pcall(function() node:Activate() end)
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "GuiButton activation attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
+  else
+    renderStatus("Activate",{
+      "Unsupported bounded activation for control type: "..target.controlType,
+      "Use normal in-game interaction for this target.",
+      "Path: "..target.path
+    })
+  end
+end)
+makeButton("Close",function() gui:Destroy() end)
+showTarget("Ready")
+'''
+    return template.replace("__PLACE_ID__",str(place_id)).replace("__TARGET_TABLE__",target_table)
+
+
+
 def build_manifest_readiness(manifest_path,output):
     analyzer=load_module("manifest_readiness_v109.py","lycoles_manifest_readiness_v109")
     source=pathlib.Path(manifest_path)
@@ -55,6 +320,20 @@ def build_manifest_readiness(manifest_path,output):
     target=output/"manifest-readiness-v109.json"
     result=analyzer.analyze(document)
     analyzer.write(result,target)
+    observed_targets=_manifest_observed_targets(document)
+    if observed_targets:
+        assisted=_manifest_assisted_workflow_lua(result["placeId"],observed_targets)
+        (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
+        (output/"manifest-assisted-workflow.json").write_text(json.dumps({
+            "schemaVersion":"30.6.manifest-assisted-workflow.1",
+            "placeId":result["placeId"],
+            "targetCount":len(observed_targets),
+            "targets":observed_targets,
+            "runtimeVerified":False,
+            "gameplayVerified":False,
+            "causalityProven":False,
+            "sourceManifest":source.name,
+        },indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
     print("BLOCKED: manifest-only input cannot generate a release; readiness written to",target)
     return result
 

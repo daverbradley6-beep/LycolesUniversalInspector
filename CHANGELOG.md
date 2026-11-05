@@ -1,3 +1,15 @@
+## v30.6.25 — Manifest-assisted functional script fallback and integrated v108 manifest handling
+
+- Extend `tools/build_release.py` manifest-only flow to emit a functional, game-specific assisted script (`LycolesManifestAssistedWorkflow.lua`) and structured target metadata (`manifest-assisted-workflow.json`) from observed interaction evidence while preserving fail-closed release blocking when numbered multipart object parts are unavailable.
+- Add bounded manifest target extraction from interaction history (exact observed paths, feature candidates, control contracts, and sampled state-hint keys) with conservative per-feature caps and deterministic ordering.
+- Generate a two-tab-equivalent operational fallback UI for manifest-only sessions with explicit **Prev/Next/Probe/Activate/Close** controls, exact-path resolution, bounded GUI activation attempts for observed `GuiButton.Activated` controls, and before/after hint snapshots without upgrading runtime/gameplay verification claims.
+- Update `tools/integrated_pipeline_v108.py` CLI to detect manifest-only inspection sources, route them through readiness + assisted-workflow generation, and return a structured blocked summary instead of crashing with `invalid inspection`.
+- Extend regression coverage:
+  - `tests/test_build_release.py` verifies manifest-only assisted Lua + metadata artifacts while release ZIP generation remains blocked.
+  - `tests/test_integrated_pipeline_v108.py` verifies CLI manifest-only blocked summary plus fallback artifact emission.
+  - `tests/test_luau_syntax.mjs` now parses manifest-assisted fallback Lua to prevent syntax regressions.
+
+
 ## v30.6.24 — Workflow linkage root-cause diagnostics for single-use transaction IDs
 
 - Extend `tools/manifest_readiness_v109.py` workflow linkage diagnostics with transaction ID reuse analysis from observed interaction history.

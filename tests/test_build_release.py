@@ -574,6 +574,16 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue((output/"manifest-readiness-v109.json").is_file())
             self.assertFalse(any(output.glob("*.zip")))
             self.assertFalse((output/"LycolesGeneratedUtility.lua").exists())
+            self.assertTrue((output/"LycolesManifestAssistedWorkflow.lua").is_file())
+            assisted=(output/"LycolesManifestAssistedWorkflow.lua").read_text(encoding="utf-8")
+            self.assertIn("manifest-assisted observed workflow trial",assisted)
+            self.assertIn("makeButton(\"Activate\"",assisted)
+            self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
+            assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
+            self.assertEqual(assisted_metadata["placeId"],85896571713843)
+            self.assertGreater(assisted_metadata["targetCount"],0)
+            self.assertFalse(assisted_metadata["runtimeVerified"])
+            self.assertFalse(assisted_metadata["gameplayVerified"])
     def test_manifest_only_cli_returns_blocked_status_with_artifact(self):
         with tempfile.TemporaryDirectory() as temp:
             output=pathlib.Path(temp)/"out"
@@ -584,6 +594,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("BUILD BLOCKED: manifest-only input",completed.stderr)
             report=json.loads((output/"manifest-readiness-v109.json").read_text(encoding="utf-8"))
             self.assertFalse(report["claims"]["gameplayVerified"])
+            self.assertTrue((output/"LycolesManifestAssistedWorkflow.lua").is_file())
+            self.assertTrue((output/"manifest-assisted-workflow.json").is_file())
     def test_manifest_only_symlink_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);link=base/"manifest.json"
