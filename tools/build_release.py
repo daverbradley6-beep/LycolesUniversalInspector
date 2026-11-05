@@ -168,12 +168,28 @@ def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,trans
     blocker_text=", ".join(blocker_tokens) if blocker_tokens else "none"
     generation_blocker_tokens=[]
     if isinstance(generation_blockers,list):
+        ordered=[]
         for blocker in generation_blockers:
-            if (isinstance(blocker,str) and blocker and len(blocker)<=120
-                    and blocker not in generation_blocker_tokens):
+            if isinstance(blocker,str) and blocker and len(blocker)<=120 and blocker not in ordered:
+                ordered.append(blocker)
+        priority=[
+            "legacy_manifest_missing_outcome_candidate_field",
+            "explicit_outcome_candidate_events_unavailable",
+            "workflow_linkage_not_observed",
+            "workflow_outcome_corroboration_unavailable",
+            "completed_workflow_candidates_unavailable",
+        ]
+        for blocker in priority:
+            if blocker in ordered and blocker not in generation_blocker_tokens:
                 generation_blocker_tokens.append(blocker)
             if len(generation_blocker_tokens)>=8:
                 break
+        if len(generation_blocker_tokens)<8:
+            for blocker in ordered:
+                if blocker not in generation_blocker_tokens:
+                    generation_blocker_tokens.append(blocker)
+                if len(generation_blocker_tokens)>=8:
+                    break
     generation_blocker_text=(", ".join(generation_blocker_tokens)
         if generation_blocker_tokens else "none")
     generation_readiness_text="ready" if generation_ready else "blocked"

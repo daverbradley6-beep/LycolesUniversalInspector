@@ -626,6 +626,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("Generation blockers:",assisted)
             self.assertIn("legacy-local-export-observed-upload-state-unknown",assisted)
             self.assertIn("upload_attempt_status_unknown_legacy_manifest",assisted)
+            self.assertIn("legacy_manifest_missing_outcome_candidate_field",assisted)
+
             self.assertIn("assert(game.PlaceId == 85896571713843",assisted)
             assisted_metadata=json.loads((output/"manifest-assisted-workflow.json").read_text(encoding="utf-8"))
             self.assertEqual(assisted_metadata["schemaVersion"],"30.6.manifest-assisted-workflow.5")
