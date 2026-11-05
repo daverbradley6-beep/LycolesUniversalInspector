@@ -458,6 +458,30 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         source=generator.render(result)
         self.assertIn("guiTextDynamic=true",source)
 
+    def test_gui_transition_only_outcome_is_review_only_not_generation_ready(self):
+        plan=self.gui_plan()
+        event=plan["observedInteractionHistory"][0]
+        event["stateChanges"]=[]
+        event["guiStateChanges"]= [{
+            "path":"PlayerGui.HUD.Shop.UpgradeResult",
+            "transition":"became-visible",
+            "beforeVisible":False,
+            "afterVisible":True,
+        }]
+        result=discovery.analyze(plan)
+        target=result["guiInteractions"]["targets"][0]
+        self.assertFalse(target["guidedActivationContractReady"])
+        self.assertEqual(target["observableOutcomeEvidenceKind"],"gui-transition-only")
+        self.assertTrue(target["reviewOnlyTemporalOutcomeCandidate"])
+        self.assertTrue(any("only GUI transition outcome evidence was observed" in item
+            for item in target["blockers"]))
+        gui=result["guiInteractions"]
+        self.assertEqual(gui["reviewOnlyTemporalOutcomeCandidates"],1)
+        self.assertEqual(gui["reviewOnlyTargetPaths"],["PlayerGui.HUD.Shop.List.Buy"])
+        self.assertTrue(any("review-only GUI transition outcome candidates were observed" in item
+            for item in gui["blockers"]))
+        self.assertEqual(gui["generationReadyTargets"],0)
+
     def test_malformed_gui_prerequisite_metadata_fails_closed(self):
         plan=self.gui_plan();plan["observedInteractionHistory"][0]["controlMetadata"]["unknown"]=True
         with self.assertRaisesRegex(ValueError,"Malformed GUI prerequisite metadata"):

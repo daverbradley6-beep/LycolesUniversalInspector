@@ -1,3 +1,10 @@
+## v30.6.18 — Review-only GUI outcome diagnostics for sparse scalar sessions
+
+- Extend `tools/discover_action_capabilities.py` GUI target diagnostics with explicit `observableOutcomeEvidenceKind` classification (`resolvable-scalar`, `gui-transition-only`, `none`) while keeping scalar-outcome requirements unchanged for trial readiness.
+- Add `reviewOnlyTemporalOutcomeCandidate` per GUI target and aggregate `reviewOnlyTemporalOutcomeCandidates`/`reviewOnlyTargetPaths` in `guiInteractions` so mixed GUI+state sessions can distinguish useful review-only evidence from fully generation-ready targets.
+- Refine GUI blockers and aggregate messaging to explicitly disclose when only GUI transition outcomes were observed without resolvable scalar state identity.
+- Add regression coverage in `tests/test_action_capability_discovery.py` proving GUI-transition-only evidence remains review-only and never auto-promotes generation readiness.
+
 ## v30.6.17 — Follow-ups-only workflow guidance refinement
 
 - Refine `tools/manifest_readiness_v109.py` linkage guidance so follow-up-only linked sessions now receive a targeted recommendation to capture one confirmation/cancel step in the same menu while preserving observable before/after values.

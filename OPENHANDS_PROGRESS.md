@@ -1,6 +1,14 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Review-only GUI outcome diagnostics (v30.6.18)
+
+- Extended GUI discovery output in `tools/discover_action_capabilities.py` with `observableOutcomeEvidenceKind` (`resolvable-scalar`, `gui-transition-only`, `none`) and `reviewOnlyTemporalOutcomeCandidate` per target while preserving strict scalar-outcome requirements for generation readiness.
+- Added aggregate `guiInteractions.reviewOnlyTemporalOutcomeCandidates` and `reviewOnlyTargetPaths`, plus specialized blocker messaging when only GUI transition outcomes are observed.
+- Added regression `test_gui_transition_only_outcome_is_review_only_not_generation_ready` in `tests/test_action_capability_discovery.py` to ensure GUI-only transition evidence remains review-only and fail-closed for generation.
+- Full local gate passed after this refinement: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,562 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Follow-up-only recommendation refinement (v30.6.17)
 
 - Refined `tools/manifest_readiness_v109.py` linkage recommendations so follow-up-only linked sessions now receive targeted capture guidance to record one same-menu confirmation/cancel step while preserving observable before/after values.

@@ -622,6 +622,10 @@ def analyze(plan):
             and selected_snapshot.get("interactable") is not False)
         drift_problematic=(len(metadata_snapshots)>1 and not target["guiMetadataTextDynamic"])
         outcome_ready=bool(target["outcomeSignals"])
+        gui_only_outcome=(not outcome_ready and bool(target["guiOutcomeSignals"]))
+        target["observableOutcomeEvidenceKind"]=("resolvable-scalar" if outcome_ready
+            else "gui-transition-only" if gui_only_outcome else "none")
+        target["reviewOnlyTemporalOutcomeCandidate"]=gui_only_outcome
         target["guidedActivationContractReady"]=(identity_ready and metadata_available
             and outcome_ready and not drift_problematic)
         target["trialGenerationReady"]=target["guidedActivationContractReady"]
@@ -636,7 +640,11 @@ def analyze(plan):
             blockers.append("GUI activation prerequisite metadata drift was observed")
         elif not metadata_available:
             blockers.append("GUI control was not observed visible, enabled, and within scrolling bounds")
-        if not outcome_ready:blockers.append("no resolvable scalar outcome change was observed")
+        if not outcome_ready:
+            if gui_only_outcome:
+                blockers.append("only GUI transition outcome evidence was observed; no resolvable scalar outcome change was observed")
+            else:
+                blockers.append("no resolvable scalar outcome change was observed")
         blockers.extend(["GuiButton exposes an Activated event but no public automatic Activate method",
             "generated trial requires the user to activate the highlighted game control",
             "temporal correlation does not prove causality",
@@ -646,13 +654,19 @@ def analyze(plan):
     gui_list.sort(key=lambda item:(-item["objective"]["requestAligned"],
         -item["objective"]["score"],item["label"].lower(),item["path"]))
     guided_ready=[item for item in gui_list if item["guidedActivationContractReady"]]
+    review_only=[item for item in gui_list if item.get("reviewOnlyTemporalOutcomeCandidate")]
     gui_interactions={"targets":gui_list,"guidedTrialReadyTargets":len(guided_ready),
         "selectedTargetPath":guided_ready[0]["path"] if guided_ready else None,
         "executionMechanism":"guided exact-control highlighting plus official Activated observation; user activation required",
         "automaticActivationSupported":False,"generatorIntegrated":True,
-        "generationReadyTargets":len(guided_ready),"causalityProven":False,"runtimeVerified":False,
+        "generationReadyTargets":len(guided_ready),
+        "reviewOnlyTemporalOutcomeCandidates":len(review_only),
+        "reviewOnlyTargetPaths":[item["path"] for item in review_only][:20],
+        "causalityProven":False,"runtimeVerified":False,
         "gameplayVerified":False,"blockers":[] if guided_ready else
-            ["no observed GUI control has stable identity, availability prerequisites, and a resolvable scalar outcome"]}
+            (["no observed GUI control has a resolvable scalar outcome; review-only GUI transition outcome candidates were observed"]
+                if review_only else
+                ["no observed GUI control has stable identity, availability prerequisites, and a resolvable scalar outcome"])}
 
 
 
