@@ -195,6 +195,34 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertIn("require the user to activate",result["request"]["supportedSubset"][1])
         self.assertEqual(result["discoveryOnlyCapabilities"],[])
 
+    def test_request_aligned_review_only_gui_transitions_surface_specific_blocker(self):
+        value={"integrity":{"scanComplete":True,"placeId":790,"scanId":"gui-review-only"},
+            "requestedCapability":"Open training panel","features":[feature("training",1,1)],
+            "actionableObjects":[],"observedInteractionHistory":[{
+                "path":"PlayerGui.HUD.Training.OpenButton","controlType":"GuiButton.Activated",
+                "featureCandidate":"training","pathIdentity":[
+                    {"name":"PlayerGui","className":"PlayerGui","ordinal":1},
+                    {"name":"HUD","className":"ScreenGui","ordinal":1},
+                    {"name":"Training","className":"Frame","ordinal":1},
+                    {"name":"OpenButton","className":"TextButton","ordinal":1}],
+                "controlMetadata":{"controlClass":"TextButton","text":"Open Training",
+                    "visible":True,"active":True,"selectable":True,"autoButtonColor":True,
+                    "interactable":True,"ancestorVisible":True,"screenEnabled":True,
+                    "withinScrollingBounds":True,"effectiveVisible":True},
+                "guiStateChanges":[{"path":"PlayerGui.HUD.Training.Panel",
+                    "beforeVisible":False,"afterVisible":True}],
+                "stateChanges":[]}]}
+        result=assess(value);request_feature=result["requestFeatureReadiness"]
+        self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
+        self.assertEqual(request_feature["workflowEvidence"]["reviewOnlyGuiTransitionCandidates"],1)
+        self.assertEqual(request_feature["workflowEvidence"][
+            "requestAlignedReviewOnlyGuiTransitionCandidates"],1)
+        self.assertEqual(request_feature["workflowEvidence"][
+            "requestAlignedReviewOnlyGuiTransitionPaths"],["PlayerGui.HUD.Training.OpenButton"])
+        self.assertIn("request_aligned_gui_transition_outcomes_without_scalar_contract",
+            request_feature["explicitBlockers"])
+        self.assertEqual(request_feature["summary"]["requestAlignedReviewOnlyGuiTransitions"],1)
+
     def test_name_only_prompt_does_not_become_generated_subset(self):
         value=egg_plan();value["observedInteractionHistory"]=[]
         value["actionableObjects"]=[{"path":"Workspace.Eggs.Basic.Prompt",

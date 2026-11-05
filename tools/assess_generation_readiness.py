@@ -416,10 +416,53 @@ def _request_feature_matches(plan,request_words):
 
 
 
+def _review_only_gui_request_evidence(actions,request_words):
+    gui=actions.get("guiInteractions") if isinstance(actions,dict) else None
+    if not isinstance(gui,dict):
+        raise ValueError("action capabilities are malformed")
+    targets=gui.get("targets",[])
+    if not isinstance(targets,list) or len(targets)>2000:
+        raise ValueError("action capabilities are malformed")
+    review_targets=[]
+    request_set=set(request_words)
+    for target in targets:
+        if not isinstance(target,dict):
+            raise ValueError("action capabilities are malformed")
+        if target.get("reviewOnlyTemporalOutcomeCandidate") is not True:
+            continue
+        path=target.get("path")
+        if not isinstance(path,str) or not 1<=len(path)<=400:
+            raise ValueError("action capabilities are malformed")
+        evidence=set()
+        for value in (path,target.get("label"),target.get("featureCandidate"),
+                target.get("actionCandidate")):
+            if value is None:
+                continue
+            if not isinstance(value,str):
+                raise ValueError("action capabilities are malformed")
+            evidence.update(_tokens(value))
+        review_targets.append({"path":path,"requestAligned":bool(request_set&evidence)})
+    expected_paths=[item["path"] for item in review_targets][:20]
+    count=gui.get("reviewOnlyTemporalOutcomeCandidates",len(review_targets))
+    paths=gui.get("reviewOnlyTargetPaths",expected_paths)
+    if (type(count) is not int or not 0<=count<=10_000_000
+            or count!=len(review_targets)
+            or not isinstance(paths,list) or len(paths)>20
+            or any(not isinstance(path,str) or not 1<=len(path)<=400 for path in paths)
+            or paths!=expected_paths):
+        raise ValueError("action capabilities are malformed")
+    aligned=[item["path"] for item in review_targets if item["requestAligned"]]
+    return {"totalCandidates":count,
+        "requestAlignedCandidates":len(aligned),
+        "requestAlignedPaths":aligned[:20]}
+
+
+
 def _request_feature_readiness(plan,request,status,generated,matched_generated,gameplay_request,
-        unavailable,discovery_only,workflow_selection,workflow_target):
+        unavailable,discovery_only,workflow_selection,workflow_target,actions):
     request_words=sorted(_tokens(request))
     feature_matches=_request_feature_matches(plan,set(request_words))
+    review_only_gui=_review_only_gui_request_evidence(actions,request_words)
     feature_values=feature_matches[:32]
     gameplay_systems=gameplay_request.get("matchedSystems",[]) if isinstance(gameplay_request,dict) else []
     gameplay_actions=(gameplay_request.get("matchedObservedActions",[])
@@ -439,6 +482,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
     execution_ready_workflows=sum(item.get("executionReady") is True for item in workflow_candidates)
     request_aligned_workflows=sum(item.get("executionReady") is True and bool(
         item.get("matchedTerms")) for item in workflow_candidates)
+    request_aligned_review_only_gui=review_only_gui["requestAlignedCandidates"]
     if request is None:
         request_status="no-capability-requested"
     elif status=="generated-bounded-subset":
@@ -456,6 +500,8 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         if not matched_generated:blockers.append("bounded_generated_contract_unavailable")
         if not feature_values:blockers.append("no_request_feature_token_overlap")
         if execution_ready_workflows==0:blockers.append("no_execution_ready_workflow_candidates")
+        if (not matched_generated and request_aligned_review_only_gui>0):
+            blockers.append("request_aligned_gui_transition_outcomes_without_scalar_contract")
         if request_status=="unsupported-by-current-evidence":
             blockers.append("request_evidence_alignment_unresolved")
     blockers=sorted(set(blockers))
@@ -469,6 +515,9 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "planningStatus":workflow_selection.get("planningDiagnostics",{}).get("status"),
             "executionReadyCandidates":execution_ready_workflows,
             "requestAlignedExecutionReadyCandidates":request_aligned_workflows,
+            "reviewOnlyGuiTransitionCandidates":review_only_gui["totalCandidates"],
+            "requestAlignedReviewOnlyGuiTransitionCandidates":request_aligned_review_only_gui,
+            "requestAlignedReviewOnlyGuiTransitionPaths":review_only_gui["requestAlignedPaths"],
             "selectedCandidateId":workflow_selection.get("selectedCandidateId"),
             "selectedCandidateRequestAligned":bool(workflow_target and _workflow_request_aligned(
                 workflow_target,request)) if request is not None else False,
@@ -482,6 +531,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "matchedObservedActions":len(gameplay_actions),
             "matchedResources":len(gameplay_resources),
             "requestAlignedExecutionReadyWorkflows":request_aligned_workflows,
+            "requestAlignedReviewOnlyGuiTransitions":request_aligned_review_only_gui,
             "blockers":len(blockers)},
         "nameMatchingSufficientForImplementation":False,
         "temporalCorrelationSufficientForImplementation":False,
@@ -642,7 +692,7 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
     workflow_selection=_workflow_selection(workflow_plan,workflow_target)
     request_feature_readiness=_request_feature_readiness(
         plan,request,status,generated,matched_generated,gameplay_request,
-        unavailable,discovery_only,workflow_selection,workflow_target)
+        unavailable,discovery_only,workflow_selection,workflow_target,actions)
     if observation_coverage["available"] is False:
         observation_limit="Interaction baseline/window coverage is unavailable for this legacy evidence"
     elif observation_coverage["evidenceLossPossible"]:

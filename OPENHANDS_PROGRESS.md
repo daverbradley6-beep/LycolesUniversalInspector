@@ -1,6 +1,22 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Request-aligned review-only GUI transition blocker diagnostics (v30.6.21)
+
+- Extended `tools/assess_generation_readiness.py` to validate and ingest review-only GUI transition diagnostics from action capabilities (`reviewOnlyTemporalOutcomeCandidates`, `reviewOnlyTargetPaths`, and target-level review-only flags).
+- Added conservative blocker emission: `request_aligned_gui_transition_outcomes_without_scalar_contract` when request-aligned GUI transition evidence exists but no generated scalar-outcome contract is available.
+- Added bounded diagnostics to `requestFeatureReadiness.workflowEvidence`:
+  - `reviewOnlyGuiTransitionCandidates`
+  - `requestAlignedReviewOnlyGuiTransitionCandidates`
+  - `requestAlignedReviewOnlyGuiTransitionPaths`
+- Added readiness summary counter `requestAlignedReviewOnlyGuiTransitions`.
+- Added regression coverage in `tests/test_generation_readiness.py` with `test_request_aligned_review_only_gui_transitions_surface_specific_blocker`.
+- Full local validation gate passed after this increment:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,582 tests, all passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Workflow selection normalization consistency hardening (v30.6.20)
 
 - Fixed cross-module request-term normalization drift between `tools/plan_generated_workflows.py`, `tools/assess_generation_readiness.py`, and `tools/generate_guided_workflow.py`.

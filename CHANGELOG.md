@@ -1,3 +1,10 @@
+## v30.6.21 — Request-aligned review-only GUI transition readiness diagnostics
+
+- Extend `tools/assess_generation_readiness.py` request-feature synthesis with strict review-only GUI transition accounting from `guiInteractions` (`reviewOnlyTemporalOutcomeCandidates` and `reviewOnlyTargetPaths`) and request-term alignment analysis.
+- Add explicit fail-closed blocker `request_aligned_gui_transition_outcomes_without_scalar_contract` when a request aligns to GUI transition evidence but no generation-ready scalar outcome contract exists.
+- Expose bounded review-only GUI transition diagnostics in `requestFeatureReadiness.workflowEvidence` and summary counters without promoting implementation readiness.
+- Add regression coverage in `tests/test_generation_readiness.py` proving request-aligned GUI-transition-only evidence remains non-generated while surfacing precise blocker guidance.
+
 ## v30.6.20 — Workflow selection normalization consistency hardening
 
 - Align request-term token normalization across `tools/plan_generated_workflows.py`, `tools/assess_generation_readiness.py`, and `tools/generate_guided_workflow.py` so planner selection scoring and guided-workflow validation use the same canonical term rules.
