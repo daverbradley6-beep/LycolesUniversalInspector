@@ -548,6 +548,44 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("Requested capability: "+request,generated)
             self.assertIn("Request status: evidence review only; gameplay is unverified",generated)
             self.assertEqual(manifest["implementedGameplayAutomation"],[])
+    def test_manifest_observed_targets_prioritize_outcome_candidate(self):
+        history=[
+            {
+                "featureCandidate":"pets",
+                "path":"LocalPlayer.PlayerGui.Main.PetsButton",
+                "controlType":"GuiButton.Activated",
+                "stateChanges":[],
+                "stateChangeCount":0,
+                "guiStateChangeCount":0,
+                "observableOutcomeCandidate":{"feature":"pets"},
+            },
+            {
+                "featureCandidate":"pets",
+                "path":"LocalPlayer.PlayerGui.Main.InventoryButton",
+                "controlType":"GuiButton.Activated",
+                "stateChanges":[{"key":"PetsOpen"}],
+                "stateChangeCount":2,
+                "guiStateChangeCount":1,
+            },
+            {
+                "featureCandidate":"unattributed",
+                "path":"Workspace.Decorative.Sign",
+                "controlType":"GuiButton.Activated",
+                "stateChanges":[],
+                "stateChangeCount":0,
+                "guiStateChangeCount":0,
+            },
+        ]
+        targets=builder._manifest_observed_targets({
+            "interactionDiagnostics":{"recentInteractions":history}
+        })
+        self.assertGreaterEqual(len(targets),2)
+        self.assertEqual(targets[0]["path"],"LocalPlayer.PlayerGui.Main.PetsButton")
+        self.assertTrue(targets[0]["observableOutcomeCandidate"])
+        self.assertEqual(targets[1]["path"],"LocalPlayer.PlayerGui.Main.InventoryButton")
+        self.assertFalse(targets[1]["observableOutcomeCandidate"])
+        self.assertFalse(any(t["path"]=="Workspace.Decorative.Sign" for t in targets))
+
     def test_transport_lifecycle_manifests_are_multipart_compatible(self):
         for index,case in enumerate(TRANSPORT_CASES):
             with self.subTest(case=case["name"]), tempfile.TemporaryDirectory() as temp:

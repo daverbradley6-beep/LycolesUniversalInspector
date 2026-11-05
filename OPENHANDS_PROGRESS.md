@@ -13,6 +13,7 @@
 - Generated Lua now surfaces `Observable outcome candidate: true/false` in per-target status details.
 - Manifest-assisted metadata now exports per-target `observableOutcomeCandidate` and bumps schema to `30.6.manifest-assisted-workflow.3`.
 - Extended `tests/test_build_release.py` to verify schema bump, Lua display line, and outcome-candidate metadata contract.
+- Added deterministic ranking regression `test_manifest_observed_targets_prioritize_outcome_candidate` to guarantee observable outcome-candidate targets sort ahead of same-feature transition-only targets while unattributed no-change noise remains filtered.
 - Validation passed after this increment:
   - `python3 -B -m unittest tests.test_build_release tests.test_integrated_pipeline_v108 tests.test_manifest_readiness_v109 tests.test_inspector_ui`
   - `node --test tests/test_luau_syntax.mjs`
