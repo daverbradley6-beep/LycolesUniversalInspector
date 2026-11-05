@@ -1,6 +1,24 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Review-only linked GUI workflow candidate surfacing (v30.6.22)
+
+- Extended `tools/plan_generated_workflows.py` to synthesize bounded review-only linked workflow candidates when linked GUI transitions are observed but no step has a resolvable scalar outcome contract.
+- Added strict planner validation for review-only GUI diagnostics consistency (`reviewOnlyTemporalOutcomeCandidates` and `reviewOnlyTargetPaths`) and fail-closed ambiguity/malformed diagnostics handling.
+- Added planner summary diagnostics:
+  - `reviewOnlyLinkedCandidates`
+  - `requestAlignedReviewOnlyLinkedCandidates`
+  - `selectedReviewOnlyCandidateId`
+- Extended `tools/assess_generation_readiness.py` workflow selection diagnostics validation/propagation for these review-only linked fields.
+- Added regressions:
+  - `tests/test_generated_workflow_planning.py::test_linked_gui_transition_only_events_surface_review_only_candidate`
+  - `tests/test_generation_readiness.py::test_workflow_selection_reports_review_only_linked_gui_candidates`
+- Full local validation gate passed after this increment:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,584 tests, all passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Request-aligned review-only GUI transition blocker diagnostics (v30.6.21)
 
 - Extended `tools/assess_generation_readiness.py` to validate and ingest review-only GUI transition diagnostics from action capabilities (`reviewOnlyTemporalOutcomeCandidates`, `reviewOnlyTargetPaths`, and target-level review-only flags).

@@ -47,6 +47,20 @@ def state_change(before,after):
             {"name":"ShopStage","className":"IntValue","ordinal":1}]}]
 
 
+
+def gui_transition_event(button,sequence,transaction="gui-review-flow"):
+    return {"path":"PlayerGui.HUD.Shop."+button,
+        "pathIdentity":identity(button),"controlType":"GuiButton.Activated",
+        "featureCandidate":"training","transactionId":transaction,"sequence":sequence,
+        "controlMetadata":{"controlClass":"TextButton","text":button,
+            "visible":True,"active":True,"selectable":True,"autoButtonColor":True,
+            "interactable":True,"ancestorVisible":True,"screenEnabled":True,
+            "withinScrollingBounds":True,"effectiveVisible":True},
+        "stateChanges":[],"guiStateChanges":[{"path":"PlayerGui.HUD.Shop.Panel",
+            "beforeVisible":False,"afterVisible":True}]}
+
+
+
 def tool_event(sequence,before,after,transaction="mixed-flow"):
     return {"path":"LocalPlayer.Backpack.Sword","pathIdentity":[
             {"name":"LocalPlayer","className":"Player","ordinal":1},
@@ -280,6 +294,27 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertEqual(result["summary"]["planningStatus"],
             "no-multi-step-generation-ready-contract")
         self.assertEqual(result["summary"]["transactionsWithInsufficientGenerationReadySteps"],1)
+
+    def test_linked_gui_transition_only_events_surface_review_only_candidate(self):
+        value=plan();value["requestedCapability"]="Open training panel"
+        value["observedInteractionHistory"]= [
+            gui_transition_event("Open Training",1),
+            gui_transition_event("Confirm Training",2)]
+        result=self.analyze(value);summary=result["summary"]
+        self.assertEqual(summary["planningStatus"],"review-only-candidates")
+        self.assertEqual(summary["workflowCandidates"],1)
+        self.assertEqual(summary["reviewOnlyLinkedCandidates"],1)
+        self.assertEqual(summary["requestAlignedReviewOnlyLinkedCandidates"],1)
+        candidate=result["workflowCandidates"][0]
+        self.assertEqual(summary["selectedReviewOnlyCandidateId"],candidate["id"])
+        self.assertFalse(candidate["executionReady"])
+        self.assertFalse(candidate["guidedTrialGenerationReady"])
+        self.assertEqual(candidate["executionMode"],"review-only")
+        self.assertEqual(candidate["reviewEvidenceType"],"linked-gui-transition-only")
+        self.assertTrue(candidate["reviewOnlyScalarContractMissing"])
+        self.assertTrue(candidate["selection"]["requestAligned"])
+        self.assertIn("train",candidate["selection"]["matchedTerms"])
+        self.assertEqual(generator.validate(result),[])
 
     def test_unique_per_event_transaction_ids_are_not_reported_as_linked(self):
         value=plan();events=value["observedInteractionHistory"]

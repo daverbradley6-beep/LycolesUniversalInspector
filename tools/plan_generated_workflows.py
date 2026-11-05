@@ -142,6 +142,39 @@ def _targets(actions):
             values[key]=(kind,metadata_key,target)
     return values
 
+
+
+def _review_only_gui_targets(actions):
+    contract=actions.get("guiInteractions",{})
+    targets=contract.get("targets",[]) if isinstance(contract,dict) else None
+    if not isinstance(targets,list) or len(targets)>2000:
+        raise ValueError("Malformed action capability targets")
+    values={}
+    for target in targets:
+        if not isinstance(target,dict):
+            raise ValueError("Malformed action capability targets")
+        if target.get("reviewOnlyTemporalOutcomeCandidate") is not True:
+            continue
+        path=target.get("path");control_type=target.get("controlType")
+        if (target.get("identityMode")!="component" or _identity(target.get("pathIdentity")) is None
+                or not _text(path,400) or control_type!="GuiButton.Activated"
+                or not _text(target.get("label"),120)
+                or not isinstance(target.get("guiMetadata"),dict)
+                or type(target.get("guiMetadataTextDynamic",False)) is not bool):
+            raise ValueError("Malformed review-only GUI target")
+        key=(path,control_type)
+        if key in values:raise ValueError("Ambiguous review-only GUI target")
+        values[key]=target
+    expected_paths=[item["path"] for item in values.values()][:20]
+    count=contract.get("reviewOnlyTemporalOutcomeCandidates",len(values))
+    paths=contract.get("reviewOnlyTargetPaths",expected_paths)
+    if (type(count) is not int or not 0<=count<=10_000_000 or count!=len(values)
+            or not isinstance(paths,list) or len(paths)>20
+            or any(not _text(path,400) for path in paths)
+            or paths!=expected_paths):
+        raise ValueError("Malformed review-only GUI diagnostics")
+    return values
+
 def _event_delta(event,key):
     changes=event.get("stateChanges",[])
     if not isinstance(changes,list) or len(changes)>256:return None
@@ -404,7 +437,8 @@ def plan(plan_document,actions):
     history=plan_document.get("observedInteractionHistory",[])
     if not isinstance(history,list) or len(history)>MAX_EVENTS:
         raise ValueError("Invalid interaction history")
-    targets=_targets(actions);groups={};unlinked=0
+    targets=_targets(actions);review_only_targets=_review_only_gui_targets(actions)
+    groups={};unlinked=0
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
         transaction=event.get("transactionId");sequence=event.get("sequence")
@@ -425,12 +459,60 @@ def plan(plan_document,actions):
         if len(set(sequences))!=len(sequences):
             raise ValueError("Duplicate sequence in linked transaction")
         events.sort(key=lambda item:item["sequence"])
-        mapped=[]
+        mapped=[];review_only_mapped=[]
         for transaction_order,event in enumerate(events,1):
             key=(event.get("path"),event.get("controlType"))
             if key in targets:mapped.append((transaction_order,event,targets[key]))
+            review_target=review_only_targets.get(key)
+            if review_target is not None and _gui_metadata_matches(
+                    event.get("controlMetadata"),review_target.get("guiMetadata"),
+                    review_target.get("guiMetadataTextDynamic",False)) and _identity(
+                        event.get("pathIdentity"))==_identity(review_target.get("pathIdentity")):
+                review_only_mapped.append((transaction_order,event,review_target))
         if len(events)>1 and len(mapped)<2:insufficient_contracts+=1
-        if len(mapped)<2:continue
+        if len(mapped)<2:
+            if len(events)>1 and len(review_only_mapped)>=2:
+                review_steps=[{"sequence":index+1,"transactionOrder":transaction_order,
+                    "observedSequence":event["sequence"],"targetPath":target["path"],
+                    "targetLabel":target["label"],"targetFeature":target.get("featureCandidate"),
+                    "actionCandidate":target.get("actionCandidate"),
+                    "controlType":target["controlType"],"kind":"guided-gui-activation-trial",
+                    "activationMode":"normal-user-gui-activation",
+                    "observationBaseline":_baseline(event),
+                    "pathIdentity":copy.deepcopy(target["pathIdentity"]),
+                    "prerequisiteMetadata":copy.deepcopy(target["guiMetadata"]),
+                    "guiTransitionSignals":copy.deepcopy(target.get("guiOutcomeSignals",[]))[:20],
+                    "manualActivationRequired":True,"runtimeVerified":False,
+                    "gameplayVerified":False,"causalityProven":False}
+                    for index,(transaction_order,event,target) in enumerate(review_only_mapped)]
+                blockers=["Cross-step gameplay semantics are unverified",
+                    "Observed order and GUI transitions do not prove causality",
+                    "Linked GUI transitions were observed without resolvable scalar outcomes",
+                    "GUI steps require normal user activation because GuiButton has no public activation method"]
+                if len(review_only_mapped)!=len(events):
+                    blockers.append("One or more linked events lack exact review-only GUI transition evidence")
+                within_step_bound=len(review_only_mapped)<=MAX_WORKFLOW_STEPS
+                if not within_step_bound:
+                    over_step_bound+=1
+                    blockers.append("Workflow exceeds the bounded 64-step generation limit")
+                candidates.append({"id":hashlib.sha256((transaction+"\0review-only-gui\0"+"\0".join(
+                        step["targetPath"] for step in review_steps)).encode()).hexdigest()[:20],
+                    "transactionId":transaction,
+                    "linkageSource":"explicit-user-armed-recording" if explicit_recording
+                        else "observed-shared-transaction",
+                    "steps":review_steps,"stepCount":len(review_steps),
+                    "unmappedLinkedEvents":len(events)-len(review_only_mapped),
+                    "exactOrderObserved":True,"allStepsGenerationReady":False,
+                    "stateContinuityLinks":[],"operatorStartRequired":True,
+                    "manualGuiActivationRequired":True,
+                    "selection":_selection(review_steps,request),
+                    "guidedTrialGenerationReady":False,"executionMode":"review-only",
+                    "automaticallyExecutable":False,"executionReady":False,
+                    "reviewEvidenceType":"linked-gui-transition-only",
+                    "reviewOnlyScalarContractMissing":True,"temporalCorrelationOnly":True,
+                    "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+                    "blockers":blockers})
+            continue
         if len(mapped)!=len(events):partially_mapped+=1
         steps=[_step(event,index+1,transaction_order,*target_data)
             for index,(transaction_order,event,target_data) in enumerate(mapped)]
@@ -471,6 +553,8 @@ def plan(plan_document,actions):
         not item["executionReady"],not item["automaticallyExecutable"],
         item["transactionId"],item["id"]))
     selected=next((item for item in candidates if item["executionReady"]),None)
+    selected_review_only=next((item for item in candidates
+        if item.get("reviewEvidenceType")=="linked-gui-transition-only"),None)
     if selected:planning_status="execution-ready-candidates"
     elif candidates:planning_status="review-only-candidates"
     elif multi_event_transactions:planning_status="no-multi-step-generation-ready-contract"
@@ -496,8 +580,15 @@ def plan(plan_document,actions):
             "automaticallyExecutableWorkflows":sum(
                 item["automaticallyExecutable"] for item in candidates),
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
+            "reviewOnlyLinkedCandidates":sum(item.get("reviewEvidenceType")==
+                "linked-gui-transition-only" for item in candidates),
+            "requestAlignedReviewOnlyLinkedCandidates":sum(item.get("reviewEvidenceType")==
+                "linked-gui-transition-only" and item["selection"]["requestAligned"]
+                for item in candidates),
             "guiRevealFollowupCandidates":gui_reveal_followups["candidateCount"],
-            "selectedExecutionCandidateId":selected["id"] if selected else None},
+            "selectedExecutionCandidateId":selected["id"] if selected else None,
+            "selectedReviewOnlyCandidateId":selected_review_only["id"]
+                if selected_review_only else None},
         "temporalAdjacency":temporal_adjacency,
         "guiRevealFollowups":gui_reveal_followups,
         "claims":false_claims,"limitations":[
@@ -505,6 +596,7 @@ def plan(plan_document,actions):
             "User-armed recording establishes intended order only, not causality or gameplay success",
             "Session-relative temporal adjacency is review evidence and never creates workflow linkage",
             "Observed GUI reveal and descendant followup evidence remains review-only and unlinked",
+            "Linked GUI transition-only workflows are review evidence and never generation-ready",
             "A transaction ID present on only one event does not establish cross-event linkage",
             "State continuity is descriptive client-visible evidence, not causal proof",
             "GUI steps require normal user activation because GuiButton has no public activation method",

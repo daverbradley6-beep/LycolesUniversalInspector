@@ -333,6 +333,25 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["requestFeatureReadiness"]["requestedTerms"],["train"])
         self.assertNotIn("traine",result["requestFeatureReadiness"]["requestedTerms"])
 
+    def test_workflow_selection_reports_review_only_linked_gui_candidates(self):
+        value=workflow_fixtures.plan();value["requestedCapability"]="Open training panel"
+        value["observedInteractionHistory"]= [
+            workflow_fixtures.gui_transition_event("Open Training",1),
+            workflow_fixtures.gui_transition_event("Confirm Training",2)]
+        gameplay=understanding.analyze(value)
+        actions=discovery.analyze(value)
+        workflow=workflow_fixtures.planner.plan(value,actions)
+        result=readiness.assess(value,gameplay,actions,workflow)
+        self.assertEqual(result["request"]["status"],"unsupported-by-current-evidence")
+        planning=result["workflowSelection"]["planningDiagnostics"]
+        self.assertEqual(planning["status"],"review-only-candidates")
+        self.assertEqual(planning["reviewOnlyLinkedCandidates"],1)
+        self.assertEqual(planning["requestAlignedReviewOnlyLinkedCandidates"],1)
+        self.assertIsNotNone(planning["selectedReviewOnlyCandidateId"])
+        selection=result["workflowSelection"]["candidates"][0]
+        self.assertFalse(selection["executionReady"])
+        self.assertEqual(selection["selectionReason"],"not-execution-ready")
+
 
     def test_inconsistent_observation_coverage_fails_closed(self):
         value=egg_plan();value["interactionObservationSummary"]={"available":True,

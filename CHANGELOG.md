@@ -1,3 +1,11 @@
+## v30.6.22 — Review-only linked GUI workflow candidate surfacing
+
+- Extend `tools/plan_generated_workflows.py` with conservative review-only linked workflow candidate synthesis when linked GUI transactions have transition evidence but lack resolvable scalar outcomes.
+- Add strict validation of review-only GUI diagnostics (`reviewOnlyTemporalOutcomeCandidates`, `reviewOnlyTargetPaths`) and fail-closed ambiguity/shape checks.
+- Enrich planner summary diagnostics with bounded review-only linked candidate fields: `reviewOnlyLinkedCandidates`, `requestAlignedReviewOnlyLinkedCandidates`, and `selectedReviewOnlyCandidateId`.
+- Propagate and validate these fields in `tools/assess_generation_readiness.py` workflow-selection diagnostics without promoting generation-ready status.
+- Add regressions in `tests/test_generated_workflow_planning.py` and `tests/test_generation_readiness.py` covering review-only linked candidate surfacing and downstream reporting.
+
 ## v30.6.21 — Request-aligned review-only GUI transition readiness diagnostics
 
 - Extend `tools/assess_generation_readiness.py` request-feature synthesis with strict review-only GUI transition accounting from `guiInteractions` (`reviewOnlyTemporalOutcomeCandidates` and `reviewOnlyTargetPaths`) and request-term alignment analysis.

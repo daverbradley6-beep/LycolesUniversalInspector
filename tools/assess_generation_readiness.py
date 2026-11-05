@@ -300,14 +300,33 @@ def _workflow_selection(workflow_plan,selected):
         "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
         "unlinkedEvents","executionReadyWorkflows")
     explicit_recordings=summary.get("explicitRecordingTransactions",0)
+    review_only_linked=summary.get("reviewOnlyLinkedCandidates",0)
+    request_aligned_review_only=summary.get("requestAlignedReviewOnlyLinkedCandidates",0)
+    selected_review_only=summary.get("selectedReviewOnlyCandidateId")
     planning_status=summary.get("planningStatus")
+    review_only_ids=[item.get("id") for item in candidates
+        if item.get("reviewEvidenceType")=="linked-gui-transition-only"]
+    review_only_ids=[item for item in review_only_ids if isinstance(item,str)]
+    expected_request_aligned_review_only=sum(item.get("reviewEvidenceType")==
+        "linked-gui-transition-only" and bool(item.get("selection",{}).get("requestAligned"))
+        for item in candidates)
     if (planning_status not in ("execution-ready-candidates","review-only-candidates",
             "no-multi-step-generation-ready-contract","singleton-transactions-only",
             "no-explicit-linkage","no-interaction-events")
             or any(type(summary.get(field)) is not int or not 0<=summary[field]<=10_000_000
                 for field in diagnostic_fields)
             or type(explicit_recordings) is not int
+            or type(review_only_linked) is not int
+            or type(request_aligned_review_only) is not int
             or not 0<=explicit_recordings<=summary.get("transactionGroups",-1)
+            or not 0<=review_only_linked<=summary.get("workflowCandidates",-1)
+            or not 0<=request_aligned_review_only<=review_only_linked
+            or review_only_linked!=len(review_only_ids)
+            or request_aligned_review_only!=expected_request_aligned_review_only
+            or selected_review_only is not None and (not isinstance(selected_review_only,str)
+                or not 1<=len(selected_review_only)<=80)
+            or review_only_linked==0 and selected_review_only is not None
+            or review_only_linked>0 and selected_review_only not in review_only_ids
             or summary["transactionGroups"]!=summary["singletonTransactions"]+summary[
                 "multiEventTransactions"]
             or summary["linkedTransactions"]!=summary["multiEventTransactions"]
@@ -327,6 +346,9 @@ def _workflow_selection(workflow_plan,selected):
         raise ValueError("generated workflow plan has inconsistent planning diagnostics")
     diagnostics={"status":planning_status,**{field:summary[field] for field in diagnostic_fields},
         "explicitRecordingTransactions":explicit_recordings,
+        "reviewOnlyLinkedCandidates":review_only_linked,
+        "requestAlignedReviewOnlyLinkedCandidates":request_aligned_review_only,
+        "selectedReviewOnlyCandidateId":selected_review_only,
         "readinessImpact":"limitations-only","causalityProven":False,
         "runtimeVerified":False,"gameplayVerified":False}
     return {"available":True,"totalCandidates":len(candidates),"shownCandidates":len(values),
