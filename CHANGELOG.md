@@ -1,3 +1,15 @@
+## v30.6.31 — Outcome-candidate-aware manifest target prioritization
+
+- Extend `tools/build_release.py` manifest-assisted target extraction to consider event-level `observableOutcomeCandidate` evidence when selecting and ranking controls.
+- Preserve noise suppression for unattributed interactions by requiring at least one observed GUI/state transition or an explicit observable outcome candidate.
+- Prioritize target ordering by:
+  1. feature attribution,
+  2. observable outcome candidate presence,
+  3. observed transitions,
+  before count-based tie-breakers.
+- Expose `observableOutcomeCandidate` in generated `manifest-assisted-workflow.json` target metadata and in `LycolesManifestAssistedWorkflow.lua` target context display.
+- Bump manifest-assisted workflow schema to `30.6.manifest-assisted-workflow.3` and extend `tests/test_build_release.py` regression checks.
+
 ## v30.6.30 — Legacy upload lifecycle diagnostics distinguish placeholder, attempted, and local-export states
 
 - Refine `tools/manifest_readiness_v109.py` transport-readiness mapping for `uploadStatus == unknown_legacy_manifest_snapshot` so `uploadedParts`/legacy telemetry cases are explicitly separated:

@@ -1,6 +1,24 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Outcome-candidate-aware manifest target ranking (v30.6.31)
+
+- Enhanced `tools/build_release.py` manifest-assisted target extraction to consume event-level `observableOutcomeCandidate` evidence when selecting and ranking controls for generated workflows.
+- Preserved conservative noise filtering for unattributed entries (still rejected unless they include observable transitions and/or explicit outcome-candidate evidence).
+- Target ranking now prioritizes:
+  1. feature attribution,
+  2. observable outcome candidate presence,
+  3. observable transitions,
+  then bounded count-based tie-breakers.
+- Generated Lua now surfaces `Observable outcome candidate: true/false` in per-target status details.
+- Manifest-assisted metadata now exports per-target `observableOutcomeCandidate` and bumps schema to `30.6.manifest-assisted-workflow.3`.
+- Extended `tests/test_build_release.py` to verify schema bump, Lua display line, and outcome-candidate metadata contract.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_build_release tests.test_integrated_pipeline_v108 tests.test_manifest_readiness_v109 tests.test_inspector_ui`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Legacy upload-state disambiguation diagnostics (v30.6.30)
 
 - Refined `tools/manifest_readiness_v109.py` legacy transport readiness mapping so `unknown_legacy_manifest_snapshot` no longer collapses distinct `uploadedParts` scenarios into one generic status.

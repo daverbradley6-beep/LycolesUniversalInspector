@@ -100,8 +100,9 @@ def _manifest_observed_targets(document):
             state_change_count=0
         if type(gui_change_count) is not int or gui_change_count<0:
             gui_change_count=0
+        outcome_candidate=isinstance(event.get("observableOutcomeCandidate"),dict)
         observable_change=(state_change_count+gui_change_count)>0
-        if feature=="unattributed" and not observable_change:
+        if feature=="unattributed" and not observable_change and not outcome_candidate:
             continue
         dedupe=(path,control)
         if dedupe in seen:
@@ -121,12 +122,14 @@ def _manifest_observed_targets(document):
             "stateHintCount":len(hints),
             "stateChangeCount":state_change_count,
             "guiStateChangeCount":gui_change_count,
+            "observableOutcomeCandidate":outcome_candidate,
             "observableChange":observable_change,
             "sequence":sequence,
             "attributed":feature!="unattributed",
         })
     targets.sort(key=lambda item:(
         0 if item["attributed"] else 1,
+        0 if item["observableOutcomeCandidate"] else 1,
         0 if item["observableChange"] else 1,
         -item["stateChangeCount"],
         -item["guiStateChangeCount"],
@@ -148,6 +151,7 @@ def _manifest_assisted_workflow_lua(place_id,targets):
             +",controlType="+_lua_string(target["controlType"])
             +",stateChangeCount="+str(target["stateChangeCount"])
             +",guiStateChangeCount="+str(target["guiStateChangeCount"])
+            +",observableOutcomeCandidate="+str(bool(target["observableOutcomeCandidate"])).lower()
             +",observableChange="+str(bool(target["observableChange"])).lower()
             +",stateHints={"+hints+"}}")
     target_table="{\n"+",\n".join(entries)+"\n}"
@@ -256,6 +260,7 @@ local function showTarget(prefix)
     "Path: "..target.path,
     "Observed state changes: "..tostring(target.stateChangeCount or 0),
     "Observed GUI changes: "..tostring(target.guiStateChangeCount or 0),
+    "Observable outcome candidate: "..tostring(target.observableOutcomeCandidate==true),
     "Observable change captured: "..tostring(target.observableChange==true),
     "",
     "Hints:",
@@ -399,7 +404,7 @@ def build_manifest_readiness(manifest_path,output):
         assisted=_manifest_assisted_workflow_lua(result["placeId"],observed_targets)
         (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
         (output/"manifest-assisted-workflow.json").write_text(json.dumps({
-            "schemaVersion":"30.6.manifest-assisted-workflow.2",
+            "schemaVersion":"30.6.manifest-assisted-workflow.3",
             "placeId":result["placeId"],
             "targetCount":len(observed_targets),
             "targets":observed_targets,
