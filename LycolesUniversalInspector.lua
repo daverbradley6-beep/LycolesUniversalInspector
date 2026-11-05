@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.14
+-- Lycoles Universal Inspector v30.6.15
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.14"
+local VERSION = "30.6.15"
 
 local endpoint = ""
 local autoSend = true
@@ -158,7 +158,9 @@ local pendingActions = {}
 local pendingGuiReveals = {}
 local MAX_PENDING_GUI_REVEALS = 100
 local GUI_REVEAL_FOLLOWUP_SECONDS = 15
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
+local FOLLOWUP_LINK_MAX_AGE_SECONDS = 6
+local FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP = 3
+local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local sessionId = HttpService:GenerateGUID(false)
 local sessionStartedClock = os.clock()
 local WORKFLOW_RECORDING_SECONDS = 60
@@ -2712,9 +2714,30 @@ local function linkWorkflow(obj, feature, sequence)
     if kind then
         local inferredFeature=feature or defaultFeatureForActionKind(kind)
         local context=workflowContext(obj,inferredFeature,kind,actionSource)
+        local bestPending=nil
+        local bestOverlap=0
+        for i=#pendingActions,1,-1 do
+            local pending=pendingActions[i]
+            local age=now-pending.clock
+            if age>=0 and age<=FOLLOWUP_LINK_MAX_AGE_SECONDS and pending.sequence<sequence
+                and (not inferredFeature or not pending.feature or pending.feature==inferredFeature) then
+                local overlap=contextTokenOverlap(context.contextTokens,pending.contextTokens)
+                if overlap>bestOverlap then
+                    bestOverlap=overlap
+                    bestPending=pending
+                end
+            end
+        end
         pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=inferredFeature,
             kind=kind,context=context,contextTokens=context.contextTokens}
         if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
+        if bestPending and bestOverlap>=FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP then
+            workflowStats.linkedFollowups=workflowStats.linkedFollowups+1
+            return {phase="followup-linked",linkedSequence=bestPending.sequence,
+                linkedAction=bestPending.kind,action=kind,actionSource=actionSource,
+                inferredFeature=bestPending.feature or inferredFeature,context=context,
+                contextOverlap=bestOverlap,confidence="context-followup-heuristic",verified=false}
+        end
         return {phase="initiated",action=kind,actionSource=actionSource,
             inferredFeature=inferredFeature,
             confidence="bounded-name-context-heuristic",verified=false}
@@ -2956,7 +2979,8 @@ local function observeInteractionObject(obj, root, label)
         local workflow = linkWorkflow(obj, feature, observationSequence + 1)
         if workflow and workflow.inferredFeature and not feature then
             feature=workflow.inferredFeature
-            attributionSource="linked-confirmation-heuristic"
+            attributionSource=(workflow.phase=="followup-linked")
+                and "linked-followup-heuristic" or "linked-confirmation-heuristic"
             unattributedInteractionCount=unattributedInteractionCount-1
             attributedInteractionCount=attributedInteractionCount+1
         end
@@ -2986,6 +3010,11 @@ local function observeInteractionObject(obj, root, label)
         local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
         local transactionId=explicitRecording and explicitRecording.recordingId
             or (workflow and workflow.linkedSequence) or (observationSequence+1)
+        local transactionLinkSource=explicitRecording and explicitRecording.linkageSource
+            or (workflow and workflow.linkedSequence and
+                (workflow.phase=="followup-linked" and "observed-followup-link"
+                    or "observed-confirmation-link")
+                or "singleton-event")
         local historyItem = {
             path=path:sub(1,400), pathIdentity=targetPathIdentity,
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
@@ -2993,8 +3022,7 @@ local function observeInteractionObject(obj, root, label)
             sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
             transactionId=transactionId,
             transactionOrder=explicitRecording and explicitRecording.order or nil,
-            transactionLinkSource=explicitRecording and explicitRecording.linkageSource or
-                (workflow and "observed-confirmation-link" or "singleton-event"),
+            transactionLinkSource=transactionLinkSource,
             explicitWorkflowRecording=explicitRecording,
             stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
             guiRevealFollowup=guiRevealFollowup,
@@ -3479,6 +3507,7 @@ end)
 local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedInteractions,
         unattributedInteractions)
     local blockers = {}
+    local linkedWorkflowEvents = workflowStats.linkedConfirmations + workflowStats.linkedFollowups
     if totalInteractions <= 0 then
         blockers[#blockers+1] = "no-interaction-events-observed"
     else
@@ -3488,7 +3517,7 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         if workflowRecordingStats.started <= 0 then
             blockers[#blockers+1] = "explicit-workflow-recording-not-armed"
         end
-        if workflowStats.linkedConfirmations <= 0 then
+        if linkedWorkflowEvents <= 0 then
             blockers[#blockers+1] = "no-linked-confirmation-events"
         end
         if workflowStats.actionOutcomesCorroborated <= 0 then
@@ -3510,6 +3539,8 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         attributedInteractions = attributedInteractions,
         unattributedInteractions = unattributedInteractions,
         linkedConfirmations = workflowStats.linkedConfirmations,
+        linkedFollowups = workflowStats.linkedFollowups,
+        linkedWorkflowEvents = linkedWorkflowEvents,
         corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
         completedWorkflowCandidates = workflowStats.completedCandidates,
         explicitWorkflowRecordings = workflowRecordingStats.started,

@@ -1,3 +1,11 @@
+## v30.6.15 — Conservative non-confirm follow-up linkage for workflow correlation
+
+- Improve `LycolesUniversalInspector.lua` workflow linkage by adding bounded non-confirm follow-up linking (`FOLLOWUP_LINK_MAX_AGE_SECONDS=6`, `FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP=3`) so semantically meaningful consecutive actions can share a transaction when feature/context overlap is strong.
+- Preserve conservative behavior: confirmation linking remains unchanged, no causality/runtime/gameplay claims are introduced, and only bounded context-token overlap in short windows can create follow-up links.
+- Add explicit diagnostics counters for `linkedFollowups` and `linkedWorkflowEvents`, and treat either confirmation links or follow-up links as linkage evidence in workflow-generation diagnostics.
+- Improve interaction records with explicit `observed-followup-link` transaction source labeling and `linked-followup-heuristic` attribution disclosure when feature attribution is inferred from linkage context.
+- Extend `tools/manifest_readiness_v109.py` and tests to surface follow-up linkage coverage and avoid falsely reporting `workflow_linkage_not_observed` when follow-up linkage evidence exists.
+
 ## v30.6.14 — Guided GUI generation compatibility for text-only metadata drift
 
 - Improve `tools/discover_action_capabilities.py` guided GUI readiness so text-only metadata drift can remain generation-ready when all non-text availability and identity fields are stable, while non-text drift still blocks readiness.

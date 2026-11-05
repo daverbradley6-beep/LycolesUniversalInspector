@@ -115,6 +115,8 @@ def _workflow_generation_diagnostics(value):
             "attributedInteractions",
             "unattributedInteractions",
             "linkedConfirmations",
+            "linkedFollowups",
+            "linkedWorkflowEvents",
             "corroboratedActionOutcomes",
             "completedWorkflowCandidates",
             "explicitWorkflowRecordings"):
@@ -192,15 +194,16 @@ def _transport_readiness(transport):
 
 
 def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
-        linked_confirmations, corroborated_outcomes, completed_candidates,
-        workflow_generation):
+        linked_confirmations, linked_followups, corroborated_outcomes,
+        completed_candidates, workflow_generation):
+    linked_workflow_events = linked_confirmations + linked_followups
     if total_interactions <= 0:
         status = "no-interactions-observed"
     elif completed_candidates > 0:
         status = "completed-workflow-candidates-observed"
-    elif linked_confirmations > 0 and corroborated_outcomes <= 0:
+    elif linked_workflow_events > 0 and corroborated_outcomes <= 0:
         status = "linked-confirmations-without-corroborated-outcomes"
-    elif linked_confirmations <= 0 and attributed_interactions > 0:
+    elif linked_workflow_events <= 0 and attributed_interactions > 0:
         status = "attributed-interactions-without-linkage"
     elif attributed_interactions <= 0:
         status = "no-attributed-interactions"
@@ -211,6 +214,7 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
     if workflow_generation.get("available") is True:
         mapped = {
             "no-linked-confirmation-events": "workflow_linkage_not_observed",
+            "no-linked-workflow-events": "workflow_linkage_not_observed",
             "no-corroborated-action-outcomes": "workflow_outcome_corroboration_unavailable",
             "no-completed-workflow-candidates": "completed_workflow_candidates_unavailable",
             "some-interactions-remain-unattributed": "interaction_attribution_incomplete",
@@ -221,7 +225,7 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
             if mapped_value:
                 blockers.append(mapped_value)
     else:
-        if linked_confirmations <= 0 and total_interactions > 0:
+        if linked_workflow_events <= 0 and total_interactions > 0:
             blockers.append("workflow_linkage_not_observed")
         if corroborated_outcomes <= 0 and total_interactions > 0:
             blockers.append("workflow_outcome_corroboration_unavailable")
@@ -235,7 +239,7 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
     elif status == "no-attributed-interactions":
         recommendation = "capture interactions on named feature controls and keep relevant menus visible"
     elif status == "attributed-interactions-without-linkage":
-        recommendation = "capture one confirmation-style sequence (initiator then confirm/cancel) within the same menu"
+        recommendation = "capture one linked sequence (initiator plus confirmation or follow-up) within the same feature context"
     elif status == "linked-confirmations-without-corroborated-outcomes":
         recommendation = "capture linked actions while relevant observable values are visible before and after activation"
     elif status == "completed-workflow-candidates-observed":
@@ -248,6 +252,10 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
         "workflowGenerationDiagnosticsAvailable": workflow_generation.get("available") is True,
         "linkedConfirmationCoverage": (0 if total_interactions <= 0 else
             round(linked_confirmations / total_interactions, 4)),
+        "linkedFollowupCoverage": (0 if total_interactions <= 0 else
+            round(linked_followups / total_interactions, 4)),
+        "linkedWorkflowCoverage": (0 if total_interactions <= 0 else
+            round(linked_workflow_events / total_interactions, 4)),
         "corroboratedOutcomeCoverage": (0 if total_interactions <= 0 else
             round(corroborated_outcomes / total_interactions, 4)),
         "completedWorkflowCoverage": (0 if total_interactions <= 0 else
@@ -527,12 +535,17 @@ def analyze(manifest):
     state_transitions = _integer(workflow.get("uniqueStateEvents"), "state transitions")
     gui_transitions = _integer(workflow.get("guiTransitions"), "GUI transitions")
     linked_confirmations = _integer(workflow.get("linkedConfirmations"), "linked confirmations")
+    linked_followups = _integer(workflow.get("linkedFollowups", 0), "linked followups")
+    linked_workflow_events = _integer(workflow.get("linkedWorkflowEvents",
+        linked_confirmations + linked_followups), "linked workflow events")
+    linked_workflow_events = max(linked_workflow_events, linked_confirmations + linked_followups)
     corroborated_outcomes = _integer(workflow.get("actionOutcomesCorroborated"), "corroborated outcomes")
     completed_candidates = _integer(workflow.get("completedCandidates"), "completed candidates")
     transport_readiness = _transport_readiness(transport)
     workflow_linkage = _workflow_linkage_diagnostics(
         interactions, attributed_interactions, linked_confirmations,
-        corroborated_outcomes, completed_candidates, workflow_generation)
+        linked_followups, corroborated_outcomes, completed_candidates,
+        workflow_generation)
     outcomes = _outcome_candidates(history)
     readiness = manifest.get("featureReadiness") or {}
     evidence = manifest.get("featureEvidence") or {}
@@ -566,12 +579,13 @@ def analyze(manifest):
         for blocker, mapped in (
                 ("explicit-workflow-recording-not-armed", "explicit_workflow_recording_not_armed"),
                 ("no-linked-confirmation-events", "workflow_linkage_not_observed"),
+                ("no-linked-workflow-events", "workflow_linkage_not_observed"),
                 ("no-corroborated-action-outcomes", "workflow_outcome_corroboration_unavailable"),
                 ("no-completed-workflow-candidates", "completed_workflow_candidates_unavailable")):
             if blocker in workflow_generation["blockers"] and mapped not in blockers:
                 blockers.append(mapped)
     elif interactions > 0:
-        if linked_confirmations == 0 and "workflow_linkage_not_observed" not in blockers:
+        if linked_workflow_events == 0 and "workflow_linkage_not_observed" not in blockers:
             blockers.append("workflow_linkage_not_observed")
         if corroborated_outcomes == 0 and "workflow_outcome_corroboration_unavailable" not in blockers:
             blockers.append("workflow_outcome_corroboration_unavailable")
@@ -611,6 +625,8 @@ def analyze(manifest):
             "stateTransitions": state_transitions,
             "guiTransitions": gui_transitions,
             "linkedConfirmations": linked_confirmations,
+            "linkedFollowups": linked_followups,
+            "linkedWorkflowEvents": linked_workflow_events,
             "corroboratedActionOutcomes": corroborated_outcomes,
             "completedWorkflowCandidates": completed_candidates,
             "historyEventsAvailable": len(history),

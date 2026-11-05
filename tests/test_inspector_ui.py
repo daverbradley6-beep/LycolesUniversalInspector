@@ -242,6 +242,11 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('name=="yesbutton" or name=="yes" or name=="confirmbutton"',SRC)
         self.assertIn('name=="nobutton" or name=="no" or name=="cancelbutton"',SRC)
         self.assertIn('or n:find("prompt",1,true)',SRC)
+        self.assertIn('local FOLLOWUP_LINK_MAX_AGE_SECONDS = 6',SRC)
+        self.assertIn('local FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP = 3',SRC)
+        self.assertIn('workflowStats.linkedFollowups=workflowStats.linkedFollowups+1',SRC)
+        self.assertIn('confidence="context-followup-heuristic"',SRC)
+        self.assertIn('workflow.phase=="followup-linked" and "observed-followup-link"',SRC)
     def test_simulator_actions_capture_progression_and_conversion(self):
         self.assertIn('progression={"progression","bubble","capacity","blow","farm"}',SRC)
         self.assertIn('shops={"shop","purchase","store","sell","upgrade"}',SRC)

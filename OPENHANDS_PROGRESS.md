@@ -1,6 +1,16 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Conservative follow-up workflow linkage (v30.6.15)
+
+- Added bounded non-confirm follow-up transaction linking in `LycolesUniversalInspector.lua` using strict context overlap and short age windows (`FOLLOWUP_LINK_MAX_AGE_SECONDS=6`, `FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP=3`) so meaningful sequential actions can correlate without relaxing causality/runtime/gameplay claims.
+- Added explicit follow-up linkage provenance in interaction history (`transactionLinkSource="observed-followup-link"`) and attribution (`linked-followup-heuristic`) while preserving existing confirmation-link behavior.
+- Extended workflow-generation diagnostics with `linkedFollowups` and `linkedWorkflowEvents`, and treated either linked confirmations or linked follow-ups as linkage evidence.
+- Updated `tools/manifest_readiness_v109.py` to parse and expose follow-up linkage counts/coverage, include forward-compatible blocker mapping, and avoid reporting missing linkage when follow-up evidence is present.
+- Added/updated regressions in `tests/test_inspector_ui.py` and `tests/test_manifest_readiness_v109.py` for follow-up linkage and readiness behavior.
+- Full local gate passed: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,561 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Guided GUI text-drift generation compatibility (v30.6.14)
 
 - Improved guided GUI action discovery so text-only prerequisite metadata drift can remain generation-ready when non-text availability and identity fields remain stable.

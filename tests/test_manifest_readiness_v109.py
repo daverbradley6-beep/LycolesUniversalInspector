@@ -116,6 +116,39 @@ class ManifestReadinessTests(unittest.TestCase):
 
         self.assertFalse(result["claims"]["gameplayVerified"])
 
+
+    def test_linked_followups_count_as_workflow_linkage(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["interactionDiagnostics"]["workflowStats"]["linkedConfirmations"] = 0
+        manifest["interactionDiagnostics"]["workflowStats"]["linkedFollowups"] = 3
+        manifest["interactionDiagnostics"]["workflowStats"]["linkedWorkflowEvents"] = 3
+        manifest["interactionDiagnostics"]["workflowGenerationDiagnostics"] = {
+            "available": True,
+            "interactionEvents": 153,
+            "attributedInteractions": 89,
+            "unattributedInteractions": 64,
+            "linkedConfirmations": 0,
+            "linkedFollowups": 3,
+            "linkedWorkflowEvents": 3,
+            "corroboratedActionOutcomes": 0,
+            "completedWorkflowCandidates": 0,
+            "explicitWorkflowRecordings": 0,
+            "blockers": [
+                "explicit-workflow-recording-not-armed",
+                "no-corroborated-action-outcomes",
+                "no-completed-workflow-candidates",
+            ],
+        }
+        result = MODULE.analyze(manifest)
+        self.assertEqual(result["evidence"]["linkedConfirmations"], 0)
+        self.assertEqual(result["evidence"]["linkedFollowups"], 3)
+        self.assertEqual(result["evidence"]["linkedWorkflowEvents"], 3)
+        linkage = result["evidence"]["workflowLinkageDiagnostics"]
+        self.assertGreater(linkage["linkedWorkflowCoverage"], 0)
+        self.assertNotIn("workflow_linkage_not_observed",
+                         result["generationReadiness"]["blockers"])
+
+
     def test_legacy_uploaded_parts_zero_is_unknown_not_failure(self):
         result = MODULE.analyze(self.manifest)
         transport = result["transport"]
