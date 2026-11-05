@@ -144,6 +144,8 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(result["evidence"]["linkedFollowups"], 3)
         self.assertEqual(result["evidence"]["linkedWorkflowEvents"], 3)
         linkage = result["evidence"]["workflowLinkageDiagnostics"]
+        self.assertEqual(linkage["linkedWorkflowEvents"], 3)
+        self.assertEqual(linkage["linkedEvidenceType"], "followups-only")
         self.assertGreater(linkage["linkedWorkflowCoverage"], 0)
         self.assertNotIn("workflow_linkage_not_observed",
                          result["generationReadiness"]["blockers"])
@@ -188,6 +190,8 @@ class ManifestReadinessTests(unittest.TestCase):
 
         linkage = result["evidence"]["workflowLinkageDiagnostics"]
         self.assertEqual(linkage["status"], "attributed-interactions-without-linkage")
+        self.assertEqual(linkage["linkedEvidenceType"], "none")
+        self.assertEqual(linkage["linkedWorkflowEvents"], 0)
         self.assertIn("workflow_linkage_not_observed", linkage["blockers"])
         self.assertIn("workflow_outcome_corroboration_unavailable", linkage["blockers"])
         self.assertEqual(result["generationReadiness"]["workflowCaptureRecommendation"],

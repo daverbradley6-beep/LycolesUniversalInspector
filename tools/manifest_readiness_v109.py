@@ -197,6 +197,15 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
         linked_confirmations, linked_followups, corroborated_outcomes,
         completed_candidates, workflow_generation):
     linked_workflow_events = linked_confirmations + linked_followups
+    if linked_workflow_events <= 0:
+        linkage_evidence_type = "none"
+    elif linked_confirmations > 0 and linked_followups > 0:
+        linkage_evidence_type = "confirmations-and-followups"
+    elif linked_confirmations > 0:
+        linkage_evidence_type = "confirmations-only"
+    else:
+        linkage_evidence_type = "followups-only"
+
     if total_interactions <= 0:
         status = "no-interactions-observed"
     elif completed_candidates > 0:
@@ -250,6 +259,8 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
     return {
         "status": status,
         "workflowGenerationDiagnosticsAvailable": workflow_generation.get("available") is True,
+        "linkedWorkflowEvents": linked_workflow_events,
+        "linkedEvidenceType": linkage_evidence_type,
         "linkedConfirmationCoverage": (0 if total_interactions <= 0 else
             round(linked_confirmations / total_interactions, 4)),
         "linkedFollowupCoverage": (0 if total_interactions <= 0 else

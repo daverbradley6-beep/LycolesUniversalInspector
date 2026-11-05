@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.15
+-- Lycoles Universal Inspector v30.6.16
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.15"
+local VERSION = "30.6.16"
 
 local endpoint = ""
 local autoSend = true

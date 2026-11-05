@@ -1,6 +1,14 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Linkage evidence typing diagnostics (v30.6.16)
+
+- Extended `tools/manifest_readiness_v109.py` workflow-linkage diagnostics to expose `linkedEvidenceType` (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and explicit `linkedWorkflowEvents` counts.
+- Preserved backward-compatible readiness/blocker mapping while improving interpretation for follow-up-only linkage sessions (distinguishing missing linkage from non-confirm linkage).
+- Added regression assertions in `tests/test_manifest_readiness_v109.py` for both no-linkage and follow-up-only linkage evidence.
+- Full local gate passed after this refinement: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,561 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Conservative follow-up workflow linkage (v30.6.15)
 
 - Added bounded non-confirm follow-up transaction linking in `LycolesUniversalInspector.lua` using strict context overlap and short age windows (`FOLLOWUP_LINK_MAX_AGE_SECONDS=6`, `FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP=3`) so meaningful sequential actions can correlate without relaxing causality/runtime/gameplay claims.

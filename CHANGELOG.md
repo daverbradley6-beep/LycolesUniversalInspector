@@ -1,3 +1,9 @@
+## v30.6.16 — Linkage evidence typing for manifest-readiness workflow diagnostics
+
+- Extend `tools/manifest_readiness_v109.py` workflow-linkage diagnostics with explicit linkage evidence typing (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and a `linkedWorkflowEvents` count.
+- Preserve backward-compatible status/blocker mapping while exposing clearer diagnostics for follow-up-only linkage sessions so readiness interpretation distinguishes absence of linkage from non-confirm linkage.
+- Add regression assertions in `tests/test_manifest_readiness_v109.py` for the new linkage evidence fields on both no-linkage and follow-up-only evidence cases.
+
 ## v30.6.15 — Conservative non-confirm follow-up linkage for workflow correlation
 
 - Improve `LycolesUniversalInspector.lua` workflow linkage by adding bounded non-confirm follow-up linking (`FOLLOWUP_LINK_MAX_AGE_SECONDS=6`, `FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP=3`) so semantically meaningful consecutive actions can share a transaction when feature/context overlap is strong.
