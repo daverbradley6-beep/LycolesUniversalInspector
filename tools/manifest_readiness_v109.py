@@ -203,10 +203,42 @@ def _transport_readiness(transport):
     }
 
 
+def _transaction_reuse_diagnostics(history):
+    if not isinstance(history,list):
+        return {"available":False,"eventsWithTransactionId":0,
+            "uniqueTransactionIds":0,"reusedTransactionIds":0,
+            "singleUseTransactionIds":0,"reuseObserved":False}
+    values=[]
+    for event in history:
+        if not isinstance(event,dict):
+            continue
+        transaction=event.get("transactionId")
+        if type(transaction) in (int,str):
+            text=str(transaction)
+            if 1<=len(text)<=80:
+                values.append(text)
+    if not values:
+        return {"available":False,"eventsWithTransactionId":0,
+            "uniqueTransactionIds":0,"reusedTransactionIds":0,
+            "singleUseTransactionIds":0,"reuseObserved":False}
+    counts={}
+    for transaction in values:
+        counts[transaction]=counts.get(transaction,0)+1
+    reused=sum(count>1 for count in counts.values())
+    single_use=sum(count==1 for count in counts.values())
+    return {"available":True,"eventsWithTransactionId":len(values),
+        "uniqueTransactionIds":len(counts),"reusedTransactionIds":reused,
+        "singleUseTransactionIds":single_use,"reuseObserved":reused>0}
+
+
 def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
         linked_confirmations, linked_followups, corroborated_outcomes,
-        completed_candidates, workflow_generation):
+        completed_candidates, workflow_generation, history):
     linked_workflow_events = linked_confirmations + linked_followups
+    transaction_diagnostics=_transaction_reuse_diagnostics(history)
+    single_use_transactions=(transaction_diagnostics["available"]
+        and transaction_diagnostics["eventsWithTransactionId"]>=2
+        and transaction_diagnostics["reusedTransactionIds"]==0)
     if linked_workflow_events <= 0:
         linkage_evidence_type = "none"
     elif linked_confirmations > 0 and linked_followups > 0:
@@ -252,13 +284,21 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
             blockers.append("completed_workflow_candidates_unavailable")
         if attributed_interactions <= 0 and total_interactions > 0:
             blockers.append("no_attributed_interactions")
+    if linked_workflow_events <= 0 and single_use_transactions:
+        blockers.append("transaction_ids_not_reused_across_steps")
 
     if status == "no-interactions-observed":
         recommendation = "record at least one feature-relevant interaction sequence with observer enabled"
     elif status == "no-attributed-interactions":
         recommendation = "capture interactions on named feature controls and keep relevant menus visible"
     elif status == "attributed-interactions-without-linkage":
-        recommendation = "capture one linked sequence (initiator plus confirmation or follow-up) within the same feature context"
+        if single_use_transactions:
+            recommendation = (
+                "arm explicit workflow recording and complete one multi-step sequence without resetting context "
+                "so related callbacks share one transaction ID"
+            )
+        else:
+            recommendation = "capture one linked sequence (initiator plus confirmation or follow-up) within the same feature context"
     elif status == "linked-confirmations-without-corroborated-outcomes":
         if linkage_evidence_type == "followups-only":
             recommendation = "capture one confirmation/cancel step in the same menu for a linked follow-up sequence while keeping observable values visible"
@@ -284,6 +324,11 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
             round(corroborated_outcomes / total_interactions, 4)),
         "completedWorkflowCoverage": (0 if total_interactions <= 0 else
             round(completed_candidates / total_interactions, 4)),
+        "transactionIdReuseObserved":transaction_diagnostics["reuseObserved"],
+        "eventsWithTransactionId":transaction_diagnostics["eventsWithTransactionId"],
+        "uniqueTransactionIds":transaction_diagnostics["uniqueTransactionIds"],
+        "reusedTransactionIds":transaction_diagnostics["reusedTransactionIds"],
+        "singleUseTransactionIds":transaction_diagnostics["singleUseTransactionIds"],
         "blockers": list(dict.fromkeys(blockers)),
         "recommendedCapture": recommendation,
     }
@@ -598,7 +643,7 @@ def analyze(manifest):
     workflow_linkage = _workflow_linkage_diagnostics(
         interactions, attributed_interactions, linked_confirmations,
         linked_followups, corroborated_outcomes, completed_candidates,
-        workflow_generation)
+        workflow_generation, history)
     outcomes = _outcome_candidates(history)
     readiness = manifest.get("featureReadiness") or {}
     evidence = manifest.get("featureEvidence") or {}

@@ -1,6 +1,24 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Transaction ID reuse linkage root-cause diagnostics (v30.6.24)
+
+- Extended `tools/manifest_readiness_v109.py` workflow linkage diagnostics with bounded transaction-ID reuse analysis from captured interaction history.
+- Added new diagnostics fields:
+  - `transactionIdReuseObserved`
+  - `eventsWithTransactionId`
+  - `uniqueTransactionIds`
+  - `reusedTransactionIds`
+  - `singleUseTransactionIds`
+- Added conservative blocker `transaction_ids_not_reused_across_steps` when no linked workflow events are observed and transaction IDs are single-use across events.
+- Improved capture guidance for this condition to recommend explicit workflow recording and a single uninterrupted multi-step flow.
+- Updated regressions in `tests/test_manifest_readiness_v109.py` to verify new blocker and recommendation behavior on the Bubble Gum INFINITY sanitized fixture.
+- Full local validation gate passed after this increment:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,585 tests, all passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Legacy upload lifecycle diagnostics clarity (v30.6.23)
 
 - Improved `tools/manifest_readiness_v109.py` legacy transport interpretation when `reportTransport` is absent and `uploadedParts` is zero by incorporating bounded `localPerformance` telemetry (`uploadParts`, `uploadBytes`) without claiming receiver success.

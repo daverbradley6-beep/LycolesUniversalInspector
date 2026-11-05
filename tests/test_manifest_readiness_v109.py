@@ -221,6 +221,11 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(linkage["linkedWorkflowEvents"], 0)
         self.assertIn("workflow_linkage_not_observed", linkage["blockers"])
         self.assertIn("workflow_outcome_corroboration_unavailable", linkage["blockers"])
+        self.assertIn("transaction_ids_not_reused_across_steps", linkage["blockers"])
+        self.assertFalse(linkage["transactionIdReuseObserved"])
+        self.assertGreaterEqual(linkage["eventsWithTransactionId"], 2)
+        self.assertEqual(linkage["reusedTransactionIds"], 0)
+        self.assertIn("share one transaction ID", linkage["recommendedCapture"])
         self.assertEqual(result["generationReadiness"]["workflowCaptureRecommendation"],
                          linkage["recommendedCapture"])
 

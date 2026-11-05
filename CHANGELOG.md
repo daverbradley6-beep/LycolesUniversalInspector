@@ -1,3 +1,11 @@
+## v30.6.24 — Workflow linkage root-cause diagnostics for single-use transaction IDs
+
+- Extend `tools/manifest_readiness_v109.py` workflow linkage diagnostics with transaction ID reuse analysis from observed interaction history.
+- Surface bounded transaction-linkage fields (`transactionIdReuseObserved`, `eventsWithTransactionId`, `uniqueTransactionIds`, `reusedTransactionIds`, `singleUseTransactionIds`) to explain why linked workflows were not formed.
+- Emit explicit blocker `transaction_ids_not_reused_across_steps` when interaction callbacks carry only single-use transaction IDs and no linked workflow events.
+- Improve capture guidance by recommending explicit workflow recording when linkage is absent due to single-use transaction IDs.
+- Extend `tests/test_manifest_readiness_v109.py` to verify the new blocker and recommendation behavior on the Bubble Gum INFINITY sanitized regression fixture.
+
 ## v30.6.23 — Legacy upload lifecycle diagnostics clarified with local export telemetry
 
 - Improve `tools/manifest_readiness_v109.py` legacy transport interpretation when `reportTransport` is absent: distinguish unknown upload state from observed local multipart export telemetry (`localPerformance.uploadParts/uploadBytes`).
