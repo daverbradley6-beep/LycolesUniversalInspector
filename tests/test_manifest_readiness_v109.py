@@ -166,7 +166,11 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport["downstreamAvailabilityStatus"], "not-validated")
         self.assertFalse(transport["receiverIntegrityVerified"])
         self.assertFalse(transport["downstreamReportAvailable"])
-        self.assertIn("pre-upload placeholder", transport["diagnostic"])
+        self.assertEqual(transport["legacyUploadAttemptInference"],
+                         "local-multipart-export-observed")
+        self.assertEqual(transport["legacyLocalMultipartParts"], self.manifest["expectedParts"])
+        self.assertTrue(transport["legacyLocalMultipartComplete"])
+        self.assertIn("complete multipart export telemetry", transport["diagnostic"])
 
     def test_legacy_uploaded_parts_nonzero_infers_attempt_without_lifecycle(self):
         manifest = copy.deepcopy(self.manifest)
@@ -178,6 +182,25 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport["legacyUploadAttemptInference"], "attempted")
         self.assertIn("attempted upload", transport["diagnostic"])
 
+    def test_legacy_partial_local_export_surfaces_unknown_lifecycle_context(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["localPerformance"] = {
+            "serializationSeconds": 1.25,
+            "uploadBytes": 4096,
+            "uploadParts": 4,
+        }
+        result = MODULE.analyze(manifest)
+        transport = result["transport"]
+        self.assertEqual(transport["legacyUploadAttemptInference"],
+                         "partial-local-multipart-export-observed")
+        self.assertEqual(transport["legacyLocalMultipartParts"], 4)
+        self.assertFalse(transport["legacyLocalMultipartComplete"])
+        self.assertIn("partial multipart export telemetry", transport["diagnostic"])
+        readiness = result["transportReadiness"]
+        self.assertIn("legacy_upload_lifecycle_unknown_after_partial_local_export",
+                      readiness["blockers"])
+        self.assertIn("complete local numbered parts export", readiness["nextAction"])
+
 
 
     def test_upload_and_workflow_diagnostics_are_actionable(self):
@@ -186,6 +209,9 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertEqual(transport_readiness["status"], "report-generated-upload-state-unknown")
         self.assertIn("upload_attempt_status_unknown_legacy_manifest",
                       transport_readiness["blockers"])
+        self.assertIn("legacy_upload_lifecycle_unknown_after_complete_local_export",
+                      transport_readiness["blockers"])
+        self.assertIn("verify receiver integrity", transport_readiness["nextAction"])
         self.assertEqual(result["evidence"]["uploadLifecycle"]["uploadStatus"],
                          "unknown_legacy_manifest_snapshot")
 

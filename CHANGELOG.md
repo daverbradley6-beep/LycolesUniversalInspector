@@ -1,3 +1,10 @@
+## v30.6.23 — Legacy upload lifecycle diagnostics clarified with local export telemetry
+
+- Improve `tools/manifest_readiness_v109.py` legacy transport interpretation when `reportTransport` is absent: distinguish unknown upload state from observed local multipart export telemetry (`localPerformance.uploadParts/uploadBytes`).
+- Add bounded legacy diagnostics fields in transport output: `legacyLocalMultipartParts`, `legacyLocalMultipartBytes`, `legacyLocalMultipartComplete`, and richer `legacyUploadAttemptInference` values.
+- Add legacy lifecycle blockers and next-action guidance that differentiate complete local export vs partial export when receiver upload lifecycle is unknown.
+- Extend regressions in `tests/test_manifest_readiness_v109.py` for complete/partial local export legacy inference and actionable transport readiness messaging.
+
 ## v30.6.22 — Review-only linked GUI workflow candidate surfacing
 
 - Extend `tools/plan_generated_workflows.py` with conservative review-only linked workflow candidate synthesis when linked GUI transactions have transition evidence but lack resolvable scalar outcomes.

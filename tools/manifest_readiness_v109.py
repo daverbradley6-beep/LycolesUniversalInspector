@@ -133,9 +133,14 @@ def _transport_readiness(transport):
     receiver_status = transport["receiverReportStatus"]
     downstream_status = transport["downstreamAvailabilityStatus"]
     local_export = transport.get("localExport") if isinstance(transport.get("localExport"), dict) else {}
+    legacy_inference = transport.get("legacyUploadAttemptInference")
     blockers = []
     if status == "unknown_legacy_manifest_snapshot":
         blockers.append("upload_attempt_status_unknown_legacy_manifest")
+        if legacy_inference == "local-multipart-export-observed":
+            blockers.append("legacy_upload_lifecycle_unknown_after_complete_local_export")
+        elif legacy_inference == "partial-local-multipart-export-observed":
+            blockers.append("legacy_upload_lifecycle_unknown_after_partial_local_export")
     elif status == "not-attempted":
         blockers.append("upload_not_attempted")
     elif status == "cancelled":
@@ -167,7 +172,12 @@ def _transport_readiness(transport):
         readiness_status = "report-generated-upload-state-unknown"
 
     if readiness_status == "report-generated-upload-state-unknown":
-        next_step = "export complete numbered parts locally and/or run a fresh upload attempt to disambiguate lifecycle state"
+        if legacy_inference == "local-multipart-export-observed":
+            next_step = "local multipart export appears complete; verify receiver integrity for this scan ID or rerun upload with lifecycle telemetry"
+        elif legacy_inference == "partial-local-multipart-export-observed":
+            next_step = "complete local numbered parts export and/or rerun upload to disambiguate lifecycle state"
+        else:
+            next_step = "export complete numbered parts locally and/or run a fresh upload attempt to disambiguate lifecycle state"
     elif readiness_status == "report-generated-upload-not-attempted":
         next_step = "run upload attempt or save complete numbered parts locally"
     elif readiness_status in {"upload-cancelled", "upload-failed-or-blocked"}:
@@ -290,12 +300,38 @@ def _transport(manifest):
         legacy_uploaded = _integer(manifest.get("uploadedParts", 0), "legacy uploaded parts")
         if legacy_uploaded > expected:
             raise ValueError("invalid legacy uploaded part count")
+        local_performance = manifest.get("localPerformance")
+        local_parts = None;local_bytes = None;local_complete = None
+        if local_performance is not None:
+            performance = _mapping(local_performance, "legacy local performance")
+            local_parts = _integer(performance.get("uploadParts", 0),
+                "legacy local multipart parts")
+            local_bytes = _integer(performance.get("uploadBytes", 0),
+                "legacy local multipart bytes")
+            if local_parts > expected:
+                raise ValueError("invalid legacy local multipart part count")
+            if local_parts == 0 and local_bytes > 0:
+                raise ValueError("inconsistent legacy local multipart telemetry")
+            local_complete = local_parts == expected and expected > 0
         inferred_attempt = True if legacy_uploaded > 0 else None
-        diagnostic = (
-            "legacy uploadedParts indicates an attempted upload, but lifecycle details are unavailable"
-            if legacy_uploaded > 0 else
-            "legacy uploadedParts is a pre-upload placeholder, not failure or success evidence"
-        )
+        if legacy_uploaded > 0:
+            inference = "attempted"
+            diagnostic = "legacy uploadedParts indicates an attempted upload, but lifecycle details are unavailable"
+        elif local_complete is True:
+            inference = "local-multipart-export-observed"
+            diagnostic = (
+                "legacy uploadedParts is zero while localPerformance reports complete multipart export telemetry; "
+                "upload lifecycle, receiver acknowledgement, and downstream availability remain unverified"
+            )
+        elif local_parts and local_parts > 0:
+            inference = "partial-local-multipart-export-observed"
+            diagnostic = (
+                "legacy uploadedParts is zero while localPerformance reports partial multipart export telemetry; "
+                "upload lifecycle and receiver acknowledgement remain unknown"
+            )
+        else:
+            inference = "unknown"
+            diagnostic = "legacy uploadedParts is a pre-upload placeholder, not failure or success evidence"
         return {
             "reportGenerated": True,
             "manifestSnapshotPhase": "legacy-unspecified",
@@ -312,7 +348,10 @@ def _transport(manifest):
             "receiverIntegrityVerified": False,
             "downstreamReportAvailable": False,
             "legacyUploadedParts": legacy_uploaded,
-            "legacyUploadAttemptInference": "attempted" if legacy_uploaded > 0 else "unknown",
+            "legacyLocalMultipartParts": local_parts,
+            "legacyLocalMultipartBytes": local_bytes,
+            "legacyLocalMultipartComplete": local_complete,
+            "legacyUploadAttemptInference": inference,
             "diagnostic": diagnostic,
         }
     transport = _mapping(transport, "report transport")

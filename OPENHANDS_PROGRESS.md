@@ -1,6 +1,24 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Legacy upload lifecycle diagnostics clarity (v30.6.23)
+
+- Improved `tools/manifest_readiness_v109.py` legacy transport interpretation when `reportTransport` is absent and `uploadedParts` is zero by incorporating bounded `localPerformance` telemetry (`uploadParts`, `uploadBytes`) without claiming receiver success.
+- Added legacy transport diagnostics fields:
+  - `legacyLocalMultipartParts`
+  - `legacyLocalMultipartBytes`
+  - `legacyLocalMultipartComplete`
+  - enriched `legacyUploadAttemptInference` (`attempted`, `local-multipart-export-observed`, `partial-local-multipart-export-observed`, `unknown`)
+- Added legacy lifecycle blockers and next-action guidance in transport readiness:
+  - `legacy_upload_lifecycle_unknown_after_complete_local_export`
+  - `legacy_upload_lifecycle_unknown_after_partial_local_export`
+- Added/updated regressions in `tests/test_manifest_readiness_v109.py` for complete and partial local export telemetry inference and actionable readiness messaging.
+- Full local validation gate passed after this increment:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,585 tests, all passing**)
+  - `npm test --silent` (**receiver checks pass + Luau parser 3/3**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Review-only linked GUI workflow candidate surfacing (v30.6.22)
 
 - Extended `tools/plan_generated_workflows.py` to synthesize bounded review-only linked workflow candidates when linked GUI transitions are observed but no step has a resolvable scalar outcome contract.
