@@ -1,3 +1,16 @@
+## v30.6.27 — Workflow root-cause diagnostics for feature-attributed transitions without outcome contracts
+
+- Extend `tools/manifest_readiness_v109.py` with derived transition diagnostics from `interactionDiagnostics.recentInteractions`:
+  - `eventsWithObservableChanges`
+  - `featureAttributedTransitionEvents`
+  - `featureAttributedStateTransitionEvents`
+  - `featureAttributedGuiTransitionEvents`
+  - `unattributedTransitionEvents`
+  - `featureTransitionCounts`
+- Add conservative linkage blocker `feature_attributed_transitions_without_outcome_contract` when interactions include feature-attributed observable changes but no completed workflow candidates can be formed.
+- Improve capture guidance for single-use transaction sessions by explicitly recommending visible scalar contract capture alongside explicit multi-step workflow recording.
+- Extend `tests/test_manifest_readiness_v109.py` regression coverage for the new blocker and diagnostics fields.
+
 ## v30.6.26 — Manifest-assisted activation support expanded to Prompt and Tool controls
 
 - Extend `tools/build_release.py` manifest-assisted workflow Lua fallback so **Activate** now supports three bounded observed control contracts:

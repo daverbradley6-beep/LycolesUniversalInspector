@@ -1,6 +1,25 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Transition-contract root-cause diagnostics (v30.6.27)
+
+- Extended `tools/manifest_readiness_v109.py` with derived transition diagnostics from `interactionDiagnostics.recentInteractions` so manifest-only sessions can expose why completed workflow candidates remain zero without lowering verification standards.
+- Added bounded workflow-linkage fields:
+  - `eventsWithObservableChanges`
+  - `featureAttributedTransitionEvents`
+  - `featureAttributedStateTransitionEvents`
+  - `featureAttributedGuiTransitionEvents`
+  - `unattributedTransitionEvents`
+  - `featureTransitionCounts`
+- Added conservative blocker `feature_attributed_transitions_without_outcome_contract` whenever feature-attributed observable transitions exist but no completed workflow candidate contract is available.
+- Refined capture guidance for single-use transaction sessions to explicitly require visible feature-relevant scalar contract evidence in addition to explicit workflow recording.
+- Extended regressions in `tests/test_manifest_readiness_v109.py` for the new blocker, derived metrics, and recommendation text.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_manifest_readiness_v109 tests.test_build_release tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-assisted Prompt/Tool activation support (v30.6.26)
 
 - Expanded `tools/build_release.py` manifest-assisted fallback activation logic so generated `LycolesManifestAssistedWorkflow.lua` now supports bounded attempts for:

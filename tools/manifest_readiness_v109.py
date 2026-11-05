@@ -231,14 +231,72 @@ def _transaction_reuse_diagnostics(history):
         "singleUseTransactionIds":single_use,"reuseObserved":reused>0}
 
 
+
+def _feature_transition_diagnostics(history):
+    if not isinstance(history, list):
+        return {
+            "eventsWithObservableChanges": 0,
+            "featureAttributedTransitionEvents": 0,
+            "featureAttributedStateTransitionEvents": 0,
+            "featureAttributedGuiTransitionEvents": 0,
+            "unattributedTransitionEvents": 0,
+            "featureTransitionCounts": [],
+        }
+    feature_counts = {}
+    observable = 0
+    attributed = 0
+    attributed_state = 0
+    attributed_gui = 0
+    unattributed = 0
+    for event in history:
+        if not isinstance(event, dict):
+            continue
+        state_count = event.get("stateChangeCount")
+        gui_count = event.get("guiStateChangeCount")
+        if type(state_count) is not int or state_count < 0:
+            state_count = 0
+        if type(gui_count) is not int or gui_count < 0:
+            gui_count = 0
+        if state_count <= 0 and gui_count <= 0:
+            continue
+        observable += 1
+        feature = event.get("featureCandidate")
+        if isinstance(feature, str) and feature and len(feature.encode("utf-8")) <= 80:
+            attributed += 1
+            if state_count > 0:
+                attributed_state += 1
+            if gui_count > 0:
+                attributed_gui += 1
+            feature_counts[feature] = feature_counts.get(feature, 0) + 1
+        else:
+            unattributed += 1
+    ranked = [
+        {"feature": feature, "count": count}
+        for feature, count in sorted(
+            feature_counts.items(), key=lambda item: (-item[1], item[0])
+        )
+    ]
+    return {
+        "eventsWithObservableChanges": observable,
+        "featureAttributedTransitionEvents": attributed,
+        "featureAttributedStateTransitionEvents": attributed_state,
+        "featureAttributedGuiTransitionEvents": attributed_gui,
+        "unattributedTransitionEvents": unattributed,
+        "featureTransitionCounts": ranked,
+    }
+
+
 def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
         linked_confirmations, linked_followups, corroborated_outcomes,
-        completed_candidates, workflow_generation, history):
+        completed_candidates, workflow_generation, history,
+        transition_diagnostics):
     linked_workflow_events = linked_confirmations + linked_followups
     transaction_diagnostics=_transaction_reuse_diagnostics(history)
     single_use_transactions=(transaction_diagnostics["available"]
         and transaction_diagnostics["eventsWithTransactionId"]>=2
         and transaction_diagnostics["reusedTransactionIds"]==0)
+    feature_attributed_transitions=(
+        transition_diagnostics.get("featureAttributedTransitionEvents", 0) > 0)
     if linked_workflow_events <= 0:
         linkage_evidence_type = "none"
     elif linked_confirmations > 0 and linked_followups > 0:
@@ -286,6 +344,8 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
             blockers.append("no_attributed_interactions")
     if linked_workflow_events <= 0 and single_use_transactions:
         blockers.append("transaction_ids_not_reused_across_steps")
+    if completed_candidates <= 0 and feature_attributed_transitions:
+        blockers.append("feature_attributed_transitions_without_outcome_contract")
 
     if status == "no-interactions-observed":
         recommendation = "record at least one feature-relevant interaction sequence with observer enabled"
@@ -297,6 +357,11 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
                 "arm explicit workflow recording and complete one multi-step sequence without resetting context "
                 "so related callbacks share one transaction ID"
             )
+            if feature_attributed_transitions:
+                recommendation += (
+                    "; keep feature-relevant observable scalar values visible so linked steps can "
+                    "resolve a deterministic outcome contract"
+                )
         else:
             recommendation = "capture one linked sequence (initiator plus confirmation or follow-up) within the same feature context"
     elif status == "linked-confirmations-without-corroborated-outcomes":
@@ -324,6 +389,12 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
             round(corroborated_outcomes / total_interactions, 4)),
         "completedWorkflowCoverage": (0 if total_interactions <= 0 else
             round(completed_candidates / total_interactions, 4)),
+        "eventsWithObservableChanges": transition_diagnostics["eventsWithObservableChanges"],
+        "featureAttributedTransitionEvents": transition_diagnostics["featureAttributedTransitionEvents"],
+        "featureAttributedStateTransitionEvents": transition_diagnostics["featureAttributedStateTransitionEvents"],
+        "featureAttributedGuiTransitionEvents": transition_diagnostics["featureAttributedGuiTransitionEvents"],
+        "unattributedTransitionEvents": transition_diagnostics["unattributedTransitionEvents"],
+        "featureTransitionCounts": transition_diagnostics["featureTransitionCounts"],
         "transactionIdReuseObserved":transaction_diagnostics["reuseObserved"],
         "eventsWithTransactionId":transaction_diagnostics["eventsWithTransactionId"],
         "uniqueTransactionIds":transaction_diagnostics["uniqueTransactionIds"],
@@ -640,10 +711,11 @@ def analyze(manifest):
     corroborated_outcomes = _integer(workflow.get("actionOutcomesCorroborated"), "corroborated outcomes")
     completed_candidates = _integer(workflow.get("completedCandidates"), "completed candidates")
     transport_readiness = _transport_readiness(transport)
+    transition_diagnostics = _feature_transition_diagnostics(history)
     workflow_linkage = _workflow_linkage_diagnostics(
         interactions, attributed_interactions, linked_confirmations,
         linked_followups, corroborated_outcomes, completed_candidates,
-        workflow_generation, history)
+        workflow_generation, history, transition_diagnostics)
     outcomes = _outcome_candidates(history)
     readiness = manifest.get("featureReadiness") or {}
     evidence = manifest.get("featureEvidence") or {}
@@ -691,6 +763,10 @@ def analyze(manifest):
             blockers.append("completed_workflow_candidates_unavailable")
         if unattributed_interactions > 0 and "interaction_attribution_incomplete" not in blockers:
             blockers.append("interaction_attribution_incomplete")
+    if (completed_candidates == 0
+            and transition_diagnostics["featureAttributedTransitionEvents"] > 0
+            and "feature_attributed_transitions_without_outcome_contract" not in blockers):
+        blockers.append("feature_attributed_transitions_without_outcome_contract")
     if history_subset:
         blockers.append("complete_interaction_history_unavailable")
     if scan_id is None:

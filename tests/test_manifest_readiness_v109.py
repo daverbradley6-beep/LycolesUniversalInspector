@@ -79,6 +79,10 @@ class ManifestReadinessTests(unittest.TestCase):
             "interaction_attribution_incomplete",
             result["generationReadiness"]["blockers"],
         )
+        self.assertIn(
+            "feature_attributed_transitions_without_outcome_contract",
+            result["generationReadiness"]["blockers"],
+        )
 
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertFalse(result["claims"]["gameplayVerified"])
@@ -222,10 +226,14 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertIn("workflow_linkage_not_observed", linkage["blockers"])
         self.assertIn("workflow_outcome_corroboration_unavailable", linkage["blockers"])
         self.assertIn("transaction_ids_not_reused_across_steps", linkage["blockers"])
+        self.assertIn("feature_attributed_transitions_without_outcome_contract", linkage["blockers"])
         self.assertFalse(linkage["transactionIdReuseObserved"])
         self.assertGreaterEqual(linkage["eventsWithTransactionId"], 2)
         self.assertEqual(linkage["reusedTransactionIds"], 0)
-        self.assertIn("share one transaction ID", linkage["recommendedCapture"])
+        self.assertGreater(linkage["eventsWithObservableChanges"], 0)
+        self.assertGreater(linkage["featureAttributedTransitionEvents"], 0)
+        self.assertGreater(linkage["featureAttributedGuiTransitionEvents"], 0)
+        self.assertIn("resolve a deterministic outcome contract", linkage["recommendedCapture"])
         self.assertEqual(result["generationReadiness"]["workflowCaptureRecommendation"],
                          linkage["recommendedCapture"])
 
