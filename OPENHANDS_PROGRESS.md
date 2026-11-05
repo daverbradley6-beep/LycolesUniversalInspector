@@ -1,6 +1,13 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Follow-up-only recommendation refinement (v30.6.17)
+
+- Refined `tools/manifest_readiness_v109.py` linkage recommendations so follow-up-only linked sessions now receive targeted capture guidance to record one same-menu confirmation/cancel step while preserving observable before/after values.
+- Added regression coverage in `tests/test_manifest_readiness_v109.py` to enforce the specialized follow-up-only recommendation text.
+- Full local gate passed after this refinement: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,561 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Linkage evidence typing diagnostics (v30.6.16)
 
 - Extended `tools/manifest_readiness_v109.py` workflow-linkage diagnostics to expose `linkedEvidenceType` (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and explicit `linkedWorkflowEvents` counts.

@@ -146,6 +146,7 @@ class ManifestReadinessTests(unittest.TestCase):
         linkage = result["evidence"]["workflowLinkageDiagnostics"]
         self.assertEqual(linkage["linkedWorkflowEvents"], 3)
         self.assertEqual(linkage["linkedEvidenceType"], "followups-only")
+        self.assertIn("confirmation/cancel step", linkage["recommendedCapture"])
         self.assertGreater(linkage["linkedWorkflowCoverage"], 0)
         self.assertNotIn("workflow_linkage_not_observed",
                          result["generationReadiness"]["blockers"])

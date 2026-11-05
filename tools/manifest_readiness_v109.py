@@ -250,7 +250,10 @@ def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
     elif status == "attributed-interactions-without-linkage":
         recommendation = "capture one linked sequence (initiator plus confirmation or follow-up) within the same feature context"
     elif status == "linked-confirmations-without-corroborated-outcomes":
-        recommendation = "capture linked actions while relevant observable values are visible before and after activation"
+        if linkage_evidence_type == "followups-only":
+            recommendation = "capture one confirmation/cancel step in the same menu for a linked follow-up sequence while keeping observable values visible"
+        else:
+            recommendation = "capture linked actions while relevant observable values are visible before and after activation"
     elif status == "completed-workflow-candidates-observed":
         recommendation = "use completed workflow candidates as input to generation planning"
     else:

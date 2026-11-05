@@ -1,3 +1,8 @@
+## v30.6.17 — Follow-ups-only workflow guidance refinement
+
+- Refine `tools/manifest_readiness_v109.py` linkage guidance so follow-up-only linked sessions now receive a targeted recommendation to capture one confirmation/cancel step in the same menu while preserving observable before/after values.
+- Add regression coverage in `tests/test_manifest_readiness_v109.py` asserting the specialized follow-up-only recommendation text.
+
 ## v30.6.16 — Linkage evidence typing for manifest-readiness workflow diagnostics
 
 - Extend `tools/manifest_readiness_v109.py` workflow-linkage diagnostics with explicit linkage evidence typing (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and a `linkedWorkflowEvents` count.
