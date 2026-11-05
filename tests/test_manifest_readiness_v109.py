@@ -205,12 +205,28 @@ class ManifestReadinessTests(unittest.TestCase):
                       readiness["blockers"])
         self.assertIn("complete local numbered parts export", readiness["nextAction"])
 
+    def test_legacy_uploaded_parts_zero_without_local_telemetry_is_placeholder(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest.pop("localPerformance", None)
+        manifest["uploadedParts"] = 0
+        result = MODULE.analyze(manifest)
+        transport = result["transport"]
+        readiness = result["transportReadiness"]
+        self.assertEqual(transport["legacyUploadAttemptInference"], "unknown")
+        self.assertIn("pre-upload placeholder", transport["diagnostic"])
+        self.assertEqual(readiness["status"], "legacy-pre-upload-placeholder")
+        self.assertIn("legacy_uploaded_parts_zero_pre_upload_placeholder",
+                      readiness["blockers"])
+        self.assertIn("first upload attempt", readiness["nextAction"])
+
+
 
 
     def test_upload_and_workflow_diagnostics_are_actionable(self):
         result = MODULE.analyze(self.manifest)
         transport_readiness = result["transportReadiness"]
-        self.assertEqual(transport_readiness["status"], "report-generated-upload-state-unknown")
+        self.assertEqual(transport_readiness["status"],
+                         "legacy-local-export-observed-upload-state-unknown")
         self.assertIn("upload_attempt_status_unknown_legacy_manifest",
                       transport_readiness["blockers"])
         self.assertIn("legacy_upload_lifecycle_unknown_after_complete_local_export",

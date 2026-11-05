@@ -1,6 +1,27 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Legacy upload-state disambiguation diagnostics (v30.6.30)
+
+- Refined `tools/manifest_readiness_v109.py` legacy transport readiness mapping so `unknown_legacy_manifest_snapshot` no longer collapses distinct `uploadedParts` scenarios into one generic status.
+- Added explicit readiness statuses for legacy snapshots:
+  - `legacy-local-export-observed-upload-state-unknown`
+  - `legacy-partial-local-export-observed-upload-state-unknown`
+  - `legacy-upload-attempt-observed-state-unknown`
+  - `legacy-pre-upload-placeholder`
+- Added conservative blockers:
+  - `legacy_upload_attempt_observed_without_lifecycle`
+  - `legacy_uploaded_parts_zero_pre_upload_placeholder`
+- Added tailored next-action guidance per legacy state, distinguishing first upload attempts from ambiguous post-upload lifecycle snapshots.
+- Extended `tests/test_manifest_readiness_v109.py` with:
+  - updated expected status for complete-local-export legacy fixtures
+  - new regression for uploadedParts zero with no local telemetry (pre-upload placeholder)
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108 tests.test_build_release`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Conservative post-capture outcome backfill (v30.6.29)
 
 - Added a bounded fallback pass in `LycolesUniversalInspector.lua` (`backfillObservableOutcomeCandidates`) that recovers missing `observableOutcomeCandidate` entries from already-captured feature-consistent state/GUI evidence across event-level and observation-window changes.

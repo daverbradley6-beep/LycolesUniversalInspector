@@ -1,3 +1,16 @@
+## v30.6.30 — Legacy upload lifecycle diagnostics distinguish placeholder, attempted, and local-export states
+
+- Refine `tools/manifest_readiness_v109.py` transport-readiness mapping for `uploadStatus == unknown_legacy_manifest_snapshot` so `uploadedParts`/legacy telemetry cases are explicitly separated:
+  - `legacy-local-export-observed-upload-state-unknown`
+  - `legacy-partial-local-export-observed-upload-state-unknown`
+  - `legacy-upload-attempt-observed-state-unknown`
+  - `legacy-pre-upload-placeholder`
+- Add conservative legacy blockers:
+  - `legacy_upload_attempt_observed_without_lifecycle`
+  - `legacy_uploaded_parts_zero_pre_upload_placeholder`
+- Tailor next-action guidance per legacy state so users can distinguish first-upload-needed placeholders from ambiguous post-upload lifecycles.
+- Extend `tests/test_manifest_readiness_v109.py` with regression coverage for the pre-upload placeholder case and updated complete-local-export readiness status.
+
 ## v30.6.29 — Conservative post-capture outcome-candidate backfill for interaction history
 
 - Add a bounded post-capture fallback pass in `LycolesUniversalInspector.lua` that derives missing `observableOutcomeCandidate` entries from already-captured interaction evidence when feature-consistent state/GUI changes are present in the event or its observation windows.

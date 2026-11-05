@@ -141,6 +141,10 @@ def _transport_readiness(transport):
             blockers.append("legacy_upload_lifecycle_unknown_after_complete_local_export")
         elif legacy_inference == "partial-local-multipart-export-observed":
             blockers.append("legacy_upload_lifecycle_unknown_after_partial_local_export")
+        elif legacy_inference == "attempted":
+            blockers.append("legacy_upload_attempt_observed_without_lifecycle")
+        else:
+            blockers.append("legacy_uploaded_parts_zero_pre_upload_placeholder")
     elif status == "not-attempted":
         blockers.append("upload_not_attempted")
     elif status == "cancelled":
@@ -168,16 +172,28 @@ def _transport_readiness(transport):
         readiness_status = "upload-failed-or-blocked"
     elif status == "not-attempted":
         readiness_status = "report-generated-upload-not-attempted"
+    elif status == "unknown_legacy_manifest_snapshot":
+        if legacy_inference == "local-multipart-export-observed":
+            readiness_status = "legacy-local-export-observed-upload-state-unknown"
+        elif legacy_inference == "partial-local-multipart-export-observed":
+            readiness_status = "legacy-partial-local-export-observed-upload-state-unknown"
+        elif legacy_inference == "attempted":
+            readiness_status = "legacy-upload-attempt-observed-state-unknown"
+        else:
+            readiness_status = "legacy-pre-upload-placeholder"
     else:
         readiness_status = "report-generated-upload-state-unknown"
 
-    if readiness_status == "report-generated-upload-state-unknown":
-        if legacy_inference == "local-multipart-export-observed":
-            next_step = "local multipart export appears complete; verify receiver integrity for this scan ID or rerun upload with lifecycle telemetry"
-        elif legacy_inference == "partial-local-multipart-export-observed":
-            next_step = "complete local numbered parts export and/or rerun upload to disambiguate lifecycle state"
-        else:
-            next_step = "export complete numbered parts locally and/or run a fresh upload attempt to disambiguate lifecycle state"
+    if readiness_status == "legacy-local-export-observed-upload-state-unknown":
+        next_step = "local multipart export appears complete; verify receiver integrity for this scan ID or rerun upload with lifecycle telemetry"
+    elif readiness_status == "legacy-partial-local-export-observed-upload-state-unknown":
+        next_step = "complete local numbered parts export and/or rerun upload to disambiguate lifecycle state"
+    elif readiness_status == "legacy-upload-attempt-observed-state-unknown":
+        next_step = "verify receiver integrity for this scan ID or rerun upload with lifecycle telemetry to disambiguate upload completion"
+    elif readiness_status == "legacy-pre-upload-placeholder":
+        next_step = "run a first upload attempt and/or save complete numbered parts locally"
+    elif readiness_status == "report-generated-upload-state-unknown":
+        next_step = "export complete numbered parts locally and/or run a fresh upload attempt to disambiguate lifecycle state"
     elif readiness_status == "report-generated-upload-not-attempted":
         next_step = "run upload attempt or save complete numbered parts locally"
     elif readiness_status in {"upload-cancelled", "upload-failed-or-blocked"}:
