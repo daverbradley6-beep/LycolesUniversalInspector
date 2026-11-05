@@ -14,6 +14,7 @@ from feature_planner_v106 import SUPPORTED, plan
 from luau_contract_v106 import validate_source
 from feature_quality_v106 import assess
 from inspection_diagnostics_v106 import analyze
+from workflow_candidates_v107 import build as build_workflow_candidates, validate as validate_workflow_candidates
 
 SCRIPT = "LycolesFunctionalObserver.client.lua"
 PLAN = "feature-plan.json"
@@ -21,6 +22,18 @@ MANIFEST = "manifest.json"
 REPORT = "inspection-report.json"
 QUALITY = "quality-report.json"
 DIAGNOSTICS = "inspection-diagnostics.json"
+WORKFLOWS = "workflow-candidates.json"
+
+def _diagnostics_with_workflows(report, feature_plan, workflow_candidates):
+    diagnostics = analyze(report, feature_plan)
+    diagnostics.update({
+        "workflowCandidates": workflow_candidates["summary"]["workflowCandidates"],
+        "completedCandidates": workflow_candidates["summary"]["completedCandidates"],
+        "reviewOnlyCandidates": workflow_candidates["summary"]["reviewOnlyCandidates"],
+        "workflowRejectedEvents": workflow_candidates["summary"]["rejectedEvents"],
+    })
+    return diagnostics
+
 
 def emit_luau(feature_plan):
     place = feature_plan["placeId"]
@@ -147,13 +160,16 @@ def emit_luau(feature_plan):
 def generate(source, place_id, output):
     report = build(source, place_id)
     feature_plan = plan(report)
+    workflow_candidates = build_workflow_candidates(report)
+    diagnostics = _diagnostics_with_workflows(report, feature_plan, workflow_candidates)
     root = Path(output)
     root.mkdir(parents=True, exist_ok=True)
     files = {
         REPORT: canonical(report),
         PLAN: canonical(feature_plan),
         QUALITY: canonical(assess(report, feature_plan)),
-        DIAGNOSTICS: canonical(analyze(report, feature_plan)),
+        DIAGNOSTICS: canonical(diagnostics),
+        WORKFLOWS: canonical(workflow_candidates),
         SCRIPT: emit_luau(feature_plan).encode("utf-8"),
     }
     for name, payload in files.items():
@@ -179,7 +195,7 @@ def generate(source, place_id, output):
 def verify(output):
     root = Path(output)
     try:
-        names = (REPORT, PLAN, QUALITY, DIAGNOSTICS, SCRIPT)
+        names = (REPORT, PLAN, QUALITY, DIAGNOSTICS, WORKFLOWS, SCRIPT)
         paths = [root / name for name in (*names, MANIFEST)]
         if any(path.is_symlink() or not path.is_file() for path in paths):
             raise ValueError("missing or symlinked file")
@@ -188,24 +204,42 @@ def verify(output):
         feature_plan = json.loads((root / PLAN).read_bytes())
         quality = json.loads((root / QUALITY).read_bytes())
         diagnostics = json.loads((root / DIAGNOSTICS).read_bytes())
+        workflow_candidates = json.loads((root / WORKFLOWS).read_bytes())
         if manifest.get("schemaVersion") != "106.integrated-manifest" or set(manifest.get("files", {})) != set(names):
             raise ValueError("invalid manifest")
         if manifest.get("readOnly") is not True or manifest.get("runtimeVerified") is not False or manifest.get("gameplayVerified") is not False:
             raise ValueError("invalid verification claim")
         if manifest.get("placeId") != report.get("placeId"):
             raise ValueError("place mismatch")
-        if feature_plan != plan(report) or quality != assess(report, feature_plan) or diagnostics != analyze(report, feature_plan):
+        validate_workflow_candidates(workflow_candidates)
+        expected_feature_plan = plan(report)
+        expected_workflows = build_workflow_candidates(report)
+        expected_diagnostics = _diagnostics_with_workflows(report, feature_plan, workflow_candidates)
+        if feature_plan != expected_feature_plan or quality != assess(report, feature_plan) or diagnostics != expected_diagnostics or workflow_candidates != expected_workflows:
             raise ValueError("feature plan mismatch")
         if manifest.get("functionalControlsGenerated") != len(feature_plan["features"]) + 3:
             raise ValueError("control count mismatch")
-        expected = {REPORT: canonical(report), PLAN: canonical(feature_plan), QUALITY: canonical(quality), DIAGNOSTICS: canonical(diagnostics), SCRIPT: emit_luau(feature_plan).encode("utf-8")}
+        expected = {
+            REPORT: canonical(report),
+            PLAN: canonical(feature_plan),
+            QUALITY: canonical(quality),
+            DIAGNOSTICS: canonical(diagnostics),
+            WORKFLOWS: canonical(workflow_candidates),
+            SCRIPT: emit_luau(feature_plan).encode("utf-8"),
+        }
         contract = validate_source(expected[SCRIPT].decode('utf-8'), len(feature_plan['features']))
         if not contract['ok']:
             raise ValueError('Luau contract: ' + ','.join(contract['issues']))
         for name, data in expected.items():
             if (root / name).read_bytes() != data or manifest["files"][name] != hashlib.sha256(data).hexdigest():
                 raise ValueError("artifact mismatch: " + name)
-        return {"ok": True, "features": len(feature_plan["features"]), "runtimeVerified": False}
+        return {
+            "ok": True,
+            "features": len(feature_plan["features"]),
+            "workflowCandidates": workflow_candidates["summary"]["workflowCandidates"],
+            "completedCandidates": workflow_candidates["summary"]["completedCandidates"],
+            "runtimeVerified": False,
+        }
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         return {"ok": False, "error": str(exc), "runtimeVerified": False}
 

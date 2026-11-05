@@ -1,6 +1,18 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-05 — Workflow-candidate pipeline integration (v30.6.19)
+
+- Integrated deterministic workflow-candidate generation into the v106 integrated pipeline: `tools/integrated_pipeline_v106.py` now emits `workflow-candidates.json`, augments diagnostics with workflow/completed/review-only counters, and verifies workflow artifacts fail-closed.
+- Added/extended regression coverage across v104/v106/v107 workflow evidence surfaces: `tests/test_release_pipeline_v104.py`, `tests/test_integrated_pipeline_v106.py`, and new `tests/test_workflow_candidates_v107.py`.
+- Hardened v104 release normalization for bounded interaction-history ingestion so workflow evidence remains typed, deterministic, and explicitly rejected when malformed.
+- Full local validation gate passed on this checkpoint:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,569 tests, all passing**)
+  - `npm test` (**receiver checks pass + Luau parser 3/3**)
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest -v tests.test_controlled_luau_v108` (**24 tests, all passing**)
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-02 — Review-only GUI outcome diagnostics (v30.6.18)
 
 - Extended GUI discovery output in `tools/discover_action_capabilities.py` with `observableOutcomeEvidenceKind` (`resolvable-scalar`, `gui-transition-only`, `none`) and `reviewOnlyTemporalOutcomeCandidate` per target while preserving strict scalar-outcome requirements for generation readiness.

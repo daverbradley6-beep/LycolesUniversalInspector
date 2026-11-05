@@ -1,3 +1,10 @@
+## v30.6.19 — Deterministic workflow-candidate artifact integration
+
+- Add deterministic interaction-history normalization to `tools/release_pipeline_v104.py` so bounded `observedInteractionHistory` records are preserved as typed workflow evidence (`observedInteractionHistory*` counters included) without inventing server-side outcomes.
+- Integrate `tools/workflow_candidates_v107.py` into `tools/integrated_pipeline_v106.py` generation and verification: emit `workflow-candidates.json`, enrich diagnostics with workflow/completion/review-only counts, and fail-close verification when workflow artifacts are missing or tampered.
+- Extend v104/v106 regression coverage (`tests/test_release_pipeline_v104.py`, `tests/test_integrated_pipeline_v106.py`) and add dedicated `tests/test_workflow_candidates_v107.py` for schema, determinism, filtering, capping, and validation guardrails.
+- Full local validation gate passed: focused pipeline suites, full Python suite, Node receiver/Luau parser tests, Luau compilation checks, and metadata consistency checks.
+
 ## v30.6.18 — Review-only GUI outcome diagnostics for sparse scalar sessions
 
 - Extend `tools/discover_action_capabilities.py` GUI target diagnostics with explicit `observableOutcomeEvidenceKind` classification (`resolvable-scalar`, `gui-transition-only`, `none`) while keeping scalar-outcome requirements unchanged for trial readiness.
