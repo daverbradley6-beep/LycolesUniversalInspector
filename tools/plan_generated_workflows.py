@@ -56,6 +56,25 @@ def _identity(value):
         result.append({"name":name,"className":class_name,"ordinal":ordinal})
     return result
 
+
+
+def _gui_metadata_matches(observed, expected, text_dynamic):
+    if not isinstance(observed,dict) or not isinstance(expected,dict):
+        return False
+    if observed.get("controlClass")!=expected.get("controlClass"):
+        return False
+    if not text_dynamic and observed.get("text")!=expected.get("text"):
+        return False
+    for key in ("visible","active","selectable","autoButtonColor",
+            "ancestorVisible","screenEnabled","withinScrollingBounds",
+            "effectiveVisible"):
+        if observed.get(key)!=expected.get(key):
+            return False
+    if "interactable" in expected and observed.get("interactable")!=expected.get("interactable"):
+        return False
+    return True
+
+
 def _targets(actions):
     values={}
     groups=(("promptInteractions","proximity-prompt-trial","promptMetadata"),
@@ -81,6 +100,8 @@ def _targets(actions):
                         or not isinstance(metadata.get("anchorPosition"),dict)
                         or type(metadata.get("maxActivationDistance")) not in (int,float)):
                     continue
+            if kind=="guided-gui-activation-trial" and type(target.get("guiMetadataTextDynamic",False)) is not bool:
+                raise ValueError("Malformed generation-ready action target")
             if (not _text(path,400) or not _text(control_type,80) or not _text(target.get("label"),120)
                     or not isinstance(target.get(metadata_key),dict)
                     or not _text(outcome.get("key"),200)
@@ -127,8 +148,14 @@ def _baseline(event):
 def _step(event,sequence,transaction_order,kind,metadata_key,target):
     outcome=target["selectedOutcome"]
     observed=_event_delta(event,outcome["key"])
+    metadata_matches=(
+        _gui_metadata_matches(event.get("controlMetadata"),target[metadata_key],
+            target.get("guiMetadataTextDynamic",False))
+        if kind=="guided-gui-activation-trial"
+        else event.get("controlMetadata")==target[metadata_key]
+    )
     if (_identity(event.get("pathIdentity"))!=_identity(target["pathIdentity"])
-            or event.get("controlMetadata")!=target[metadata_key]
+            or not metadata_matches
             or observed is None
             or observed["stateIdentity"]!=_identity(outcome["stateIdentity"])):
         raise ValueError("Workflow step evidence drift")

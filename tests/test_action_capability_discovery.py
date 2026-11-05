@@ -424,13 +424,14 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         source=generator.render(result)
         for token in ('kind="gui"','guiMetadata={','local function currentGuiMetadata(button)',
                       'Instance.new("UIStroke")','button.Activated:Connect',
-                      'gui-activation-timeout','automatic GUI activation unsupported'):
+                      'gui-activation-timeout','automatic GUI activation unsupported',
+                      'guiTextDynamic=false'):
             self.assertIn(token,source)
         for forbidden in ('firesignal(','VirtualInputManager','VirtualUser'):
             self.assertNotIn(forbidden,source)
 
 
-    def test_unavailable_or_drifted_gui_control_stays_discovery_only(self):
+    def test_unavailable_or_non_text_drifted_gui_control_stays_discovery_only(self):
         unavailable=self.gui_plan()
         unavailable["observedInteractionHistory"][0]["controlMetadata"]["withinScrollingBounds"]=False
         target=discovery.analyze(unavailable)["guiInteractions"]["targets"][0]
@@ -438,12 +439,24 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertIn("GUI control was not observed visible, enabled, and within scrolling bounds",
             target["blockers"])
         drift=self.gui_plan();second=json.loads(json.dumps(drift["observedInteractionHistory"][0]))
-        second["controlMetadata"]["text"]="Buy Better Upgrade"
+        second["controlMetadata"]["active"]=False
         drift["observedInteractionHistory"].append(second)
         target=discovery.analyze(drift)["guiInteractions"]["targets"][0]
         self.assertFalse(target["guidedActivationContractReady"])
         self.assertTrue(target["prerequisiteEvidence"]["metadataDriftObserved"])
         self.assertIn("GUI activation prerequisite metadata drift was observed",target["blockers"])
+
+    def test_text_only_gui_metadata_drift_can_remain_generation_ready(self):
+        drift=self.gui_plan();second=json.loads(json.dumps(drift["observedInteractionHistory"][0]))
+        second["controlMetadata"]["text"]="Buy Better Upgrade"
+        drift["observedInteractionHistory"].append(second)
+        result=discovery.analyze(drift)
+        target=result["guiInteractions"]["targets"][0]
+        self.assertTrue(target["guidedActivationContractReady"])
+        self.assertTrue(target["guiMetadataTextDynamic"])
+        self.assertTrue(target["prerequisiteEvidence"]["metadataDriftObserved"])
+        source=generator.render(result)
+        self.assertIn("guiTextDynamic=true",source)
 
     def test_malformed_gui_prerequisite_metadata_fails_closed(self):
         plan=self.gui_plan();plan["observedInteractionHistory"][0]["controlMetadata"]["unknown"]=True

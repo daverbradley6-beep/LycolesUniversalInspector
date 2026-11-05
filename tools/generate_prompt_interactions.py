@@ -174,7 +174,7 @@ def render(discovery):
             targets.append((label,path,signal["key"],signal["change"],multi,is_egg,
                 str(item.get("featureCandidate") or "other")[:80],score,
                 _identity_lua(item.get("pathIdentity")),_state_identity_lua(signal.get("stateIdentity")),
-                "prompt","nil","nil"))
+                "prompt","nil","nil",False))
     elif egg.get("automaticSingleTrialReady") is True:
         for item in egg.get("targets",[]):
             if not isinstance(item,dict) or item.get("incrementObservations",0)<1:continue
@@ -185,7 +185,7 @@ def render(discovery):
             multi=any(token in (label+" "+metadata).lower() for token in ("multi","triple","x3","3 egg","three"))
             targets.append((label,path,keys[0],"increased",multi,True,"pets",0,
                 _identity_lua(item.get("pathIdentity")),_state_identity_lua(identities.get(keys[0])),
-                "prompt","nil","nil"))
+                "prompt","nil","nil",False))
     tool_contract=discovery.get("toolInteractions")
     if isinstance(tool_contract,dict):
         if (tool_contract.get("generatorIntegrated") is not True
@@ -229,7 +229,7 @@ def render(discovery):
                 str(item.get("featureCandidate") or "other")[:80],score,
                 _identity_lua(item.get("pathIdentity"),"Tool"),
                 _state_identity_lua(signal.get("stateIdentity")),"tool",
-                _tool_metadata_lua(snapshots[0]),"nil"))
+                _tool_metadata_lua(snapshots[0]),"nil",False))
     if isinstance(gui_contract,dict):
         if (gui_contract.get("generatorIntegrated") is not True
                 or gui_contract.get("automaticActivationSupported") is not False
@@ -260,10 +260,27 @@ def render(discovery):
             evidence=item.get("prerequisiteEvidence")
             if not isinstance(evidence,dict):raise ValueError("Malformed GUI prerequisite evidence")
             snapshots=evidence.get("metadataSnapshots");drift=evidence.get("metadataDriftObserved")
-            if (not isinstance(snapshots,list) or len(snapshots)!=1 or drift is not False
-                    or item.get("guiMetadata")!=snapshots[0]):
+            if (not isinstance(snapshots,list) or not 1<=len(snapshots)<=8 or type(drift) is not bool
+                    or drift!=(len(snapshots)>1)
+                    or len({json.dumps(snapshot,sort_keys=True,ensure_ascii=False)
+                        for snapshot in snapshots})!=len(snapshots)):
                 raise ValueError("Malformed GUI prerequisite evidence")
-            snapshot=_gui_snapshot(snapshots[0])
+            snapshots=[_gui_snapshot(snapshot) for snapshot in snapshots]
+            metadata=item.get("guiMetadata")
+            if not isinstance(metadata,dict):raise ValueError("Malformed GUI prerequisite evidence")
+            snapshot=_gui_snapshot(metadata)
+            text_dynamic=item.get("guiMetadataTextDynamic",False)
+            if type(text_dynamic) is not bool:
+                raise ValueError("Malformed GUI prerequisite evidence")
+            if text_dynamic:
+                if drift is not True or snapshot not in snapshots:
+                    raise ValueError("Malformed GUI prerequisite evidence")
+                normalized={key:snapshot.get(key) for key in snapshot if key!="text"}
+                if any({key:value.get(key) for key in value if key!="text"}!=normalized
+                        for value in snapshots):
+                    raise ValueError("Malformed GUI prerequisite evidence")
+            elif len(snapshots)!=1 or snapshot!=snapshots[0]:
+                raise ValueError("Malformed GUI prerequisite evidence")
             if (not all(snapshot[key] is True for key in
                     ("visible","active","ancestorVisible","screenEnabled",
                         "withinScrollingBounds","effectiveVisible"))
@@ -276,7 +293,7 @@ def render(discovery):
                 str(item.get("featureCandidate") or "other")[:80],score,
                 _identity_lua(item.get("pathIdentity"),snapshot["controlClass"]),
                 _state_identity_lua(signal.get("stateIdentity")),"gui","nil",
-                _gui_metadata_lua(snapshot)))
+                _gui_metadata_lua(snapshot),text_dynamic))
 
 
     if not targets:return None
@@ -286,8 +303,10 @@ def render(discovery):
         ",multi="+("true" if multi else "false")+",egg="+("true" if is_egg else "false")+
         ",feature="+_quote(feature)+",objectiveScore="+str(score)+",kind="+_quote(kind)+
         ",identity="+identity+",outcomeIdentity="+outcome_identity+",toolMetadata="+tool_metadata+
-        ",guiMetadata="+gui_metadata+"},"
-        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity,kind,tool_metadata,gui_metadata in targets)
+        ",guiMetadata="+gui_metadata+",guiTextDynamic="+(
+            "true" if gui_text_dynamic else "false")+"},"
+        for label,path,outcome,expected,multi,is_egg,feature,score,identity,outcome_identity,
+            kind,tool_metadata,gui_metadata,gui_text_dynamic in targets)
     scan_id=discovery.get("scanId")
     if scan_id is None:
         scan_id="UNAVAILABLE"
@@ -471,8 +490,10 @@ local function currentGuiMetadata(button)
         withinScrollingBounds=withinScrollingBounds,
         effectiveVisible=button.Visible and ancestorVisible and screenEnabled}
 end
-local function guiMetadataMatches(actual,expected)
-    for _,key in ipairs({"controlClass","text","visible","active","selectable","autoButtonColor",
+local function guiMetadataMatches(actual,expected,textDynamic)
+    if actual.controlClass~=expected.controlClass then return false end
+    if not textDynamic and actual.text~=expected.text then return false end
+    for _,key in ipairs({"visible","active","selectable","autoButtonColor",
         "ancestorVisible","screenEnabled","withinScrollingBounds","effectiveVisible"}) do
         if actual[key]~=expected[key] then return false end
     end
@@ -558,7 +579,7 @@ local function activateOnce()
                 or not actual.withinScrollingBounds then
             return failed("gui-unavailable","Observed GUI control is hidden, disabled, or outside scrolling bounds")
         end
-        if not guiMetadataMatches(actual,metadata) then
+        if not guiMetadataMatches(actual,metadata,target.guiTextDynamic==true) then
             return failed("gui-metadata-drift","GUI activation prerequisite metadata changed")
         end
         before=readOutcome(target)

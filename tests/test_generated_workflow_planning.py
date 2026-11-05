@@ -344,6 +344,19 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertIn("One or more linked events lack exact generation-ready contracts",
             candidate["blockers"])
 
+    def test_text_only_gui_metadata_drift_can_still_plan_guided_workflow(self):
+        value={"integrity":{"scanComplete":True,"placeId":789,"scanId":"workflow-scan"},
+            "requestedCapability":"Complete the observed shop flow","features":[],
+            "actionableObjects":[],"observedInteractionHistory":[
+                event("Select",1,2,3),event("Select",2,3,4)]}
+        value["observedInteractionHistory"][1]["controlMetadata"]["text"]="Select Tier 2"
+        result=self.analyze(value)
+        self.assertEqual(result["summary"]["workflowCandidates"],1)
+        candidate=result["workflowCandidates"][0]
+        self.assertTrue(candidate["guidedTrialGenerationReady"])
+        self.assertEqual([step["targetPath"] for step in candidate["steps"]],[
+            "PlayerGui.HUD.Shop.Select","PlayerGui.HUD.Shop.Select"])
+
     def test_forged_step_snapshot_or_identity_fails_closed(self):
         value=plan();actions=discovery.analyze(value)
         actions["guiInteractions"]["targets"][0]["guiMetadata"]["text"]="Forged"

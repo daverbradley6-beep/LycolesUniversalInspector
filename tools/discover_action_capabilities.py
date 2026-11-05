@@ -601,25 +601,39 @@ def analyze(plan):
             and identity[-1]["className"] in ("TextButton","ImageButton")
             and target["identityAmbiguous"] is False)
         metadata_snapshots=target["prerequisiteEvidence"]["metadataSnapshots"]
-        metadata_complete=(len(metadata_snapshots)==1
-            and required_gui_metadata.issubset(metadata_snapshots[0]))
+        complete_snapshots=[snapshot for snapshot in metadata_snapshots
+            if required_gui_metadata.issubset(snapshot)]
+        text_drift_only=False
+        if len(complete_snapshots)>1:
+            base={key:complete_snapshots[0].get(key) for key in
+                required_gui_metadata|{"interactable"} if key!="text"}
+            text_drift_only=all({key:snapshot.get(key) for key in
+                required_gui_metadata|{"interactable"} if key!="text"}==base
+                for snapshot in complete_snapshots[1:])
+        selected_snapshot=complete_snapshots[0] if complete_snapshots else None
+        if selected_snapshot is not None:
+            target["guiMetadata"]=copy.deepcopy(selected_snapshot)
+        target["guiMetadataTextDynamic"]=bool(text_drift_only and len(complete_snapshots)>1)
+        metadata_complete=bool(selected_snapshot)
         metadata_available=(metadata_complete
-            and all(metadata_snapshots[0][key] is True for key in
+            and all(selected_snapshot[key] is True for key in
                 ("visible","active","ancestorVisible","screenEnabled",
                     "withinScrollingBounds","effectiveVisible"))
-            and metadata_snapshots[0].get("interactable") is not False)
+            and selected_snapshot.get("interactable") is not False)
+        drift_problematic=(len(metadata_snapshots)>1 and not target["guiMetadataTextDynamic"])
         outcome_ready=bool(target["outcomeSignals"])
-        target["guidedActivationContractReady"]=identity_ready and metadata_available and outcome_ready
+        target["guidedActivationContractReady"]=(identity_ready and metadata_available
+            and outcome_ready and not drift_problematic)
         target["trialGenerationReady"]=target["guidedActivationContractReady"]
         target["replayContractAvailable"]=False
         blockers=[]
         if not identity_ready:blockers.append("no exact unambiguous PlayerGui component identity was observed")
         if not metadata_snapshots:
             blockers.append("no GUI activation prerequisite snapshot was observed")
-        elif len(metadata_snapshots)>1:
-            blockers.append("GUI activation prerequisite metadata drift was observed")
-        elif not metadata_complete:
+        elif len(complete_snapshots)!=len(metadata_snapshots):
             blockers.append("GUI activation prerequisite snapshot lacks hierarchy or availability fields")
+        elif drift_problematic:
+            blockers.append("GUI activation prerequisite metadata drift was observed")
         elif not metadata_available:
             blockers.append("GUI control was not observed visible, enabled, and within scrolling bounds")
         if not outcome_ready:blockers.append("no resolvable scalar outcome change was observed")

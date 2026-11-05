@@ -1,3 +1,11 @@
+## v30.6.14 — Guided GUI generation compatibility for text-only metadata drift
+
+- Improve `tools/discover_action_capabilities.py` guided GUI readiness so text-only metadata drift can remain generation-ready when all non-text availability and identity fields are stable, while non-text drift still blocks readiness.
+- Add explicit `guiMetadataTextDynamic` to guided GUI targets, preserving strict non-text prerequisite checks and availability requirements.
+- Update `tools/generate_prompt_interactions.py` validation/runtime so generated guided trials can tolerate dynamic GUI text while still fail-closing on control-class, visibility/active/scrolling, and interactable drift.
+- Update `tools/plan_generated_workflows.py` workflow-step evidence matching to allow the same text-dynamic GUI tolerance without relaxing exact path identity or state-outcome identity contracts.
+- Add regressions for text-only GUI drift compatibility in discovery and workflow planning.
+
 ## v30.6.13 — Upload-state clarity and stronger passive workflow initiation
 
 - Extend `tools/manifest_readiness_v109.py` with explicit `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` outputs so legacy/live manifests more clearly distinguish generated-report state, upload-attempt ambiguity, receiver visibility, and linkage gaps.

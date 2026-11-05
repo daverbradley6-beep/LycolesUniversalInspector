@@ -1,6 +1,16 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Guided GUI text-drift generation compatibility (v30.6.14)
+
+- Improved guided GUI action discovery so text-only prerequisite metadata drift can remain generation-ready when non-text availability and identity fields remain stable.
+- Added explicit `guiMetadataTextDynamic` contract propagation from discovery into generated prompt-interaction utilities and workflow planning checks.
+- Updated runtime GUI metadata checks to tolerate dynamic text only when explicitly allowed by evidence while preserving strict checks for control class, visibility, active/selectable state, screen/ancestor visibility, scrolling bounds, and interactable status.
+- Updated workflow planner step evidence checks to apply the same text-dynamic tolerance without relaxing exact path identity or exact scalar state-outcome identity requirements.
+- Added regressions in `tests/test_action_capability_discovery.py` and `tests/test_generated_workflow_planning.py` for text-only drift compatibility and non-text drift rejection.
+- Full local gate passed after this increment: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,560 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Upload clarity + passive workflow initiation (v30.6.13)
 
 - Extended `tools/manifest_readiness_v109.py` with explicit `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` so legacy manifests clearly distinguish unknown upload-attempt state from failed upload state.
