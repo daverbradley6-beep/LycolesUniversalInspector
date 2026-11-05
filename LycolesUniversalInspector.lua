@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.12
+-- Lycoles Universal Inspector v30.6.13
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.12"
+local VERSION = "30.6.13"
 
 local endpoint = ""
 local autoSend = true
@@ -2555,6 +2555,12 @@ local function semanticActionKind(obj, feature)
         if kind then return kind,"bounded-ancestor-name" end
         node=node.Parent
     end
+    if feature=="shops" then return "purchase","bounded-feature-default-kind" end
+    if feature=="rewards" or feature=="quests" then
+        return "claim","bounded-feature-default-kind"
+    end
+    if feature=="rebirth" then return "rebirth","bounded-feature-default-kind" end
+    if feature=="travel" then return "travel","bounded-feature-default-kind" end
     return nil,nil
 end
 local function defaultFeatureForActionKind(kind)
@@ -2620,10 +2626,11 @@ local function classifyInteraction(obj,path)
 end
 local function linkWorkflow(obj, feature, sequence)
     local name=obj.Name:lower()
-    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confimbutton"
-        or name=="confirm" or name=="acceptbutton" or name=="okbutton"
-    local isNo=name=="nobutton" or name=="cancelbutton" or name=="cancel"
-        or name=="declinebutton"
+    local isYes=name=="yesbutton" or name=="yes" or name=="confirmbutton"
+        or name=="confimbutton" or name=="confirm" or name=="acceptbutton"
+        or name=="accept" or name=="okbutton" or name=="ok"
+    local isNo=name=="nobutton" or name=="no" or name=="cancelbutton"
+        or name=="cancel" or name=="declinebutton" or name=="decline"
     local now=os.clock()
     for i=#pendingActions,1,-1 do
         if now-pendingActions[i].clock > 15 then
@@ -2641,8 +2648,9 @@ local function linkWorkflow(obj, feature, sequence)
         contextNames[#contextNames+1]=node.Name
         local n=node.Name:lower()
         if n:find("confirm",1,true) or n:find("confim",1,true)
-            or n:find("choice",1,true) or n=="travelareanewmenu"
-            or n=="rebirthnewmenu" then
+            or n:find("choice",1,true) or n:find("prompt",1,true)
+            or n:find("purchase",1,true) or n:find("unlock",1,true)
+            or n=="travelareanewmenu" or n=="rebirthnewmenu" then
             dialog=true
             menuName=node.Name
         end

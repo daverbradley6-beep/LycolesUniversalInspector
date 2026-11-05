@@ -1,6 +1,6 @@
 {
   "name": "lycoles-universal-inspector-validation",
-  "version": "30.6.12",
+  "version": "30.6.13",
   "private": true,
   "description": "Local and CI validation for generated Lycoles Luau artifacts",
   "type": "module",

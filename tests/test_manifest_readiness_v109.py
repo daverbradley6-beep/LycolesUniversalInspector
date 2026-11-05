@@ -132,6 +132,35 @@ class ManifestReadinessTests(unittest.TestCase):
         self.assertFalse(transport["downstreamReportAvailable"])
         self.assertIn("pre-upload placeholder", transport["diagnostic"])
 
+    def test_legacy_uploaded_parts_nonzero_infers_attempt_without_lifecycle(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest["uploadedParts"] = 3
+        result = MODULE.analyze(manifest)
+        transport = result["transport"]
+        self.assertTrue(transport["uploadAttempted"])
+        self.assertEqual(transport["legacyUploadedParts"], 3)
+        self.assertEqual(transport["legacyUploadAttemptInference"], "attempted")
+        self.assertIn("attempted upload", transport["diagnostic"])
+
+
+
+    def test_upload_and_workflow_diagnostics_are_actionable(self):
+        result = MODULE.analyze(self.manifest)
+        transport_readiness = result["transportReadiness"]
+        self.assertEqual(transport_readiness["status"], "report-generated-upload-state-unknown")
+        self.assertIn("upload_attempt_status_unknown_legacy_manifest",
+                      transport_readiness["blockers"])
+        self.assertEqual(result["evidence"]["uploadLifecycle"]["uploadStatus"],
+                         "unknown_legacy_manifest_snapshot")
+
+        linkage = result["evidence"]["workflowLinkageDiagnostics"]
+        self.assertEqual(linkage["status"], "attributed-interactions-without-linkage")
+        self.assertIn("workflow_linkage_not_observed", linkage["blockers"])
+        self.assertIn("workflow_outcome_corroboration_unavailable", linkage["blockers"])
+        self.assertEqual(result["generationReadiness"]["workflowCaptureRecommendation"],
+                         linkage["recommendedCapture"])
+
+
     def test_missing_local_export_has_actionable_recovery(self):
         result = MODULE.analyze(self.manifest)
         export = result["transport"]["localExport"]

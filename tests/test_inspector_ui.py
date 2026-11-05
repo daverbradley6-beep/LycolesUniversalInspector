@@ -236,6 +236,12 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("kind, actionSource = semanticActionKind(obj,feature)",SRC)
         self.assertIn('feature=="pets" and (lower:find("hatch",1,true) or lower:find("egg",1,true))',SRC)
         self.assertIn('if n:find("hatch",1,true) or n=="egg" then return "hatch" end',SRC)
+        self.assertIn('if feature=="shops" then return "purchase","bounded-feature-default-kind" end',SRC)
+        self.assertIn('if feature=="rewards" or feature=="quests" then',SRC)
+        self.assertIn('return "claim","bounded-feature-default-kind"',SRC)
+        self.assertIn('name=="yesbutton" or name=="yes" or name=="confirmbutton"',SRC)
+        self.assertIn('name=="nobutton" or name=="no" or name=="cancelbutton"',SRC)
+        self.assertIn('or n:find("prompt",1,true)',SRC)
     def test_simulator_actions_capture_progression_and_conversion(self):
         self.assertIn('progression={"progression","bubble","capacity","blow","farm"}',SRC)
         self.assertIn('shops={"shop","purchase","store","sell","upgrade"}',SRC)

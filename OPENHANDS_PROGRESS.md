@@ -1,6 +1,17 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-02 — Upload clarity + passive workflow initiation (v30.6.13)
+
+- Extended `tools/manifest_readiness_v109.py` with explicit `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` so legacy manifests clearly distinguish unknown upload-attempt state from failed upload state.
+- Added conservative legacy upload-attempt inference for manifests that only expose `uploadedParts` (`legacyUploadedParts`, `legacyUploadAttemptInference`) without inferring receiver success.
+- Added `generationReadiness.workflowCaptureRecommendation` so output provides one concrete next capture step when linkage/outcome evidence remains insufficient.
+- Improved passive workflow formation in `LycolesUniversalInspector.lua` by expanding bounded confirmation token matching (`yes/no/ok/accept/decline`), broadening dialog cues (`prompt`, `purchase`, `unlock`), and adding conservative feature-default action inference for generic controls (`shops→purchase`, `rewards/quests→claim`, `rebirth`, `travel`).
+- Added/updated regressions in `tests/test_manifest_readiness_v109.py` and `tests/test_inspector_ui.py` for the new diagnostics and inference behavior.
+- Focused validation passed: `python3 -B -m unittest -v tests.test_manifest_readiness_v109 tests.test_inspector_ui` (**49 tests**, all passing).
+- Full local gate passed after final edits: `python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1,558 tests, 17 skipped**) and `npm test --silent` (**3/3**).
+
+
 ## Update — 2026-11-02 — Linked transaction outcome inheritance (v30.6.12)
 
 - Extended `tools/discover_action_capabilities.py` so initiating controls can inherit resolvable scalar state-outcome signals from later events in the same linked transaction when no direct scalar outcome was captured on the initiating event.

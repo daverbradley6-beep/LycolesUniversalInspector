@@ -125,6 +125,139 @@ def _workflow_generation_diagnostics(value):
 
 
 
+
+def _transport_readiness(transport):
+    status = transport["uploadStatus"]
+    receiver_status = transport["receiverReportStatus"]
+    downstream_status = transport["downstreamAvailabilityStatus"]
+    local_export = transport.get("localExport") if isinstance(transport.get("localExport"), dict) else {}
+    blockers = []
+    if status == "unknown_legacy_manifest_snapshot":
+        blockers.append("upload_attempt_status_unknown_legacy_manifest")
+    elif status == "not-attempted":
+        blockers.append("upload_not_attempted")
+    elif status == "cancelled":
+        blockers.append("upload_cancelled_before_completion")
+    elif status in {"failed", "incomplete", "configuration-error"}:
+        blockers.append("upload_not_completed")
+    if receiver_status in {"unknown-legacy", "unavailable", "configuration-blocked", "upload-incomplete"}:
+        blockers.append("receiver_report_not_confirmed")
+    if downstream_status != "available":
+        blockers.append("downstream_report_not_validated")
+    if local_export.get("completeNumberedPartsClaimed") is not True:
+        blockers.append("complete_local_numbered_parts_unavailable")
+
+    if downstream_status == "available":
+        readiness_status = "report-available"
+    elif receiver_status == "integrity-verified":
+        readiness_status = "receiver-integrity-verified-not-retrieved"
+    elif receiver_status == "acknowledged-awaiting-integrity":
+        readiness_status = "upload-acknowledged-awaiting-integrity"
+    elif status == "uploading":
+        readiness_status = "upload-in-progress"
+    elif status == "cancelled":
+        readiness_status = "upload-cancelled"
+    elif status in {"failed", "incomplete", "configuration-error"}:
+        readiness_status = "upload-failed-or-blocked"
+    elif status == "not-attempted":
+        readiness_status = "report-generated-upload-not-attempted"
+    else:
+        readiness_status = "report-generated-upload-state-unknown"
+
+    if readiness_status == "report-generated-upload-state-unknown":
+        next_step = "export complete numbered parts locally and/or run a fresh upload attempt to disambiguate lifecycle state"
+    elif readiness_status == "report-generated-upload-not-attempted":
+        next_step = "run upload attempt or save complete numbered parts locally"
+    elif readiness_status in {"upload-cancelled", "upload-failed-or-blocked"}:
+        next_step = "retry upload and/or export complete numbered parts for offline processing"
+    elif readiness_status == "upload-acknowledged-awaiting-integrity":
+        next_step = "verify receiver integrity for this scan ID or export complete numbered parts locally"
+    elif readiness_status == "receiver-integrity-verified-not-retrieved":
+        next_step = "retrieve and validate full multipart report from receiver"
+    elif readiness_status == "upload-in-progress":
+        next_step = "wait for upload completion and receiver acknowledgement"
+    else:
+        next_step = "receiver report is available; proceed with full evidence processing"
+
+    return {
+        "status": readiness_status,
+        "uploadAttempted": transport["uploadAttempted"],
+        "uploadStatus": status,
+        "receiverReportStatus": receiver_status,
+        "downstreamAvailabilityStatus": downstream_status,
+        "completeLocalNumberedPartsClaimed": local_export.get("completeNumberedPartsClaimed") is True,
+        "blockers": list(dict.fromkeys(blockers)),
+        "nextAction": next_step,
+    }
+
+
+def _workflow_linkage_diagnostics(total_interactions, attributed_interactions,
+        linked_confirmations, corroborated_outcomes, completed_candidates,
+        workflow_generation):
+    if total_interactions <= 0:
+        status = "no-interactions-observed"
+    elif completed_candidates > 0:
+        status = "completed-workflow-candidates-observed"
+    elif linked_confirmations > 0 and corroborated_outcomes <= 0:
+        status = "linked-confirmations-without-corroborated-outcomes"
+    elif linked_confirmations <= 0 and attributed_interactions > 0:
+        status = "attributed-interactions-without-linkage"
+    elif attributed_interactions <= 0:
+        status = "no-attributed-interactions"
+    else:
+        status = "interaction-linkage-insufficient"
+
+    blockers = []
+    if workflow_generation.get("available") is True:
+        mapped = {
+            "no-linked-confirmation-events": "workflow_linkage_not_observed",
+            "no-corroborated-action-outcomes": "workflow_outcome_corroboration_unavailable",
+            "no-completed-workflow-candidates": "completed_workflow_candidates_unavailable",
+            "some-interactions-remain-unattributed": "interaction_attribution_incomplete",
+            "no-feature-attributed-interactions": "no_attributed_interactions",
+        }
+        for blocker in workflow_generation.get("blockers", []):
+            mapped_value = mapped.get(blocker)
+            if mapped_value:
+                blockers.append(mapped_value)
+    else:
+        if linked_confirmations <= 0 and total_interactions > 0:
+            blockers.append("workflow_linkage_not_observed")
+        if corroborated_outcomes <= 0 and total_interactions > 0:
+            blockers.append("workflow_outcome_corroboration_unavailable")
+        if completed_candidates <= 0 and total_interactions > 0:
+            blockers.append("completed_workflow_candidates_unavailable")
+        if attributed_interactions <= 0 and total_interactions > 0:
+            blockers.append("no_attributed_interactions")
+
+    if status == "no-interactions-observed":
+        recommendation = "record at least one feature-relevant interaction sequence with observer enabled"
+    elif status == "no-attributed-interactions":
+        recommendation = "capture interactions on named feature controls and keep relevant menus visible"
+    elif status == "attributed-interactions-without-linkage":
+        recommendation = "capture one confirmation-style sequence (initiator then confirm/cancel) within the same menu"
+    elif status == "linked-confirmations-without-corroborated-outcomes":
+        recommendation = "capture linked actions while relevant observable values are visible before and after activation"
+    elif status == "completed-workflow-candidates-observed":
+        recommendation = "use completed workflow candidates as input to generation planning"
+    else:
+        recommendation = "capture additional linked interactions with observable outcomes"
+
+    return {
+        "status": status,
+        "workflowGenerationDiagnosticsAvailable": workflow_generation.get("available") is True,
+        "linkedConfirmationCoverage": (0 if total_interactions <= 0 else
+            round(linked_confirmations / total_interactions, 4)),
+        "corroboratedOutcomeCoverage": (0 if total_interactions <= 0 else
+            round(corroborated_outcomes / total_interactions, 4)),
+        "completedWorkflowCoverage": (0 if total_interactions <= 0 else
+            round(completed_candidates / total_interactions, 4)),
+        "blockers": list(dict.fromkeys(blockers)),
+        "recommendedCapture": recommendation,
+    }
+
+
+
 def _transport(manifest):
     expected = _integer(manifest.get("expectedParts", manifest.get("partCount")), "expected parts", minimum=1)
     part_count = _integer(manifest.get("partCount"), "part count", minimum=1)
@@ -135,10 +268,16 @@ def _transport(manifest):
         legacy_uploaded = _integer(manifest.get("uploadedParts", 0), "legacy uploaded parts")
         if legacy_uploaded > expected:
             raise ValueError("invalid legacy uploaded part count")
+        inferred_attempt = True if legacy_uploaded > 0 else None
+        diagnostic = (
+            "legacy uploadedParts indicates an attempted upload, but lifecycle details are unavailable"
+            if legacy_uploaded > 0 else
+            "legacy uploadedParts is a pre-upload placeholder, not failure or success evidence"
+        )
         return {
             "reportGenerated": True,
             "manifestSnapshotPhase": "legacy-unspecified",
-            "uploadAttempted": None,
+            "uploadAttempted": inferred_attempt,
             "uploadAttemptStatus": "unknown-legacy",
             "uploadStatus": "unknown_legacy_manifest_snapshot",
             "receiverReportStatus": "unknown-legacy",
@@ -150,7 +289,9 @@ def _transport(manifest):
             "uploadFailed": False,
             "receiverIntegrityVerified": False,
             "downstreamReportAvailable": False,
-            "diagnostic": "legacy uploadedParts is a pre-upload placeholder, not failure or success evidence",
+            "legacyUploadedParts": legacy_uploaded,
+            "legacyUploadAttemptInference": "attempted" if legacy_uploaded > 0 else "unknown",
+            "diagnostic": diagnostic,
         }
     transport = _mapping(transport, "report transport")
     generated = transport.get("reportGenerated")
@@ -388,6 +529,10 @@ def analyze(manifest):
     linked_confirmations = _integer(workflow.get("linkedConfirmations"), "linked confirmations")
     corroborated_outcomes = _integer(workflow.get("actionOutcomesCorroborated"), "corroborated outcomes")
     completed_candidates = _integer(workflow.get("completedCandidates"), "completed candidates")
+    transport_readiness = _transport_readiness(transport)
+    workflow_linkage = _workflow_linkage_diagnostics(
+        interactions, attributed_interactions, linked_confirmations,
+        corroborated_outcomes, completed_candidates, workflow_generation)
     outcomes = _outcome_candidates(history)
     readiness = manifest.get("featureReadiness") or {}
     evidence = manifest.get("featureEvidence") or {}
@@ -428,6 +573,8 @@ def analyze(manifest):
     elif interactions > 0:
         if linked_confirmations == 0 and "workflow_linkage_not_observed" not in blockers:
             blockers.append("workflow_linkage_not_observed")
+        if corroborated_outcomes == 0 and "workflow_outcome_corroboration_unavailable" not in blockers:
+            blockers.append("workflow_outcome_corroboration_unavailable")
         if completed_candidates == 0 and "completed_workflow_candidates_unavailable" not in blockers:
             blockers.append("completed_workflow_candidates_unavailable")
         if unattributed_interactions > 0 and "interaction_attribution_incomplete" not in blockers:
@@ -456,6 +603,7 @@ def analyze(manifest):
         "inspectorVersion": manifest.get("version"),
         "scan": scan,
         "transport": transport,
+        "transportReadiness": transport_readiness,
         "evidence": {
             "interactions": interactions,
             "attributedInteractions": attributed_interactions,
@@ -470,6 +618,16 @@ def analyze(manifest):
             "historyIsSubset": history_subset,
             "featureConsistentOutcomeCandidatesLowerBound": len(outcomes),
             "workflowGenerationDiagnostics": workflow_generation,
+            "workflowLinkageDiagnostics": workflow_linkage,
+            "uploadLifecycle": {
+                "uploadAttempted": transport["uploadAttempted"],
+                "uploadStatus": transport["uploadStatus"],
+                "uploadAttemptStatus": transport["uploadAttemptStatus"],
+                "receiverReportStatus": transport["receiverReportStatus"],
+                "downstreamAvailabilityStatus": transport["downstreamAvailabilityStatus"],
+                "reportGenerated": transport["reportGenerated"],
+                "manifestSnapshotPhase": transport["manifestSnapshotPhase"],
+            },
         },
         "outcomeCandidates": outcomes,
         "capabilities": capabilities,
@@ -481,6 +639,7 @@ def analyze(manifest):
             "blockers": blockers,
             "recommendedRecovery": recovery,
             "nextRequiredArtifact": next_artifact,
+            "workflowCaptureRecommendation": workflow_linkage["recommendedCapture"],
         },
         "claims": {
             "readOnly": True,

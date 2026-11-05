@@ -1,3 +1,11 @@
+## v30.6.13 — Upload-state clarity and stronger passive workflow initiation
+
+- Extend `tools/manifest_readiness_v109.py` with explicit `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` outputs so legacy/live manifests more clearly distinguish generated-report state, upload-attempt ambiguity, receiver visibility, and linkage gaps.
+- Add legacy transport inference for nonzero `uploadedParts` snapshots (`legacyUploadedParts`, `legacyUploadAttemptInference`) without claiming upload success or receiver availability.
+- Surface `generationReadiness.workflowCaptureRecommendation` so offline outputs provide one concrete next capture target when linkage/corroboration evidence is missing.
+- Improve passive workflow initiation/linking in `LycolesUniversalInspector.lua` by expanding bounded yes/no token detection, widening dialog-context cues (`prompt`, `purchase`, `unlock`), and adding conservative feature-default action inference for generic controls (`shops→purchase`, `rewards/quests→claim`, `rebirth`, `travel`).
+- Add regressions for new readiness diagnostics and legacy upload-attempt inference behavior.
+
 ## v30.6.12 — Linked transaction outcome inheritance for generation readiness
 
 - Extend `tools/discover_action_capabilities.py` to inherit resolvable state-outcome signals from later events in the same linked transaction when the initiating control has no direct scalar outcome evidence.
