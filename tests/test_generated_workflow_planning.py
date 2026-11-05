@@ -230,6 +230,21 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertEqual(result["summary"]["requestAlignedWorkflows"],1)
         self.assertEqual(result["summary"]["selectedExecutionCandidateId"],candidates[0]["id"])
 
+
+    def test_request_alignment_normalizes_gerund_action_words(self):
+        value=plan();value["requestedCapability"]="Automate training"
+        value["observedInteractionHistory"]=[tool_event(1,0,1,"train-flow"),
+            tool_event(2,1,2,"train-flow")]
+        for item in value["observedInteractionHistory"]:
+            item["workflow"]={"phase":"initiated","action":"train",
+                "confidence":"bounded-name-context-heuristic","verified":False}
+        result=self.analyze(value);candidate=result["workflowCandidates"][0]
+        self.assertEqual(candidate["transactionId"],"train-flow")
+        self.assertTrue(candidate["selection"]["requestAligned"])
+        self.assertIn("train",candidate["selection"]["matchedTerms"])
+        self.assertGreaterEqual(candidate["selection"]["requestScore"],4)
+        self.assertEqual(result["summary"]["requestAlignedWorkflows"],1)
+
     def test_malformed_requested_capability_fails_closed(self):
         value=plan();value["requestedCapability"]="x"*1001
         with self.assertRaisesRegex(ValueError,"requested capability"):

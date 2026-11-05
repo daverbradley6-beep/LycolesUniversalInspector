@@ -26,9 +26,44 @@ def _load(filename,name):
     spec=importlib.util.spec_from_file_location(name,source)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 
+_STOP_WORDS={"a","an","and","auto","automate","automated","automatic",
+    "automatically","complete","do","for","from","in","of","observed","please",
+    "the","to","with","workflow","flow"}
+_TOKEN_ALIASES={
+    "attacking":"attack","attacked":"attack","buying":"buy",
+    "claiming":"claim","claimed":"claim","collecting":"collect",
+    "collected":"collect","fighting":"fight","hatching":"hatch",
+    "hatched":"hatch","purchasing":"purchase","purchased":"purchase",
+    "rebirthing":"rebirth","selling":"sell","sold":"sell",
+    "training":"train","trained":"train","traveling":"travel",
+    "travelled":"travel","upgrading":"upgrade","upgraded":"upgrade",
+}
+
+
+def _token_forms(token):
+    forms={token}
+    if len(token)>4 and token.endswith("ies"):
+        forms.add(token[:-3]+"y")
+    if len(token)>4 and token.endswith("es"):
+        forms.add(token[:-2])
+    if len(token)>4 and token.endswith("s") and not token.endswith("ss"):
+        forms.add(token[:-1])
+    if len(token)>5 and token.endswith("ing"):
+        stem=token[:-3];forms.update((stem,stem+"e"))
+    if len(token)>4 and token.endswith("ed"):
+        stem=token[:-2];forms.update((stem,stem+"e"))
+    return forms
+
+
 def _tokens(value):
     if not isinstance(value,str):return set()
-    return {token for token in re.findall(r"[a-z0-9]+",value.casefold()) if len(token)>2}
+    result=set()
+    for token in re.findall(r"[a-z0-9]+",value.casefold())[:128]:
+        for form in _token_forms(token):
+            canonical=_TOKEN_ALIASES.get(form,form)
+            if len(canonical)>=2 and canonical not in _STOP_WORDS:
+                result.add(canonical)
+    return result
 
 def _validate_sources(plan,gameplay,actions):
     if not isinstance(plan,dict):raise ValueError("compiled plan must be an object")
@@ -300,11 +335,13 @@ def _workflow_selection(workflow_plan,selected):
 
 
 
-def _unavailable_requested(request_words,actions,is_egg):
+def _unavailable_requested(request_words,actions,is_egg,request_text=None):
     if not is_egg:return []
     egg=actions["eggHatching"];values=[]
-    automatic=bool(request_words&{"auto","automatic","automatically"})
-    multi=bool(request_words&{"multi","multiple","triple"})
+    mode_words=set(request_words)
+    if isinstance(request_text,str):mode_words.update(re.findall(r"[a-z0-9]+",request_text.lower()))
+    automatic=bool(mode_words&{"auto","automatic","automatically"})
+    multi=bool(mode_words&{"multi","multiple","triple"})
     if automatic:
         values.append({"id":"auto-game-mode","status":"unavailable",
             "blockers":list(egg["modeExecutionBlockers"]["auto"]),
@@ -561,7 +598,7 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
             matched_generated.append("linked-gameplay-workflow-trial")
     request_words=_tokens(request)
     prompt_aligned=bool(target and target.get("objective",{}).get("requestAligned") is True)
-    unavailable=_unavailable_requested(request_words,actions,is_egg and prompt_aligned)
+    unavailable=_unavailable_requested(request_words,actions,is_egg and prompt_aligned,request)
     gameplay_request=gameplay.get("requestedCapabilityAssessment")
     evidence_matched=bool(gameplay_request and (gameplay_request.get("matchedSystems")
         or gameplay_request.get("matchedObservedActions") or gameplay_request.get("matchedResources")))

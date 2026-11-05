@@ -267,6 +267,26 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["request"]["status"],"generated-bounded-subset")
         self.assertIn("may have lost client-visible changes",result["limitations"][0])
 
+
+    def test_workflow_alignment_uses_normalized_request_terms(self):
+        value=workflow_fixtures.plan();value["requestedCapability"]="Automate training"
+        value["observedInteractionHistory"]= [
+            workflow_fixtures.tool_event(1,0,1,"train-flow"),
+            workflow_fixtures.tool_event(2,1,2,"train-flow")]
+        for item in value["observedInteractionHistory"]:
+            item["workflow"]={"phase":"initiated","action":"train",
+                "confidence":"bounded-name-context-heuristic","verified":False}
+        gameplay=understanding.analyze(value)
+        actions=discovery.analyze(value)
+        workflow=workflow_fixtures.planner.plan(value,actions)
+        result=readiness.assess(value,gameplay,actions,workflow)
+        self.assertEqual(result["request"]["status"],"generated-bounded-subset")
+        self.assertIn("linked-gameplay-workflow-trial",
+            result["request"]["matchedGeneratedCapabilityIds"])
+        selected=result["workflowSelection"]["candidates"][0]
+        self.assertIn("train",selected["matchedTerms"])
+        self.assertGreaterEqual(selected["requestScore"],4)
+
     def test_inconsistent_observation_coverage_fails_closed(self):
         value=egg_plan();value["interactionObservationSummary"]={"available":True,
             "callbacksFired":1,"preActivationBaselinesUsed":1,"callbackBaselinesUsed":0,
