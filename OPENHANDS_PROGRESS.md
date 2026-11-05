@@ -16,6 +16,8 @@
   - `python3 -B -m unittest tests.test_build_release tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108`
   - `node --test tests/test_luau_syntax.mjs`
   - `git diff --check` (clean)
+- Follow-up hardening (`b5794e5`): generation blocker summaries in manifest-assisted Lua are now priority-ordered so critical legacy evidence-gap blockers are retained within bounded display limits; regression now asserts `legacy_manifest_missing_outcome_candidate_field` appears in rendered Lua.
+
 
 
 ## Update — 2026-11-05 — Manifest-readiness adds legacy outcome-candidate coverage diagnostics (v30.6.34)
