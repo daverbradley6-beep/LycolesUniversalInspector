@@ -230,3 +230,10 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - local parts: `python3 tools/receiver_generation_pipeline.py from-parts --parts-dir <dir> --output-root <dir> [--requested-capability <text>]`
   - receiver fetch + generation: `python3 tools/receiver_generation_pipeline.py from-receiver --receiver-endpoint <https-origin> --scan-id <id> --output-root <dir> [--local-manifest <manifest.json>] [--resume-dir <dir>] [--requested-capability <text>]`
   - receiver mode requires `LYCOLES_READ_KEY` in the environment.
+- Provider-backed generation environment knobs (server-side only):
+  - `LYCOLES_LLM_PROVIDER=deterministic|openai|openai-compatible`
+  - `LYCOLES_OPENAI_API_KEY` (or `OPENAI_API_KEY` fallback)
+  - `LYCOLES_OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
+  - `LYCOLES_ANALYSIS_MODEL`, `LYCOLES_GENERATION_MODEL`, `LYCOLES_REPAIR_MODEL`
+  - optional cost tracking: `LYCOLES_ANALYSIS_COST_GBP_PER_1K`, `LYCOLES_GENERATION_COST_GBP_PER_1K`, `LYCOLES_REPAIR_COST_GBP_PER_1K`
+  - `LYCOLES_PREFER_AI_GENERATION=true` enables AI-first script synthesis when deterministic output is also available.

@@ -2,6 +2,28 @@
 
 
 
+## Update — 2026-11-06 — Provider-backed AI path + dataset retrieval blocker validation
+
+- Verified dataset availability blocker with repository evidence:
+  - searched tracked files on `origin/openhands-development`, `origin/main`, and `origin/fix/inspector-observation-sequencing` using `git ls-tree -r`;
+  - searched branch history for `Lycoles_BubbleGum_Clean_Inspection.zip`;
+  - searched GitHub code index for the exact filename.
+  - Result: no match found; no `.zip` files tracked on the listed branches.
+- Upgraded `tools/lycoles_generation_service.py` from deterministic-only scaffold to a configurable provider architecture:
+  - provider abstraction (`BaseLLMProvider`), deterministic provider, and OpenAI-compatible provider path;
+  - environment-driven provider routing (`LYCOLES_LLM_PROVIDER`, `LYCOLES_OPENAI_API_KEY`/`OPENAI_API_KEY`, `LYCOLES_OPENAI_BASE_URL`);
+  - stage-specific model routing (`LYCOLES_ANALYSIS_MODEL`, `LYCOLES_GENERATION_MODEL`, `LYCOLES_REPAIR_MODEL`);
+  - token/cost accounting hooks (`LYCOLES_*_COST_GBP_PER_1K`);
+  - retry/error handling for inference calls;
+  - result metadata now reports provider status and whether real AI inference executed.
+- Added regression tests for provider and metadata behavior:
+  - `tests/test_lycoles_generation_service_provider.py`.
+- Validation passed after this increment:
+  - complete Python suite: **1,600 tests passed**,
+  - receiver + parser suite: all Node/Luau tests passed,
+  - `python3 -m compileall -q tools tests`,
+  - `git diff --check`.
+
 ## Update — 2026-11-06 — Dedicated production generation service scaffold (v30.6.37 cycle)
 
 - Added deployable `tools/lycoles_generation_service.py` implementing a separate production service boundary (independent of this OpenHands conversation) with explicit modules:

@@ -5,9 +5,13 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
+import re
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,9 +39,23 @@ def _load_local_module(filename: str, name: str):
 
 @dataclass(frozen=True)
 class ModelRouteConfig:
-    analysis_model: str = "deterministic-analysis"
-    generation_model: str = "deterministic-generation"
-    repair_model: str = "deterministic-repair"
+    analysis_model: str = "gpt-4.1-mini"
+    generation_model: str = "gpt-4.1"
+    repair_model: str = "gpt-4.1-mini"
+
+
+@dataclass(frozen=True)
+class ProviderInfo:
+    provider: str
+    enabled: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class ProviderCostConfig:
+    analysis_cost_gbp_per_1k_tokens: float = 0.0
+    generation_cost_gbp_per_1k_tokens: float = 0.0
+    repair_cost_gbp_per_1k_tokens: float = 0.0
 
 
 @dataclass
@@ -107,7 +125,85 @@ class JobRecord:
         }
 
 
-class DeterministicLLMProvider:
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _response_output_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+    if isinstance(output_text, list):
+        return "\n".join(str(item) for item in output_text)
+    chunks: list[str] = []
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return ""
+    for message in output:
+        if not isinstance(message, dict):
+            continue
+        for content in message.get("content") or []:
+            if not isinstance(content, dict):
+                continue
+            text = content.get("text")
+            if isinstance(text, str):
+                chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _extract_first_json_object(text: str) -> Optional[dict[str, Any]]:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _strip_lua_fences(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned.startswith("```"):
+        return cleaned
+    cleaned = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _bundle_prompt_summary(bundle: EvidenceBundle) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "mode": bundle.mode,
+        "placeId": bundle.place_id,
+        "scanId": bundle.scan_id,
+    }
+    if bundle.generation_readiness:
+        readiness = bundle.generation_readiness
+        summary["request"] = readiness.get("request")
+        summary["generatedCapabilities"] = readiness.get("generatedCapabilities")
+        summary["unavailableRequestedBehavior"] = readiness.get("unavailableRequestedBehavior")
+        summary["workflowSelection"] = readiness.get("workflowSelection")
+    elif bundle.manifest_readiness:
+        readiness = bundle.manifest_readiness
+        summary["generationReadiness"] = readiness.get("generationReadiness")
+        summary["outcomeCandidates"] = readiness.get("outcomeCandidates")
+    return summary
+
+
+class BaseLLMProvider:
+    def info(self) -> ProviderInfo:
+        raise NotImplementedError
+
     def analyze(self, _: EvidenceBundle, __: str) -> tuple[Optional[dict[str, Any]], dict[str, Any]]:
         return None, {"tokens": 0, "costGbp": 0.0}
 
@@ -116,6 +212,157 @@ class DeterministicLLMProvider:
 
     def repair(self, code: str, _: dict[str, Any], __: str) -> tuple[str, dict[str, Any]]:
         return code, {"tokens": 0, "costGbp": 0.0}
+
+
+class DeterministicLLMProvider(BaseLLMProvider):
+    def __init__(self, reason: str = "deterministic mode selected") -> None:
+        self._info = ProviderInfo(provider="deterministic", enabled=False, reason=reason)
+
+    def info(self) -> ProviderInfo:
+        return self._info
+
+
+class OpenAICompatibleProvider(BaseLLMProvider):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        timeout_seconds: float,
+        retries: int,
+        cost_config: ProviderCostConfig,
+    ) -> None:
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+        self._retries = max(0, retries)
+        self._cost_config = cost_config
+        self._info = ProviderInfo(provider="openai-compatible", enabled=True, reason="provider configured")
+
+    def info(self) -> ProviderInfo:
+        return self._info
+
+    def _usage(self, payload: dict[str, Any], stage: str) -> dict[str, Any]:
+        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        tokens = int(usage.get("total_tokens") or 0)
+        if stage == "analysis":
+            rate = self._cost_config.analysis_cost_gbp_per_1k_tokens
+        elif stage == "generation":
+            rate = self._cost_config.generation_cost_gbp_per_1k_tokens
+        else:
+            rate = self._cost_config.repair_cost_gbp_per_1k_tokens
+        return {"tokens": tokens, "costGbp": (tokens / 1000.0) * rate}
+
+    def _call_responses_api(self, model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        endpoint = f"{self._base_url}/responses"
+        payload = {
+            "model": model,
+            "input": [
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
+            ],
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        transient = {408, 425, 429, 500, 502, 503, 504}
+        last_error: Optional[str] = None
+        for attempt in range(self._retries + 1):
+            request = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                status = exc.code
+                text = exc.read().decode("utf-8", errors="replace")
+                exc.close()
+                last_error = f"HTTP {status}: {text[:400]}"
+                if status not in transient or attempt == self._retries:
+                    raise ValueError(f"Provider request failed: {last_error}") from None
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                last_error = str(exc)
+                if attempt == self._retries:
+                    raise ValueError(f"Provider request failed: {last_error}") from None
+            time.sleep(0.4 * (2 ** attempt))
+        raise ValueError(f"Provider request failed: {last_error or 'unknown error'}")
+
+    def analyze(self, bundle: EvidenceBundle, model: str) -> tuple[Optional[dict[str, Any]], dict[str, Any]]:
+        system_prompt = (
+            "You are Lycoles feature-analysis AI. Return only one JSON object. "
+            "Never claim runtime/gameplay/server authority verification."
+        )
+        user_prompt = (
+            "Analyze this Roblox inspection evidence summary and return JSON with keys: "
+            "candidateFeatures (array of short strings), risks (array), and notes (array).\n"
+            f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}"
+        )
+        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        text = _response_output_text(payload)
+        parsed = _extract_first_json_object(text)
+        return (parsed if isinstance(parsed, dict) else None), self._usage(payload, "analysis")
+
+    def generate(self, bundle: EvidenceBundle, analysis: dict[str, Any], model: str) -> tuple[Optional[str], dict[str, Any]]:
+        system_prompt = (
+            "You are Lycoles script-generation AI. Output only Lua/Luau source code. "
+            "Do not fabricate server-authoritative capabilities."
+        )
+        user_prompt = (
+            "Generate a Roblox Lua/Luau script with a functional GUI from this evidence summary. "
+            "Include duplicate-execution protection, nil-safe lookups, and explicit unsupported-feature notices.\n"
+            f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}\n"
+            f"Analysis:\n{json.dumps(analysis, ensure_ascii=False)}"
+        )
+        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        text = _strip_lua_fences(_response_output_text(payload))
+        return (text or None), self._usage(payload, "generation")
+
+    def repair(self, code: str, analysis: dict[str, Any], model: str) -> tuple[str, dict[str, Any]]:
+        system_prompt = (
+            "You are Lycoles repair AI. Output only fixed Lua/Luau source code. "
+            "Preserve place guard and safe client-only behavior."
+        )
+        user_prompt = (
+            "Repair this Lua/Luau script so it remains client-safe and preserves behavior.\n"
+            f"Analysis context: {json.dumps(analysis, ensure_ascii=False)}\n"
+            f"Code:\n{code}"
+        )
+        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        text = _strip_lua_fences(_response_output_text(payload))
+        return (text or code), self._usage(payload, "repair")
+
+
+def _provider_from_environment() -> tuple[BaseLLMProvider, ProviderInfo]:
+    provider = (os.environ.get("LYCOLES_LLM_PROVIDER") or "deterministic").strip().lower()
+    if provider in {"", "deterministic", "none"}:
+        value = DeterministicLLMProvider("deterministic provider selected")
+        return value, value.info()
+
+    if provider in {"openai", "openai-compatible"}:
+        api_key = os.environ.get("LYCOLES_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            value = DeterministicLLMProvider("missing OPENAI_API_KEY/LYCOLES_OPENAI_API_KEY")
+            return value, ProviderInfo(provider="openai-compatible", enabled=False, reason=value.info().reason)
+        base_url = os.environ.get("LYCOLES_OPENAI_BASE_URL", "https://api.openai.com/v1")
+        timeout_seconds = _env_float("LYCOLES_OPENAI_TIMEOUT_SECONDS", 45.0)
+        retries = int(_env_float("LYCOLES_OPENAI_RETRIES", 2.0))
+        cost_config = ProviderCostConfig(
+            analysis_cost_gbp_per_1k_tokens=_env_float("LYCOLES_ANALYSIS_COST_GBP_PER_1K", 0.0),
+            generation_cost_gbp_per_1k_tokens=_env_float("LYCOLES_GENERATION_COST_GBP_PER_1K", 0.0),
+            repair_cost_gbp_per_1k_tokens=_env_float("LYCOLES_REPAIR_COST_GBP_PER_1K", 0.0),
+        )
+        value = OpenAICompatibleProvider(
+            api_key=api_key,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            retries=retries,
+            cost_config=cost_config,
+        )
+        return value, value.info()
+
+    value = DeterministicLLMProvider(f"unsupported provider '{provider}'")
+    return value, ProviderInfo(provider=provider, enabled=False, reason=value.info().reason)
 
 
 class EvidenceProcessor:
@@ -166,7 +413,7 @@ class EvidenceProcessor:
 
 
 class FeatureAnalysisEngine:
-    def __init__(self, llm_provider: DeterministicLLMProvider, model_routes: ModelRouteConfig) -> None:
+    def __init__(self, llm_provider: BaseLLMProvider, model_routes: ModelRouteConfig) -> None:
         self._llm_provider = llm_provider
         self._routes = model_routes
 
@@ -199,30 +446,42 @@ class FeatureAnalysisEngine:
         else:
             raise ValueError("No analysis source available")
 
-        _analysis, llm_usage = self._llm_provider.analyze(bundle, self._routes.analysis_model)
+        ai_analysis, llm_usage = self._llm_provider.analyze(bundle, self._routes.analysis_model)
         usage.analysis_tokens += int(llm_usage.get("tokens", 0))
         usage.analysis_cost_gbp += float(llm_usage.get("costGbp", 0.0))
+        if isinstance(ai_analysis, dict):
+            summary["aiAnalysis"] = ai_analysis
         return summary
 
 
 class ScriptGenerationEngine:
-    def __init__(self, llm_provider: DeterministicLLMProvider, model_routes: ModelRouteConfig) -> None:
+    def __init__(
+        self,
+        llm_provider: BaseLLMProvider,
+        model_routes: ModelRouteConfig,
+        *,
+        prefer_ai_generation: bool,
+    ) -> None:
         self._llm_provider = llm_provider
         self._routes = model_routes
+        self._prefer_ai_generation = prefer_ai_generation
 
     def generate(self, bundle: EvidenceBundle, analysis: dict[str, Any], usage: UsageLedger) -> tuple[Optional[str], str]:
-        if bundle.generated_script:
+        if bundle.generated_script and not self._prefer_ai_generation:
             return bundle.generated_script, "deterministic-release-script"
+
         llm_script, llm_usage = self._llm_provider.generate(bundle, analysis, self._routes.generation_model)
         usage.generation_tokens += int(llm_usage.get("tokens", 0))
         usage.generation_cost_gbp += float(llm_usage.get("costGbp", 0.0))
         if llm_script:
-            return llm_script, "llm-generated-script"
+            return llm_script, "ai-generated-script"
+        if bundle.generated_script:
+            return bundle.generated_script, "deterministic-release-script"
         return None, "no-script-generated"
 
 
 class ValidationRepairEngine:
-    def __init__(self, llm_provider: DeterministicLLMProvider, model_routes: ModelRouteConfig) -> None:
+    def __init__(self, llm_provider: BaseLLMProvider, model_routes: ModelRouteConfig) -> None:
         self._llm_provider = llm_provider
         self._routes = model_routes
 
@@ -311,14 +570,35 @@ class DeliveryEngine:
 
 
 class LycolesGenerationService:
-    def __init__(self, output_root: Path, model_routes: Optional[ModelRouteConfig] = None) -> None:
+    def __init__(
+        self,
+        output_root: Path,
+        model_routes: Optional[ModelRouteConfig] = None,
+        llm_provider: Optional[BaseLLMProvider] = None,
+        provider_info: Optional[ProviderInfo] = None,
+    ) -> None:
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
         self.model_routes = model_routes or ModelRouteConfig()
-        self.llm_provider = DeterministicLLMProvider()
+
+        if llm_provider is None:
+            selected_provider, selected_info = _provider_from_environment()
+            self.llm_provider = selected_provider
+            self.provider_info = selected_info
+        else:
+            self.llm_provider = llm_provider
+            self.provider_info = provider_info or llm_provider.info()
+
+        prefer_ai_flag = (os.environ.get("LYCOLES_PREFER_AI_GENERATION") or "").strip().lower()
+        prefer_ai_generation = self.provider_info.enabled and prefer_ai_flag in {"1", "true", "yes", "on"}
+
         self.evidence_processor = EvidenceProcessor()
         self.feature_analysis = FeatureAnalysisEngine(self.llm_provider, self.model_routes)
-        self.script_generation = ScriptGenerationEngine(self.llm_provider, self.model_routes)
+        self.script_generation = ScriptGenerationEngine(
+            self.llm_provider,
+            self.model_routes,
+            prefer_ai_generation=prefer_ai_generation,
+        )
         self.validation_repair = ValidationRepairEngine(self.llm_provider, self.model_routes)
         self.delivery = DeliveryEngine()
         self._jobs: dict[str, JobRecord] = {}
@@ -343,6 +623,15 @@ class LycolesGenerationService:
             "status": "succeeded",
             "generationStatus": generation_status,
             "generationSource": generation_source,
+            "provider": {
+                "name": self.provider_info.provider,
+                "enabled": self.provider_info.enabled,
+                "reason": self.provider_info.reason,
+                "analysisModel": self.model_routes.analysis_model,
+                "generationModel": self.model_routes.generation_model,
+                "repairModel": self.model_routes.repair_model,
+                "aiInferencePerformed": generation_source == "ai-generated-script" or usage.analysis_tokens > 0 or usage.repair_tokens > 0,
+            },
             "evidence": {
                 "mode": bundle.mode,
                 "placeId": bundle.place_id,
@@ -461,6 +750,14 @@ def _request_from_args(args: argparse.Namespace) -> GenerationRequest:
     )
 
 
+def _model_routes_from_environment() -> ModelRouteConfig:
+    return ModelRouteConfig(
+        analysis_model=(os.environ.get("LYCOLES_ANALYSIS_MODEL") or ModelRouteConfig.analysis_model).strip(),
+        generation_model=(os.environ.get("LYCOLES_GENERATION_MODEL") or ModelRouteConfig.generation_model).strip(),
+        repair_model=(os.environ.get("LYCOLES_REPAIR_MODEL") or ModelRouteConfig.repair_model).strip(),
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -477,7 +774,10 @@ def main() -> int:
     serve_parser.add_argument("--port", type=int, default=8787)
 
     args = parser.parse_args()
-    service = LycolesGenerationService(output_root=Path(args.output_root))
+    service = LycolesGenerationService(
+        output_root=Path(args.output_root),
+        model_routes=_model_routes_from_environment(),
+    )
 
     if args.command == "run-job":
         result = service.run_sync(_request_from_args(args))
