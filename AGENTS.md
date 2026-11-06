@@ -213,3 +213,16 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Potassium/Roblox executors may fail on top-level lexical-local pressure before runtime (`Out of local registers ... exceeded limit 200`). v30.6.36 had 203 top-level locals even though official Luau disassembly stayed below register index 200; these are different compiler properties.
 - Keep bounded-policy constants grouped under `LIMITS` and cohesive helper families inside lexical `do` scopes exported through namespace tables. Do not flatten `EVIDENCE_HELPERS` or `WORKFLOW_HELPERS` back into top-level local functions.
 - Regression guard: `tests/test_inspector_compiler_limits.py` uses the official Luau AST to enforce root lexical pressure at or below 170, including active locals inside scoped modules, and compiles `LycolesUniversalInspector.lua` across every Luau 0.744 optimization/debug combination. Potassium remains live-unverified until user-confirmed `loadstring(source)` success.
+
+## Dedicated generation service baseline
+
+- `tools/lycoles_generation_service.py` is the current production-service boundary for evidence-to-script processing, separate from OpenHands conversation state.
+- CLI:
+  - synchronous job: `python3 tools/lycoles_generation_service.py run-job --evidence-kind <manifest|parts_dir> --evidence-path <path> --output-root <dir> [--requested-capability <text>]`
+  - service mode: `python3 tools/lycoles_generation_service.py serve --host 127.0.0.1 --port 8787 --output-root build/generation-jobs`
+- HTTP API (service mode):
+  - `POST /v1/generation/jobs`
+  - `GET /v1/generation/jobs`
+  - `GET /v1/generation/jobs/{jobId}`
+- The service currently uses deterministic pipeline artifacts (`build_release`, `generation-readiness`, `generated_result`) and keeps all authenticity/runtime/gameplay claims false.
+- `tests/test_lycoles_generation_service.py` is the regression guard for manifest-blocked, multipart-generated, and async lifecycle flows.

@@ -1,6 +1,32 @@
 # OpenHands Development Progress
 
 
+
+## Update — 2026-11-06 — Dedicated production generation service scaffold (v30.6.37 cycle)
+
+- Added deployable `tools/lycoles_generation_service.py` implementing a separate production service boundary (independent of this OpenHands conversation) with explicit modules:
+  - Evidence processor (manifest or multipart parts-dir input),
+  - Feature-analysis engine,
+  - Script-generation engine,
+  - Validation/repair engine,
+  - Delivery engine.
+- Service behavior:
+  - Synchronous mode: `run-job` CLI command,
+  - Asynchronous mode: in-process job queue with status tracking,
+  - HTTP endpoints: `POST /v1/generation/jobs`, `GET /v1/generation/jobs`, `GET /v1/generation/jobs/{jobId}`,
+  - Per-job output directory with persisted `job-result.json` and generated artifacts.
+- Integrated deterministic production pipeline reuse:
+  - uses `build_release.build_manifest_readiness` for manifest-only evidence,
+  - uses `build_release.build` + `generation-readiness.json` + `LycolesGeneratedUtility.lua` for multipart evidence,
+  - uses `generated_result.build` for bounded display-only delivery payloads with all verification claims false.
+- Added regression coverage: `tests/test_lycoles_generation_service.py` (manifest blocked flow, multipart generated flow, async lifecycle flow).
+- Validation passed after this increment:
+  - complete Python suite: **1,596 tests passed**,
+  - receiver + parser suite: all Node/Luau tests passed,
+  - `python3 -m compileall -q tools tests`,
+  - `git diff --check`.
+
+
 ## Update — 2026-11-06 — Structural Potassium local-register fix (v30.6.37)
 
 - Reproduced the live failure mechanism in the v30.6.36 source: the official Luau AST contains **203 top-level local declarations**, above Potassium's reported limit of 200. The previous disassembly-register check measured a different compiler property and therefore did not protect the failing lexical-local condition.
