@@ -2,6 +2,32 @@
 
 
 
+## Update — 2026-11-06 — Potassium compile blocker hotfix: register-pressure reduction (v30.6.36)
+
+- Addressed live-blocking Potassium compile error (`Out of local registers ... exceeded limit 200`) by reducing top-level local declaration pressure in `LycolesUniversalInspector.lua` while preserving single-file loadstring entry behavior.
+- Refactor applied:
+  - consolidated multiple top-level `MAX_*`/bounded-policy constants into a single `LIMITS` table,
+  - rewired all usages (upload retries/concurrency, scan/yield, watch batching, snapshot caps, interaction history/action queues, GUI followup bounds, workflow recording limits),
+  - preserved existing inspection, GUI, workflow recording, evidence capture, multipart export, receiver, and generated-script flows.
+- Added permanent compiler regression coverage:
+  - `tests/test_inspector_compiler_limits.py`
+  - verifies `luau-compile LycolesUniversalInspector.lua` succeeds,
+  - fails on register-overflow signatures,
+  - asserts disassembly register index stays bounded (`max R <= 199`) to guard against regressions near the reported executor threshold.
+- Updated brittle inspector-source assertions in `tests/test_inspector_ui.py` to track the new `LIMITS`-table representation.
+- Bumped version metadata to `30.6.36`:
+  - `LycolesUniversalInspector.lua`
+  - `version.txt`
+  - `package.json`
+  - `package-lock.json`
+- Validation passed after this increment:
+  - `LUAU_BIN="$PWD/build/luau-0.744/luau" python3 -B -m unittest discover -s tests -p 'test_*.py'` (**1593 tests passing**)
+  - `python3 -B -m unittest -v tests.test_inspector_compiler_limits` (new compiler-limit tests passing)
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
+
 ## Update — 2026-11-06 — Bubble live end-to-end test package + automated post-test validator (v30.6.36)
 
 - Added `tools/prepare_live_test_bubble_package.py` to generate a reproducible package at `build/live_test_bubble/` from the Bubble manifest and manifest-assisted artifacts.

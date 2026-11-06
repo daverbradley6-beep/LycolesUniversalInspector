@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.35
+-- Lycoles Universal Inspector v30.6.36
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.35"
+local VERSION = "30.6.36"
 
 local endpoint = ""
 local autoSend = true
@@ -86,10 +86,26 @@ local function uploadSnapshot(phase)
         note = "Receiver acknowledgements require separate integrity verification before downstream use"
     }
 end
-local MAX_UPLOAD_ATTEMPTS = 3
-local MAX_CONCURRENT_UPLOADS = 1
-local SCAN_YIELD_BUDGET_SECONDS = 0.012
 local UPLOAD_RETRY_DELAYS = {1, 3, 6}
+local LIMITS = {
+    uploadAttempts = 3,
+    maxConcurrentUploads = 1,
+    scanYieldBudgetSeconds = 0.012,
+    watchIntervalSeconds = 30,
+    watchBatchSize = 1500,
+    maxStateSnapshotCandidates = 1000,
+    maxInteractionHistory = 180,
+    maxPendingActions = 24,
+    maxStateChanges = 24,
+    maxGuiChanges = 16,
+    maxTransactionSignatures = 2000,
+    maxPendingGuiReveals = 100,
+    guiRevealFollowupSeconds = 15,
+    followupLinkMaxAgeSeconds = 6,
+    followupLinkMinContextOverlap = 3,
+    workflowRecordingSeconds = 60,
+    maxWorkflowRecordingEvents = 8,
+}
 local alive = true
 local watchEnabled = true
 local watchConnections = {}
@@ -100,7 +116,6 @@ local lastGameName = nil
 local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
 local QUICK_ROOT_LABELS = {"ReplicatedStorage", "Workspace", "PlayerGui", "LocalPlayer", "Character"}
 
-local WATCH_INTERVAL = 30
 local watchSeen = {}
 local watchSkippedCharacters = 0
 local watchUploaded = 0
@@ -110,9 +125,7 @@ local pendingObservationEvents = 0
 local observed = setmetatable({}, {__mode = "k"})
 local stateSnapshotCandidates = {}
 local stateSnapshotCandidateSeen = setmetatable({}, {__mode = "k"})
-local MAX_STATE_SNAPSHOT_CANDIDATES = 1000
 local changeUploaded = 0
-local WATCH_BATCH = 1500
 local interactionObserveEnabled = true
 local AUTO_EVIDENCE_ENABLED = true
 local OBSERVATION_IDLE_OPTIONS = {8, 12, 20, 30}
@@ -146,25 +159,14 @@ local interactionEventCount = 0
 local attributedInteractionCount = 0
 local unattributedInteractionCount = 0
 local interactionHistory = {}
-local MAX_INTERACTION_HISTORY = 180
-local MAX_PENDING_ACTIONS = 24
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
-local MAX_STATE_CHANGES = 24
-local MAX_GUI_CHANGES = 16
 local transactionEvidenceSeen = {}
 local transactionEvidenceCount = 0
-local MAX_TRANSACTION_SIGNATURES = 2000
 local pendingActions = {}
 local pendingGuiReveals = {}
-local MAX_PENDING_GUI_REVEALS = 100
-local GUI_REVEAL_FOLLOWUP_SECONDS = 15
-local FOLLOWUP_LINK_MAX_AGE_SECONDS = 6
-local FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP = 3
 local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, backfilledOutcomeCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local sessionId = HttpService:GenerateGUID(false)
 local sessionStartedClock = os.clock()
-local WORKFLOW_RECORDING_SECONDS = 60
-local MAX_WORKFLOW_RECORDING_EVENTS = 8
 local workflowRecording = {active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0}
 local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
     recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil}
@@ -199,7 +201,7 @@ local function startWorkflowRecording()
     workflowRecording.eventCount=0
     workflowRecordingStats.started=workflowRecordingStats.started+1
     local recordingId=workflowRecording.id
-    task.delay(WORKFLOW_RECORDING_SECONDS,function()
+    task.delay(LIMITS.workflowRecordingSeconds,function()
         if alive and workflowRecording.active and workflowRecording.id==recordingId then
             stopWorkflowRecording("duration-limit")
         end
@@ -209,7 +211,7 @@ local function startWorkflowRecording()
 end
 local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
     if not workflowRecording.active then return nil end
-    if activationClock-workflowRecording.startedClock>WORKFLOW_RECORDING_SECONDS then
+    if activationClock-workflowRecording.startedClock>LIMITS.workflowRecordingSeconds then
         stopWorkflowRecording("duration-limit")
         return nil
     end
@@ -217,11 +219,11 @@ local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
     workflowRecordingStats.recordedEvents=workflowRecordingStats.recordedEvents+1
     local result={recordingId=workflowRecording.id,order=workflowRecording.eventCount,
         startedElapsedSeconds=workflowRecording.startedElapsed,
-        maxDurationSeconds=WORKFLOW_RECORDING_SECONDS,
-        maxEvents=MAX_WORKFLOW_RECORDING_EVENTS,
+        maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+        maxEvents=LIMITS.maxWorkflowRecordingEvents,
         linkageSource="explicit-user-armed-recording",explicitUserArmed=true,
         establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false}
-    if workflowRecording.eventCount>=MAX_WORKFLOW_RECORDING_EVENTS then
+    if workflowRecording.eventCount>=LIMITS.maxWorkflowRecordingEvents then
         stopWorkflowRecording("event-limit")
     elseif refreshWorkflowRecorder then
         refreshWorkflowRecorder("event-recorded")
@@ -426,7 +428,7 @@ local function compareNearbyGuiState(before, after)
         end
     end
     table.sort(changes,guiChangeLess)
-    while #changes>MAX_GUI_CHANGES do table.remove(changes) end
+    while #changes>LIMITS.maxGuiChanges do table.remove(changes) end
     return changes
 end
 local function stateValueIdentity(obj,root)
@@ -463,7 +465,7 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= MAX_STATE_SNAPSHOT_CANDIDATES then break end
+                if count >= LIMITS.maxStateSnapshotCandidates then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
                     local segments = {}
                     local parent = obj
@@ -490,7 +492,7 @@ local function safeInteractionState()
         end
     end
     for _,candidate in ipairs(stateSnapshotCandidates) do
-        if count>=MAX_STATE_SNAPSHOT_CANDIDATES then break end
+        if count>=LIMITS.maxStateSnapshotCandidates then break end
         local obj=candidate.object
         local ok,value=pcall(function() return obj.Value end)
         if ok and (type(value)=="boolean" or (type(value)=="number"
@@ -1630,7 +1632,7 @@ end
 -- Return a verified acknowledgement; never log the secret-bearing endpoint.
 local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCount)
     local lastError = "request not attempted"
-    for attempt = 1, MAX_UPLOAD_ATTEMPTS do
+    for attempt = 1, LIMITS.uploadAttempts do
         if not alive then return false, "inspector closed" end
         local ok, response = pcall(requestFn, {
             Url = receiver, Method = "POST",
@@ -1654,7 +1656,7 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
             lastError = "HTTP " .. tostring(code or "request error")
         end
         warn("Lycoles upload attempt failed", partIndex, attempt, lastError)
-        if attempt < MAX_UPLOAD_ATTEMPTS then
+        if attempt < LIMITS.uploadAttempts then
             task.wait(UPLOAD_RETRY_DELAYS[attempt])
         end
     end
@@ -1738,7 +1740,7 @@ local function transmit()
             if pendingAcknowledged[i] then succeeded = succeeded + 1 end
         end
         uploadState.acknowledgedParts=succeeded
-        local workers = math.min(MAX_CONCURRENT_UPLOADS, partCount)
+        local workers = math.min(LIMITS.maxConcurrentUploads, partCount)
         for _ = 1, workers do
             active = active + 1
             task.spawn(function()
@@ -2360,7 +2362,7 @@ local function observeObject(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return end
     if property=="Value" and label=="LocalPlayer"
         and not stateSnapshotCandidateSeen[obj]
-        and #stateSnapshotCandidates<MAX_STATE_SNAPSHOT_CANDIDATES then
+        and #stateSnapshotCandidates<LIMITS.maxStateSnapshotCandidates then
         local top=obj
         while top.Parent and top.Parent~=player do top=top.Parent end
         local low=path:lower()
@@ -2770,7 +2772,7 @@ local function linkWorkflow(obj, feature, sequence)
         for i=#pendingActions,1,-1 do
             local pending=pendingActions[i]
             local age=now-pending.clock
-            if age>=0 and age<=FOLLOWUP_LINK_MAX_AGE_SECONDS and pending.sequence<sequence
+            if age>=0 and age<=LIMITS.followupLinkMaxAgeSeconds and pending.sequence<sequence
                 and (not inferredFeature or not pending.feature or pending.feature==inferredFeature) then
                 local overlap=contextTokenOverlap(context.contextTokens,pending.contextTokens)
                 if overlap>bestOverlap then
@@ -2781,8 +2783,8 @@ local function linkWorkflow(obj, feature, sequence)
         end
         pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=inferredFeature,
             kind=kind,context=context,contextTokens=context.contextTokens}
-        if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
-        if bestPending and bestOverlap>=FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP then
+        if #pendingActions>LIMITS.maxPendingActions then table.remove(pendingActions,1) end
+        if bestPending and bestOverlap>=LIMITS.followupLinkMinContextOverlap then
             workflowStats.linkedFollowups=workflowStats.linkedFollowups+1
             return {phase="followup-linked",linkedSequence=bestPending.sequence,
                 linkedAction=bestPending.kind,action=kind,actionSource=actionSource,
@@ -2807,7 +2809,7 @@ end
 local function matchGuiRevealFollowup(targetIdentity,targetSequence,targetElapsed)
     for index=#pendingGuiReveals,1,-1 do
         local sourceAge=targetElapsed-pendingGuiReveals[index].sourceElapsed
-        if sourceAge<0 or sourceAge>GUI_REVEAL_FOLLOWUP_SECONDS then
+        if sourceAge<0 or sourceAge>LIMITS.guiRevealFollowupSeconds then
             table.remove(pendingGuiReveals,index)
             workflowStats.guiRevealCandidatesExpired=workflowStats.guiRevealCandidatesExpired+1
         end
@@ -2844,7 +2846,7 @@ local function registerGuiRevealCandidates(changes,historyItem,observationWindow
                 revealedPath=change.path,revealedPathIdentity=change.pathIdentity,
                 observationWindowSeconds=observationWindowSeconds}
             workflowStats.guiRevealCandidates=workflowStats.guiRevealCandidates+1
-            if #pendingGuiReveals>MAX_PENDING_GUI_REVEALS then
+            if #pendingGuiReveals>LIMITS.maxPendingGuiReveals then
                 table.remove(pendingGuiReveals,1)
                 workflowStats.guiRevealCandidatesDropped=workflowStats.guiRevealCandidatesDropped+1
             end
@@ -3085,7 +3087,7 @@ local function observeInteractionObject(obj, root, label)
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
-        if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
+        if #interactionHistory > LIMITS.maxInteractionHistory then table.remove(interactionHistory, 1) end
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
@@ -3138,21 +3140,21 @@ local function observeInteractionObject(obj, root, label)
                     local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
                     local changes={}
                     for key,value in pairs(before) do
-                        if after[key]~=nil and after[key]~=value and #changes<MAX_STATE_CHANGES then
+                        if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
                             local identity=afterStateIdentities[key]
                             changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
                                 stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(after) do
-                        if before[key]==nil and #changes<MAX_STATE_CHANGES then
+                        if before[key]==nil and #changes<LIMITS.maxStateChanges then
                             local identity=afterStateIdentities[key]
                             changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
                                 stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(before) do
-                        if after[key]==nil and #changes<MAX_STATE_CHANGES then
+                        if after[key]==nil and #changes<LIMITS.maxStateChanges then
                             local identity=beforeStateIdentities[key]
                             changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
                                 stateIdentityStatus=identity and "component-resolved" or "unavailable"}
@@ -3195,7 +3197,7 @@ local function observeInteractionObject(obj, root, label)
                             transactionFresh[#transactionFresh+1]=change
                         end
                     end
-                    if transactionEvidenceCount>MAX_TRANSACTION_SIGNATURES then
+                    if transactionEvidenceCount>LIMITS.maxTransactionSignatures then
                         transactionEvidenceSeen={}
                         transactionEvidenceCount=0
                     end
@@ -3339,7 +3341,7 @@ local function flushWatch()
     watchBusy = true
     local batch = {}
     local changesInBatch = 0
-    local take = math.min(changeCount, WATCH_BATCH)
+    local take = math.min(changeCount, LIMITS.watchBatchSize)
     for i = 1, take do
         batch[#batch + 1] = changeQueue[i]
     end
@@ -3351,11 +3353,11 @@ local function flushWatch()
     end
     changeCount = changeCount - take
     changesInBatch = take
-    if #batch < WATCH_BATCH then for path, entry in pairs(watchQueue) do
+    if #batch < LIMITS.watchBatchSize then for path, entry in pairs(watchQueue) do
         batch[#batch + 1] = entry
         watchQueue[path] = nil
         watchCount = watchCount - 1
-        if #batch >= WATCH_BATCH then break end
+        if #batch >= LIMITS.watchBatchSize then break end
     end end
     task.spawn(function()
         local report = {
@@ -3511,7 +3513,7 @@ local function startWatching()
 
     task.spawn(function()
         while alive do
-            task.wait(WATCH_INTERVAL)
+            task.wait(LIMITS.watchIntervalSeconds)
             if alive then
                 refreshQueue()
                 flushWatch()
@@ -3748,7 +3750,7 @@ local function inspect(requestType, featureRequest)
             local nextInstanceId = 0
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
-                local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                local yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                 local root = spec.instance
                 stablePathCache = {}
                 local coverage = {
@@ -3890,7 +3892,7 @@ local function inspect(requestType, featureRequest)
                             status.Text = "Scanning " .. report.scanStats.scanned .. " objects (" .. profile.label .. ")..."
                             report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
-                            yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                            yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                         end
                         end
                         if generation ~= scanGeneration then
@@ -3962,7 +3964,7 @@ local function inspect(requestType, featureRequest)
                     or observerStats.callbackBaselinesUsed>0,
                 cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
-                recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
+                recentInteractions=interactionHistory, interactionHistoryLimit=LIMITS.maxInteractionHistory,
                 workflowStats=workflowStats,
                 backfilledOutcomeCandidates=recoveredOutcomeCandidates,
                 workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
@@ -3971,8 +3973,8 @@ local function inspect(requestType, featureRequest)
                 pendingGuiRevealCount=#pendingGuiReveals,
                 workflowRecordingActive=workflowRecording.active,
                 workflowRecordingStats=workflowRecordingStats,
-                workflowRecordingLimits={maxDurationSeconds=WORKFLOW_RECORDING_SECONDS,
-                    maxEvents=MAX_WORKFLOW_RECORDING_EVENTS},
+                workflowRecordingLimits={maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+                    maxEvents=LIMITS.maxWorkflowRecordingEvents},
                 workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof",
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
@@ -3985,11 +3987,11 @@ local function inspect(requestType, featureRequest)
                 actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
                 stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates"},
                 stateSnapshotCandidateCount=#stateSnapshotCandidates,
-                stateSnapshotMaxValues=MAX_STATE_SNAPSHOT_CANDIDATES,
+                stateSnapshotMaxValues=LIMITS.maxStateSnapshotCandidates,
                 observationWindowsSeconds=OBSERVATION_WINDOWS,
                 observationIdleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 scanCancelled=scanCancelled,
-                stateChangeLimit=MAX_STATE_CHANGES,
+                stateChangeLimit=LIMITS.maxStateChanges,
                 featureEvidenceRules={"feature-key-changed","reward-status-became-visible",
                     "post-capture-window-evidence-backfill"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
@@ -4166,7 +4168,7 @@ local workflowRecordToggle = create("TextButton", {
 },panel)
 refreshWorkflowRecorder=function(reason)
     if workflowRecording.active then
-        workflowRecordToggle.Text="RECORD: "..workflowRecording.eventCount.."/"..MAX_WORKFLOW_RECORDING_EVENTS
+        workflowRecordToggle.Text="RECORD: "..workflowRecording.eventCount.."/"..LIMITS.maxWorkflowRecordingEvents
         workflowRecordToggle.BackgroundColor3=Color3.fromRGB(145,90,45)
         if reason=="started" then
             status.Text="Workflow recording armed for 60 seconds or 8 interactions"
