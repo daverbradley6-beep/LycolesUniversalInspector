@@ -1,6 +1,24 @@
 # OpenHands Development Progress
 
 
+## Update — 2026-11-06 — Structural Potassium local-register fix (v30.6.37)
+
+- Reproduced the live failure mechanism in the v30.6.36 source: the official Luau AST contains **203 top-level local declarations**, above Potassium's reported limit of 200. The previous disassembly-register check measured a different compiler property and therefore did not protect the failing lexical-local condition.
+- Encapsulated the feature-evidence and interaction-workflow helper families in lexical `do` scopes, exposed only cross-module entry points through `EVIDENCE_HELPERS` and `WORKFLOW_HELPERS`, and isolated generated-result validation plus its only consumer in a third private scope. Existing scanning, observation, evidence, workflow, GUI, multipart export, local save, and receiver paths remain present.
+- Reduced top-level local declarations from **203 to 157**. The worst root lexical peak, including active locals inside the scoped modules, is **167**, providing 33 locals of headroom below the reported executor limit instead of merely moving the next failing declaration.
+- Strengthened `tests/test_inspector_compiler_limits.py` to:
+  - calculate root lexical pressure from the official Luau AST, including scoped module locals,
+  - enforce a 170-local regression budget,
+  - compile the inspector under every Luau 0.744 optimization/debug combination (`O0..O2` × `g0..g2`).
+- Validation passed:
+  - complete Python suite: **1,593 tests passed**,
+  - receiver and Luau parser suite: **4 parser tests passed** plus receiver integrity checks,
+  - official Luau 0.744 compile matrix: **9/9 modes passed**,
+  - Python compilation and `git diff --check`: passed.
+- Potassium compatibility remains **offline-verified but live-unverified** until `loadstring(source)` succeeds in the user's Potassium environment.
+
+
+
 
 ## Update — 2026-11-06 — Potassium compile blocker hotfix: register-pressure reduction (v30.6.36)
 

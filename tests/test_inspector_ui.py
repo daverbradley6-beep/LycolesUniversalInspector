@@ -167,7 +167,7 @@ class InspectorUITests(unittest.TestCase):
     def test_interactions_capture_replay_relevant_control_metadata(self):
         self.assertIn('local function interactionDescriptor(obj,root,label)',SRC)
         self.assertIn('local function interactionPathIdentity(obj,root,label)',SRC)
-        self.assertIn('local targetPathIdentity=interactionPathIdentity(obj,root,label)',SRC)
+        self.assertIn('local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)',SRC)
         self.assertIn('path=path:sub(1,400), pathIdentity=targetPathIdentity',SRC)
         self.assertIn('["official-tool-activation-trial"]=true',SRC)
 
@@ -184,7 +184,7 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true',SRC)
         self.assertIn('current:IsA("ScrollingFrame")',SRC)
         self.assertIn('effectiveVisible=visible',SRC)
-        self.assertIn('return guiControlSnapshot(obj)',SRC)
+        self.assertIn('return EVIDENCE_HELPERS.guiControlSnapshot(obj)',SRC)
 
     def test_interaction_baselines_capture_pre_activation_state_when_supported(self):
         self.assertIn('registerPreActivation(obj.InputBegan,"GuiButton.InputBegan",2',SRC)
@@ -267,7 +267,7 @@ class InspectorUITests(unittest.TestCase):
     def test_feature_readiness_uses_relevant_state_only(self):
         self.assertIn("local featureStateEvidence=featureConsistentStateEvidence(feature,transactionFresh)",SRC)
         self.assertIn("if featureStateEvidence then item.stateChanges=item.stateChanges+1 end",SRC)
-        self.assertIn("local recoveredOutcomeCandidates=backfillObservableOutcomeCandidates(interactionHistory)",SRC)
+        self.assertIn("local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)",SRC)
         self.assertIn('"post-capture-window-evidence-backfill"',SRC)
         self.assertIn("observable-outcome-candidate-needs-causal-validation",SRC)
     def test_state_snapshots_include_bounded_local_player_values(self):

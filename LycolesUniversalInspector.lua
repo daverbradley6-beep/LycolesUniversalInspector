@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.36
+-- Lycoles Universal Inspector v30.6.37
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.36"
+local VERSION = "30.6.37"
 
 local endpoint = ""
 local autoSend = true
@@ -238,6 +238,8 @@ local snapshotId = nil
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
 -- paths. This prevents 'LiveRequest' being classified as a quest.
+local EVIDENCE_HELPERS = {}
+do
 local FEATURE_TERMS = {
  training={"training","gym","strength","agility","treadmill"},
  progression={"progression","bubble","capacity","blow","farm"},
@@ -699,6 +701,22 @@ local function buildFeatureEvidence(objects)
     end
     return features
 end
+
+EVIDENCE_HELPERS.featureForName = featureForName
+EVIDENCE_HELPERS.interactionGuiContext = interactionGuiContext
+EVIDENCE_HELPERS.guiControlSnapshot = guiControlSnapshot
+EVIDENCE_HELPERS.interactionPathIdentity = interactionPathIdentity
+EVIDENCE_HELPERS.safeNearbyGuiState = safeNearbyGuiState
+EVIDENCE_HELPERS.compareNearbyGuiState = compareNearbyGuiState
+EVIDENCE_HELPERS.safeInteractionState = safeInteractionState
+EVIDENCE_HELPERS.safeInventorySummary = safeInventorySummary
+EVIDENCE_HELPERS.compareInventoryGuiSamples = compareInventoryGuiSamples
+EVIDENCE_HELPERS.compareFeatureSnapshots = compareFeatureSnapshots
+EVIDENCE_HELPERS.buildReadiness = buildReadiness
+EVIDENCE_HELPERS.buildFeatureEvidence = buildFeatureEvidence
+EVIDENCE_HELPERS.featureInteractions = featureInteractions
+end
+
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
@@ -1125,6 +1143,8 @@ local function refreshGeneratedHandoff(phase)
         .."\n"..downstreamLine
         .."\nGeneration: offline compilation/validation pending; gameplay unverified"
 end
+
+do
 local function boundedResultText(value,limit)
     return type(value)=="string" and #value>=1 and #value<=limit
         and value:find("[%c]")==nil
@@ -1616,8 +1636,7 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
     end
     showGeneratedScriptPane(true)
 end)
-
-
+end
 
 _G.LycolesInspectorClose = function()
     stopWorkflowRecording("inspector-closed")
@@ -2131,7 +2150,7 @@ local function enrichEntry(entry, obj, profile)
         }
     end
     if obj:IsA("GuiButton") then
-        entry.guiControl = guiControlSnapshot(obj)
+        entry.guiControl = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.guiControl = {placeholder = tostring(obj.PlaceholderText):sub(1,100)}
     end
@@ -2297,7 +2316,7 @@ local function enrichEntry(entry, obj, profile)
 
     -- Capture UI control structure only. Never collect text entered into TextBoxes.
     if obj:IsA("GuiButton") then
-        entry.controlMetadata = guiControlSnapshot(obj)
+        entry.controlMetadata = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.controlMetadata = {
             controlType = "TextBox",
@@ -2397,6 +2416,8 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
+local WORKFLOW_HELPERS = {}
+do
 local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
     rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
@@ -2447,7 +2468,7 @@ local function scoredFeatureFromInteractionContext(obj,path)
         local text=tostring(value)
         local hint=MENU_FEATURE_HINTS[text:lower()]
         if hint then add(hint,weight+1) end
-        local feature=featureForName(text)
+        local feature=EVIDENCE_HELPERS.featureForName(text)
         if feature then add(feature,weight) end
     end
     scan(obj.Name,2)
@@ -2565,7 +2586,7 @@ local function backfillObservableOutcomeCandidates(history)
                 recovered=recovered+1
                 workflowStats.backfilledOutcomeCandidates=workflowStats.backfilledOutcomeCandidates+1
                 workflowStats.completedCandidates=workflowStats.completedCandidates+1
-                local item=featureInteractions[feature]
+                local item=EVIDENCE_HELPERS.featureInteractions[feature]
                 if item then item.outcomeCandidates=(item.outcomeCandidates or 0)+1 end
             end
         end
@@ -2656,14 +2677,14 @@ local function classifyInteraction(obj,path)
         node=node.Parent
         depth=depth+1
     end
-    local feature,count=featureForName(obj.Name)
+    local feature,count=EVIDENCE_HELPERS.featureForName(obj.Name)
     if feature then return feature,count,"control-name" end
     node=obj.Parent
     depth=0
     while node and depth<8 do
         local hint=MENU_FEATURE_HINTS[node.Name:lower()]
         if hint then return hint,1,"menu-context-hint" end
-        local candidate,matches=featureForName(node.Name)
+        local candidate,matches=EVIDENCE_HELPERS.featureForName(node.Name)
         if candidate then return candidate,matches,"ancestor-name" end
         if node:IsA("ScreenGui") then break end
         node=node.Parent
@@ -2939,7 +2960,7 @@ local function interactionDescriptor(obj,root,label)
             anchorPosition=anchor and anchor:IsA("BasePart") and watchVec(anchor.Position) or nil}
     end
     if obj:IsA("GuiButton") then
-        return guiControlSnapshot(obj)
+        return EVIDENCE_HELPERS.guiControlSnapshot(obj)
     end
     if obj:IsA("ClickDetector") then
         return {maxActivationDistance=obj.MaxActivationDistance}
@@ -2973,9 +2994,9 @@ local function observeInteractionObject(obj, root, label)
     local preActivationCapture=nil
     local function capturePreActivation(source,maxAge)
         local ok,state,identities,guiState,position=pcall(function()
-            local values,valueIdentities=safeInteractionState()
+            local values,valueIdentities=EVIDENCE_HELPERS.safeInteractionState()
             local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            return values,valueIdentities,safeNearbyGuiState(obj),rootPart and rootPart.Position or nil
+            return values,valueIdentities,EVIDENCE_HELPERS.safeNearbyGuiState(obj),rootPart and rootPart.Position or nil
         end)
         if not ok then
             observerStats.preActivationCaptureFailures=observerStats.preActivationCaptureFailures+1
@@ -3050,14 +3071,14 @@ local function observeInteractionObject(obj, root, label)
             if captured then
                 observerStats.stalePreActivationCaptures=observerStats.stalePreActivationCaptures+1
             end
-            before,beforeStateIdentities=safeInteractionState()
-            beforeGui=safeNearbyGuiState(obj)
+            before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            beforeGui=EVIDENCE_HELPERS.safeNearbyGuiState(obj)
             local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
             beforePosition=rootPart and rootPart.Position or nil
             baselineSource="activation-callback-fallback"
             observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
         end
-        local targetPathIdentity=interactionPathIdentity(obj,root,label)
+        local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)
         local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
             observationSequence+1,sessionElapsedSeconds)
         local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
@@ -3077,7 +3098,7 @@ local function observeInteractionObject(obj, root, label)
             transactionOrder=explicitRecording and explicitRecording.order or nil,
             transactionLinkSource=transactionLinkSource,
             explicitWorkflowRecording=explicitRecording,
-            stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
+            stateChangeCount=0, guiContext=EVIDENCE_HELPERS.interactionGuiContext(obj), workflow=workflow,
             guiRevealFollowup=guiRevealFollowup,
             controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
             baselineTiming=baselineSource=="activation-callback-fallback"
@@ -3105,12 +3126,12 @@ local function observeInteractionObject(obj, root, label)
                 inventoryAction="selection"
             end
         end
-        local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
+        local inventorySummaryBefore=inventoryRelevant and EVIDENCE_HELPERS.safeInventorySummary() or nil
         if feature then
-            local item = featureInteractions[feature] or {
+            local item = EVIDENCE_HELPERS.featureInteractions[feature] or {
                 count=0,stateChanges=0,temporalStateChanges=0,outcomeCandidates=0}
             item.count = item.count + 1
-            featureInteractions[feature] = item
+            EVIDENCE_HELPERS.featureInteractions[feature] = item
         end
         observationSequence = observationSequence + 1
         changeCount = changeCount + 1
@@ -3136,8 +3157,8 @@ local function observeInteractionObject(obj, root, label)
                 pendingObservationEvents=math.max(0,pendingObservationEvents-1)
                 if not alive then return end
                 local ok,err=pcall(function()
-                    local after,afterStateIdentities=safeInteractionState()
-                    local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
+                    local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+                    local guiChanges=EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,EVIDENCE_HELPERS.safeNearbyGuiState(obj))
                     local changes={}
                     for key,value in pairs(before) do
                         if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
@@ -3224,7 +3245,7 @@ local function observeInteractionObject(obj, root, label)
                             causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
                         historyItem.outcomeVerified=false
                         workflowStats.completedCandidates=workflowStats.completedCandidates+1
-                        local item=feature and featureInteractions[feature]
+                        local item=feature and EVIDENCE_HELPERS.featureInteractions[feature]
                         if item then item.outcomeCandidates=item.outcomeCandidates+1 end
                     end
                     local window={seconds=delaySeconds,stateChanges=freshState,
@@ -3237,8 +3258,8 @@ local function observeInteractionObject(obj, root, label)
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
                     if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
-                        local inventoryAfter=safeInventorySummary()
-                        local guiEvidence=compareInventoryGuiSamples(
+                        local inventoryAfter=EVIDENCE_HELPERS.safeInventorySummary()
+                        local guiEvidence=EVIDENCE_HELPERS.compareInventoryGuiSamples(
                             inventorySummaryBefore,inventoryAfter)
                         historyItem.inventoryObservationScope={
                             actionContext=inventoryAction,
@@ -3278,7 +3299,7 @@ local function observeInteractionObject(obj, root, label)
                         for _,change in ipairs(transactionFresh) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
-                            local item=featureInteractions[feature]
+                            local item=EVIDENCE_HELPERS.featureInteractions[feature]
                             if item then
                                 item.temporalStateChanges=item.temporalStateChanges+1
                                 if featureStateEvidence then item.stateChanges=item.stateChanges+1 end
@@ -3311,6 +3332,10 @@ local function observeInteractionObject(obj, root, label)
     table.insert(watchConnections, connection)
 end
 
+WORKFLOW_HELPERS.observeInteractionObject = observeInteractionObject
+WORKFLOW_HELPERS.backfillObservableOutcomeCandidates = backfillObservableOutcomeCandidates
+end
+
 local function sweepInteractionControls()
     observerStats.sweepCompleted = false
     observerStats.sweepStartedAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -3323,7 +3348,7 @@ local function sweepInteractionControls()
     for i, obj in ipairs(descendants) do
         if not alive then return end
         if obj:IsA("GuiButton") then
-            local success = pcall(observeInteractionObject, obj, gui, "PlayerGui")
+            local success = pcall(WORKFLOW_HELPERS.observeInteractionObject, obj, gui, "PlayerGui")
             if not success then observerStats.bindingErrors = observerStats.bindingErrors + 1 end
         end
         observerStats.sweepScanned = i
@@ -3366,8 +3391,8 @@ local function flushWatch()
             inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             objects = batch, counts = {}, groups = {},
             sessionId = sessionId, parentSnapshotId = snapshotId,
-            featureEvidence = buildFeatureEvidence(batch),
-            featureReadiness = buildReadiness(buildFeatureEvidence(batch), interactionEventCount),
+            featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(batch),
+            featureReadiness = EVIDENCE_HELPERS.buildReadiness(EVIDENCE_HELPERS.buildFeatureEvidence(batch), interactionEventCount),
             scanStats = {
                 mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
@@ -3456,7 +3481,7 @@ local function startWatching()
                         return
                     end
                     observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -3472,7 +3497,7 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
                     if i % 500 == 0 then task.wait() end
                 end
             end)
@@ -3489,7 +3514,7 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
                     if i % 300 == 0 then task.wait() end
                 end
             end
@@ -3498,7 +3523,7 @@ local function startWatching()
                 task.defer(function()
                     if not alive or not watchEnabled then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
                     local good, entry = pcall(watchEntry, obj, character, label)
                     if good and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -3931,9 +3956,9 @@ local function inspect(requestType, featureRequest)
                 and rootAccountingValid
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
             report.scanStats.complete = scanComplete
-            report.featureEvidence = buildFeatureEvidence(report.objects)
-            report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
-            local recoveredOutcomeCandidates=backfillObservableOutcomeCandidates(interactionHistory)
+            report.featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(report.objects)
+            report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
+            local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             report.interactionDiagnostics = {
                 scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
                 scanProfile=activeScanProfileId, scanMode=profile.scanMode,
@@ -4001,7 +4026,7 @@ local function inspect(requestType, featureRequest)
                 sweepStartedAt=observerStats.sweepStartedAt, sweepFinishedAt=observerStats.sweepFinishedAt,
                 lastSweepError=observerStats.lastSweepError
             }
-            report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
+            report.featureSnapshotDelta = EVIDENCE_HELPERS.compareFeatureSnapshots(report.featureEvidence)
             report.automationDiagnostics = {
                 enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
