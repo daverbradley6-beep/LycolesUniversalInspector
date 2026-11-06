@@ -458,7 +458,8 @@ def compile_scan(directory):
             identity=bounded_path_identity(event["pathIdentity"])
             if (identity is None or not isinstance(event.get("path"),str)
                     or ".".join(segment["name"] for segment in identity)!=event["path"]):
-                fail("Malformed interaction path identity")
+                event.pop("pathIdentity",None)
+                continue
             event["pathIdentity"]=identity
     history_evidence=[]
     for event in history:

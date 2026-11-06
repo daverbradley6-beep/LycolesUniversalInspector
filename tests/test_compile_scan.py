@@ -65,14 +65,16 @@ class ScanCompilerTests(unittest.TestCase):
             path=pathlib.Path(tmp);self.parts(path,event=event)
             result=compiler.compile_scan(path)
             self.assertEqual(result["observedInteractionHistory"][0]["pathIdentity"],identity)
+
             event["pathIdentity"][1]["ordinal"]=0
             self.parts(path,event=event)
-            with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
-                compiler.compile_scan(path)
+            result=compiler.compile_scan(path)
+            self.assertNotIn("pathIdentity",result["observedInteractionHistory"][0])
+
             event["pathIdentity"][1].update(name="Other",ordinal=2)
             self.parts(path,event=event)
-            with self.assertRaisesRegex(ValueError,"Malformed interaction path identity"):
-                compiler.compile_scan(path)
+            result=compiler.compile_scan(path)
+            self.assertNotIn("pathIdentity",result["observedInteractionHistory"][0])
 
     def test_pre_activation_baselines_and_pending_windows_are_preserved(self):
         event={"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated",

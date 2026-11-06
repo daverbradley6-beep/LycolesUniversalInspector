@@ -2,6 +2,43 @@
 
 
 
+## Update — 2026-11-06 — Real Bubble Gum dataset processed end-to-end
+
+- Retrieved and verified real inspection archive from `main`:
+  - `Lycoles_BubbleGum_Clean_Inspection.zip`
+  - SHA-256: `f3a523ad193cccf8d6c85314c6c431df7b17da2fcce13a331edb65cf3c5ca52e`
+- Extracted and validated multipart structure:
+  - 1 manifest + 1,253 parts (`part-0001` … `part-1253`),
+  - `scanId`: `AC79D385-BCB0-4928-85D5-6C3D960C44AE`,
+  - `placeId`: `85896571713843`,
+  - no missing parts, no parse/identity mismatches.
+- Real-evidence processing discovered two interaction events whose `pathIdentity` no longer matched runtime `path` strings; previous behavior aborted compilation.
+  - Updated `tools/compile_scan.py` to drop invalid interaction `pathIdentity` entries instead of failing the entire scan.
+  - Updated regression in `tests/test_compile_scan.py` accordingly.
+- Ran generation service and receiver pipeline on full real dataset:
+  - `tools/lycoles_generation_service.py run-job --evidence-kind parts_dir ...` ✅
+  - `tools/receiver_generation_pipeline.py from-parts ...` ✅
+  - output status: `generated`
+  - generation source: `deterministic-release-script`
+  - generated capability kinds: `proximity-prompt-trial`.
+- Fixed delivery mismatch when external requested capability text conflicts with `generation-readiness` request state:
+  - `tools/lycoles_generation_service.py` now aligns generated-result request field with readiness payload.
+- Provider-backed AI integration validated in real-data flow (without credentials):
+  - `LYCOLES_LLM_PROVIDER=openai` with missing key now safely falls back,
+  - provider metadata reports `openai-compatible`, `enabled=false`, and explicit missing-key reason,
+  - `aiInferencePerformed=false` and token usage remains zero.
+- Added first testable game-specific scripts derived from this real scan:
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_v1.lua` (pipeline output),
+  - `generated/live/BubbleGumInfinity_RealInspection_v1.lua` (evidence-grounded utility controls for inventory/shops/rewards/prompt workflows).
+- Validation after changes:
+  - full Python suite: **1,600 tests passed**,
+  - Node/Luau parser suite: all tests passed,
+  - Luau syntax validation for both generated Bubble scripts passed,
+  - `python3 -m compileall -q tools tests`,
+  - `git diff --check`.
+
+
+
 ## Update — 2026-11-06 — Provider-backed AI path + dataset retrieval blocker validation
 
 - Verified dataset availability blocker with repository evidence:

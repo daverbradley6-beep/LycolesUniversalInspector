@@ -237,3 +237,7 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `LYCOLES_ANALYSIS_MODEL`, `LYCOLES_GENERATION_MODEL`, `LYCOLES_REPAIR_MODEL`
   - optional cost tracking: `LYCOLES_ANALYSIS_COST_GBP_PER_1K`, `LYCOLES_GENERATION_COST_GBP_PER_1K`, `LYCOLES_REPAIR_COST_GBP_PER_1K`
   - `LYCOLES_PREFER_AI_GENERATION=true` enables AI-first script synthesis when deterministic output is also available.
+- Real Bubble Gum INFINITY dataset location/reference:
+  - Source ZIP (main branch): `Lycoles_BubbleGum_Clean_Inspection.zip`
+  - Scan identity: `scanId=AC79D385-BCB0-4928-85D5-6C3D960C44AE`, `placeId=85896571713843`, `partCount=1253`.
+- Real-data compatibility note: `compile_scan.py` now tolerates invalid interaction `pathIdentity` by dropping mismatched entries instead of aborting the full scan; this was required for the verified live dataset.

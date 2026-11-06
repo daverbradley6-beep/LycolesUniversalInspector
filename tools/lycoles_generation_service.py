@@ -547,11 +547,16 @@ class DeliveryEngine:
         if not isinstance(bundle.place_id, int) or bundle.place_id <= 0:
             raise ValueError("invalid place id for delivery")
 
+        readiness_request = None
+        request_section = readiness.get("request") if isinstance(readiness.get("request"), dict) else {}
+        if isinstance(request_section.get("request"), str):
+            readiness_request = request_section.get("request")
+
         generated_result = self._generated_result.build(
             place_id=bundle.place_id,
             scan_id=bundle.scan_id or "scan-unavailable",
             code=code,
-            requested_capability=request.requested_capability,
+            requested_capability=readiness_request,
             validation={"placeGuard": bool(validation.get("placeGuard")), "unsafeOperationsFound": bool(validation.get("unsafeOperationsFound", False))},
             capabilities=self._capabilities_from_bundle(bundle),
             generation_readiness=readiness,
