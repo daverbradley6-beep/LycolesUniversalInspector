@@ -540,6 +540,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     gameplay_understanding=gameplay_compiler.analyze(plan)
     gameplay_understanding_bytes=(json.dumps(
         gameplay_understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    universal_intelligence_builder=load_module(
+        "universal_gameplay_intelligence.py","lycoles_universal_gameplay_intelligence")
+    universal_gameplay_intelligence=universal_intelligence_builder.analyze(plan)
+    universal_gameplay_intelligence_bytes=(json.dumps(
+        universal_gameplay_intelligence,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
 
     action_discovery_builder=load_module("discover_action_capabilities.py","lycoles_action_discovery")
     action_discovery=action_discovery_builder.analyze(plan)
@@ -685,6 +690,11 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "sha256":sha(gameplay_understanding_bytes),
             "summary":gameplay_understanding["summary"],
             "requestedCapabilityAssessment":gameplay_understanding["requestedCapabilityAssessment"]},
+        "universalGameplayIntelligence":{"schemaVersion":universal_gameplay_intelligence["schemaVersion"],
+            "artifact":"universal-gameplay-intelligence.json",
+            "sha256":sha(universal_gameplay_intelligence_bytes),
+            "summary":universal_gameplay_intelligence["summary"],
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
         "actionCapabilities":{"artifact":"action-capabilities.json",
             "schemaVersion":action_discovery["schemaVersion"],
             "sha256":sha(action_discovery_bytes),
@@ -826,6 +836,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "gameplay-understanding.json":gameplay_understanding_bytes,
+      "universal-gameplay-intelligence.json":universal_gameplay_intelligence_bytes,
       "generation-readiness.json":generation_readiness_bytes,
 
       "action-capabilities.json":action_discovery_bytes,
@@ -847,6 +858,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
           "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
+          "Universal intelligence interactables: "+str(universal_gameplay_intelligence["summary"]["interactables"])+"; workflow candidates: "+str(universal_gameplay_intelligence["summary"]["workflowCandidates"])+".\n"
           "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
           "Linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; bounded runnable trials: "+str(generated_workflows["summary"]["executionReadyWorkflows"])+"; operator-started automatic Tool/Prompt trials: "+str(generated_workflows["summary"]["automaticallyExecutableWorkflows"])+". Runtime and gameplay remain unverified.\n"
           "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"

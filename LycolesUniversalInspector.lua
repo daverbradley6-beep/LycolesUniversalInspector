@@ -3586,16 +3586,19 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         unattributedInteractions)
     local blockers = {}
     local linkedWorkflowEvents = workflowStats.linkedConfirmations + workflowStats.linkedFollowups
+    local derivedWorkflowEvidenceEvents = math.max(linkedWorkflowEvents,
+        workflowStats.completedCandidates)
     if totalInteractions <= 0 then
         blockers[#blockers+1] = "no-interaction-events-observed"
     else
         if attributedInteractions <= 0 then
             blockers[#blockers+1] = "no-feature-attributed-interactions"
         end
-        if workflowRecordingStats.started <= 0 then
+        if (workflowRecordingStats.started <= 0 and linkedWorkflowEvents <= 0
+                and workflowStats.completedCandidates <= 0) then
             blockers[#blockers+1] = "explicit-workflow-recording-not-armed"
         end
-        if linkedWorkflowEvents <= 0 then
+        if linkedWorkflowEvents <= 0 and workflowStats.completedCandidates <= 0 then
             blockers[#blockers+1] = "no-linked-confirmation-events"
         end
         if workflowStats.actionOutcomesCorroborated <= 0 then
@@ -3619,6 +3622,7 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         linkedConfirmations = workflowStats.linkedConfirmations,
         linkedFollowups = workflowStats.linkedFollowups,
         linkedWorkflowEvents = linkedWorkflowEvents,
+        derivedWorkflowEvidenceEvents = derivedWorkflowEvidenceEvents,
         corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
         completedWorkflowCandidates = workflowStats.completedCandidates,
         explicitWorkflowRecordings = workflowRecordingStats.started,

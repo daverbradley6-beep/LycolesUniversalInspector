@@ -253,3 +253,12 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `generated/live/BubbleGumInfinity_generation-readiness_gameplay-first_v2.json`
   - `generated/live/BubbleGumInfinity_generation-readiness_requested_v2.json`
 
+- Universal discovery extraction (2026-11-06): `compile_scan.py` now emits `universalDiscovery` (`30.7.universal-discovery.1`) containing bounded `regions`, `interactables`, `economySignals`, `stateChangeSignals`, and `interactionPatterns` derived from full multipart objects plus interaction history.
+- New intelligence artifact: `tools/universal_gameplay_intelligence.py` emits `111.universal-gameplay-intelligence.1` with `world`, `economy`, `actions`, `workflows`, and `relationships`; all verification/authenticity/causality claims are fail-closed false.
+- Release integration: `build_release.py` now writes `universal-gameplay-intelligence.json`, records it in `release-manifest.json` under `universalGameplayIntelligence`, and includes summary counts in `README.txt`.
+- Workflow diagnostics refinement in `LycolesUniversalInspector.lua`: `explicit-workflow-recording-not-armed` now triggers only when there is no linked/completed workflow evidence; diagnostics include `derivedWorkflowEvidenceEvents` to avoid recording-only false negatives.
+- Regression coverage added:
+  - `tests/test_compile_scan.py` now validates universal discovery schema and extraction of interactable/economy/state signals.
+  - `tests/test_universal_gameplay_intelligence.py` validates analyzer output and deterministic `validate()` roundtrip.
+  - `tests/test_build_release.py` verifies manifest/file integration for universal intelligence artifacts.
+

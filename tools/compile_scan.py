@@ -150,6 +150,316 @@ def _interaction_observation_summary(diagnostics):
         "evidenceLossPossible":actual_loss,"limitations":limitations}
 
 
+MAX_DISCOVERY_REGIONS=256
+MAX_DISCOVERY_INTERACTABLES=1600
+MAX_DISCOVERY_ECONOMY_SIGNALS=1200
+MAX_DISCOVERY_STATE_SIGNALS=800
+MAX_DISCOVERY_PATTERNS=256
+MAX_DISCOVERY_PATH_LENGTH=400
+_ACTIONABLE_CLASSES={"ProximityPrompt","ClickDetector","TextButton","ImageButton","Tool"}
+
+def _safe_text(value,limit=MAX_DISCOVERY_PATH_LENGTH):
+    return (isinstance(value,str) and 1<=len(value)<=limit
+        and all(unicodedata.category(character)!="Cc" for character in value))
+
+def _safe_scalar(value):
+    return type(value) in (int,float,str,bool) and len(str(value))<=120
+
+def _safe_number(value):
+    return type(value) in (int,float) and type(value) is not bool and math.isfinite(value)
+
+def _safe_vec3(value):
+    if not isinstance(value,dict):return None
+    x,y,z=value.get("x"),value.get("y"),value.get("z")
+    if not (_safe_number(x) and _safe_number(y) and _safe_number(z)):return None
+    if any(abs(component)>10_000_000 for component in (x,y,z)):return None
+    return {"x":round(float(x),3),"y":round(float(y),3),"z":round(float(z),3)}
+
+def _path_tokens(value):
+    if not isinstance(value,str):return set()
+    tokens=set()
+    for token in value.lower().replace("[",".").replace("]",".").replace("/",".").split("."):
+        token=token.strip()
+        if token and len(token)<=80:tokens.add(token)
+    return tokens
+
+def _terminal_name(path):
+    if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH):return None
+    return path.rsplit(".",1)[-1][:120]
+
+def _economy_classification(path,key):
+    tokens=_path_tokens(path)|_path_tokens(key)
+    if not tokens:return None
+    if tokens&{"cost","price","priced","costs","requirement","required","requires",
+            "unlock","unlocks","levelreq","levelrequirement"}:
+        return "requirement_or_cost_signal"
+    if tokens&{"coin","coins","gem","gems","cash","currency","currencies",
+            "token","tokens","gold","money","credit","credits"}:
+        return "currency_signal"
+    if tokens&{"reward","rewards","quest","quests","xp","experience","exp",
+            "rebirth","rebirths","level","levels","progress","milestone"}:
+        return "progression_signal"
+    if tokens&{"inventory","capacity","slot","slots","item","items"}:
+        return "inventory_signal"
+    return None
+
+def _canonical_region(path):
+    if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH) or not path.startswith("Workspace."):
+        return None
+    segments=path.split(".")
+    if len(segments)<3:return "Workspace"
+    depth=4 if len(segments)>=4 and segments[1].lower() in (
+        "worlds","areas","islands","zones","region","regions") else 3
+    return ".".join(segments[:min(len(segments),depth)])
+
+def _interaction_mechanism(entry_class,control_type):
+    if entry_class=="ProximityPrompt" or control_type=="ProximityPrompt.Triggered":
+        return "proximity_prompt"
+    if entry_class=="ClickDetector" or control_type=="ClickDetector.MouseClick":
+        return "click_detector"
+    if entry_class=="Tool" or control_type=="Tool.Activated":
+        return "tool_activation"
+    if entry_class in {"TextButton","ImageButton"} or control_type=="GuiButton.Activated":
+        return "gui_button"
+    return "observed_control"
+
+def _nearest_position(path,positions):
+    if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH):return None,None
+    segments=path.split(".")
+    for index in range(len(segments),0,-1):
+        prefix=".".join(segments[:index])
+        if prefix in positions:return positions[prefix],prefix
+    return None,None
+
+def _universal_discovery(objects,actionable,history):
+    positions={}
+    region_stats={}
+    root_counts=collections.Counter()
+    for obj in objects:
+        path=obj.get("path")
+        if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH):
+            continue
+        root_counts[path.split(".",1)[0]]+=1
+        position=_safe_vec3(obj.get("position"))
+        if position is None:
+            continue
+        positions[path]=position
+        region=_canonical_region(path)
+        if not region:
+            continue
+        stats=region_stats.setdefault(region,{"positioned":0,"total":0,
+            "sumX":0.0,"sumY":0.0,"sumZ":0.0,
+            "minX":position["x"],"minY":position["y"],"minZ":position["z"],
+            "maxX":position["x"],"maxY":position["y"],"maxZ":position["z"]})
+        stats["positioned"]+=1
+        stats["sumX"]+=position["x"];stats["sumY"]+=position["y"];stats["sumZ"]+=position["z"]
+        stats["minX"]=min(stats["minX"],position["x"]);stats["maxX"]=max(stats["maxX"],position["x"])
+        stats["minY"]=min(stats["minY"],position["y"]);stats["maxY"]=max(stats["maxY"],position["y"])
+        stats["minZ"]=min(stats["minZ"],position["z"]);stats["maxZ"]=max(stats["maxZ"],position["z"])
+    for obj in objects:
+        region=_canonical_region(obj.get("path"))
+        if region in region_stats:region_stats[region]["total"]+=1
+
+    history_by_path={}
+    for event in history:
+        path=event.get("path")
+        if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH):continue
+        item=history_by_path.setdefault(path,{"observedInteractions":0,"controlTypes":set(),"features":set()})
+        item["observedInteractions"]+=1
+        if _safe_text(event.get("controlType"),120):item["controlTypes"].add(event["controlType"])
+        if _safe_text(event.get("featureCandidate"),120):item["features"].add(event["featureCandidate"])
+
+    interactables=[]
+    seen_paths=set()
+    for item in actionable:
+        path=item.get("path")
+        entry_class=item.get("class")
+        if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH) or not _safe_text(entry_class,80):continue
+        seen_paths.add(path)
+        control_type=("ProximityPrompt.Triggered" if entry_class=="ProximityPrompt"
+            else "ClickDetector.MouseClick" if entry_class=="ClickDetector"
+            else "Tool.Activated" if entry_class=="Tool" else "GuiButton.Activated")
+        mechanism=_interaction_mechanism(entry_class,control_type)
+        interaction=item.get("interaction") if isinstance(item.get("interaction"),dict) else {}
+        position=_safe_vec3(interaction.get("anchorPosition"))
+        position_source_path=interaction.get("anchorPath") if position is not None else None
+        source="interaction-anchor"
+        if position is None:
+            position,position_source_path=_nearest_position(path,positions)
+            source="nearest-object-position" if position is not None else "unavailable"
+        history_details=history_by_path.get(path,{})
+        interactables.append({
+            "id":"interactable_"+hashlib.sha256((path+"\n"+entry_class).encode("utf-8")).hexdigest()[:16],
+            "path":path,"class":entry_class,
+            "scope":path.split(".",1)[0].lower(),
+            "mechanism":mechanism,
+            "position":position,
+            "positionSource":source,
+            "positionSourcePath":position_source_path if _safe_text(position_source_path,MAX_DISCOVERY_PATH_LENGTH) else None,
+            "observedInteractions":history_details.get("observedInteractions",0),
+            "observedControlTypes":sorted(history_details.get("controlTypes",set())),
+            "relatedFeatures":sorted(history_details.get("features",set())),
+            "actionText":(interaction.get("actionText") if _safe_text(interaction.get("actionText"),120) else None),
+            "objectText":(interaction.get("objectText") if _safe_text(interaction.get("objectText"),120) else None),
+            "sharedPatternKey":mechanism+":"+path.split(".",1)[0].lower(),
+            "confidence":"structural-with-observation" if history_details else "structural-only",
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+        })
+
+    for path,details in history_by_path.items():
+        if path in seen_paths:
+            continue
+        control_type=next(iter(sorted(details["controlTypes"])),"Unknown")
+        mechanism=_interaction_mechanism(None,control_type)
+        position,position_source_path=_nearest_position(path,positions)
+        interactables.append({
+            "id":"interactable_"+hashlib.sha256((path+"\n"+control_type).encode("utf-8")).hexdigest()[:16],
+            "path":path,"class":control_type.split(".",1)[0],
+            "scope":path.split(".",1)[0].lower(),
+            "mechanism":mechanism,
+            "position":position,
+            "positionSource":"nearest-object-position" if position is not None else "unavailable",
+            "positionSourcePath":position_source_path,
+            "observedInteractions":details["observedInteractions"],
+            "observedControlTypes":sorted(details["controlTypes"]),
+            "relatedFeatures":sorted(details["features"]),
+            "actionText":None,"objectText":None,
+            "sharedPatternKey":mechanism+":"+path.split(".",1)[0].lower(),
+            "confidence":"observation-only",
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+        })
+
+    interactables.sort(key=lambda item:(
+        -(item["observedInteractions"]),
+        item["position"] is None,
+        item["path"],item["class"]))
+    if len(interactables)>MAX_DISCOVERY_INTERACTABLES:
+        interactables=interactables[:MAX_DISCOVERY_INTERACTABLES]
+
+    economy=[];economy_seen=set()
+    def add_economy(path,key,value,source,scope):
+        if not (_safe_text(path,MAX_DISCOVERY_PATH_LENGTH) and _safe_text(key,120) and _safe_scalar(value)):
+            return
+        classification=_economy_classification(path,key)
+        if classification is None:return
+        identity=(path,key,source)
+        if identity in economy_seen:return
+        economy_seen.add(identity)
+        economy.append({"id":"econ_"+hashlib.sha256((path+"\n"+key+"\n"+source).encode("utf-8")).hexdigest()[:16],
+            "path":path,"key":key,"value":value,"source":source,
+            "scope":scope,"classification":classification,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False})
+
+    for obj in objects:
+        path=obj.get("path")
+        if not _safe_text(path,MAX_DISCOVERY_PATH_LENGTH):continue
+        scope=path.split(".",1)[0].lower()
+        attrs=obj.get("attributes")
+        if isinstance(attrs,dict):
+            for key,value in attrs.items():
+                if len(economy)>=MAX_DISCOVERY_ECONOMY_SIGNALS:break
+                add_economy(path,str(key)[:120],value,"object-attribute",scope)
+        if len(economy)>=MAX_DISCOVERY_ECONOMY_SIGNALS:break
+        if "value" in obj:
+            key=_terminal_name(path) or "value"
+            add_economy(path,key,obj.get("value"),"value-object",scope)
+
+    state_signals={}
+    for event in history:
+        feature=event.get("featureCandidate") if _safe_text(event.get("featureCandidate"),120) else None
+        changes=[]
+        if isinstance(event.get("stateChanges"),list):changes.extend(event["stateChanges"])
+        windows=event.get("observationWindows")
+        if isinstance(windows,list):
+            for window in windows:
+                if isinstance(window,dict) and isinstance(window.get("stateChanges"),list):
+                    changes.extend(window["stateChanges"])
+        for change in changes:
+            if not isinstance(change,dict):continue
+            key=change.get("key") or change.get("path")
+            before,after=change.get("before"),change.get("after")
+            if not (_safe_text(key,200) and _safe_scalar(before) and _safe_scalar(after)):
+                continue
+            classification=_economy_classification(key,key) or "state_transition_signal"
+            signal=state_signals.setdefault(key,{"id":"state_"+hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
+                "key":key,"classification":classification,
+                "increaseEvents":0,"decreaseEvents":0,"changedEvents":0,
+                "sourceFeatures":set(),"lastBefore":before,"lastAfter":after,
+                "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False})
+            signal["changedEvents"]+=1
+            signal["lastBefore"]=before;signal["lastAfter"]=after
+            if type(before) in (int,float) and type(after) in (int,float):
+                if after>before:signal["increaseEvents"]+=1
+                elif after<before:signal["decreaseEvents"]+=1
+            if feature:signal["sourceFeatures"].add(feature)
+
+    state_signal_items=sorted(({
+        **item,
+        "sourceFeatures":sorted(item["sourceFeatures"]),
+    } for item in state_signals.values()),key=lambda item:(
+        -(item["changedEvents"]),item["key"]))
+    if len(state_signal_items)>MAX_DISCOVERY_STATE_SIGNALS:
+        state_signal_items=state_signal_items[:MAX_DISCOVERY_STATE_SIGNALS]
+
+    region_items=[]
+    for region,stats in sorted(region_stats.items(),key=lambda item:(
+            -item[1]["positioned"],-item[1]["total"],item[0]))[:MAX_DISCOVERY_REGIONS]:
+        region_items.append({"id":"region_"+hashlib.sha256(region.encode("utf-8")).hexdigest()[:16],
+            "path":region,
+            "positionedObjectCount":stats["positioned"],
+            "totalObjectCount":stats["total"],
+            "centroid":{
+                "x":round(stats["sumX"]/stats["positioned"],3),
+                "y":round(stats["sumY"]/stats["positioned"],3),
+                "z":round(stats["sumZ"]/stats["positioned"],3)},
+            "bounds":{
+                "x":[round(stats["minX"],3),round(stats["maxX"],3)],
+                "y":[round(stats["minY"],3),round(stats["maxY"],3)],
+                "z":[round(stats["minZ"],3),round(stats["maxZ"],3)]},
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    pattern_counts={}
+    for item in interactables:
+        key=item["sharedPatternKey"]
+        pattern=pattern_counts.setdefault(key,{"mechanism":item["mechanism"],
+            "scope":item["scope"],"memberCount":0,"observedInteractions":0,
+            "samplePaths":[]})
+        pattern["memberCount"]+=1
+        pattern["observedInteractions"]+=item["observedInteractions"]
+        if len(pattern["samplePaths"])<5:pattern["samplePaths"].append(item["path"])
+    patterns=[]
+    for key,data in sorted(pattern_counts.items(),key=lambda item:(
+            -item[1]["memberCount"],-item[1]["observedInteractions"],item[0]))[:MAX_DISCOVERY_PATTERNS]:
+        patterns.append({"id":"pattern_"+hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
+            "key":key,"mechanism":data["mechanism"],"scope":data["scope"],
+            "memberCount":data["memberCount"],
+            "observedInteractions":data["observedInteractions"],
+            "samplePaths":data["samplePaths"],
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    economy.sort(key=lambda item:(item["classification"],item["path"],item["key"],item["source"]))
+    if len(economy)>MAX_DISCOVERY_ECONOMY_SIGNALS:
+        economy=economy[:MAX_DISCOVERY_ECONOMY_SIGNALS]
+
+    return {"schemaVersion":"30.7.universal-discovery.1",
+        "regions":region_items,
+        "interactables":interactables,
+        "economySignals":economy,
+        "stateChangeSignals":state_signal_items,
+        "interactionPatterns":patterns,
+        "summary":{
+            "rootObjectGroups":dict(sorted(root_counts.items())),
+            "regions":len(region_items),
+            "interactables":len(interactables),
+            "worldPositionedInteractables":sum(item["position"] is not None for item in interactables),
+            "observedInteractablePaths":sum(item["observedInteractions"]>0 for item in interactables),
+            "economySignals":len(economy),
+            "stateChangeSignals":len(state_signal_items),
+            "interactionPatterns":len(patterns)},
+        "claims":{"runtimeVerified":False,"gameplayVerified":False,
+            "causalityProven":False,"sourceAuthenticityVerified":False}}
+
+
 
 _RECEIVER_PROVENANCE_FIELDS={
     "schemaVersion","scanId","placeId","partCount","expectedParts","objectCount",
@@ -543,6 +853,7 @@ def compile_scan(directory):
                "uniqueObjectIdentities":len(paths),"interactionEvents":len(history),
                "scanComplete":bool(metadata["scanStats"].get("complete"))}
     if not integrity["scanComplete"]: fail("Source scan reports incomplete root coverage")
+    universal_discovery=_universal_discovery(objects,actionable,history)
     plan={"schemaVersion":"20.0","integrity":integrity,"featureCount":len(features),
           "features":features,"classCounts":dict(counts),
           "requestedCapability":requested_capability,
@@ -557,6 +868,7 @@ def compile_scan(directory):
           "interactionObservationSummary":interaction_observation_summary,
           "observedInteractionHistory":history,
           "actionableObjects":actionable,"actionableObjectCount":actionable_total,
+          "universalDiscovery":universal_discovery,
           "actionableObjectsTruncated":actionable_total>len(actionable),
           "releaseGate":{"gameplayAutomationApproved":False,
                          "reason":"Passive inspection cannot establish replayable server-authoritative actions",

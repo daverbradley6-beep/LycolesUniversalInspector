@@ -66,6 +66,11 @@ class ReleaseBuilderTests(unittest.TestCase):
                     "maxActivationDistance":10}}
             (parts/"1.json").write_text(json.dumps(first))
             manifest=builder.build(parts,base/"out")
+            self.assertIn("universalGameplayIntelligence",manifest)
+            self.assertEqual(manifest["universalGameplayIntelligence"]["artifact"],
+                "universal-gameplay-intelligence.json")
+            self.assertTrue((base/"out"/"universal-gameplay-intelligence.json").exists())
+            self.assertTrue(manifest["universalGameplayIntelligence"]["summary"]["interactables"]>=1)
             self.assertTrue(manifest["promptInteractionTrial"]["generated"])
             self.assertTrue(manifest["promptInteractionTrial"]["automaticMovement"])
             self.assertIn("Gameplay",manifest["implementedClientControls"])

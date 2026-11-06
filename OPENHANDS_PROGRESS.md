@@ -1498,3 +1498,34 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 3. Improve feature-specific interaction/state attribution where real evidence supports it, especially observation-window ownership and relevant-state selection, without lowering causality or outcome-verification standards.
 4. When complete real numbered parts become available, run them through receiver import plus v107/v108 generation; do not request another live test solely to replace the missing historical payload.
 5. Keep complete Python, actual-Luau, receiver, parser, integrity, determinism, immutable-action, and dependency-provenance gates green after each cycle.
+
+## Update — 2026-11-06 — Universal gameplay intelligence extraction integrated
+
+- Added bounded universal discovery extraction to `tools/compile_scan.py` and capability plans:
+  - `universalDiscovery.schemaVersion = 30.7.universal-discovery.1`
+  - Captures `regions`, `interactables`, `economySignals`, `stateChangeSignals`, and `interactionPatterns`.
+  - Derives interactable mechanisms and world-position anchors where available while keeping all runtime/causality/gameplay claims false.
+- Added `tools/universal_gameplay_intelligence.py`:
+  - Produces `111.universal-gameplay-intelligence.1` artifact with `world`, `economy`, `actions`, `workflows`, and `relationships`.
+  - Includes structured before/during/after action context records and reusable workflow candidates from shared transactions + temporal adjacency.
+  - Maintains fail-closed claims (`runtimeVerified=false`, `gameplayVerified=false`, `causalityProven=false`).
+- Integrated universal intelligence into `tools/build_release.py`:
+  - Emits `universal-gameplay-intelligence.json`.
+  - Adds `universalGameplayIntelligence` section to `release-manifest.json` with SHA and summary.
+  - Includes summary counts in generated README.
+- Workflow recorder gating improvement in `LycolesUniversalInspector.lua`:
+  - `explicit-workflow-recording-not-armed` blocker is now emitted only when there is no linked/completed workflow evidence.
+  - Added `derivedWorkflowEvidenceEvents` to workflow-generation diagnostics for clearer capture interpretation.
+- Added/updated tests:
+  - `tests/test_compile_scan.py`: universal discovery schema + interactable/economy/state-signal extraction assertions.
+  - `tests/test_universal_gameplay_intelligence.py`: module coverage and deterministic validate roundtrip.
+  - `tests/test_build_release.py`: release manifest/artifact assertions for universal intelligence output.
+- Validation status:
+  - Targeted suites for compile/release/intelligence and readiness/inspector interfaces passed.
+  - Full Python suite passed: **1604 tests**.
+  - Node parser/Luau syntax suites passed.
+- Real Bubble dataset (`AC79D385-BCB0-4928-85D5-6C3D960C44AE`) rebuilt through upgraded pipeline:
+  - Generated `build/real-bubble-universal-intel/universal-gameplay-intelligence.json`.
+  - Current artifact summary: `regions=120`, `interactables=500`, `economySignals=600`, `actionRecords=180`, `workflowCandidates=30`.
+  - Runtime/gameplay/causality remain intentionally unverified pending live testing.
+

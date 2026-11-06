@@ -23,6 +23,10 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(result["integrity"]["objects"],2)
             self.assertEqual(result["features"][0]["status"],"interaction-observed")
             self.assertFalse(result["releaseGate"]["gameplayAutomationApproved"])
+            discovery=result["universalDiscovery"]
+            self.assertEqual(discovery["schemaVersion"],"30.7.universal-discovery.1")
+            self.assertIn("summary",discovery)
+            self.assertIn("interactables",discovery)
 
     def test_local_source_provenance_binds_exact_current_part_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,6 +57,37 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(result["actionableObjectCount"],1)
             self.assertFalse(result["actionableObjectsTruncated"])
             self.assertEqual(result["actionableObjects"][0]["interaction"]["objectText"],"Rainbow Egg")
+
+    def test_universal_discovery_extracts_interactable_and_state_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            event={"path":"Workspace.Egg.Prompt","controlType":"ProximityPrompt.Triggered",
+                "featureCandidate":"pets","evidenceLevel":"temporal-state-change-observed",
+                "outcomeVerified":False,
+                "stateChanges":[{"key":"leaderstats.Coins","before":100,"after":90}]}
+            self.parts(path,event=event)
+            first=json.loads((path/"1.json").read_text())
+            first["scanStats"]["recorded"]=3
+            first["objects"]=[
+                {"path":"Workspace.Egg.Prompt","class":"ProximityPrompt","scanOrdinal":1,
+                    "interaction":{"actionText":"Hatch","objectText":"Rainbow Egg",
+                        "holdDuration":0,"maxActivationDistance":10,
+                        "anchorPath":"Workspace.Egg","anchorPosition":{"x":1,"y":2,"z":3}}},
+                {"path":"Workspace.Worlds.Overworld.ShopDoor","class":"Part",
+                    "scanOrdinal":2,"position":{"x":10,"y":15,"z":20},
+                    "attributes":{"Cost":5000}},
+            ]
+            (path/"1.json").write_text(json.dumps(first))
+            result=compiler.compile_scan(path)
+            discovery=result["universalDiscovery"]
+            self.assertGreaterEqual(len(discovery["interactables"]),1)
+            self.assertEqual(discovery["interactables"][0]["mechanism"],"proximity_prompt")
+            self.assertEqual(discovery["interactables"][0]["position"],{"x":1.0,"y":2.0,"z":3.0})
+            self.assertGreaterEqual(len(discovery["regions"]),1)
+            self.assertTrue(any(item["classification"]=="requirement_or_cost_signal"
+                for item in discovery["economySignals"]))
+            self.assertTrue(any(item["key"]=="leaderstats.Coins"
+                for item in discovery["stateChangeSignals"]))
 
     def test_interaction_path_identity_is_validated_and_preserved(self):
         identity=[{"name":"Workspace","className":"Workspace","ordinal":1},
