@@ -33,7 +33,7 @@ def validate_lua(lua,place_id):
         raise ValueError("Missing place guard")
     required=('local Players = game:GetService("Players")',
               'LycolesGeneratedClose','gui:Destroy()',
-              'button("Stats"','button("Menus"','button("Prompts"','button("Features"')
+              'button("Stats"','button("Menus"','button("Prompts"','button("Gameplay"')
     for token in required:
         if token not in lua: raise ValueError("Missing generated component: "+token)
     # These must not appear in a diagnostic-only build, including comments.
@@ -505,7 +505,7 @@ def build_manifest_readiness(manifest_path,output):
 
 def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
           audit_path=None,prompt_feedback_path=None,guided_feedback_path=None,
-          guided_feedback_paths=None):
+          guided_feedback_paths=None,requested_capability=None):
     parts_path=pathlib.Path(parts_dir)
     if parts_path.is_file():
         return build_manifest_readiness(parts_path,output)
@@ -519,6 +519,14 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         observations=[compiler.compile_scan(folder) for folder in observation_dirs]
         plan=merger.merge_evidence(plan,observations)
     evidence_overlays=plan.get("evidenceOverlays",[])
+    if requested_capability is not None:
+        if (not isinstance(requested_capability,str) or not requested_capability
+                or len(requested_capability.encode("utf-8"))>240
+                or requested_capability!=requested_capability.strip()
+                or any(ord(character)<32 for character in requested_capability)):
+            raise ValueError("Malformed requested capability override")
+        plan["requestedCapability"]=requested_capability
+
     overlay_provenance={
         "schemaVersion":"30.3.evidence-overlay-provenance.1",
         "baselineScanId":plan["integrity"]["scanId"],
@@ -781,7 +789,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
-        "implementedClientControls":["Stats","Menus","Prompts","Features","Admin Commands"]+
+        "implementedClientControls":["Stats","Menus","Prompts","Gameplay","Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
             (["Tool Activation Trial"] if tool_trial_generated else [])+
             (["Guided GUI Trial"] if gui_trial_generated else [])+
@@ -834,7 +842,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
-          "This release contains client-side diagnostics and, when evidence permits, bounded prompt, official Tool, or user-mediated guided GUI trials.\n"
+          "This release contains client-side gameplay-assistance controls and, when evidence permits, bounded prompt, official Tool, or user-mediated guided GUI trials.\n"
           "Baseline source input: "+source_provenance["inputMode"]+".\n"
           "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
           "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
@@ -895,10 +903,13 @@ def main():
     parser.add_argument("--guided-feedback",action="append",default=[],
         help="Generated guided workflow feedback (v115 schema); repeatable")
     parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
+    parser.add_argument("--requested-capability",default=None,
+        help="Optional requested capability override used for readiness/generation scoring")
     args=parser.parse_args()
     try:
         result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
-            args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback)
+            args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback,
+            requested_capability=args.requested_capability)
         schema = result.get("schemaVersion")
         if isinstance(schema, str) and schema.startswith("109.manifest-readiness."):
             print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)

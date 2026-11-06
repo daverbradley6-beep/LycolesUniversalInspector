@@ -68,6 +68,7 @@ class ReleaseBuilderTests(unittest.TestCase):
             manifest=builder.build(parts,base/"out")
             self.assertTrue(manifest["promptInteractionTrial"]["generated"])
             self.assertTrue(manifest["promptInteractionTrial"]["automaticMovement"])
+            self.assertIn("Gameplay",manifest["implementedClientControls"])
             self.assertFalse(manifest["promptInteractionTrial"]["gameplayVerified"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["artifact"])

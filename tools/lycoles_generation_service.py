@@ -396,7 +396,11 @@ class EvidenceProcessor:
         if request.evidence_kind != "parts_dir":
             raise ValueError("Unsupported evidence kind")
 
-        manifest = self._build_release.build(request.evidence_path, output_dir)
+        manifest = self._build_release.build(
+            request.evidence_path,
+            output_dir,
+            requested_capability=request.requested_capability,
+        )
         readiness_path = output_dir / "generation-readiness.json"
         script_path = output_dir / "LycolesGeneratedUtility.lua"
         generation_readiness = json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.exists() else None

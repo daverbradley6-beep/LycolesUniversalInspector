@@ -1,0 +1,932 @@
+{
+  "automationOpportunities": [
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "structural_candidate",
+      "id": "boss_encounters",
+      "implementationReady": false,
+      "label": "Boss or arena encounters",
+      "liveVerified": false,
+      "observedActionIds": [],
+      "status": "insufficient_interaction_evidence"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "failure_outcomes",
+        "interaction_mechanism",
+        "live_failure_validation",
+        "permitted_action_contract",
+        "resource_requirement",
+        "selected_target_identity"
+      ],
+      "evidenceTier": "temporal_state_correlation",
+      "id": "commerce",
+      "implementationReady": false,
+      "label": "Purchasing and exchange",
+      "liveVerified": false,
+      "observedActionIds": [
+        "purchase"
+      ],
+      "status": "blocked_pending_action_contract"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "failure_outcomes",
+        "interaction_mechanism",
+        "live_failure_validation",
+        "mode_semantics",
+        "navigation_contract",
+        "observable_result",
+        "permitted_action_contract",
+        "resource_requirement",
+        "selected_target_identity"
+      ],
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "id": "companion_collection",
+      "implementationReady": false,
+      "label": "Companions and collectible entities",
+      "liveVerified": false,
+      "observedActionIds": [
+        "hatch"
+      ],
+      "status": "blocked_pending_action_contract"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "temporal_state_correlation",
+      "id": "item_management",
+      "implementationReady": false,
+      "label": "Inventory and equipment",
+      "liveVerified": false,
+      "observedActionIds": [],
+      "status": "insufficient_interaction_evidence"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "structural_candidate",
+      "id": "navigation",
+      "implementationReady": false,
+      "label": "World traversal and area access",
+      "liveVerified": false,
+      "observedActionIds": [],
+      "status": "insufficient_interaction_evidence"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "structural_candidate",
+      "id": "prestige_progression",
+      "implementationReady": false,
+      "label": "Reset-based progression",
+      "liveVerified": false,
+      "observedActionIds": [],
+      "status": "insufficient_interaction_evidence"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "interaction_mechanism",
+        "live_failure_validation",
+        "observable_result",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "id": "resource_progression",
+      "implementationReady": false,
+      "label": "Repeatable stat or resource progression",
+      "liveVerified": false,
+      "observedActionIds": [
+        "craft"
+      ],
+      "status": "blocked_pending_action_contract"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "interaction_mechanism",
+        "live_failure_validation",
+        "observable_result",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "id": "reward_collection",
+      "implementationReady": false,
+      "label": "Repeatable and milestone rewards",
+      "liveVerified": false,
+      "observedActionIds": [
+        "claim"
+      ],
+      "status": "blocked_pending_action_contract"
+    },
+    {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "structural_candidate",
+      "id": "task_progression",
+      "implementationReady": false,
+      "label": "Tasks and objective progression",
+      "liveVerified": false,
+      "observedActionIds": [],
+      "status": "insufficient_interaction_evidence"
+    }
+  ],
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "primaryObjectiveVerified": false,
+    "replayable": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "evidenceGaps": [
+    {
+      "category": "generation-contract",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "clean_stop_behavior",
+      "implementationReady": false,
+      "liveObservationRequired": false,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "boss_encounters",
+        "commerce",
+        "companion_collection",
+        "item_management",
+        "navigation",
+        "prestige_progression",
+        "resource_progression",
+        "reward_collection",
+        "task_progression"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "failure_outcomes",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "commerce",
+        "companion_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "interaction_mechanism",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "commerce",
+        "companion_collection",
+        "resource_progression",
+        "reward_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "live-validation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "live_failure_validation",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "boss_encounters",
+        "commerce",
+        "companion_collection",
+        "item_management",
+        "navigation",
+        "prestige_progression",
+        "resource_progression",
+        "reward_collection",
+        "task_progression"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "mode_semantics",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "companion_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "navigation_contract",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "companion_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "observable_result",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "companion_collection",
+        "resource_progression",
+        "reward_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "observed_interaction_evidence",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "boss_encounters",
+        "item_management",
+        "navigation",
+        "prestige_progression",
+        "task_progression"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "operator-review",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "permitted_action_contract",
+      "implementationReady": false,
+      "liveObservationRequired": false,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "boss_encounters",
+        "commerce",
+        "companion_collection",
+        "item_management",
+        "navigation",
+        "prestige_progression",
+        "resource_progression",
+        "reward_collection",
+        "task_progression"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "resource_requirement",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "commerce",
+        "companion_collection"
+      ],
+      "status": "unresolved"
+    },
+    {
+      "category": "client-observation",
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "id": "selected_target_identity",
+      "implementationReady": false,
+      "liveObservationRequired": true,
+      "requestRelevant": false,
+      "runtimeVerified": false,
+      "sourceAuthenticityVerified": false,
+      "sourceOpportunityIds": [
+        "commerce",
+        "companion_collection"
+      ],
+      "status": "unresolved"
+    }
+  ],
+  "genre": null,
+  "limitations": [
+    "Client-visible evidence only",
+    "Names are structural candidates, not mechanics",
+    "Temporal state changes do not prove causality",
+    "No server-only information or remote payload inference",
+    "Automation requires a permitted reviewed action contract and live failure validation"
+  ],
+  "mechanicCandidates": [
+    {
+      "actionIds": [
+        "hatch"
+      ],
+      "automationPotential": "bounded-trial-candidate",
+      "benefit": "Acquire companions/items to improve progression and unlock systems",
+      "benefitScore": 85,
+      "category": "progression",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "egg_hatching_progression",
+      "label": "Companion or egg hatching progression",
+      "multiStepPotential": true,
+      "prerequisites": [
+        "selected_target_identity",
+        "resource_requirement",
+        "hatch_result_observation",
+        "failure_outcomes"
+      ],
+      "rank": 1,
+      "resourceIds": [],
+      "resourceLabels": [],
+      "runtimeVerified": false,
+      "status": "candidate_with_observed_interaction",
+      "systemIds": [
+        "companion_collection",
+        "commerce"
+      ]
+    },
+    {
+      "actionIds": [
+        "claim"
+      ],
+      "automationPotential": "bounded-trial-candidate",
+      "benefit": "Claim recurring rewards to accelerate progression",
+      "benefitScore": 85,
+      "category": "progression",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "reward_collection_cycle",
+      "label": "Reward collection cycle",
+      "multiStepPotential": true,
+      "prerequisites": [
+        "selected_target_identity",
+        "interaction_mechanism",
+        "failure_outcomes"
+      ],
+      "rank": 2,
+      "resourceIds": [],
+      "resourceLabels": [],
+      "runtimeVerified": false,
+      "status": "candidate_with_observed_interaction",
+      "systemIds": [
+        "reward_collection",
+        "task_progression"
+      ]
+    },
+    {
+      "actionIds": [],
+      "automationPotential": "evidence-only",
+      "benefit": "Reset-based progression routing for long-term gains",
+      "benefitScore": 25,
+      "category": "progression",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "rebirth_cycle",
+      "label": "Rebirth or prestige cycle",
+      "multiStepPotential": true,
+      "prerequisites": [
+        "resource_requirement",
+        "selected_target_identity",
+        "failure_outcomes"
+      ],
+      "rank": 3,
+      "resourceIds": [],
+      "resourceLabels": [],
+      "runtimeVerified": false,
+      "status": "insufficient_interaction_evidence",
+      "systemIds": [
+        "prestige_progression",
+        "resource_progression"
+      ]
+    },
+    {
+      "actionIds": [],
+      "automationPotential": "evidence-only",
+      "benefit": "Move between gameplay areas required for progression chains",
+      "benefitScore": 25,
+      "category": "navigation",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "travel_progression",
+      "label": "Travel and world progression",
+      "multiStepPotential": true,
+      "prerequisites": [
+        "selected_target_identity",
+        "navigation_contract",
+        "arrival_observation"
+      ],
+      "rank": 4,
+      "resourceIds": [],
+      "resourceLabels": [],
+      "runtimeVerified": false,
+      "status": "insufficient_interaction_evidence",
+      "systemIds": [
+        "navigation"
+      ]
+    }
+  ],
+  "model": "composable_capabilities",
+  "objectiveCandidates": [
+    {
+      "classification": "objective_candidate",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "id": "objective_collection_progression_ec24e4c93de8",
+      "kind": "collection_progression",
+      "label": "Acquire collectible companions or items",
+      "primaryObjectiveVerified": false,
+      "rank": 1,
+      "targetIds": [
+        "companion_collection"
+      ]
+    },
+    {
+      "classification": "objective_candidate",
+      "evidenceTier": "temporal_state_correlation",
+      "id": "objective_resource_accumulation_ae93fac233a5",
+      "kind": "resource_accumulation",
+      "label": "Accumulate Bubbles",
+      "primaryObjectiveVerified": false,
+      "rank": 2,
+      "targetIds": [
+        "resource_bubbles_20ae0afcd0fa"
+      ]
+    },
+    {
+      "classification": "objective_candidate",
+      "evidenceTier": "temporal_state_correlation",
+      "id": "objective_resource_accumulation_45f3fde48f53",
+      "kind": "resource_accumulation",
+      "label": "Accumulate Hatches",
+      "primaryObjectiveVerified": false,
+      "rank": 3,
+      "targetIds": [
+        "resource_hatches_fe0fa05b82ab"
+      ]
+    }
+  ],
+  "observedActions": [
+    {
+      "causalityProven": false,
+      "classification": "observed_client_interaction",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "claim",
+      "interactionCount": 12,
+      "interactionMechanismVerified": false,
+      "observedPaths": [
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.HUD.Right.Season.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 11.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 12.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 13.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 14.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 15.Action.Button"
+      ],
+      "replayable": false,
+      "resourceEffects": [],
+      "role": "collect_reward",
+      "sourceFeatures": [
+        "rewards"
+      ]
+    },
+    {
+      "causalityProven": false,
+      "classification": "observed_client_interaction",
+      "evidenceTier": "interaction_observed",
+      "gameplayVerified": false,
+      "id": "craft",
+      "interactionCount": 9,
+      "interactionMechanismVerified": false,
+      "observedPaths": [
+        "LocalPlayer.PlayerGui.ScreenGui.Potions.Frame.Inner.Details.Main.Buttons.CraftAll.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Bubbles/1.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Luck/1.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Luck/2.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Luck/3.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Secret/1.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Secret/2.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.RuneCrafting.Frame.Inner.Main.ScrollingFrame.Secret/3.Button"
+      ],
+      "replayable": false,
+      "resourceEffects": [],
+      "role": "transform_item",
+      "sourceFeatures": [
+        "progression"
+      ]
+    },
+    {
+      "causalityProven": false,
+      "classification": "observed_client_interaction",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "hatch",
+      "interactionCount": 1,
+      "interactionMechanismVerified": false,
+      "observedPaths": [
+        "Workspace.Rendered.Chunker.Showman Egg.Prompt.ProximityPrompt"
+      ],
+      "replayable": false,
+      "resourceEffects": [
+        {
+          "directions": [
+            "increase"
+          ],
+          "resource": "Hatches",
+          "resourceId": "resource_hatches_fe0fa05b82ab"
+        }
+      ],
+      "role": "acquire_item",
+      "sourceFeatures": [
+        "pets"
+      ]
+    },
+    {
+      "causalityProven": false,
+      "classification": "observed_client_interaction",
+      "evidenceTier": "interaction_observed",
+      "gameplayVerified": false,
+      "id": "purchase",
+      "interactionCount": 15,
+      "interactionMechanismVerified": false,
+      "observedPaths": [
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Inner.List.Lemon.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Inner.List.Molten.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Inner.List.Swirl.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Inner.List.Void Gum.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Tray.Flavors.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Tray.Gum.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.ItemShop.Frame.Main.ScrollingFrame.Item1.Buttons.BuyAll.Button"
+      ],
+      "replayable": false,
+      "resourceEffects": [],
+      "role": "spend_resource",
+      "sourceFeatures": [
+        "shops"
+      ]
+    }
+  ],
+  "placeId": 85896571713843,
+  "profileIndex": {
+    "automationOpportunityIds": [
+      "boss_encounters",
+      "commerce",
+      "companion_collection",
+      "item_management",
+      "navigation",
+      "prestige_progression",
+      "resource_progression",
+      "reward_collection",
+      "task_progression"
+    ],
+    "evidenceGapIds": [
+      "clean_stop_behavior",
+      "failure_outcomes",
+      "interaction_mechanism",
+      "live_failure_validation",
+      "mode_semantics",
+      "navigation_contract",
+      "observable_result",
+      "observed_interaction_evidence",
+      "permitted_action_contract",
+      "resource_requirement",
+      "selected_target_identity"
+    ],
+    "gameplayVerified": false,
+    "implementationReady": false,
+    "mechanicCandidateIds": [
+      "egg_hatching_progression",
+      "rebirth_cycle",
+      "reward_collection_cycle",
+      "travel_progression"
+    ],
+    "model": "provider-independent-composable-profile",
+    "objectiveIds": [
+      "objective_collection_progression_ec24e4c93de8",
+      "objective_resource_accumulation_45f3fde48f53",
+      "objective_resource_accumulation_ae93fac233a5"
+    ],
+    "observedActionIds": [
+      "claim",
+      "craft",
+      "hatch",
+      "purchase"
+    ],
+    "omittedSystemCandidates": 0,
+    "progressionLoopIds": [],
+    "relationshipIds": [
+      "relationship_0000"
+    ],
+    "resourceIds": [
+      "resource_bubbles_20ae0afcd0fa",
+      "resource_hatches_fe0fa05b82ab"
+    ],
+    "runtimeVerified": false,
+    "schemaVersion": "110.game-profile-index.1",
+    "singleGenreAssumed": false,
+    "systemIds": [
+      "boss_encounters",
+      "commerce",
+      "companion_collection",
+      "item_management",
+      "navigation",
+      "prestige_progression",
+      "resource_progression",
+      "reward_collection",
+      "task_progression"
+    ],
+    "systemInventoryTruncated": false
+  },
+  "progressionLoops": [],
+  "progressionRelationships": [
+    {
+      "causalityProven": false,
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "id": "relationship_0000",
+      "relationship": "temporally_followed_by_increase",
+      "sourceId": "hatch",
+      "sourceType": "observed_action",
+      "targetId": "resource_hatches_fe0fa05b82ab",
+      "targetLabel": "Hatches",
+      "targetType": "observable_resource"
+    }
+  ],
+  "requestedCapabilityAssessment": null,
+  "resources": [
+    {
+      "authority": "client_visible",
+      "causalityProven": false,
+      "classification": "observable_resource_candidate",
+      "gameplayVerified": false,
+      "id": "resource_bubbles_20ae0afcd0fa",
+      "identityMode": "component-resolved",
+      "name": "Bubbles",
+      "observationCount": 28,
+      "observedActions": [],
+      "observedDirections": [
+        "increase"
+      ],
+      "sourceFeatures": [
+        "inventory",
+        "progression",
+        "rewards"
+      ],
+      "sourceKeys": [
+        "leaderstats.🟣 Bubbles"
+      ],
+      "stateIdentity": [
+        {
+          "className": "Folder",
+          "name": "leaderstats",
+          "ordinal": 1
+        },
+        {
+          "className": "IntValue",
+          "name": "🟣 Bubbles",
+          "ordinal": 1
+        }
+      ]
+    },
+    {
+      "authority": "client_visible",
+      "causalityProven": false,
+      "classification": "observable_resource_candidate",
+      "gameplayVerified": false,
+      "id": "resource_hatches_fe0fa05b82ab",
+      "identityMode": "component-resolved",
+      "name": "Hatches",
+      "observationCount": 3,
+      "observedActions": [
+        "hatch"
+      ],
+      "observedDirections": [
+        "increase"
+      ],
+      "sourceFeatures": [
+        "pets",
+        "shops"
+      ],
+      "sourceKeys": [
+        "leaderstats.🥚 Hatches"
+      ],
+      "stateIdentity": [
+        {
+          "className": "Folder",
+          "name": "leaderstats",
+          "ordinal": 1
+        },
+        {
+          "className": "IntValue",
+          "name": "🥚 Hatches",
+          "ordinal": 1
+        }
+      ]
+    }
+  ],
+  "scanId": "AC79D385-BCB0-4928-85D5-6C3D960C44AE",
+  "schemaVersion": "110.gameplay-understanding.2",
+  "summary": {
+    "evidenceGaps": 11,
+    "implementationReadyOpportunities": 0,
+    "mechanicCandidates": 4,
+    "objectiveCandidates": 3,
+    "observedActions": 4,
+    "omittedSystemCandidates": 0,
+    "progressionLoops": 0,
+    "progressionRelationships": 1,
+    "requestRelevantEvidenceGaps": 0,
+    "resources": 2,
+    "systems": 9,
+    "topAutomationMechanic": "egg_hatching_progression"
+  },
+  "systems": [
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "boss_encounters",
+      "label": "Boss or arena encounters",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0,
+      "sourceFeatures": [
+        "bosses"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "temporal_state_correlation",
+      "gameplayVerified": false,
+      "id": "commerce",
+      "label": "Purchasing and exchange",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 23,
+      "sourceFeatures": [
+        "shops"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "companion_collection",
+      "label": "Companions and collectible entities",
+      "observableOutcomeCandidates": 1,
+      "observedInteractions": 16,
+      "sourceFeatures": [
+        "pets"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "temporal_state_correlation",
+      "gameplayVerified": false,
+      "id": "item_management",
+      "label": "Inventory and equipment",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 45,
+      "sourceFeatures": [
+        "inventory"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "navigation",
+      "label": "World traversal and area access",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0,
+      "sourceFeatures": [
+        "travel"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "prestige_progression",
+      "label": "Reset-based progression",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0,
+      "sourceFeatures": [
+        "rebirth"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "resource_progression",
+      "label": "Repeatable stat or resource progression",
+      "observableOutcomeCandidates": 2,
+      "observedInteractions": 52,
+      "sourceFeatures": [
+        "progression"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "observable_outcome_candidate_unverified",
+      "gameplayVerified": false,
+      "id": "reward_collection",
+      "label": "Repeatable and milestone rewards",
+      "observableOutcomeCandidates": 10,
+      "observedInteractions": 15,
+      "sourceFeatures": [
+        "rewards"
+      ],
+      "systemVerified": false
+    },
+    {
+      "causalityProven": false,
+      "classification": "composable_system_candidate",
+      "evidenceTier": "structural_candidate",
+      "gameplayVerified": false,
+      "id": "task_progression",
+      "label": "Tasks and objective progression",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0,
+      "sourceFeatures": [
+        "quests"
+      ],
+      "systemVerified": false
+    }
+  ]
+}

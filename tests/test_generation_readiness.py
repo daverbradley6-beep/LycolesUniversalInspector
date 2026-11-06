@@ -195,6 +195,22 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertIn("require the user to activate",result["request"]["supportedSubset"][1])
         self.assertEqual(result["discoveryOnlyCapabilities"],[])
 
+    def test_ui_only_request_is_blocked_as_not_meaningful_gameplay(self):
+        value={"integrity":{"scanComplete":True,"placeId":791,"scanId":"ui-only-scan"},
+            "requestedCapability":"Open inventory menu tab",
+            "features":[feature("inventory",1,0)],
+            "actionableObjects":[],
+            "observedInteractionHistory":[{"path":"PlayerGui.HUD.Inventory.TabButton",
+                "controlType":"GuiButton.Activated","featureCandidate":"inventory",
+                "outcomeVerified":False,"stateChanges":[],
+                "workflow":{"phase":"initiated","action":"open",
+                    "confidence":"bounded-name-context-heuristic","verified":False}}]}
+        result=assess(value)
+        readiness_block=result["requestFeatureReadiness"]
+        self.assertIn("no_meaningful_gameplay_feature_matches",
+                      readiness_block["explicitBlockers"])
+        self.assertEqual(readiness_block["summary"]["meaningfulGameplayFeatureMatches"],0)
+
     def test_request_aligned_review_only_gui_transitions_surface_specific_blocker(self):
         value={"integrity":{"scanComplete":True,"placeId":790,"scanId":"gui-review-only"},
             "requestedCapability":"Open training panel","features":[feature("training",1,1)],

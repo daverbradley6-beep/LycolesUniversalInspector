@@ -427,13 +427,28 @@ def _request_feature_matches(plan,request_words):
         status=feature.get("status")
         if not isinstance(status,str) or not 1<=len(status)<=120:
             raise ValueError("compiled plan has malformed feature evidence")
+        gameplay_tokens={"hatch","egg","sell","shop","reward","claim","rebirth",
+            "upgrade","travel","teleport","quest","battle","combat","pet",
+            "farm","bubble","craft","enchant","currency"}
+        ui_tokens={"menu","inventory","ui","screen","tab","button","frame"}
+        feature_tokens=_tokens(name)
+        gameplay_score=0
+        if feature_tokens&gameplay_tokens:
+            gameplay_score+=20
+        if feature_tokens&ui_tokens and not feature_tokens&gameplay_tokens:
+            gameplay_score-=8
+        gameplay_score+=4*counts["observableOutcomeCandidates"]
+        gameplay_score+=3*counts["featureStateCorrelations"]
+        gameplay_score+=2*counts["interactionEvents"]
         values.append({"feature":name,"status":status,
             "evidenceClassification":_FEATURE_EVIDENCE_CLASSIFICATION.get(
                 status,"unrecognized-feature-status"),
             "matchedTerms":matched_terms,**counts,
+            "gameplayPriorityScore":gameplay_score,
             "tokenEvidenceOnly":True,"implementationReady":False})
-    values.sort(key=lambda item:(-item["observableOutcomeCandidates"],
-        -item["featureStateCorrelations"],-item["interactionEvents"],item["feature"]))
+    values.sort(key=lambda item:(-item["gameplayPriorityScore"],
+        -item["observableOutcomeCandidates"],-item["featureStateCorrelations"],
+        -item["interactionEvents"],item["feature"]))
     return values
 
 
@@ -486,6 +501,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
     feature_matches=_request_feature_matches(plan,set(request_words))
     review_only_gui=_review_only_gui_request_evidence(actions,request_words)
     feature_values=feature_matches[:32]
+    meaningful_feature_matches=sum(item.get("gameplayPriorityScore",0)>0 for item in feature_matches)
     gameplay_systems=gameplay_request.get("matchedSystems",[]) if isinstance(gameplay_request,dict) else []
     gameplay_actions=(gameplay_request.get("matchedObservedActions",[])
         if isinstance(gameplay_request,dict) else [])
@@ -521,6 +537,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         blockers.extend("discovery-only:"+item["family"] for item in discovery_only)
         if not matched_generated:blockers.append("bounded_generated_contract_unavailable")
         if not feature_values:blockers.append("no_request_feature_token_overlap")
+        if meaningful_feature_matches==0:blockers.append("no_meaningful_gameplay_feature_matches")
         if execution_ready_workflows==0:blockers.append("no_execution_ready_workflow_candidates")
         if (not matched_generated and request_aligned_review_only_gui>0):
             blockers.append("request_aligned_gui_transition_outcomes_without_scalar_contract")
@@ -549,6 +566,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "generatedCapabilityCount":len(generated_ids)},
         "explicitBlockers":blockers,
         "summary":{"matchedFeatures":len(feature_values),
+            "meaningfulGameplayFeatureMatches":meaningful_feature_matches,
             "matchedSystems":len(gameplay_systems),
             "matchedObservedActions":len(gameplay_actions),
             "matchedResources":len(gameplay_resources),

@@ -73,6 +73,12 @@ class GameplayUnderstandingTests(unittest.TestCase):
         objective_kinds={item["kind"] for item in result["objectiveCandidates"]}
         self.assertIn("resource_accumulation",objective_kinds)
         self.assertIn("collection_progression",objective_kinds)
+        self.assertGreaterEqual(len(result["mechanicCandidates"]),2)
+        self.assertEqual(result["summary"]["topAutomationMechanic"],
+                         result["mechanicCandidates"][0]["id"])
+        mechanic_ids={item["id"] for item in result["mechanicCandidates"]}
+        self.assertIn("resource_conversion",mechanic_ids)
+        self.assertIn("mechanicCandidateIds",result["profileIndex"])
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertFalse(result["claims"]["gameplayVerified"])
 

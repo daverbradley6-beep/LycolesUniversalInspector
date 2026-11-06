@@ -2,6 +2,42 @@
 
 
 
+## Update — 2026-11-06 — Gameplay-first generation architecture pass
+
+- Refocused generated utility behavior from diagnostic-only tabs toward gameplay-action execution while preserving safety boundaries.
+  - `tools/generate_script.py` now builds an evidence-ranked action target list from observed interaction history plus generated capability targets.
+  - Generated utility adds `Gameplay` control with runtime execution attempts against evidence-backed GUI/ProximityPrompt targets.
+  - Uses bounded client-side activation only (`fireproximityprompt` or virtual input fallback); no server remote fabrication.
+- Added gameplay-mechanics modeling in `tools/understand_gameplay.py`:
+  - New `mechanicCandidates` inventory with ranking (`benefitScore`, `rank`) and categories (farming, progression, navigation, combat).
+  - Added profile index linkage (`mechanicCandidateIds`) and summary fields (`mechanicCandidates`, `topAutomationMechanic`).
+- Improved feature-readiness prioritization in `tools/assess_generation_readiness.py`:
+  - Request feature matching now computes `gameplayPriorityScore` and prefers gameplay-relevant mechanics over UI-only matches.
+  - Added explicit blocker `no_meaningful_gameplay_feature_matches`.
+  - Added summary field `meaningfulGameplayFeatureMatches`.
+- Fixed requested-capability propagation so pipeline requests actually affect readiness/generation:
+  - `tools/build_release.py` now supports `requested_capability` override (API + CLI `--requested-capability`) with validation.
+  - `tools/lycoles_generation_service.py` now forwards `GenerationRequest.requested_capability` into `build_release.build(...)`.
+- Release metadata updated:
+  - `implementedClientControls` now uses `Gameplay` instead of `Features`.
+  - README wording updated from diagnostics-first to gameplay-assistance controls.
+- Real Bubble Gum dataset regeneration after these changes:
+  - no-request run produced gameplay-first utility artifact with evidence-ranked targets;
+  - request run (`Automatically hatch eggs and claim rewards`) now correctly reports `generated-bounded-subset` instead of `no-capability-requested`.
+- New tracked artifacts:
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_v2.lua`
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_Requested_v2.lua`
+  - `generated/live/BubbleGumInfinity_gameplay-understanding_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_gameplay-first_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_requested_v2.json`
+  - `generated/live/BubbleGumInfinity_release-manifest_requested_v2.json`
+- Validation:
+  - Full Python suite: **1601 tests passed**.
+  - Node parser suite: passed.
+  - Luau syntax checks passed for new gameplay-first artifacts.
+
+
+
 ## Update — 2026-11-06 — Real Bubble Gum dataset processed end-to-end
 
 - Retrieved and verified real inspection archive from `main`:

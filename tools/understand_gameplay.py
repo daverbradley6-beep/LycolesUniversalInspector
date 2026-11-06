@@ -414,6 +414,170 @@ def _objectives(systems,resources,actions):
     return objectives
 
 
+
+
+def _max_tier(values):
+    valid=[value for value in values if value in TIER_ORDER]
+    return max(valid,key=lambda value:TIER_ORDER[value]) if valid else "structural_candidate"
+
+
+def _mechanic_candidates(systems,actions,resources,loops):
+    systems_by_id={item["id"]:item for item in systems}
+    resources_by_id={item["id"]:item for item in resources}
+    action_by_id={item["id"]:item for item in actions}
+
+    def action_ids_for(*roles):
+        return sorted(item["id"] for item in actions if item["role"] in roles)
+
+    def resource_ids_from(action_ids,directions):
+        values=set()
+        for action_id in action_ids:
+            action=action_by_id.get(action_id)
+            if not action:
+                continue
+            for effect in action["resourceEffects"]:
+                if any(direction in effect["directions"] for direction in directions):
+                    values.add(effect["resourceId"])
+        return sorted(values)
+
+    candidates=[]
+
+    farming_actions=action_ids_for("generate_resource","collect_resource")
+    if farming_actions:
+        farm_resources=resource_ids_from(farming_actions,{"increase"})
+        candidates.append({"id":"resource_farming","category":"farming",
+            "label":"Resource generation loop","benefit":"Automate repeated resource gain interactions",
+            "systemIds":[identifier for identifier in ("resource_progression",) if identifier in systems_by_id],
+            "actionIds":farming_actions,"resourceIds":farm_resources,
+            "resourceLabels":[resources_by_id[value]["name"] for value in farm_resources if value in resources_by_id],
+            "prerequisites":["selected_target_identity","interaction_mechanism","failure_outcomes"],
+            "multiStepPotential":bool(any(loop["id"]=="accumulate_and_convert" for loop in loops)),
+            "automationPotential":"bounded-trial-candidate",
+            "evidenceTier":_max_tier([action_by_id[value]["evidenceTier"] for value in farming_actions]),
+            "status":"candidate_with_observed_interaction",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    conversion_actions=action_ids_for("convert_resource")
+    if conversion_actions:
+        outputs=resource_ids_from(conversion_actions,{"increase"})
+        candidates.append({"id":"resource_conversion","category":"progression",
+            "label":"Sell or convert resources","benefit":"Turn farmed resources into progression currency",
+            "systemIds":[identifier for identifier in ("commerce","resource_progression") if identifier in systems_by_id],
+            "actionIds":conversion_actions,"resourceIds":outputs,
+            "resourceLabels":[resources_by_id[value]["name"] for value in outputs if value in resources_by_id],
+            "prerequisites":["sell_location","capacity_state","interaction_mechanism","failure_outcomes"],
+            "multiStepPotential":True,"automationPotential":"bounded-trial-candidate",
+            "evidenceTier":_max_tier([action_by_id[value]["evidenceTier"] for value in conversion_actions]),
+            "status":"candidate_with_observed_interaction",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    hatch_actions=action_ids_for("acquire_item")
+    if hatch_actions or "companion_collection" in systems_by_id:
+        tiers=[action_by_id[value]["evidenceTier"] for value in hatch_actions]
+        if "companion_collection" in systems_by_id:
+            tiers.append(systems_by_id["companion_collection"]["evidenceTier"])
+        inventory_growth=[item["id"] for item in resources
+            if item["classification"]=="inventory_quantity_candidate"]
+        candidates.append({"id":"egg_hatching_progression","category":"progression",
+            "label":"Companion or egg hatching progression",
+            "benefit":"Acquire companions/items to improve progression and unlock systems",
+            "systemIds":[identifier for identifier in ("companion_collection","commerce") if identifier in systems_by_id],
+            "actionIds":hatch_actions,"resourceIds":inventory_growth,
+            "resourceLabels":[resources_by_id[value]["name"] for value in inventory_growth if value in resources_by_id],
+            "prerequisites":["selected_target_identity","resource_requirement","hatch_result_observation","failure_outcomes"],
+            "multiStepPotential":True,
+            "automationPotential":"bounded-trial-candidate" if hatch_actions else "evidence-only",
+            "evidenceTier":_max_tier(tiers),
+            "status":"candidate_with_observed_interaction" if hatch_actions else "insufficient_interaction_evidence",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    reward_actions=action_ids_for("collect_reward")
+    if reward_actions or "reward_collection" in systems_by_id:
+        tiers=[action_by_id[value]["evidenceTier"] for value in reward_actions]
+        if "reward_collection" in systems_by_id:
+            tiers.append(systems_by_id["reward_collection"]["evidenceTier"])
+        candidates.append({"id":"reward_collection_cycle","category":"progression",
+            "label":"Reward collection cycle",
+            "benefit":"Claim recurring rewards to accelerate progression",
+            "systemIds":[identifier for identifier in ("reward_collection","task_progression") if identifier in systems_by_id],
+            "actionIds":reward_actions,"resourceIds":resource_ids_from(reward_actions,{"increase"}),
+            "resourceLabels":[resources_by_id[value]["name"] for value in resource_ids_from(reward_actions,{"increase"}) if value in resources_by_id],
+            "prerequisites":["selected_target_identity","interaction_mechanism","failure_outcomes"],
+            "multiStepPotential":True,
+            "automationPotential":"bounded-trial-candidate" if reward_actions else "evidence-only",
+            "evidenceTier":_max_tier(tiers),
+            "status":"candidate_with_observed_interaction" if reward_actions else "insufficient_interaction_evidence",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    rebirth_actions=action_ids_for("prestige")
+    if rebirth_actions or "prestige_progression" in systems_by_id:
+        tiers=[action_by_id[value]["evidenceTier"] for value in rebirth_actions]
+        if "prestige_progression" in systems_by_id:
+            tiers.append(systems_by_id["prestige_progression"]["evidenceTier"])
+        candidates.append({"id":"rebirth_cycle","category":"progression",
+            "label":"Rebirth or prestige cycle",
+            "benefit":"Reset-based progression routing for long-term gains",
+            "systemIds":[identifier for identifier in ("prestige_progression","resource_progression") if identifier in systems_by_id],
+            "actionIds":rebirth_actions,"resourceIds":resource_ids_from(rebirth_actions,{"decrease","increase"}),
+            "resourceLabels":[resources_by_id[value]["name"] for value in resource_ids_from(rebirth_actions,{"decrease","increase"}) if value in resources_by_id],
+            "prerequisites":["resource_requirement","selected_target_identity","failure_outcomes"],
+            "multiStepPotential":True,
+            "automationPotential":"bounded-trial-candidate" if rebirth_actions else "evidence-only",
+            "evidenceTier":_max_tier(tiers),
+            "status":"candidate_with_observed_interaction" if rebirth_actions else "insufficient_interaction_evidence",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    travel_actions=action_ids_for("navigate")
+    if travel_actions or "navigation" in systems_by_id:
+        tiers=[action_by_id[value]["evidenceTier"] for value in travel_actions]
+        if "navigation" in systems_by_id:
+            tiers.append(systems_by_id["navigation"]["evidenceTier"])
+        candidates.append({"id":"travel_progression","category":"navigation",
+            "label":"Travel and world progression",
+            "benefit":"Move between gameplay areas required for progression chains",
+            "systemIds":[identifier for identifier in ("navigation",) if identifier in systems_by_id],
+            "actionIds":travel_actions,"resourceIds":[],"resourceLabels":[],
+            "prerequisites":["selected_target_identity","navigation_contract","arrival_observation"],
+            "multiStepPotential":True,
+            "automationPotential":"bounded-trial-candidate" if travel_actions else "evidence-only",
+            "evidenceTier":_max_tier(tiers),
+            "status":"candidate_with_observed_interaction" if travel_actions else "insufficient_interaction_evidence",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    combat_actions=action_ids_for("combat_action")
+    if combat_actions or "combat" in systems_by_id:
+        tiers=[action_by_id[value]["evidenceTier"] for value in combat_actions]
+        if "combat" in systems_by_id:
+            tiers.append(systems_by_id["combat"]["evidenceTier"])
+        candidates.append({"id":"combat_assist","category":"combat",
+            "label":"Combat interaction assist",
+            "benefit":"Assist repeated combat actions within client-visible constraints",
+            "systemIds":[identifier for identifier in ("combat",) if identifier in systems_by_id],
+            "actionIds":combat_actions,
+            "resourceIds":resource_ids_from(combat_actions,{"increase","decrease"}),
+            "resourceLabels":[resources_by_id[value]["name"] for value in resource_ids_from(combat_actions,{"increase","decrease"}) if value in resources_by_id],
+            "prerequisites":["target_identity","interaction_mechanism","game_restrictions"],
+            "multiStepPotential":False,
+            "automationPotential":"bounded-trial-candidate" if combat_actions else "evidence-only",
+            "evidenceTier":_max_tier(tiers),
+            "status":"candidate_with_observed_interaction" if combat_actions else "insufficient_interaction_evidence",
+            "runtimeVerified":False,"gameplayVerified":False})
+
+    for item in candidates:
+        item["benefitScore"]=sum((
+            40 if item["status"]=="candidate_with_observed_interaction" else 10,
+            15 if item["multiStepPotential"] else 0,
+            10 if item["automationPotential"]=="bounded-trial-candidate" else 0,
+            5*len(item["actionIds"]),
+            2*len(item["resourceIds"]),
+            5*TIER_ORDER.get(item["evidenceTier"],0),
+        ))
+
+    candidates.sort(key=lambda item:(-item["benefitScore"],-TIER_ORDER.get(item["evidenceTier"],0),item["id"]))
+    for index,item in enumerate(candidates,1):
+        item["rank"]=index
+    return candidates
+
 def _opportunities(systems,actions):
     values=[]
     for system in systems:
@@ -503,8 +667,8 @@ def _evidence_gaps(opportunities,request):
     return result
 
 
-def _profile_index(systems,resources,actions,relationships,loops,objectives,opportunities,gaps,
-        omitted_systems):
+def _profile_index(systems,resources,actions,relationships,loops,objectives,mechanics,
+        opportunities,gaps,omitted_systems):
     return {"schemaVersion":"110.game-profile-index.1",
         "model":"provider-independent-composable-profile","singleGenreAssumed":False,
         "systemInventoryTruncated":omitted_systems>0,
@@ -515,6 +679,7 @@ def _profile_index(systems,resources,actions,relationships,loops,objectives,oppo
         "relationshipIds":sorted(item["id"] for item in relationships),
         "progressionLoopIds":sorted(item["id"] for item in loops),
         "objectiveIds":sorted(item["id"] for item in objectives),
+        "mechanicCandidateIds":sorted(item["id"] for item in mechanics),
         "automationOpportunityIds":sorted(item["id"] for item in opportunities),
         "evidenceGapIds":sorted(item["id"] for item in gaps),
         "implementationReady":False,"runtimeVerified":False,"gameplayVerified":False}
@@ -539,20 +704,22 @@ def analyze(plan):
     relationships=_relationships(actions)
     loops=_loops(actions,resources)
     objectives=_objectives(systems,resources,actions)
+    mechanics=_mechanic_candidates(systems,actions,resources,loops)
     opportunities=_opportunities(systems,actions)
     request=_request(plan,systems,resources,actions,opportunities)
     gaps=_evidence_gaps(opportunities,request)
     profile=_profile_index(systems,resources,actions,relationships,loops,objectives,
-        opportunities,gaps,omitted_systems)
+        mechanics,opportunities,gaps,omitted_systems)
     result={"schemaVersion":SCHEMA_VERSION,"placeId":integrity["placeId"],
         "scanId":integrity["scanId"],"model":"composable_capabilities","genre":None,
-        "profileIndex":profile,"objectiveCandidates":objectives,"systems":systems,
-        "resources":resources,"observedActions":actions,
+        "profileIndex":profile,"objectiveCandidates":objectives,"mechanicCandidates":mechanics,
+        "systems":systems,"resources":resources,"observedActions":actions,
         "progressionRelationships":relationships,"progressionLoops":loops,
         "automationOpportunities":opportunities,"evidenceGaps":gaps,
         "requestedCapabilityAssessment":request,
-        "summary":{"objectiveCandidates":len(objectives),"systems":len(systems),
-            "omittedSystemCandidates":omitted_systems,
+        "summary":{"objectiveCandidates":len(objectives),"mechanicCandidates":len(mechanics),
+            "topAutomationMechanic":mechanics[0]["id"] if mechanics else None,
+            "systems":len(systems),"omittedSystemCandidates":omitted_systems,
             "resources":len(resources),"observedActions":len(actions),
             "progressionRelationships":len(relationships),"progressionLoops":len(loops),
             "evidenceGaps":len(gaps),"requestRelevantEvidenceGaps":sum(

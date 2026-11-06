@@ -241,3 +241,15 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - Source ZIP (main branch): `Lycoles_BubbleGum_Clean_Inspection.zip`
   - Scan identity: `scanId=AC79D385-BCB0-4928-85D5-6C3D960C44AE`, `placeId=85896571713843`, `partCount=1253`.
 - Real-data compatibility note: `compile_scan.py` now tolerates invalid interaction `pathIdentity` by dropping mismatched entries instead of aborting the full scan; this was required for the verified live dataset.
+- Gameplay-first generation refactor (2026-11-06): `generate_script.py` now emits a `Gameplay` tab with evidence-ranked action targets (`ACTION_TARGETS`) and bounded client-side activation attempts (`fireproximityprompt` for prompts, virtual input fallback for GUI buttons). Legacy `Features` tab is removed.
+- Safety compatibility constraint: do not reintroduce `firesignal(` in generated Lua; `test_build_release` enforces this.
+- `understand_gameplay.py` now outputs `mechanicCandidates` with ranked gameplay mechanics and publishes `summary.topAutomationMechanic`; profile index includes `mechanicCandidateIds`.
+- `assess_generation_readiness.py` now computes per-feature `gameplayPriorityScore`, reports `summary.meaningfulGameplayFeatureMatches`, and emits blocker `no_meaningful_gameplay_feature_matches` when request matches are UI-only/low-value.
+- Requested-capability propagation fix: `build_release.build(..., requested_capability=...)` can override compiled plan request (validated, fail-closed), and `lycoles_generation_service.EvidenceProcessor` now forwards `GenerationRequest.requested_capability` into `build_release.build`. This resolves prior `no-capability-requested` false negatives when pipeline callers supplied request text.
+- Latest gameplay-first real artifacts:
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_v2.lua`
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_Requested_v2.lua`
+  - `generated/live/BubbleGumInfinity_gameplay-understanding_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_gameplay-first_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_requested_v2.json`
+
