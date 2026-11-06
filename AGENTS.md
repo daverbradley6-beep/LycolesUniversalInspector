@@ -197,3 +197,16 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - `tools/controlled_admin_commands.py` executes actual `generate_admin_commands.py` output in bounded local stubs and verifies command/chat/GUI shared state, tracked cleanup, fly continuity across a simulated character replacement, deterministic output, and assertion-based place guarding. Its report must keep Roblox runtime, live-game, server-authority, and gameplay claims false.
 - `tools/controlled_gui_activation.py` executes actual guided interaction output in bounded stubs and verifies exact identity resolution, highlighting, official `Activated` observation, selected scalar direction, drift/unavailable/timeout failure boundaries, cleanup, and the 25-attempt cap. It simulates user-event activation and must keep `automaticGuiActivationUsed`, Roblox runtime, server authority, causality, and gameplay verification false.
 - Controlled Luau success is simulated, read-only evidence only; it never upgrades Roblox runtime, live-game, server-authority, causality, or gameplay verification claims.
+
+## Live Bubble test preparation workflow (v30.6.36+)
+
+- `tools/prepare_live_test_bubble_package.py` generates `build/live_test_bubble/` from a manifest plus manifest-assisted artifacts, including:
+  - 18-target analysis table (`targets-18-analysis.md/.json`),
+  - primary/backup workflow selection,
+  - beginner operator checklist,
+  - export/retrieval and post-test validation instructions.
+- For the Bubble Gum INFINITY baseline package, run:
+  - `python3 tools/prepare_live_test_bubble_package.py --manifest "Pasted text(20261102-152723).txt" --artifact-dir build/e2e_bubble_v108 --output build/live_test_bubble --place-id 85896571713843`
+- `tools/validate_live_capture.py` validates returned live captures (manifest + optional parts directory), runs `build_release`, and emits machine-readable and markdown summaries:
+  - `python3 tools/validate_live_capture.py --manifest <manifest.json> --parts-dir <parts_dir> --output <out_dir> --place-id 85896571713843`
+- Validation summary explicitly separates available interaction history from inspector-reported total events (`events` vs `eventsReportedByInspector`) so subset histories are not misinterpreted as complete capture failure.

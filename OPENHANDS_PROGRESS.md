@@ -1,6 +1,29 @@
 # OpenHands Development Progress
 
 
+
+## Update — 2026-11-06 — Bubble live end-to-end test package + automated post-test validator (v30.6.36)
+
+- Added `tools/prepare_live_test_bubble_package.py` to generate a reproducible package at `build/live_test_bubble/` from the Bubble manifest and manifest-assisted artifacts.
+  - Produces: `targets-18-analysis.md/.json`, `workflow-selection.md`, `operator-checklist.md`, `export-and-retrieval.md`, `post-test-validation.md`, `troubleshooting.md`, and copied manifest-assisted artifacts.
+  - On the protected Bubble manifest (`Pasted text(20261102-152723).txt`), package generation selected:
+    - Primary workflow: `LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button`
+    - Backup workflow: `LocalPlayer.PlayerGui.ScreenGui.Quests.Frame.Main.Prizes.Tabs.Playtime.Button`
+- Added `tools/validate_live_capture.py` for automated returned-report validation.
+  - Checks multipart accounting, interaction-history coverage, transaction-ID reuse/linkage, explicit outcome-candidate coverage, corroborated/completed workflow counts, and generation-readiness blockers.
+  - Runs `build_release` on manifest/parts input and reports generated artifact availability.
+  - Emits both JSON and Markdown summaries (`live-capture-validation.json/.md`) and keeps CLI stdout machine-readable by capturing builder logs.
+  - Distinguishes available interaction history from inspector-reported totals (`events` vs `eventsReportedByInspector`) to avoid false negatives on subset histories.
+- Added regression coverage:
+  - `tests/test_prepare_live_test_bubble_package.py`
+  - `tests/test_validate_live_capture.py`
+- Prepared live package artifacts (ignored by git policy) under `build/live_test_bubble/`, including baseline pre-test validation output in `build/live_test_bubble/pretest_validation/`.
+- Validation passed after this increment:
+  - `python3 -B -m unittest tests.test_validate_live_capture tests.test_prepare_live_test_bubble_package tests.test_build_release tests.test_manifest_readiness_v109 tests.test_integrated_pipeline_v108`
+  - `node --test tests/test_luau_syntax.mjs`
+  - `git diff --check` (clean)
+
+
 ## Update — 2026-11-05 — Manifest-assisted schema .5 surfaces generation blockers and coverage (v30.6.35)
 
 - Extended `tools/build_release.py` manifest-assisted Lua status text to include generation-readiness context:
