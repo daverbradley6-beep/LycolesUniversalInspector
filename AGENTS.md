@@ -262,3 +262,5 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `tests/test_universal_gameplay_intelligence.py` validates analyzer output and deterministic `validate()` roundtrip.
   - `tests/test_build_release.py` verifies manifest/file integration for universal intelligence artifacts.
 
+- Potassium compile headroom fix (`v30.6.38`): demoted six late UI declarations from local bindings to reduce top-level register pressure near the observation-control block where Potassium previously failed (`observationToggle` allocation). Local Luau text-compile register scan now peaks at `R154`.
+

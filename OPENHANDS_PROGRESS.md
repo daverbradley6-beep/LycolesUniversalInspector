@@ -1516,6 +1516,9 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Workflow recorder gating improvement in `LycolesUniversalInspector.lua`:
   - `explicit-workflow-recording-not-armed` blocker is now emitted only when there is no linked/completed workflow evidence.
   - Added `derivedWorkflowEvidenceEvents` to workflow-generation diagnostics for clearer capture interpretation.
+- Potassium-focused register-pressure mitigation (`v30.6.38`):
+  - Reduced top-level Luau local pressure by demoting six late UI declarations (`autoEvidenceToggle`, `workflowRecordToggle`, `scanModeToggle`, `observationToggle`, `evidenceHint`, `uploadHint`) from local bindings.
+  - Local `luau-compile --text` check now reports max register index `R154` (additional headroom vs prior near-limit failures).
 - Added/updated tests:
   - `tests/test_compile_scan.py`: universal discovery schema + interactable/economy/state-signal extraction assertions.
   - `tests/test_universal_gameplay_intelligence.py`: module coverage and deterministic validate roundtrip.

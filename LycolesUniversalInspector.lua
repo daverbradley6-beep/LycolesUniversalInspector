@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.37
+-- Lycoles Universal Inspector v30.6.38
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.37"
+local VERSION = "30.6.38"
 
 local endpoint = ""
 local autoSend = true
@@ -4178,7 +4178,7 @@ end
 -- v6 automatic evidence collection: observe ordinary user gameplay without requiring
 -- the user to perform a fresh manual scan after every interaction.
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
-local autoEvidenceToggle = Instance.new("TextButton")
+autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
 autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
 autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)
@@ -4189,7 +4189,7 @@ autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
 autoEvidenceToggle.Parent = panel
 -- Keep evidence control below INTERACT and outside the report viewport.
 autoEvidenceToggle.ZIndex = 4
-local workflowRecordToggle = create("TextButton", {
+workflowRecordToggle = create("TextButton", {
     Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF",
     Size=UDim2.fromOffset(120,26),Position=UDim2.fromOffset(380,201),
     TextSize=10,TextColor3=Color3.fromRGB(245,245,245),
@@ -4224,19 +4224,19 @@ workflowRecordToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-local scanModeToggle = create("TextButton", {
+scanModeToggle = create("TextButton", {
     Name = "ScanModeToggle", Text = "SCAN MODE: FULL",
     Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 232),
     TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
     BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
 }, panel)
-local observationToggle = create("TextButton", {
+observationToggle = create("TextButton", {
     Name = "ObservationWindowToggle", Text = "OBSERVE: 12s",
     Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 263),
     TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
     BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
 }, panel)
-local evidenceHint = create("TextLabel", {
+evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
     Text = "Auto rescans: 0/4",
     Position = UDim2.fromOffset(379, 294),
@@ -4247,7 +4247,7 @@ local evidenceHint = create("TextLabel", {
     TextWrapped = true,
     TextYAlignment = Enum.TextYAlignment.Top
 }, panel)
-local uploadHint = create("TextLabel", {
+uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
     Position = UDim2.fromOffset(379, 332),
