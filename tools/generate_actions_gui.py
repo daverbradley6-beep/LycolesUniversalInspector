@@ -5,12 +5,12 @@ import importlib.util
 import pathlib
 
 ROOT=pathlib.Path(__file__).resolve().parent
-def actions_module():
-    spec=importlib.util.spec_from_file_location("lycoles_actions",ROOT/"generate_client_actions.py")
+def load_module(name,path):
+    spec=importlib.util.spec_from_file_location(name,ROOT/path)
     mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod);return mod
 
 def render(document):
-    module=actions_module()
+    module=load_module("lycoles_actions","generate_client_actions.py")
     source=module.render(document)
     if not document["contracts"]:
         raise ValueError("No reviewed actions to display")
@@ -133,4 +133,6 @@ _G.LycolesActionsClose = function()
 end
 table.insert(connections, close.MouseButton1Click:Connect(_G.LycolesActionsClose))
 '''.replace("ACTION_LIST","{"+",".join(json.dumps(n) for n in names)+"}"))
-    return "\n".join(lines)+"\n"
+    reviewed_gui="\n".join(lines)+"\n"
+    admin=load_module("lycoles_admin_commands","generate_admin_commands.py")
+    return reviewed_gui+"\n"+admin.render(document["placeId"])

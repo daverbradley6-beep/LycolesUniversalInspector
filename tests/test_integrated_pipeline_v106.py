@@ -15,11 +15,38 @@ from feature_quality_v106 import assess
 PLACE = 85896571713843
 
 def fixture():
-    return {"placeId": PLACE, "objects": [
-        {"path": ["PlayerGui", "HUD", "Coins"], "className": "TextLabel"},
-        {"path": ["Players", "PlayerStats", "Wins"], "className": "IntValue"},
-        {"path": ["Workspace", "Chest", "Prompt"], "className": "ProximityPrompt"},
-    ]}
+    return {
+        "placeId": PLACE,
+        "objects": [
+            {"path": ["PlayerGui", "HUD", "Coins"], "className": "TextLabel"},
+            {"path": ["Players", "PlayerStats", "Wins"], "className": "IntValue"},
+            {"path": ["Workspace", "Chest", "Prompt"], "className": "ProximityPrompt"},
+        ],
+        "observedInteractionHistory": [
+            {
+                "sequence": 1,
+                "path": "PlayerGui.HUD.ShopButton",
+                "featureCandidate": "shop",
+                "actionCandidate": "open_shop",
+                "transactionId": "txn-shop-1",
+                "stateChanges": [{"key": "Data.Bubbles", "before": 10, "after": 8}],
+            },
+            {
+                "sequence": 2,
+                "path": "PlayerGui.HUD.BuyButton",
+                "featureCandidate": "shop",
+                "actionCandidate": "buy_item",
+                "transactionId": "txn-shop-1",
+                "stateChanges": [{"key": "Data.Inventory", "before": 2, "after": 3}],
+            },
+            {
+                "sequence": 3,
+                "path": "PlayerGui.HUD.CloseButton",
+                "featureCandidate": "shop",
+                "transactionId": "txn-shop-close",
+            },
+        ],
+    }
 
 class IntegratedPipelineTests(unittest.TestCase):
     def test_end_to_end(self):
@@ -27,6 +54,8 @@ class IntegratedPipelineTests(unittest.TestCase):
             result = generate(fixture(), PLACE, tmp)
             self.assertTrue(result["ok"], result)
             self.assertEqual(result["features"], 3)
+            self.assertEqual(result["workflowCandidates"], 1)
+            self.assertEqual(result["completedCandidates"], 1)
             self.assertTrue(verify(tmp)["ok"])
             script = (Path(tmp) / "LycolesFunctionalObserver.client.lua").read_text()
             self.assertIn("Activated:Connect", script)
@@ -38,8 +67,15 @@ class IntegratedPipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
             generate(fixture(), PLACE, a)
             generate(fixture(), PLACE, b)
-            for name in ("inspection-report.json", "feature-plan.json",
-                         "LycolesFunctionalObserver.client.lua", "quality-report.json", "inspection-diagnostics.json", "manifest.json"):
+            for name in (
+                "inspection-report.json",
+                "feature-plan.json",
+                "LycolesFunctionalObserver.client.lua",
+                "quality-report.json",
+                "inspection-diagnostics.json",
+                "workflow-candidates.json",
+                "manifest.json",
+            ):
                 self.assertEqual((Path(a) / name).read_bytes(), (Path(b) / name).read_bytes())
 
     def test_tampering_detected(self):
@@ -93,6 +129,27 @@ class IntegratedPipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             emit_luau(feature_plan)
 
+    def test_feature_plan_preserves_class_identity(self):
+        features = plan(build(fixture(), PLACE))["features"]
+        self.assertEqual([feature["className"] for feature in features],
+                         ["TextLabel", "IntValue", "ProximityPrompt"])
+
+    def test_generated_resolver_requires_terminal_class_match(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        self.assertIn("child.Name == terminalName and child.ClassName == feature.className", script)
+        self.assertIn("for _, child in ipairs(node:GetChildren()) do", script)
+
+    def test_invalid_generated_class_rejected(self):
+        feature_plan = plan(build(fixture(), PLACE))
+        feature_plan["features"][0]["className"] = "RemoteEvent"
+        with self.assertRaises(ValueError):
+            emit_luau(feature_plan)
+
+    def test_static_contract_detects_missing_class_match(self):
+        script = emit_luau(plan(build(fixture(), PLACE)))
+        broken = script.replace("child.ClassName == feature.className", "true")
+        self.assertFalse(validate_source(broken, 3)["ok"])
+
     def test_quality_accounting_and_coverage(self):
         report = build(fixture(), PLACE)
         result = assess(report, plan(report))
@@ -123,6 +180,16 @@ class IntegratedPipelineTests(unittest.TestCase):
         self.assertIn("if autoRefresh then refreshAll() end", script)
         self.assertIn("while gui.Parent do", script)
 
+    def test_workflow_candidate_tampering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = generate(fixture(), PLACE, tmp)
+            self.assertTrue(result["ok"], result)
+            path = Path(tmp) / "workflow-candidates.json"
+            document = json.loads(path.read_text())
+            document["summary"]["completedCandidates"] = 99
+            path.write_text(json.dumps(document))
+            self.assertFalse(verify(tmp)["ok"])
+
     def test_manifest_control_count(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = generate(fixture(), PLACE, tmp)
@@ -137,6 +204,9 @@ class IntegratedPipelineTests(unittest.TestCase):
             data = json.loads((Path(tmp) / "inspection-diagnostics.json").read_text())
             self.assertEqual(data["supportedControls"], 3)
             self.assertEqual(data["coverage"], 1.0)
+            self.assertEqual(data["workflowCandidates"], 1)
+            self.assertEqual(data["completedCandidates"], 1)
+            self.assertEqual(data["reviewOnlyCandidates"], 0)
 
     def test_missing_artifact_detected(self):
         with tempfile.TemporaryDirectory() as tmp:

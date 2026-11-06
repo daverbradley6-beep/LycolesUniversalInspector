@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Lycoles v10 one-command offline pipeline: scan -> plan -> Lua -> release ZIP.
+"""Lycoles offline pipeline: multipart scan -> release, or manifest -> blockers.
 
 Usage: python3 tools/build_release.py ./scan-parts --output ./build
+       python3 tools/build_release.py ./local-manifest.json --output ./build
 No remote execution, network access, GitHub credentials or third-party modules.
 """
 import argparse
@@ -32,7 +33,7 @@ def validate_lua(lua,place_id):
         raise ValueError("Missing place guard")
     required=('local Players = game:GetService("Players")',
               'LycolesGeneratedClose','gui:Destroy()',
-              'button("Stats"','button("Menus"','button("Prompts"','button("Features"')
+              'button("Stats"','button("Menus"','button("Prompts"','button("Gameplay"')
     for token in required:
         if token not in lua: raise ValueError("Missing generated component: "+token)
     # These must not appear in a diagnostic-only build, including comments.
@@ -45,15 +46,562 @@ def validate_lua(lua,place_id):
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
-def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,audit_path=None):
+
+def _lua_string(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _manifest_observed_targets(document):
+    diagnostics=document.get("interactionDiagnostics")
+    history=(diagnostics.get("recentInteractions")
+        if isinstance(diagnostics,dict) else [])
+    if not isinstance(history,list):
+        return []
+    limits={}
+    seen=set();targets=[]
+    def collect_state_hints(event):
+        hints=[]
+        for source in (event.get("stateChanges"),):
+            if isinstance(source,list):
+                for change in source:
+                    key=change.get("key") if isinstance(change,dict) else None
+                    if isinstance(key,str) and 1<=len(key)<=200 and key not in hints:
+                        hints.append(key)
+        windows=event.get("observationWindows")
+        if isinstance(windows,list):
+            for window in windows[:2]:
+                changes=window.get("stateChanges") if isinstance(window,dict) else None
+                if not isinstance(changes,list):
+                    continue
+                for change in changes:
+                    key=change.get("key") if isinstance(change,dict) else None
+                    if isinstance(key,str) and 1<=len(key)<=200 and key not in hints:
+                        hints.append(key)
+        return hints[:6]
+
+    for event in history:
+        if not isinstance(event,dict):
+            continue
+        path=event.get("path")
+        if not isinstance(path,str) or not 1<=len(path)<=400:
+            continue
+        root=path.split(".",1)[0]
+        if root not in {"LocalPlayer","Workspace","ReplicatedStorage","Lighting"}:
+            continue
+        control=event.get("controlType")
+        if not isinstance(control,str) or not 1<=len(control)<=120:
+            control="unknown"
+        feature=event.get("featureCandidate")
+        if not isinstance(feature,str) or not 1<=len(feature)<=80:
+            feature="unattributed"
+        state_change_count=event.get("stateChangeCount")
+        gui_change_count=event.get("guiStateChangeCount")
+        if type(state_change_count) is not int or state_change_count<0:
+            state_change_count=0
+        if type(gui_change_count) is not int or gui_change_count<0:
+            gui_change_count=0
+        outcome_candidate=isinstance(event.get("observableOutcomeCandidate"),dict)
+        observable_change=(state_change_count+gui_change_count)>0
+        if feature=="unattributed" and not observable_change and not outcome_candidate:
+            continue
+        dedupe=(path,control)
+        if dedupe in seen:
+            continue
+        if limits.get(feature,0)>=4:
+            continue
+        seen.add(dedupe);limits[feature]=limits.get(feature,0)+1
+        sequence=event.get("sequence") if type(event.get("sequence")) is int else 0
+        hints=collect_state_hints(event)
+        label=path.split(".")[-1]
+        targets.append({
+            "path":path,
+            "label":label,
+            "feature":feature,
+            "controlType":control,
+            "stateHints":hints,
+            "stateHintCount":len(hints),
+            "stateChangeCount":state_change_count,
+            "guiStateChangeCount":gui_change_count,
+            "observableOutcomeCandidate":outcome_candidate,
+            "observableChange":observable_change,
+            "sequence":sequence,
+            "attributed":feature!="unattributed",
+        })
+    targets.sort(key=lambda item:(
+        0 if item["attributed"] else 1,
+        0 if item["observableOutcomeCandidate"] else 1,
+        0 if item["observableChange"] else 1,
+        -item["stateChangeCount"],
+        -item["guiStateChangeCount"],
+        -item["stateHintCount"],
+        -item["sequence"],
+        item["feature"],
+        item["path"]))
+    return targets[:18]
+
+
+def _manifest_assisted_workflow_lua(place_id,targets,transport_status=None,transport_blockers=None,
+                                    generation_ready=False,generation_blockers=None):
+    entries=[]
+    for index,target in enumerate(targets,1):
+        hints=", ".join(_lua_string(hint) for hint in target["stateHints"])
+        entries.append("  {id="+_lua_string(f"target-{index:03d}")
+            +",feature="+_lua_string(target["feature"])
+            +",label="+_lua_string(target["label"])
+            +",path="+_lua_string(target["path"])
+            +",controlType="+_lua_string(target["controlType"])
+            +",stateChangeCount="+str(target["stateChangeCount"])
+            +",guiStateChangeCount="+str(target["guiStateChangeCount"])
+            +",observableOutcomeCandidate="+str(bool(target["observableOutcomeCandidate"])).lower()
+            +",observableChange="+str(bool(target["observableChange"])).lower()
+            +",stateHints={"+hints+"}}")
+    target_table="{\n"+",\n".join(entries)+"\n}"
+    status_text=(transport_status.strip() if isinstance(transport_status,str) and transport_status.strip()
+        else "unknown")
+    blocker_tokens=[]
+    if isinstance(transport_blockers,list):
+        for blocker in transport_blockers:
+            if isinstance(blocker,str) and blocker and len(blocker)<=120 and blocker not in blocker_tokens:
+                blocker_tokens.append(blocker)
+            if len(blocker_tokens)>=6:
+                break
+    blocker_text=", ".join(blocker_tokens) if blocker_tokens else "none"
+    generation_blocker_tokens=[]
+    if isinstance(generation_blockers,list):
+        ordered=[]
+        for blocker in generation_blockers:
+            if isinstance(blocker,str) and blocker and len(blocker)<=120 and blocker not in ordered:
+                ordered.append(blocker)
+        priority=[
+            "legacy_manifest_missing_outcome_candidate_field",
+            "explicit_outcome_candidate_events_unavailable",
+            "workflow_linkage_not_observed",
+            "workflow_outcome_corroboration_unavailable",
+            "completed_workflow_candidates_unavailable",
+        ]
+        for blocker in priority:
+            if blocker in ordered and blocker not in generation_blocker_tokens:
+                generation_blocker_tokens.append(blocker)
+            if len(generation_blocker_tokens)>=8:
+                break
+        if len(generation_blocker_tokens)<8:
+            for blocker in ordered:
+                if blocker not in generation_blocker_tokens:
+                    generation_blocker_tokens.append(blocker)
+                if len(generation_blocker_tokens)>=8:
+                    break
+    generation_blocker_text=(", ".join(generation_blocker_tokens)
+        if generation_blocker_tokens else "none")
+    generation_readiness_text="ready" if generation_ready else "blocked"
+
+
+
+    template='''-- Lycoles manifest-assisted observed workflow trial (client-visible evidence only).
+-- This artifact is generated when numbered multipart object parts are unavailable.
+-- Runtime, causality, server authority, and gameplay outcomes remain unverified.
+assert(game.PlaceId == __PLACE_ID__, "Wrong place for manifest-assisted script")
+local Players=game:GetService("Players")
+local player=Players.LocalPlayer
+if not player then return end
+local targets=__TARGET_TABLE__
+if #targets==0 then return end
+local gui=Instance.new("ScreenGui")
+gui.Name="LycolesManifestWorkflow"
+gui.ResetOnSpawn=false
+gui.Parent=player:WaitForChild("PlayerGui")
+local frame=Instance.new("Frame",gui)
+frame.Size=UDim2.fromOffset(560,390)
+frame.Position=UDim2.new(0.5,-280,0.08,0)
+frame.BackgroundColor3=Color3.fromRGB(26,29,34)
+local heading=Instance.new("TextLabel",frame)
+heading.Size=UDim2.new(1,-44,0,34)
+heading.Position=UDim2.fromOffset(12,8)
+heading.BackgroundTransparency=1
+heading.Text="Manifest-assisted workflow targets"
+heading.TextXAlignment=Enum.TextXAlignment.Left
+heading.TextColor3=Color3.fromRGB(236,241,255)
+heading.TextSize=18
+local close=Instance.new("TextButton",frame)
+close.Size=UDim2.fromOffset(30,30)
+close.Position=UDim2.new(1,-38,0,8)
+close.Text="X"
+close.BackgroundColor3=Color3.fromRGB(70,74,82)
+close.TextColor3=Color3.new(1,1,1)
+local output=Instance.new("TextLabel",frame)
+output.Position=UDim2.fromOffset(12,52)
+output.Size=UDim2.new(1,-24,1,-116)
+output.BackgroundColor3=Color3.fromRGB(34,38,45)
+output.TextColor3=Color3.fromRGB(226,234,240)
+output.TextXAlignment=Enum.TextXAlignment.Left
+output.TextYAlignment=Enum.TextYAlignment.Top
+output.TextWrapped=true
+output.TextSize=13
+output.Text="Select Probe to inspect a target, or Activate for bounded GUI activation."
+local controls=Instance.new("Frame",frame)
+controls.BackgroundTransparency=1
+controls.Position=UDim2.new(0,12,1,-54)
+controls.Size=UDim2.new(1,-24,0,40)
+local layout=Instance.new("UIListLayout",controls)
+layout.FillDirection=Enum.FillDirection.Horizontal
+layout.Padding=UDim.new(0,6)
+local function splitPath(path)
+  local parts={}
+  for token in string.gmatch(path,"[^%.]+") do table.insert(parts,token) end
+  return parts
+end
+local function resolvePath(path)
+  local parts=splitPath(path)
+  local root=parts[1]
+  local node=nil
+  if root=="LocalPlayer" then node=player
+  elseif root=="Workspace" then node=workspace
+  elseif root=="ReplicatedStorage" then node=game:GetService("ReplicatedStorage")
+  elseif root=="Lighting" then node=game:GetService("Lighting")
+  else return nil,"Unsupported root: "..tostring(root) end
+  for i=2,#parts do
+    node=node and node:FindFirstChild(parts[i]) or nil
+    if not node then return nil,"Missing segment: "..parts[i] end
+  end
+  return node,nil
+end
+local function resolveHint(key)
+  local probe={key,"LocalPlayer."..key,"LocalPlayer.leaderstats."..key,"LocalPlayer.Data."..key}
+  for _,entry in ipairs(probe) do
+    local obj=resolvePath(entry)
+    if obj then return obj end
+  end
+  return nil
+end
+local function describeValue(obj)
+  if not obj then return "unavailable" end
+  if obj:IsA("ValueBase") then return tostring(obj.Value) end
+  if obj:IsA("GuiObject") then return "Visible="..tostring(obj.Visible)..", Active="..tostring(obj.Active) end
+  return "class="..obj.ClassName
+end
+local function collectHints(target)
+  local lines={}
+  for _,hint in ipairs(target.stateHints) do
+    local obj=resolveHint(hint)
+    lines[#lines+1]=hint..": "..describeValue(obj)
+  end
+  if #lines==0 then lines={"No state hints captured for this target."} end
+  return lines
+end
+local TRANSPORT_READINESS_STATUS=__TRANSPORT_STATUS__
+local TRANSPORT_READINESS_BLOCKERS=__TRANSPORT_BLOCKERS__
+local GENERATION_READINESS_STATUS=__GENERATION_READINESS_STATUS__
+local GENERATION_READINESS_BLOCKERS=__GENERATION_READINESS_BLOCKERS__
+local index=1
+local function current() return targets[index] end
+local function renderStatus(title,lines)
+  local merged={
+    "Transport readiness: "..tostring(TRANSPORT_READINESS_STATUS),
+    "Transport blockers: "..tostring(TRANSPORT_READINESS_BLOCKERS),
+    "Generation readiness: "..tostring(GENERATION_READINESS_STATUS),
+    "Generation blockers: "..tostring(GENERATION_READINESS_BLOCKERS),
+    "",
+  }
+  for _,line in ipairs(lines) do merged[#merged+1]=line end
+  output.Text=title.."\\n\\n"..table.concat(merged,"\\n")
+end
+local function showTarget(prefix)
+  local target=current()
+  renderStatus(prefix,{
+    "Target "..tostring(index).." / "..tostring(#targets),
+    "Feature: "..target.feature,
+    "Control: "..target.controlType,
+    "Path: "..target.path,
+    "Observed state changes: "..tostring(target.stateChangeCount or 0),
+    "Observed GUI changes: "..tostring(target.guiStateChangeCount or 0),
+    "Observable outcome candidate: "..tostring(target.observableOutcomeCandidate==true),
+    "Observable change captured: "..tostring(target.observableChange==true),
+    "",
+    "Hints:",
+    table.concat(collectHints(target),"\\n")
+  })
+end
+local function makeButton(name,callback)
+  local b=Instance.new("TextButton",controls)
+  b.Size=UDim2.new(0.2,-6,1,0)
+  b.Text=name
+  b.TextSize=12
+  b.BackgroundColor3=Color3.fromRGB(48,78,103)
+  b.TextColor3=Color3.new(1,1,1)
+  b.MouseButton1Click:Connect(function()
+    local ok,err=pcall(callback)
+    if not ok then renderStatus(name.." failed",{tostring(err)}) end
+  end)
+  return b
+end
+makeButton("Prev",function() index=(index<=1) and #targets or (index-1);showTarget("Selected") end)
+makeButton("Next",function() index=(index>=#targets) and 1 or (index+1);showTarget("Selected") end)
+makeButton("Probe",function()
+  local target=current()
+  local node,err=resolvePath(target.path)
+  if not node then
+    renderStatus("Probe",{"Path unavailable: "..err,target.path})
+    return
+  end
+  renderStatus("Probe",{
+    "Found: "..target.path,
+    "Class: "..node.ClassName,
+    "Control contract: "..target.controlType,
+    "",
+    "State hints:",
+    table.concat(collectHints(target),"\\n")
+  })
+end)
+makeButton("Activate",function()
+  local target=current()
+  local node,err=resolvePath(target.path)
+  if not node then
+    renderStatus("Activate",{"Path unavailable: "..err,target.path})
+    return
+  end
+  if target.controlType=="GuiButton.Activated" and node:IsA("GuiButton") then
+    local before=collectHints(target)
+    local ok,call_err=pcall(function() node:Activate() end)
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "GuiButton activation attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
+  elseif target.controlType=="ProximityPrompt.Triggered" and node:IsA("ProximityPrompt") then
+    local before=collectHints(target)
+    local trigger=(typeof(fireproximityprompt)=="function" and fireproximityprompt)
+      or (typeof(_G.fireproximityprompt)=="function" and _G.fireproximityprompt)
+    local ok=false
+    local call_err="fireproximityprompt unavailable"
+    if trigger then
+      ok,call_err=pcall(function() trigger(node) end)
+    end
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "ProximityPrompt trigger attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
+  elseif target.controlType=="Tool.Activated" and node:IsA("Tool") then
+    local before=collectHints(target)
+    local character=player.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    local equipped=false
+    if humanoid then
+      pcall(function() humanoid:EquipTool(node) end)
+      equipped=(node.Parent==character)
+    end
+    local ok=false
+    local call_err=nil
+    if equipped then
+      ok,call_err=pcall(function() node:Activate() end)
+    else
+      call_err="Tool equip unavailable"
+    end
+    task.wait(1)
+    local after=collectHints(target)
+    renderStatus("Activate",{
+      "Tool activation attempted: "..tostring(ok),
+      ok and "" or ("Error: "..tostring(call_err)),
+      "",
+      "Before:",
+      table.concat(before,"\\n"),
+      "",
+      "After:",
+      table.concat(after,"\\n"),
+      "",
+      "Result remains unverified gameplay evidence."
+    })
+  else
+    renderStatus("Activate",{
+      "Unsupported bounded activation for control type: "..target.controlType,
+      "Use normal in-game interaction for this target.",
+      "Path: "..target.path
+    })
+  end
+end)
+makeButton("Close",function() gui:Destroy() end)
+showTarget("Ready")
+'''
+    return (template
+        .replace("__PLACE_ID__",str(place_id))
+        .replace("__TARGET_TABLE__",target_table)
+        .replace("__TRANSPORT_STATUS__",_lua_string(status_text))
+        .replace("__TRANSPORT_BLOCKERS__",_lua_string(blocker_text))
+        .replace("__GENERATION_READINESS_STATUS__",_lua_string(generation_readiness_text))
+        .replace("__GENERATION_READINESS_BLOCKERS__",_lua_string(generation_blocker_text)))
+
+
+
+def build_manifest_readiness(manifest_path,output):
+    analyzer=load_module("manifest_readiness_v109.py","lycoles_manifest_readiness_v109")
+    source=pathlib.Path(manifest_path)
+    document=analyzer.load(source)
+    output=pathlib.Path(output)
+    output.mkdir(parents=True,exist_ok=True)
+    target=output/"manifest-readiness-v109.json"
+    result=analyzer.analyze(document)
+    analyzer.write(result,target)
+    observed_targets=_manifest_observed_targets(document)
+    if observed_targets:
+        transport_readiness=(result.get("transportReadiness")
+            if isinstance(result.get("transportReadiness"),dict) else {})
+        transport_blockers=transport_readiness.get("blockers")
+        if not isinstance(transport_blockers,list):
+            transport_blockers=[]
+        generation_readiness=(result.get("generationReadiness")
+            if isinstance(result.get("generationReadiness"),dict) else {})
+        generation_blockers=generation_readiness.get("blockers")
+        if not isinstance(generation_blockers,list):
+            generation_blockers=[]
+        interaction_coverage=((result.get("evidence") or {}).get("interactionCoverageDiagnostics")
+            if isinstance(result.get("evidence"),dict) else None)
+        if not isinstance(interaction_coverage,dict):
+            interaction_coverage={}
+        assisted=_manifest_assisted_workflow_lua(
+            result["placeId"],
+            observed_targets,
+            transport_readiness.get("status"),
+            transport_blockers,
+            bool(generation_readiness.get("scriptGenerationReady")),
+            generation_blockers,
+        )
+        (output/"LycolesManifestAssistedWorkflow.lua").write_text(assisted,encoding="utf-8")
+        (output/"manifest-assisted-workflow.json").write_text(json.dumps({
+            "schemaVersion":"30.6.manifest-assisted-workflow.5",
+            "placeId":result["placeId"],
+            "targetCount":len(observed_targets),
+            "targets":observed_targets,
+            "transportReadinessStatus":transport_readiness.get("status"),
+            "transportReadinessBlockers":transport_blockers,
+            "scriptGenerationReady":bool(generation_readiness.get("scriptGenerationReady")),
+            "generationReadinessBlockers":generation_blockers,
+            "interactionCoverageDiagnostics":interaction_coverage,
+            "runtimeVerified":False,
+            "gameplayVerified":False,
+            "causalityProven":False,
+            "sourceManifest":source.name,
+        },indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+    print("BLOCKED: manifest-only input cannot generate a release; readiness written to",target)
+    return result
+
+
+
+def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
+          audit_path=None,prompt_feedback_path=None,guided_feedback_path=None,
+          guided_feedback_paths=None,requested_capability=None):
+    parts_path=pathlib.Path(parts_dir)
+    if parts_path.is_file():
+        return build_manifest_readiness(parts_path,output)
     compiler=load_module("compile_scan.py","lycoles_compiler")
     generator=load_module("generate_script.py","lycoles_generator")
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
+    source_provenance=plan["sourceProvenance"]
     if observation_dirs:
         merger=load_module('merge_observations.py','lycoles_merge')
         observations=[compiler.compile_scan(folder) for folder in observation_dirs]
         plan=merger.merge_evidence(plan,observations)
+    evidence_overlays=plan.get("evidenceOverlays",[])
+    if requested_capability is not None:
+        if (not isinstance(requested_capability,str) or not requested_capability
+                or len(requested_capability.encode("utf-8"))>240
+                or requested_capability!=requested_capability.strip()
+                or any(ord(character)<32 for character in requested_capability)):
+            raise ValueError("Malformed requested capability override")
+        plan["requestedCapability"]=requested_capability
+
+    overlay_provenance={
+        "schemaVersion":"30.3.evidence-overlay-provenance.1",
+        "baselineScanId":plan["integrity"]["scanId"],
+        "overlayCount":len(evidence_overlays),"overlays":evidence_overlays,
+        "sourceAuthenticityVerified":False,"causalityProven":False,
+        "serverAuthorityVerified":False,"replayable":False,
+        "gameplayVerified":False,"actionOutcomesVerified":False,
+    }
+    overlay_provenance_bytes=(json.dumps(overlay_provenance,indent=2,sort_keys=True)+"\n").encode()
+    gameplay_compiler=load_module("understand_gameplay.py","lycoles_gameplay_understanding")
+    gameplay_understanding=gameplay_compiler.analyze(plan)
+    gameplay_understanding_bytes=(json.dumps(
+        gameplay_understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    universal_intelligence_builder=load_module(
+        "universal_gameplay_intelligence.py","lycoles_universal_gameplay_intelligence")
+    universal_gameplay_intelligence=universal_intelligence_builder.analyze(plan)
+    universal_gameplay_intelligence_bytes=(json.dumps(
+        universal_gameplay_intelligence,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
+    action_discovery_builder=load_module("discover_action_capabilities.py","lycoles_action_discovery")
+    action_discovery=action_discovery_builder.analyze(plan)
+    action_discovery_bytes=(json.dumps(
+        action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    workflow_planner=load_module("plan_generated_workflows.py","lycoles_generated_workflows")
+    generated_workflows=workflow_planner.plan(plan,action_discovery)
+    generated_workflows_bytes=(json.dumps(
+        generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    guided_workflow_builder=load_module(
+        "generate_guided_workflow.py","lycoles_guided_workflow")
+    guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
+    guided_workflow_candidate=(guided_workflow_candidates[0]
+        if guided_workflow_candidates else None)
+    guided_workflow_candidate_id=(guided_workflow_candidate["id"]
+        if guided_workflow_candidate else None)
+
+    guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
+    guided_workflow_bytes=(guided_workflow_lua.encode("utf-8")
+        if guided_workflow_lua is not None else None)
+    guided_feedback=None
+    guided_feedback_bytes=None
+    guided_feedback_aggregate=None
+    guided_feedback_aggregate_bytes=None
+    guided_documents=[]
+    if (guided_feedback_paths is not None
+            and (not isinstance(guided_feedback_paths,(list,tuple))
+                or any(not isinstance(path,(str,pathlib.Path)) for path in guided_feedback_paths))):
+        raise TypeError("guided feedback paths must be a list or tuple of paths")
+    guided_paths=list(guided_feedback_paths or [])
+    if guided_feedback_path is not None:
+        guided_paths.insert(0,guided_feedback_path)
+    if guided_paths:
+        guided_documents=[json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+            for path in guided_paths]
+        guided_feedback_aggregator=load_module(
+            "aggregate_guided_workflow_feedback.py","lycoles_guided_feedback_aggregate")
+        guided_feedback_aggregate=guided_feedback_aggregator.aggregate(
+            generated_workflows,guided_documents)
+        guided_feedback_aggregate_bytes=(json.dumps(guided_feedback_aggregate,
+            indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+        if len(guided_documents)==1:
+            guided_feedback_evaluator=load_module(
+                "evaluate_guided_workflow_feedback.py","lycoles_guided_feedback")
+            guided_feedback=guided_feedback_evaluator.evaluate(
+                generated_workflows,guided_documents[0])
+            guided_feedback_bytes=(json.dumps(guided_feedback,indent=2,
+                sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
+
+    readiness_builder=load_module(
+        "assess_generation_readiness.py","lycoles_generation_readiness")
+    generation_readiness=readiness_builder.assess(plan,gameplay_understanding,
+        action_discovery,generated_workflows,guided_documents if guided_paths else None)
+    generation_readiness_bytes=(json.dumps(
+        generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
     place=generator.validate(plan)
     workflows=workflows_compiler.compile_workflows(plan)
     sequence_compiler=load_module("compile_interaction_sequences.py","lycoles_sequences")
@@ -98,13 +646,137 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     if actions_gui_lua is not None:
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
-    lua=generator.render(plan)
+    utility_lua=generator.render(plan,gameplay_understanding,generation_readiness)
+    prompt_generator=load_module("generate_prompt_interactions.py","lycoles_prompt_interactions")
+    prompt_interactions_lua=prompt_generator.render(action_discovery)
+    prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
+    tool_trial_generated=action_discovery["toolInteractions"]["generationReadyTargets"]>0
+    gui_trial_generated=action_discovery["guiInteractions"]["generationReadyTargets"]>0
+    egg_trial_generated=action_discovery["eggHatching"]["automaticSingleTrialReady"] is True
+
+    admin_generator=load_module("generate_admin_commands.py","lycoles_admin_commands")
+    prompt_feedback=None
+    prompt_feedback_bytes=None
+    if prompt_feedback_path is not None:
+        prompt_feedback_evaluator=load_module(
+            "evaluate_prompt_trial_feedback.py","lycoles_prompt_feedback")
+        prompt_feedback_document=json.loads(
+            pathlib.Path(prompt_feedback_path).read_text(encoding="utf-8"))
+        prompt_feedback=prompt_feedback_evaluator.evaluate(
+            action_discovery,prompt_feedback_document)
+        prompt_feedback_bytes=(json.dumps(
+            prompt_feedback,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+
+    admin_lua=admin_generator.render(
+        place,gameplay_understanding,generation_readiness)
+    lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
+        +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
+    if guided_workflow_bytes is None:
+        (output/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
+    if guided_feedback_bytes is None:
+        (output/"guided-workflow-evaluation.json").unlink(missing_ok=True)
+    if guided_feedback_aggregate_bytes is None:
+        (output/"guided-workflow-feedback-aggregate.json").unlink(missing_ok=True)
+
     output.mkdir(parents=True,exist_ok=True)
     manifest={
         "schemaVersion":"30.0","placeId":place,"scanId":plan["integrity"]["scanId"],
         "sourceFeatureCandidates":len(plan["features"]),
+        "requestedCapability":plan.get("requestedCapability"),
+        "gameplayUnderstanding":{"schemaVersion":gameplay_understanding["schemaVersion"],
+            "artifact":"gameplay-understanding.json",
+            "sha256":sha(gameplay_understanding_bytes),
+            "summary":gameplay_understanding["summary"],
+            "requestedCapabilityAssessment":gameplay_understanding["requestedCapabilityAssessment"]},
+        "universalGameplayIntelligence":{"schemaVersion":universal_gameplay_intelligence["schemaVersion"],
+            "artifact":"universal-gameplay-intelligence.json",
+            "sha256":sha(universal_gameplay_intelligence_bytes),
+            "summary":universal_gameplay_intelligence["summary"],
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "actionCapabilities":{"artifact":"action-capabilities.json",
+            "schemaVersion":action_discovery["schemaVersion"],
+            "sha256":sha(action_discovery_bytes),
+            "promptTargets":len(action_discovery["promptInteractions"]["targets"]),
+            "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
+            "toolTargets":len(action_discovery["toolInteractions"]["targets"]),
+            "generationReadyToolTargets":action_discovery["toolInteractions"]["generationReadyTargets"],
+            "guiTargets":len(action_discovery["guiInteractions"]["targets"]),
+            "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
+            "eggTargets":len(action_discovery["eggHatching"]["targets"]),
+            "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+        "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
+            "schemaVersion":generated_workflows["schemaVersion"],
+            "sha256":sha(generated_workflows_bytes),"summary":generated_workflows["summary"],
+            "temporalAdjacency":{field:generated_workflows["temporalAdjacency"][field]
+                for field in ("timedEvents","unlinkedAdjacentPairs","usedForWorkflowLinkage")},
+            "guiRevealFollowups":{field:generated_workflows["guiRevealFollowups"][field]
+                for field in ("candidateCount","usedForWorkflowLinkage","causalityProven")},
+            "automaticallyExecutable":generated_workflows["summary"][
+                "automaticallyExecutableWorkflows"]>0,"runtimeVerified":False,
+            "gameplayVerified":False,"causalityProven":False},
+        "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "integratedInGeneratedUtility":guided_workflow_lua is not None,
+            "candidateId":guided_workflow_candidate_id,
+            "executionMode":guided_workflow_candidate.get("executionMode")
+                if guided_workflow_candidate else None,
+            "sha256":sha(guided_workflow_bytes) if guided_workflow_bytes else None,
+            "feedbackSchema":"115.guided-workflow-feedback.1" if guided_workflow_lua else None,
+            "feedbackWorkflowPlanSHA256":guided_workflow_builder.digest(generated_workflows)
+                if guided_workflow_lua else None,
+            "generated":guided_workflow_lua is not None,
+            "automaticActivation":guided_workflow_candidate.get("automaticallyExecutable",False)
+                if guided_workflow_candidate else False,
+            "manualActivationRequired":guided_workflow_candidate.get(
+                "manualGuiActivationRequired",False) if guided_workflow_candidate else False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "guidedWorkflowFeedback":{"sessionCount":len(guided_paths),
+            "artifact":"guided-workflow-evaluation.json" if guided_feedback is not None else None,
+            "sha256":sha(guided_feedback_bytes) if guided_feedback_bytes else None,
+            "summary":guided_feedback["summary"] if guided_feedback is not None else None,
+            "aggregateArtifact":"guided-workflow-feedback-aggregate.json"
+                if guided_feedback_aggregate is not None else None,
+            "aggregateSHA256":sha(guided_feedback_aggregate_bytes)
+                if guided_feedback_aggregate_bytes else None,
+            "aggregateSummary":guided_feedback_aggregate["summary"]
+                if guided_feedback_aggregate is not None else None,
+            "completeSequenceRecurrenceObserved":guided_feedback_aggregate[
+                "completeSequenceRecurrenceObserved"] if guided_feedback_aggregate is not None else False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "generationReadiness":{"schemaVersion":generation_readiness["schemaVersion"],
+            "artifact":"generation-readiness.json",
+            "sha256":sha(generation_readiness_bytes),
+            "summary":generation_readiness["summary"],
+            "request":generation_readiness["request"],
+            "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"],
+            "runtimeVerified":False,"gameplayVerified":False,
+            "causalityProven":False,"actionOutcomesVerified":False},
+        "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
+            "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "toolActivationTrial":{"artifact":"LycolesPromptInteractions.lua" if tool_trial_generated else None,
+            "generated":tool_trial_generated,"officialActivation":tool_trial_generated,
+            "boundedEquip":tool_trial_generated,"automaticMovement":False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+        "guidedGuiTrial":{"artifact":"LycolesPromptInteractions.lua" if gui_trial_generated else None,
+            "generated":gui_trial_generated,"automaticActivation":False,
+            "manualActivationRequired":gui_trial_generated,
+            "exactControlHighlighting":gui_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+
+        "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
+            "generated":egg_trial_generated,"runtimeVerified":False,"gameplayVerified":False,
+            "multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],
+            "compatibilityAlias":True},
+        "promptTrialFeedback":{"artifact":"prompt-trial-evaluation.json" if prompt_feedback else None,
+            "sha256":sha(prompt_feedback_bytes) if prompt_feedback_bytes else None,
+            "submitted":prompt_feedback is not None,
+            "attempts":prompt_feedback["summary"]["submittedAttempts"] if prompt_feedback else 0,
+            "expectedChangesObserved":prompt_feedback["summary"]["expectedChangesObserved"] if prompt_feedback else 0,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+            "actionOutcomesVerified":False},
+
         "implementationBacklogCandidates":backlog["candidateCount"],
         "reviewRequiredContractCandidates":len(contract_draft["proposals"]),
         "reviewTemplateContracts":len(review_template["contracts"]),
@@ -118,41 +790,100 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "manualVerificationChecks":len(verification_plan["checks"]),
         "submittedRuntimeObservations":feedback["summary"]["submitted"] if feedback else 0,
         "dynamicEvidenceOverlays":len(plan.get("evidenceOverlays",[])),
+        "evidenceOverlayProvenance":{"schemaVersion":overlay_provenance["schemaVersion"],
+            "artifact":"evidence-overlay-provenance.json",
+            "overlayCount":overlay_provenance["overlayCount"],
+            "sha256":sha(overlay_provenance_bytes)},
         "workflowEvidenceSummary":workflows["summary"],
         "validatedClientActionContracts":len(validated_contracts["contracts"]) if validated_contracts else 0,
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
-        "implementedClientControls":["Stats","Menus","Prompts","Features"],
+        "implementedClientControls":["Stats","Menus","Prompts","Gameplay","Admin Commands"]+
+            (["Prompt Interactions"] if prompt_trial_generated else [])+
+            (["Tool Activation Trial"] if tool_trial_generated else [])+
+            (["Guided GUI Trial"] if gui_trial_generated else [])+
+            (["Linked Workflow Trial"] if guided_workflow_lua else []),
         "implementedGameplayAutomation":[],
+        "adminCommandFramework":{"artifact":"LycolesAdminCommands.lua",
+            "commands":list(admin_generator.COMMANDS),"prefix":";",
+            "keyboardShortcut":"RightBracket","chatCommandSupport":"where-player-chat-events-are-supported",
+            "sharedFeatureState":True,"staticValidationPassed":True,"runtimeVerified":False,
+            "sha256":sha(admin_lua.encode("utf-8"))},
+        "sourceProvenance":source_provenance,
         "validation":validation,
         "runtimeVerified":False,
         "releaseStatus":"GENERATED_STATIC_CHECKED_NOT_LIVE_TESTED",
         "generatedLuaSHA256":sha(lua.encode("utf-8"))
     }
+    result_builder=load_module("generated_result.py","lycoles_generated_result")
+    generated_result=result_builder.build(place,plan["integrity"]["scanId"],lua,
+        plan.get("requestedCapability"),validation,manifest["implementedClientControls"],
+        generation_readiness)
+    generated_result_name="Lycoles-"+str(place)+"-generated-result.json"
+    generated_result_bytes=(json.dumps(
+        generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+    manifest["generatedResult"]={"artifact":generated_result_name,
+        "schemaVersion":generated_result["schemaVersion"],
+        "sha256":sha(generated_result_bytes),"displayOnly":True,"executionAuthorized":False}
+
     files={
       "feature-coverage.json":(json.dumps(coverage,indent=2,sort_keys=True)+"\n").encode(),
+      "generated-workflow-plan.json":generated_workflows_bytes,
       "review-contracts-template.json":(json.dumps(review_template,indent=2,sort_keys=True)+"\n").encode(),
       "contract-draft.json":(json.dumps(contract_draft,indent=2,sort_keys=True)+"\n").encode(),
       "implementation-backlog.json":(json.dumps(backlog,indent=2,sort_keys=True)+"\n").encode(),
       "manual-verification-plan.json":(json.dumps(verification_plan,indent=2,sort_keys=True)+"\n").encode(),
       "observed-workflows.json":(json.dumps(sequences,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
+      "gameplay-understanding.json":gameplay_understanding_bytes,
+      "universal-gameplay-intelligence.json":universal_gameplay_intelligence_bytes,
+      "generation-readiness.json":generation_readiness_bytes,
+
+      "action-capabilities.json":action_discovery_bytes,
+
       "action-proposals.json":(json.dumps(proposals,indent=2,sort_keys=True)+"\n").encode(),
       "capability-plan.json":(json.dumps(plan,indent=2,sort_keys=True)+"\n").encode(),
+      "evidence-overlay-provenance.json":overlay_provenance_bytes,
+      "source-provenance.json":(json.dumps(source_provenance,indent=2,sort_keys=True)+"\n").encode(),
       "workflow-specs.json":(json.dumps(workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode(),
       "implementation-review.md":(workflows_compiler.render_review(workflows)+"\n").encode("utf-8"),
+      "LycolesAdminCommands.lua":admin_lua.encode("utf-8"),
       "LycolesGeneratedUtility.lua":lua.encode(),
+      generated_result_name:generated_result_bytes,
       "release-manifest.json":(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode(),
       "README.txt":(
           "Lycoles generated utility for Roblox place "+str(place)+"\n"
-          "This release contains client-side diagnostics only.\n"
-          "It has not been runtime-tested. Do not describe gameplay automation as implemented.\n"
+          "This release contains client-side gameplay-assistance controls and, when evidence permits, bounded prompt, official Tool, or user-mediated guided GUI trials.\n"
+          "Baseline source input: "+source_provenance["inputMode"]+".\n"
+          "Dynamic evidence overlays: "+str(overlay_provenance["overlayCount"])+"; each retains separate provenance in evidence-overlay-provenance.json.\n"
+          "Receiver payload digests verified: "+str(source_provenance["receiverStoredPayloadDigestsVerified"]).lower()+".\n"
+          "Gameplay system candidates: "+str(gameplay_understanding["summary"]["systems"])+"; progression loops: "+str(gameplay_understanding["summary"]["progressionLoops"])+".\n"
+          "Universal intelligence interactables: "+str(universal_gameplay_intelligence["summary"]["interactables"])+"; workflow candidates: "+str(universal_gameplay_intelligence["summary"]["workflowCandidates"])+".\n"
+          "Generated bounded capabilities: "+str(generation_readiness["summary"]["generatedCapabilities"])+"; request status: "+generation_readiness["request"]["status"]+".\n"
+          "Linked workflow candidates: "+str(generated_workflows["summary"]["workflowCandidates"])+"; bounded runnable trials: "+str(generated_workflows["summary"]["executionReadyWorkflows"])+"; operator-started automatic Tool/Prompt trials: "+str(generated_workflows["summary"]["automaticallyExecutableWorkflows"])+". Runtime and gameplay remain unverified.\n"
+          "Gameplay understanding and generation readiness do not verify objectives, causality, runtime behavior, or gameplay success.\n"
+          "Admin Commands provides local client utilities only; it does not grant server administrator privileges.\n"
+          "Command wiring is statically checked but not verified in the live Roblox engine.\n"
+          "Inspector ACK digest equivalence: "+str(source_provenance["receiverAcknowledgementDigestEquivalent"]).lower()+".\n"
+          "Resume checkpoint authentication, receiver response authenticity, and original local payload equivalence are unverified.\n"
+          "Generated prompt, Tool, and user-mediated guided GUI trials have not been live runtime-tested; do not claim gameplay functionality or causality.\n"
       ).encode()
     }
+    if prompt_interactions_lua is not None:
+        files["LycolesPromptInteractions.lua"]=prompt_interactions_lua.encode("utf-8")
+    if guided_workflow_bytes is not None:
+        files["LycolesGuidedWorkflow.lua"]=guided_workflow_bytes
+
     if audit_evaluation is not None:
         files["action-audit-evaluation.json"]=(json.dumps(audit_evaluation,indent=2,sort_keys=True)+"\n").encode()
     if feedback is not None:
         files["runtime-feedback.json"]=(json.dumps(feedback,indent=2,sort_keys=True)+"\n").encode()
+    if prompt_feedback_bytes is not None:
+        files["prompt-trial-evaluation.json"]=prompt_feedback_bytes
+    if guided_feedback_bytes is not None:
+        files["guided-workflow-evaluation.json"]=guided_feedback_bytes
+    if guided_feedback_aggregate_bytes is not None:
+        files["guided-workflow-feedback-aggregate.json"]=guided_feedback_aggregate_bytes
     if verification_lua is not None:
         files["LycolesManualVerification.lua"]=verification_lua.encode("utf-8")
     if actions_gui_lua is not None:
@@ -179,9 +910,23 @@ def main():
     parser.add_argument("--contracts",default=None)
     parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
+    parser.add_argument("--prompt-feedback",default=None,
+        help="Optional generated prompt trial feedback (v112 schema)")
+    parser.add_argument("--guided-feedback",action="append",default=[],
+        help="Generated guided workflow feedback (v115 schema); repeatable")
     parser.add_argument("--audit",default=None,help="Optional reviewed-actions GUI audit JSON (v28 schema)")
+    parser.add_argument("--requested-capability",default=None,
+        help="Optional requested capability override used for readiness/generation scoring")
     args=parser.parse_args()
-    try: build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,args.audit);return 0
+    try:
+        result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
+            args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback,
+            requested_capability=args.requested_capability)
+        schema = result.get("schemaVersion")
+        if isinstance(schema, str) and schema.startswith("109.manifest-readiness."):
+            print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)
+            return 2
+        return 0
     except (ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         print("BUILD BLOCKED:",exc,file=sys.stderr);return 2
 

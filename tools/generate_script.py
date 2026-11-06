@@ -8,12 +8,23 @@ remote invocations or claim to replay server-controlled gameplay actions.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
 import sys
+import unicodedata
 
-ALLOWED_FEATURES = ("live_stats", "ui_catalog", "prompt_catalog", "performance")
+ALLOWED_FEATURES = ("gameplay_actions", "evidence_ranked_targets", "bounded_automation")
+
+
+def load_local_module(name,filename):
+    path=pathlib.Path(__file__).with_name(filename)
+    spec=importlib.util.spec_from_file_location(name,path)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+
 def validate(plan):
     if not isinstance(plan,dict): raise ValueError("Plan must be an object")
     integrity=plan.get("integrity")
@@ -27,17 +38,430 @@ def validate(plan):
     for feature in plan["features"]:
         if not isinstance(feature,dict) or not isinstance(feature.get("feature"),str):
             raise ValueError("Malformed feature")
+    request=plan.get("requestedCapability")
+    if request is not None and (not isinstance(request,str) or not request
+            or len(request.encode("utf-8"))>240 or request!=request.strip()
+            or any(unicodedata.category(character)=="Cc" for character in request)):
+        raise ValueError("Malformed requested capability")
     return place
+
+def _validate_source_provenance(provenance):
+    if not isinstance(provenance,dict):
+        raise ValueError("Malformed source provenance")
+    mode=provenance.get("inputMode")
+    receiver=mode in ("receiver-import","receiver-import-legacy-v11")
+    digest_receiver=mode=="receiver-import"
+    if mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11"):
+        raise ValueError("Unsupported source provenance mode")
+    false_claims=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
+                  "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
+                  "serverAuthorityVerified","replayable","gameplayVerified",
+                  "actionOutcomesVerified")
+    if any(provenance.get(field) is not False for field in false_claims):
+        raise ValueError("Source provenance claims unsupported verification")
+    schema=provenance.get("schemaVersion")
+    if schema not in ("30.2.source-provenance.1","30.2.source-provenance.2"):
+        raise ValueError("Unsupported source provenance schema")
+    if schema=="30.2.source-provenance.2":
+        part_count=provenance.get("partCount")
+        digests=provenance.get("partContentDigests")
+        if (mode!="local-multipart" or type(part_count) is not int or not 1<=part_count<=2000
+                or provenance.get("localPartContentDigestsComputed") is not True
+                or not isinstance(digests,list) or len(digests)!=part_count):
+            raise ValueError("Invalid local part digest coverage")
+        indexes=set()
+        for entry in digests:
+            if (not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}
+                    or type(entry.get("partIndex")) is not int
+                    or not 1<=entry["partIndex"]<=part_count
+                    or not isinstance(entry.get("sha256"),str)
+                    or re.fullmatch(r"[a-f0-9]{64}",entry["sha256"]) is None
+                    or entry["partIndex"] in indexes):
+                raise ValueError("Invalid local part digest coverage")
+            indexes.add(entry["partIndex"])
+        if indexes!=set(range(1,part_count+1)):
+            raise ValueError("Invalid local part digest coverage")
+    digest_verified=provenance.get("receiverStoredPayloadDigestsVerified")
+    integrity_verified=provenance.get("receiverIntegrityVerified")
+    acknowledgement_equivalent=provenance.get("receiverAcknowledgementDigestEquivalent")
+    revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun")
+    if (type(digest_verified) is not bool or type(integrity_verified) is not bool
+            or type(acknowledgement_equivalent) is not bool or type(revalidated) is not bool
+            or digest_verified is not digest_receiver or integrity_verified is not receiver
+            or (mode!="receiver-import" and revalidated)
+            or (not receiver and acknowledgement_equivalent)):
+        raise ValueError("Inconsistent source provenance")
+    return receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated
+
+
+def source_provenance_lines(plan):
+    provenance=plan.get("sourceProvenance")
+    if provenance is None:
+        lines=["Baseline input: local multipart","Local part digests: unavailable",
+               "Receiver payload digests: unavailable","Receiver retrieval integrity: unavailable",
+               "Inspector ACK digest equivalence: not established",
+               "Resume checkpoint authentication: unavailable",
+               "Response authenticity: unverified",
+               "Original local payload equivalence: unverified",
+               "Gameplay outcomes: unverified"]
+    else:
+        receiver,digest_verified,integrity_verified,acknowledgement_equivalent,revalidated=(
+            _validate_source_provenance(provenance))
+        mode=provenance["inputMode"]
+        baseline=("legacy v11 receiver import" if mode=="receiver-import-legacy-v11"
+                  else "receiver import" if receiver else "local multipart")
+        if receiver:
+            local_digest_line="not applicable"
+        elif provenance.get("schemaVersion")=="30.2.source-provenance.2":
+            local_digest_line=("computed for "+str(len(provenance["partContentDigests"]))
+                               +"/"+str(provenance["partCount"])+" parts")
+        else:
+            local_digest_line="unavailable"
+        lines=[
+            "Baseline input: "+baseline,
+            "Local part digests: "+local_digest_line,
+            "Receiver payload digests: "+("verified" if digest_verified else "unavailable"),
+            "Receiver retrieval integrity: "+("verified" if integrity_verified else "unavailable"),
+            "Inspector ACK digest equivalence: "+(
+                "verified" if acknowledgement_equivalent else "not established"),
+            "Receiver digests rechecked this run: "+(
+                "yes" if revalidated else "unavailable on legacy v11" if mode=="receiver-import-legacy-v11"
+                else "no (cached checkpoint used)" if receiver else "not applicable"),
+            "Resume checkpoint authentication: unavailable",
+            "Response authenticity: unverified",
+            "Original local payload equivalence: unverified",
+            "Gameplay outcomes: unverified",
+        ]
+    overlays=plan.get("evidenceOverlays",[])
+    if not isinstance(overlays,list) or len(overlays)>64:
+        raise ValueError("Malformed evidence overlays")
+    receiver_overlays=0
+    for overlay in overlays:
+        if not isinstance(overlay,dict):
+            raise ValueError("Malformed evidence overlay")
+        overlay_provenance=overlay.get("sourceProvenance")
+        if (_validate_source_provenance(overlay_provenance)[0]):
+            receiver_overlays+=1
+        if (overlay_provenance.get("schemaVersion") not in
+                ("30.2.source-provenance.1","30.2.source-provenance.2")
+                or overlay_provenance.get("scanId")!=overlay.get("scanId")
+                or overlay_provenance.get("placeId")!=plan["integrity"]["placeId"]
+                or overlay_provenance.get("partCount")!=overlay.get("parts")):
+            raise ValueError("Evidence overlay provenance identity mismatch")
+    lines.append("Dynamic evidence overlays: "+str(len(overlays)))
+    if overlays:
+        lines.append("Overlay sources: "+str(receiver_overlays)+" receiver import, "
+                     +str(len(overlays)-receiver_overlays)+" local multipart; separate provenance")
+    return lines
+
+
+def gameplay_understanding_lines(plan,understanding):
+    if understanding is None:
+        return ["Gameplay understanding: unavailable","No gameplay mechanics are verified"]
+    integrity=plan["integrity"]
+    if not isinstance(understanding,dict):
+        raise ValueError("Malformed gameplay understanding")
+    claims=understanding.get("claims")
+    false_claims=("sourceAuthenticityVerified","primaryObjectiveVerified","causalityProven",
+                  "serverAuthorityVerified","replayable","runtimeVerified",
+                  "gameplayVerified","actionOutcomesVerified")
+    if (understanding.get("schemaVersion") not in {
+                "110.gameplay-understanding.1","110.gameplay-understanding.2"}
+            or understanding.get("placeId")!=integrity.get("placeId")
+            or understanding.get("scanId")!=integrity.get("scanId")
+            or understanding.get("model")!="composable_capabilities"
+            or understanding.get("genre") is not None
+            or not isinstance(claims,dict)
+            or any(claims.get(field) is not False for field in false_claims)):
+        raise ValueError("Invalid gameplay understanding claims")
+    systems=understanding.get("systems")
+    objectives=understanding.get("objectiveCandidates")
+    loops=understanding.get("progressionLoops")
+    if (not isinstance(systems,list) or len(systems)>128
+            or not isinstance(objectives,list) or len(objectives)>128
+            or not isinstance(loops,list) or len(loops)>128):
+        raise ValueError("Malformed gameplay understanding")
+    lines=["Gameplay systems: "+str(len(systems)),
+           "Objective candidates: "+str(len(objectives)),
+           "Progression loops: "+str(len(loops)),
+           "No gameplay mechanics are verified"]
+    profile=understanding.get("profileIndex");gaps=understanding.get("evidenceGaps")
+    if profile is not None or gaps is not None:
+        if (not isinstance(profile,dict)
+                or profile.get("schemaVersion")!="110.game-profile-index.1"
+                or profile.get("model")!="provider-independent-composable-profile"
+                or profile.get("singleGenreAssumed") is not False
+                or type(profile.get("systemInventoryTruncated")) is not bool
+                or type(profile.get("omittedSystemCandidates")) is not int
+                or profile["omittedSystemCandidates"]<0
+                or profile["systemInventoryTruncated"]!=(profile["omittedSystemCandidates"]>0)
+                or profile.get("implementationReady") is not False
+                or profile.get("runtimeVerified") is not False
+                or profile.get("gameplayVerified") is not False
+                or not isinstance(gaps,list) or len(gaps)>128
+                or any(not isinstance(item,dict) or item.get("status")!="unresolved"
+                    or item.get("implementationReady") is not False
+                    or item.get("causalityProven") is not False for item in gaps)):
+            raise ValueError("Malformed provider-independent game profile")
+        lines.extend(["Game profile: provider-independent composable evidence",
+            "Unresolved evidence gaps: "+str(len(gaps))])
+    assessment=understanding.get("requestedCapabilityAssessment")
+    if assessment is not None:
+        if (not isinstance(assessment,dict)
+                or assessment.get("implementationReady") is not False
+                or assessment.get("runtimeVerified") is not False
+                or assessment.get("gameplayVerified") is not False):
+            raise ValueError("Invalid requested capability assessment")
+        missing=assessment.get("blockers")
+        if (not isinstance(missing,list) or len(missing)>64
+                or any(not isinstance(item,str) or len(item)>160 for item in missing)):
+            raise ValueError("Invalid requested capability blockers")
+        lines.append("Request readiness: "+str(assessment.get("status")))
+        lines.append("Request evidence: "+str(assessment.get("evidenceTier")))
+        if missing:
+            lines.append("Request missing: "+", ".join(missing[:8]))
+    for system in systems[:8]:
+        label=system.get("label") if isinstance(system,dict) else None
+        tier=system.get("evidenceTier") if isinstance(system,dict) else None
+        if not isinstance(label,str) or not isinstance(tier,str):
+            raise ValueError("Malformed gameplay system")
+        lines.append(label+" ["+tier+"]")
+    return lines
+
+
+
+def generation_readiness_lines(plan,readiness):
+    if readiness is None:
+        return ["Generation readiness: unavailable",
+                "No generated gameplay capability is live-verified"]
+    integrity=plan["integrity"]
+    claims=readiness.get("claims") if isinstance(readiness,dict) else None
+    false_claims=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
+                  "runtimeVerified","gameplayVerified","actionOutcomesVerified")
+    if (not isinstance(readiness,dict)
+            or readiness.get("schemaVersion")!="113.generation-readiness.1"
+            or readiness.get("placeId")!=integrity.get("placeId")
+            or readiness.get("scanId")!=integrity.get("scanId")
+            or not isinstance(claims,dict)
+            or any(claims.get(field) is not False for field in false_claims)):
+        raise ValueError("Invalid generation readiness claims")
+    request=readiness.get("request")
+    generated=readiness.get("generatedCapabilities")
+    unavailable=readiness.get("unavailableRequestedBehavior")
+    if (not isinstance(request,dict) or not isinstance(generated,list) or len(generated)>64
+            or not isinstance(unavailable,list) or len(unavailable)>16
+            or request.get("fullRequestImplemented") is not False
+            or request.get("runtimeVerified") is not False
+            or request.get("gameplayVerified") is not False):
+        raise ValueError("Malformed generation readiness")
+    status=request.get("status")
+    if not isinstance(status,str) or not 1<=len(status)<=100:
+        raise ValueError("Malformed generation readiness status")
+    lines=["Generation request: "+status,
+           "Generated bounded capabilities: "+str(len(generated)),
+           "Full requested capability implemented: false",
+           "Runtime and gameplay verification: false"]
+    subset=request.get("supportedSubset")
+    if not isinstance(subset,list) or len(subset)>16:
+        raise ValueError("Malformed generated capability subset")
+    for item in subset[:5]:
+        if not isinstance(item,str) or not 1<=len(item)<=160:
+            raise ValueError("Malformed generated capability subset")
+        lines.append("Generated subset: "+item)
+    for capability in generated[:5]:
+        if not isinstance(capability,dict):raise ValueError("Malformed generated capability")
+        kind=capability.get("kind")
+        if (capability.get("runtimeVerified") is not False
+                or capability.get("gameplayVerified") is not False):
+            raise ValueError("Malformed generated capability")
+        if kind=="mixed-action-workflow-trial":
+            label=capability.get("candidateId");mode=capability.get("executionMode")
+            matched=capability.get("requestMatchedTerms");score=capability.get("requestMatchScore")
+            if (not isinstance(label,str) or not 1<=len(label)<=120
+                    or mode not in ("mixed-guided","bounded-automatic")
+                    or not isinstance(capability.get("stepCount"),int)
+                    or not 2<=capability["stepCount"]<=128
+                    or not isinstance(matched,list) or len(matched)>128
+                    or any(not isinstance(term,str) or not 1<=len(term)<=80 or not all(
+                        "a"<=character<="z" or "0"<=character<="9" for character in term)
+                        for term in matched)
+                    or matched!=sorted(set(matched)) or type(score) is not int
+                    or not 0<=score<=10_000 or (score>0)!=bool(matched)
+                    or capability.get("operatorStartRequired") is not True):
+                raise ValueError("Malformed generated workflow capability")
+            lines.append("Generated workflow: "+label+" ["+mode+", "+str(
+                capability["stepCount"])+" steps; request evidence: "+(
+                    ", ".join(matched) if matched else "none")+"]")
+            continue
+        label=capability.get("targetLabel")
+        if (not isinstance(label,str) or not 1<=len(label)<=120
+                or kind not in ("proximity-prompt-trial","official-tool-activation-trial",
+                    "guided-gui-activation-trial")):
+            raise ValueError("Malformed generated capability")
+        if (kind=="guided-gui-activation-trial"
+                and (capability.get("automaticActivation") is not False
+                    or capability.get("manualActivationRequired") is not True
+                    or capability.get("exactControlHighlighting") is not True)):
+            raise ValueError("Malformed guided GUI capability")
+        lines.append("Generated trial: "+label+" ["+kind+"]")
+    selection=readiness.get("workflowSelection")
+    candidates=selection.get("candidates") if isinstance(selection,dict) else None
+    if (not isinstance(selection,dict) or type(selection.get("available")) is not bool
+            or not isinstance(candidates,list) or len(candidates)>20
+            or type(selection.get("totalCandidates")) is not int
+            or type(selection.get("omittedCandidates")) is not int
+            or selection.get("shownCandidates")!=len(candidates)
+            or selection["totalCandidates"]!=len(candidates)+selection["omittedCandidates"]):
+        raise ValueError("Malformed workflow selection")
+    selected_id=selection.get("selectedCandidateId")
+    if selected_id is not None:
+        if not isinstance(selected_id,str) or not 1<=len(selected_id)<=120:
+            raise ValueError("Malformed selected workflow identity")
+        lines.append("Workflow selected: "+selected_id+" of "+str(selection["totalCandidates"]))
+    alternatives=0
+    for item in candidates:
+        if not isinstance(item,dict) or type(item.get("selected")) is not bool:
+            raise ValueError("Malformed workflow alternative")
+        if item["selected"]:continue
+        identifier=item.get("candidateId");reason=item.get("selectionReason")
+        if (not isinstance(identifier,str) or not 1<=len(identifier)<=120
+                or not isinstance(reason,str) or not 1<=len(reason)<=80):
+            raise ValueError("Malformed workflow alternative")
+        if alternatives<3:lines.append("Workflow not selected: "+identifier+" ["+reason+"]")
+        alternatives+=1
+
+    for item in unavailable:
+        identifier=item.get("id") if isinstance(item,dict) else None
+        status_value=item.get("status") if isinstance(item,dict) else None
+        if not isinstance(identifier,str) or status_value!="unavailable":
+            raise ValueError("Malformed unavailable requested behavior")
+        lines.append("Unavailable: "+identifier)
+    correlation=readiness.get("guidedWorkflowFeedbackCorrelation")
+    if correlation is not None:
+        correlation_claims=correlation.get("claims") if isinstance(correlation,dict) else None
+        if (not isinstance(correlation,dict) or type(correlation.get("available")) is not bool
+                or not isinstance(correlation_claims,dict)
+                or any(correlation_claims.get(field) is not False for field in false_claims)):
+            raise ValueError("Malformed guided feedback correlation")
+        if correlation["available"]:
+            summary=correlation.get("summary")
+            if (correlation.get("readinessImpact")!="informational-only"
+                    or not isinstance(summary,dict)
+                    or any(type(summary.get(field)) is not int or summary[field]<0 for field in
+                        ("sessions","completeClientObservationSequences","stepsWithStatusConflict"))
+                    or type(correlation.get("completeSequenceRecurrenceObserved")) is not bool):
+                raise ValueError("Malformed guided feedback correlation")
+            lines.extend(["Guided feedback sessions: "+str(summary["sessions"]),
+                "Complete client-observation sequences: "+str(
+                    summary["completeClientObservationSequences"]),
+                "Guided feedback status conflicts: "+str(summary["stepsWithStatusConflict"]),
+                "Repeated client-observation sequence: "+str(
+                    correlation["completeSequenceRecurrenceObserved"]).lower(),
+                "Feedback readiness impact: informational-only"])
+    return lines
+
 
 def lua_quote(value):
     return json.dumps(str(value),ensure_ascii=True)
 
-def render(plan):
+def render(plan,gameplay_understanding=None,generation_readiness=None):
     place=validate(plan)
     names=sorted({f["feature"] for f in plan["features"]})
     feature_list="\n".join("    "+lua_quote(name)+"," for name in names)
+    provenance_list="\n".join(
+        "    "+lua_quote(line)+"," for line in source_provenance_lines(plan))
+    gameplay_list="\n".join("    "+lua_quote(line)+"," for line in
+                             gameplay_understanding_lines(plan,gameplay_understanding))
+    generation_list="\n".join("    "+lua_quote(line)+"," for line in
+                               generation_readiness_lines(plan,generation_readiness))
+
+    request=plan.get("requestedCapability")
+    request_lines=(["Requested capability: "+request,
+                    "Request status: evidence review only; gameplay is unverified"]
+                   if request else ["Requested capability: none supplied"])
+    request_list="\n".join("    "+lua_quote(line)+"," for line in request_lines)
+
+    history=plan.get("observedInteractionHistory",[])
+    action_candidates={}
+    if isinstance(history,list):
+        for event in history:
+            if not isinstance(event,dict):
+                continue
+            path=event.get("path")
+            control_type=event.get("controlType")
+            feature=(event.get("featureCandidate")
+                if isinstance(event.get("featureCandidate"),str) else "general")
+            if not isinstance(path,str) or not 1<=len(path)<=400 or not isinstance(control_type,str):
+                continue
+            if control_type.startswith("GuiButton") and path.startswith("LocalPlayer.PlayerGui."):
+                kind="gui"
+            elif control_type.startswith("ProximityPrompt") and path.startswith("Workspace."):
+                kind="prompt"
+            else:
+                continue
+            tokens={token.casefold() for token in re.findall(r"[^\\W_]+",path,flags=re.UNICODE)}
+            meaningful_tokens={"action","claim","reward","reroll","hatch","egg","buy",
+                "sell","upgrade","rebirth","travel","teleport","craft","roll",
+                "use","enchant","daily","season","gum"}
+            low_value_tokens={"close","menu","menus","sidebar","settings","diagnostic","stats"}
+            score=0
+            if feature in {"shops","rewards","progression","training","rebirth",
+                    "travel","quests","combat","bosses","crafting","pets"}:
+                score+=5
+            if tokens&meaningful_tokens:
+                score+=4
+            if isinstance(event.get("stateChanges"),list) and event["stateChanges"]:
+                score+=3
+            if tokens&low_value_tokens and not tokens&meaningful_tokens:
+                score-=6
+            if score<3:
+                continue
+            key=(kind,path)
+            candidate=action_candidates.setdefault(key,{
+                "kind":kind,"path":path,"feature":feature,
+                "label":" / ".join(path.split(".")[-3:]),"score":0,"count":0})
+            candidate["score"]+=score
+            candidate["count"]+=1
+
+    if isinstance(generation_readiness,dict):
+        generated=generation_readiness.get("generatedCapabilities")
+        if isinstance(generated,list):
+            for capability in generated:
+                if not isinstance(capability,dict):
+                    continue
+                kind=capability.get("kind")
+                path=capability.get("targetPath")
+                label=capability.get("targetLabel")
+                if not isinstance(path,str) or not path:
+                    continue
+                if kind=="proximity-prompt-trial":
+                    action_kind="prompt"
+                elif kind in ("guided-gui-activation-trial","official-tool-activation-trial"):
+                    action_kind="gui"
+                else:
+                    continue
+                key=(action_kind,path)
+                candidate=action_candidates.setdefault(key,{
+                    "kind":action_kind,"path":path,"feature":"progression",
+                    "label":label if isinstance(label,str) and label else " / ".join(path.split(".")[-3:]),
+                    "score":0,"count":0})
+                candidate["score"]+=12
+                candidate["count"]+=1
+
+    actions=sorted(action_candidates.values(),
+        key=lambda item:(-item["score"],-item["count"],item["feature"],item["path"]))[:12]
+    if not actions:
+        actions=[{"label":"no evidence-backed gameplay action discovered",
+            "kind":"gui","path":"","feature":"general"}]
+
+    action_target_list="\n".join(
+        "    {label="+lua_quote("["+str(item.get("feature","general"))+"] "+str(item["label"]) )
+        +", kind="+lua_quote(item["kind"])
+        +", path="+lua_quote(item["path"])+"},"
+        for item in actions)
+
     return """-- Generated by Lycoles v9 from validated client-visible scan evidence.
--- Client diagnostics only. No remote invocation, anticheat bypass or fabricated gameplay.
+-- Gameplay-assistance controls only; no remote fabrication or server authority claims.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
@@ -81,7 +505,7 @@ output.TextXAlignment=Enum.TextXAlignment.Left
 output.TextYAlignment=Enum.TextYAlignment.Top
 output.TextWrapped=true
 output.TextSize=13
-output.Text="Select a client diagnostic."
+output.Text="Select gameplay controls or review evidence status."
 local tabs=Instance.new("Frame",frame)
 tabs.BackgroundTransparency=1
 tabs.Position=UDim2.new(0,12,1,-46)
@@ -89,13 +513,109 @@ tabs.Size=UDim2.new(1,-24,0,38)
 local layout=Instance.new("UIListLayout",tabs)
 layout.FillDirection=Enum.FillDirection.Horizontal
 layout.Padding=UDim.new(0,4)
+
+local ACTION_TARGETS = ACTION_TARGETS_DATA
+local selectedActionIndex = 1
+local gameplayAttempts, gameplaySuccesses, gameplayFailures = 0, 0, 0
+
+local function selectedGameplayAction()
+    if #ACTION_TARGETS == 0 then return nil end
+    selectedActionIndex = math.clamp(selectedActionIndex, 1, #ACTION_TARGETS)
+    return ACTION_TARGETS[selectedActionIndex]
+end
+
+local function resolvePath(path)
+    if type(path) ~= "string" or path == "" then return nil, "empty path" end
+    local parts = {}
+    for item in string.gmatch(path, "[^%.]+") do parts[#parts + 1] = item end
+    if #parts == 0 then return nil, "invalid path" end
+    local root, index = nil, 2
+    if parts[1] == "LocalPlayer" then
+        root = player
+    elseif parts[1] == "Workspace" then
+        root = workspace
+    else
+        root = player:FindFirstChild("PlayerGui")
+        index = 1
+    end
+    if not root then return nil, "missing root" end
+    local current = root
+    for i = index, #parts do
+        current = current:FindFirstChild(parts[i])
+        if not current then return nil, "missing segment: " .. parts[i] end
+    end
+    return current, nil
+end
+
+local function trySignal(_signal)
+    return false, "signal invocation disabled"
+end
+
+local function tryVirtualClick(button)
+    local okService, vim = pcall(function() return game:GetService("VirtualInputManager") end)
+    if not okService or not vim then return false, "VirtualInputManager unavailable" end
+    local size, pos = button.AbsoluteSize, button.AbsolutePosition
+    if size.X <= 1 or size.Y <= 1 then return false, "no clickable area" end
+    local x = pos.X + math.floor(size.X/2)
+    local y = pos.Y + math.floor(size.Y/2)
+    local ok = pcall(function()
+        vim:SendMouseMoveEvent(x, y, game)
+        vim:SendMouseButtonEvent(x, y, 0, true, game, 1)
+        vim:SendMouseButtonEvent(x, y, 0, false, game, 1)
+    end)
+    if ok then return true, "virtual click" end
+    return false, "virtual click failed"
+end
+
+local function activateGameplayAction(action)
+    gameplayAttempts = gameplayAttempts + 1
+    if not action or type(action.path) ~= "string" or action.path == "" then
+        gameplayFailures = gameplayFailures + 1
+        return false, "no actionable path"
+    end
+    if action.kind == "prompt" then
+        local prompt, err = resolvePath(action.path)
+        if not prompt or not prompt:IsA("ProximityPrompt") then
+            gameplayFailures = gameplayFailures + 1
+            return false, "prompt resolve failed: " .. tostring(err)
+        end
+        if type(fireproximityprompt) ~= "function" then
+            gameplayFailures = gameplayFailures + 1
+            return false, "fireproximityprompt unavailable"
+        end
+        local ok, activateError = pcall(function() fireproximityprompt(prompt) end)
+        if ok then
+            gameplaySuccesses = gameplaySuccesses + 1
+            return true, "prompt activated"
+        end
+        gameplayFailures = gameplayFailures + 1
+        return false, "prompt activation failed: " .. tostring(activateError)
+    end
+    local button, err = resolvePath(action.path)
+    if not button or not button:IsA("GuiButton") then
+        gameplayFailures = gameplayFailures + 1
+        return false, "GUI resolve failed: " .. tostring(err or "not GuiButton")
+    end
+    local ok, mode = trySignal(button.Activated)
+    if not ok and button.MouseButton1Click then
+        ok, mode = trySignal(button.MouseButton1Click)
+    end
+    if not ok then ok, mode = tryVirtualClick(button) end
+    if ok then
+        gameplaySuccesses = gameplaySuccesses + 1
+        return true, "activated via " .. mode
+    end
+    gameplayFailures = gameplayFailures + 1
+    return false, "activation unavailable"
+end
+
 local function show(title,lines)
     if not alive then return end
     output.Text=title.."\\n\\n"..table.concat(lines,"\\n")
 end
 local function button(name,callback)
     local b=Instance.new("TextButton",tabs)
-    b.Size=UDim2.new(0.25,-4,1,0)
+    b.Size=UDim2.new(0.2,-4,1,0)
     b.Text=name
     b.TextSize=12
     b.BackgroundColor3=Color3.fromRGB(48,78,103)
@@ -138,11 +658,39 @@ button("Prompts",function()
     if #lines==0 then lines={"No proximity prompts found."} end
     show("World prompts (read-only)",lines)
 end)
-button("Features",function()
+button("Gameplay",function()
     local candidates=FEATURE_NAMES
-    local lines={"Discovered: "..tostring(#candidates),"These are candidates, not implemented gameplay actions."}
-    for i=1,math.min(18,#candidates) do lines[#lines+1]=candidates[i] end
-    show("Inspection inventory",lines)
+    local provenance=SOURCE_PROVENANCE_LINES
+    local gameplay=GAMEPLAY_UNDERSTANDING_LINES
+    local generation=GENERATION_READINESS_LINES
+    local request=REQUEST_STATUS_LINES
+    local action=selectedGameplayAction()
+    local activationSummary="No actionable gameplay target"
+    if action and action.path ~= "" then
+        local ok,message=activateGameplayAction(action)
+        activationSummary=tostring(ok).." | "..tostring(message)
+        selectedActionIndex=(selectedActionIndex % #ACTION_TARGETS)+1
+    end
+    local lines={
+        "Gameplay action run: "..activationSummary,
+        "Actions attempted: "..tostring(gameplayAttempts).." | success: "..tostring(gameplaySuccesses).." | failure: "..tostring(gameplayFailures),
+        "Evidence-backed action targets: "..tostring(#ACTION_TARGETS),
+        ""}
+    for _,line in ipairs(request) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for _,line in ipairs(generation) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for i=1,math.min(8,#ACTION_TARGETS) do
+        local item=ACTION_TARGETS[i]
+        lines[#lines+1]="Target "..tostring(i)..": "..item.label.." ["..item.kind.."]"
+    end
+    lines[#lines+1]=""
+    for _,line in ipairs(gameplay) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for _,line in ipairs(provenance) do lines[#lines+1]=line end
+    lines[#lines+1]=""
+    for i=1,math.min(8,#candidates) do lines[#lines+1]=candidates[i] end
+    show("Gameplay actions and evidence status",lines)
 end)
 local dragging,dragInput,dragStart,startPos=false,nil,nil,nil
 table.insert(connections,heading.InputBegan:Connect(function(input)
@@ -167,8 +715,14 @@ _G.LycolesGeneratedClose=function()
     _G.LycolesGeneratedClose=nil
 end
 table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesGeneratedClose))
-show("Ready",{"Validated scan inventory loaded.","Client diagnostic features only.","Gameplay automation has not been verified."})
-""".replace("PLACE_ID",str(place)).replace("FEATURE_NAMES", "{\n"+feature_list+"\n}")
+show("Ready",{"Validated scan inventory loaded.","Gameplay action controls available.","Gameplay automation has not been verified."})
+""".replace("PLACE_ID",str(place)).replace(
+        "ACTION_TARGETS_DATA", "{\n"+action_target_list+"\n}").replace(
+        "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
+        "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
+        "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(
+        "GENERATION_READINESS_LINES", "{\n"+generation_list+"\n}").replace(
+        "REQUEST_STATUS_LINES", "{\n"+request_list+"\n}")
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -178,17 +732,152 @@ def main():
         raw=pathlib.Path(args.plan).read_bytes()
         if len(raw)>5_000_000: raise ValueError("Plan too large")
         plan=json.loads(raw)
-        lua=render(plan)
+        understanding=load_local_module("lycoles_gameplay_understanding",
+                                        "understand_gameplay.py").analyze(plan)
+        discovery_builder=load_local_module("lycoles_action_discovery",
+                                             "discover_action_capabilities.py")
+        action_discovery=discovery_builder.analyze(plan)
+        workflow_planner=load_local_module("lycoles_generated_workflows",
+                                           "plan_generated_workflows.py")
+        generated_workflows=workflow_planner.plan(plan,action_discovery)
+        guided_workflow_builder=load_local_module("lycoles_guided_workflow",
+                                                  "generate_guided_workflow.py")
+        guided_workflow_lua=guided_workflow_builder.render(generated_workflows)
+
+        guided_workflow_candidates=guided_workflow_builder.validate(generated_workflows)
+        guided_workflow_candidate=(guided_workflow_candidates[0]
+            if guided_workflow_candidates else None)
+        guided_workflow_candidate_id=(guided_workflow_candidate["id"]
+            if guided_workflow_candidate else None)
+
+        readiness_builder=load_local_module("lycoles_generation_readiness",
+                                             "assess_generation_readiness.py")
+        generation_readiness=readiness_builder.assess(
+            plan,understanding,action_discovery,generated_workflows)
+        utility_lua=render(plan,understanding,generation_readiness)
+        prompt_generator=load_local_module("lycoles_prompt_interactions","generate_prompt_interactions.py")
+        prompt_interactions_lua=prompt_generator.render(action_discovery)
+        prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
+        tool_trial_generated=action_discovery["toolInteractions"]["generationReadyTargets"]>0
+        gui_trial_generated=action_discovery["guiInteractions"]["generationReadyTargets"]>0
+        egg_trial_generated=action_discovery["eggHatching"]["automaticSingleTrialReady"] is True
+
+        admin_generator=load_local_module("lycoles_admin_commands",
+                                          "generate_admin_commands.py")
+        admin_lua=admin_generator.render(
+            plan["integrity"]["placeId"],understanding,generation_readiness)
+        lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
+            +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
+        result_builder=load_local_module("lycoles_generated_result","generated_result.py")
+        generated_result=result_builder.build(plan["integrity"]["placeId"],
+            plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
+            {"placeGuard":True,"note":"Generator structural contract; not live runtime validation"},
+            list(ALLOWED_FEATURES)+["Admin Commands"]+
+                (["Prompt Interactions"] if prompt_trial_generated else [])+
+                (["Tool Activation Trial"] if tool_trial_generated else [])+
+                (["Guided GUI Trial"] if gui_trial_generated else [])+
+                (["Linked Workflow Trial"] if guided_workflow_lua else []),
+            generation_readiness)
+
+        generation_readiness_bytes=(json.dumps(
+            generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
+        if guided_workflow_lua is None:
+            (out/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
+
         script=out/"LycolesGeneratedUtility.lua"
         script.write_text(lua,encoding="utf-8")
+        (out/"LycolesAdminCommands.lua").write_text(admin_lua,encoding="utf-8")
+        (out/"gameplay-understanding.json").write_text(
+            json.dumps(understanding,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        (out/"action-capabilities.json").write_text(json.dumps(
+            action_discovery,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        (out/"generated-workflow-plan.json").write_text(json.dumps(
+            generated_workflows,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+        if guided_workflow_lua is not None:
+            (out/"LycolesGuidedWorkflow.lua").write_text(
+                guided_workflow_lua,encoding="utf-8")
+
+        (out/"generation-readiness.json").write_bytes(generation_readiness_bytes)
+        if prompt_interactions_lua is not None:
+            (out/"LycolesPromptInteractions.lua").write_text(prompt_interactions_lua,encoding="utf-8")
+
+        result_name="Lycoles-"+str(plan["integrity"]["placeId"])+"-generated-result.json"
+        (out/result_name).write_text(json.dumps(
+            generated_result,indent=2,sort_keys=True,ensure_ascii=False)+"\n",encoding="utf-8")
+
         manifest={"schemaVersion":"9.0","placeId":plan["integrity"]["placeId"],
           "sourcePlanSHA256":hashlib.sha256(raw).hexdigest(),
           "generatedLuaSHA256":hashlib.sha256(lua.encode()).hexdigest(),
-          "implementedFeatures":list(ALLOWED_FEATURES),
+          "implementedFeatures":list(ALLOWED_FEATURES)+["Admin Commands"]+
+            (["Prompt Interactions"] if prompt_trial_generated else [])+
+            (["Tool Activation Trial"] if tool_trial_generated else [])+
+            (["Guided GUI Trial"] if gui_trial_generated else [])+
+            (["Linked Workflow Trial"] if guided_workflow_lua else []),
+          "adminCommands":list(admin_generator.COMMANDS),
+          "generatedResult":{"artifact":result_name,"schemaVersion":generated_result["schemaVersion"],
+            "displayOnly":True,"executionAuthorized":False},
+          "actionCapabilities":{"artifact":"action-capabilities.json",
+            "schemaVersion":action_discovery["schemaVersion"],
+            "promptTargets":len(action_discovery["promptInteractions"]["targets"]),
+            "trialReadyPromptTargets":action_discovery["promptInteractions"]["trialReadyTargets"],
+            "toolTargets":len(action_discovery["toolInteractions"]["targets"]),
+            "generationReadyToolTargets":action_discovery["toolInteractions"]["generationReadyTargets"],
+            "guiTargets":len(action_discovery["guiInteractions"]["targets"]),
+            "generationReadyGuiTargets":action_discovery["guiInteractions"]["generationReadyTargets"],
+            "correlatedEggTargets":action_discovery["eggHatching"]["correlatedTargets"]},
+          "generatedWorkflowPlan":{"artifact":"generated-workflow-plan.json",
+            "schemaVersion":generated_workflows["schemaVersion"],
+            "summary":generated_workflows["summary"],
+            "temporalAdjacency":{field:generated_workflows["temporalAdjacency"][field]
+                for field in ("timedEvents","unlinkedAdjacentPairs","usedForWorkflowLinkage")},
+            "guiRevealFollowups":{field:generated_workflows["guiRevealFollowups"][field]
+                for field in ("candidateCount","usedForWorkflowLinkage","causalityProven")},
+            "automaticallyExecutable":
+                generated_workflows["summary"]["automaticallyExecutableWorkflows"]>0,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "guidedWorkflowTrial":{"artifact":"LycolesGuidedWorkflow.lua" if guided_workflow_lua else None,
+            "integratedInGeneratedUtility":guided_workflow_lua is not None,
+            "candidateId":guided_workflow_candidate_id,
+            "executionMode":guided_workflow_candidate.get("executionMode")
+                if guided_workflow_candidate else None,
+            "feedbackSchema":"115.guided-workflow-feedback.1" if guided_workflow_lua else None,
+            "feedbackWorkflowPlanSHA256":guided_workflow_builder.digest(generated_workflows)
+                if guided_workflow_lua else None,
+            "generated":guided_workflow_lua is not None,
+            "automaticActivation":guided_workflow_candidate.get("automaticallyExecutable",False)
+                if guided_workflow_candidate else False,
+            "manualActivationRequired":guided_workflow_candidate.get(
+                "manualGuiActivationRequired",False) if guided_workflow_candidate else False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
+            "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "toolActivationTrial":{"artifact":"LycolesPromptInteractions.lua" if tool_trial_generated else None,
+            "generated":tool_trial_generated,"officialActivation":tool_trial_generated,
+            "boundedEquip":tool_trial_generated,"automaticMovement":False,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "guidedGuiTrial":{"artifact":"LycolesPromptInteractions.lua" if gui_trial_generated else None,
+            "generated":gui_trial_generated,"automaticActivation":False,
+            "manualActivationRequired":gui_trial_generated,
+            "exactControlHighlighting":gui_trial_generated,
+            "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
+          "eggAutofarmTrial":{"artifact":"LycolesPromptInteractions.lua" if egg_trial_generated else None,
+            "generated":egg_trial_generated,"runtimeVerified":False,
+            "gameplayVerified":False,"multiHatchReady":action_discovery["eggHatching"]["multiHatchTrialReady"],
+            "compatibilityAlias":True},
+          "gameplayUnderstanding":{"artifact":"gameplay-understanding.json",
+            "schemaVersion":understanding["schemaVersion"],"summary":understanding["summary"]},
+          "generationReadiness":{"artifact":"generation-readiness.json",
+            "schemaVersion":generation_readiness["schemaVersion"],
+            "sha256":hashlib.sha256(generation_readiness_bytes).hexdigest(),
+            "summary":generation_readiness["summary"],
+            "request":generation_readiness["request"],
+            "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,
           "sourceFeatureCandidates":len(plan["features"]),
-          "releaseStatus":"CLIENT_DIAGNOSTIC_ONLY_UNTESTED"}
+          "releaseStatus":"GENERATED_PROMPT_TRIAL_STATIC_CHECKED_NOT_LIVE_TESTED"
+            if prompt_interactions_lua else "CLIENT_DIAGNOSTIC_ONLY_UNTESTED"}
         (out/"release-manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
         print("Generated:",script)
         return 0

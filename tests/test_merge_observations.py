@@ -14,8 +14,20 @@ class MergeTests(unittest.TestCase):
           "features":[{"feature":"rebirth","interactionEvents":1,"observedEvents":1,
             "verifiedClientOutcomes":0,"clientCorroboratedEvents":0,
             "temporalTransitionEvents":0,"implementationReady":False}]}
-    def observation(self):
-        return {"integrity":{"scanComplete":True,"placeId":123,"scanId":"delta"},
+    def observation(self,input_mode="local-multipart"):
+        receiver=input_mode=="receiver-import"
+        provenance={"schemaVersion":"30.2.source-provenance.1","inputMode":input_mode,
+          "scanId":"delta","placeId":123,"partCount":2,
+          "receiverStoredPayloadDigestsVerified":receiver,
+          "receiverStoredPayloadDigestsRevalidatedThisRun":receiver,
+          "receiverAcknowledgementDigestEquivalent":False,
+          "receiverIntegrityVerified":receiver,
+          "resumeCheckpointAuthenticated":False,"receiverResponseAuthenticityVerified":False,
+          "localPayloadEquivalent":False,"sourceAuthenticityVerified":False,
+          "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
+          "gameplayVerified":False,"actionOutcomesVerified":False}
+        return {"integrity":{"scanComplete":True,"placeId":123,"scanId":"delta","parts":2},
+          "sourceProvenance":provenance,
           "sourceDiagnostics":{"scanMode":"dynamic-observations"},
           "features":[{"feature":"rebirth","interactionEvents":2,"observedEvents":2,
             "verifiedClientOutcomes":1,"clientCorroboratedEvents":1,
@@ -27,6 +39,35 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(merged["features"][0]["verifiedClientOutcomes"],1)
         self.assertEqual(b["features"][0]["interactionEvents"],1)
         self.assertFalse(merged["releaseGate"]["gameplayAutomationApproved"])
+        overlay=merged["evidenceOverlays"][0]
+        self.assertEqual(overlay["sourceProvenance"]["scanId"],"delta")
+        self.assertEqual(overlay["sourceProvenance"]["inputMode"],"local-multipart")
+        self.assertFalse(overlay["sourceProvenance"]["sourceAuthenticityVerified"])
+    def test_local_v2_digest_provenance_is_preserved_and_validated(self):
+        observation=self.observation();provenance=observation["sourceProvenance"]
+        provenance.update(schemaVersion="30.2.source-provenance.2",
+            localPartContentDigestsComputed=True,partContentDigests=[
+                {"partIndex":1,"sha256":"1"*64},{"partIndex":2,"sha256":"2"*64}])
+        merged=m.merge_evidence(self.baseline(),[observation])
+        self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["schemaVersion"],
+                         "30.2.source-provenance.2")
+        provenance["partContentDigests"][1]["partIndex"]=1
+        with self.assertRaisesRegex(ValueError,"provenance"):
+            m.merge_evidence(self.baseline(),[observation])
+
+    def test_forged_overlay_provenance_rejected(self):
+        for field in ("gameplayVerified","receiverStoredPayloadDigestsVerified"):
+            with self.subTest(field=field):
+                observation=self.observation()
+                observation["sourceProvenance"][field]=True
+                with self.assertRaisesRegex(ValueError,"provenance"):
+                    m.merge_evidence(self.baseline(),[observation])
+    def test_receiver_overlay_provenance_preserved_separately(self):
+        merged=m.merge_evidence(self.baseline(),[self.observation("receiver-import")])
+        provenance=merged["evidenceOverlays"][0]["sourceProvenance"]
+        self.assertEqual(provenance["inputMode"],"receiver-import")
+        self.assertTrue(provenance["receiverStoredPayloadDigestsVerified"])
+        self.assertFalse(provenance["receiverResponseAuthenticityVerified"])
     def test_duplicate_rejected(self):
         with self.assertRaises(ValueError):
             m.merge_evidence(self.baseline(),[self.observation(),self.observation()])

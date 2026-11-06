@@ -19,10 +19,38 @@ class SequenceTests(unittest.TestCase):
         self.assertEqual(result["workflows"][0]["observedStateChanges"],1)
         self.assertFalse(result["workflows"][0]["automaticallyExecutable"])
         self.assertFalse(result["workflows"][0]["serverVerified"])
+    def test_baseline_timing_is_preserved_and_validated(self):
+        plan=self.plan();first,second=plan["observedInteractionHistory"]
+        first.update(baselineSource="GuiButton.InputBegan",baselineTiming="pre-activation",
+            baselineAgeSeconds=0.01,preActivationBaselineAvailable=True)
+        second.update(baselineSource="activation-callback-fallback",
+            baselineTiming="activation-callback",preActivationBaselineAvailable=False)
+        workflow=m.compile_sequences(plan)["workflows"][0]
+        self.assertEqual(workflow["preActivationBaselineSteps"],1)
+        self.assertEqual(workflow["activationCallbackBaselineSteps"],1)
+        second["preActivationBaselineAvailable"]=True
+        with self.assertRaisesRegex(ValueError,"baseline timing"):
+            m.compile_sequences(plan)
+
     def test_unlinked_events_separate(self):
         p=self.plan()
         for event in p["observedInteractionHistory"]:event.pop("transactionId")
         self.assertEqual(m.compile_sequences(p)["workflowCount"],2)
+
+    def test_session_timing_surfaces_adjacency_without_linking(self):
+        plan=self.plan();first,second=plan["observedInteractionHistory"]
+        first.update(transactionId="one",sessionId="session",sessionElapsedSeconds=10.125)
+        second.update(transactionId="two",sessionId="session",sessionElapsedSeconds=12.5)
+        result=m.compile_sequences(plan);adjacency=result["temporalAdjacency"]
+        self.assertEqual(result["workflowCount"],2)
+        self.assertEqual(adjacency["unlinkedAdjacentPairs"],1)
+        self.assertEqual(adjacency["candidates"][0]["gapSeconds"],2.375)
+        self.assertFalse(adjacency["usedForAutomaticLinkage"])
+        self.assertFalse(adjacency["candidates"][0]["causalityProven"])
+        second.pop("sessionElapsedSeconds")
+        with self.assertRaisesRegex(ValueError,"session timing"):
+            m.compile_sequences(plan)
+
     def test_invalid_scan(self):
         p=self.plan();p["integrity"]["scanComplete"]=False
         with self.assertRaises(ValueError):m.compile_sequences(p)

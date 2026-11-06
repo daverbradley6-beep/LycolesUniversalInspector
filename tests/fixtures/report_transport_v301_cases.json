@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "30.1.transport-fixtures.1",
+  "description": "Synthetic local-manifest transport snapshots; acknowledgements are not receiver integrity proof.",
+  "scanId": "transportfixture01",
+  "cases": [
+    {
+      "name": "pre-upload",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "pre-upload",
+        "uploadAttempted": false,
+        "uploadStatus": "not-attempted",
+        "acknowledgedParts": 0,
+        "lastError": null,
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": false
+    },
+    {
+      "name": "retry-uploading",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "upload-started",
+        "uploadAttempted": true,
+        "uploadStatus": "uploading",
+        "acknowledgedParts": "PARTIAL",
+        "lastError": null,
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": false
+    },
+    {
+      "name": "upload-cancelled",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "upload-cancelled",
+        "uploadAttempted": true,
+        "uploadStatus": "cancelled",
+        "acknowledgedParts": "PARTIAL",
+        "lastError": "operator cancelled",
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": false
+    },
+    {
+      "name": "post-acknowledgement",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "post-upload",
+        "uploadAttempted": true,
+        "uploadStatus": "acknowledged",
+        "acknowledgedParts": "ALL",
+        "lastError": null,
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": false
+    },
+    {
+      "name": "post-incomplete",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "post-upload",
+        "uploadAttempted": true,
+        "uploadStatus": "incomplete",
+        "acknowledgedParts": "ALL_BUT_ONE",
+        "lastError": "not all parts acknowledged",
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": true
+    },
+    {
+      "name": "post-failure",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "post-upload",
+        "uploadAttempted": true,
+        "uploadStatus": "failed",
+        "acknowledgedParts": "PARTIAL",
+        "lastError": "synthetic transport failure",
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": true
+    },
+    {
+      "name": "configuration-error",
+      "reportTransport": {
+        "reportGenerated": true,
+        "manifestSnapshotPhase": "upload-blocked",
+        "uploadAttempted": false,
+        "uploadStatus": "configuration-error",
+        "acknowledgedParts": 0,
+        "lastError": "invalid receiver endpoint",
+        "receiverIntegrityVerified": false,
+        "downstreamReportAvailable": false
+      },
+      "expectedUploadFailed": true
+    }
+  ]
+}

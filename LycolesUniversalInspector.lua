@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.0.0
+-- Lycoles Universal Inspector v30.6.38
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,21 +13,99 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.0.0"
+local VERSION = "30.6.38"
 
 local endpoint = ""
 local autoSend = true
 local last = nil
 local pendingParts = nil
+local pendingManifest = nil
 local MAX_PART_BYTES = 105000
 local running = false
 local uploading = false
 local uploadGeneration = 0
 local pendingAcknowledged = {}
-local MAX_UPLOAD_ATTEMPTS = 3
-local MAX_CONCURRENT_UPLOADS = 3
-local SCAN_YIELD_BUDGET_SECONDS = 0.012
+local uploadState = {
+    attempted=false,status="not-attempted",acknowledgedParts=0,
+    expectedParts=0,lastError=nil
+}
+local function uploadAttemptStage()
+    if uploadState.status=="configuration-error" then
+        return uploadState.attempted and "attempted-previously-currently-blocked"
+            or "blocked-before-attempt"
+    end
+    if uploadState.status=="cancelled" then
+        return uploadState.attempted and "attempted-cancelled" or "cancelled-before-attempt"
+    end
+    if uploadState.attempted then return "attempted" end
+    return "not-attempted"
+end
+local function receiverReportStatus()
+    if uploadState.expectedParts>0
+        and uploadState.acknowledgedParts==uploadState.expectedParts then
+        return "acknowledged-awaiting-integrity"
+    end
+    if uploadState.status=="uploading" then return "upload-in-progress" end
+    if uploadState.status=="cancelled" and uploadState.acknowledgedParts==0 then
+        return "upload-cancelled"
+    end
+    if uploadState.acknowledgedParts>0 then return "partially-acknowledged" end
+    if uploadState.status=="failed" or uploadState.status=="incomplete" then
+        return "upload-incomplete"
+    end
+    if uploadState.status=="configuration-error" then return "configuration-blocked" end
+    return "unavailable"
+end
+
+local refreshLocalManifest = nil
+local function uploadSnapshot(phase)
+    local digests = {}
+    for partIndex,ack in pairs(pendingAcknowledged) do
+        if type(partIndex)=="number" and type(ack)=="table"
+            and type(ack.sha256)=="string" and ack.sha256:match("^[a-f0-9]+$")
+            and #ack.sha256==64 then
+            digests[#digests+1]={partIndex=partIndex,sha256=ack.sha256}
+        end
+    end
+    table.sort(digests,function(a,b) return a.partIndex < b.partIndex end)
+    return {
+        reportGenerated = pendingParts ~= nil or uploadState.expectedParts > 0,
+        manifestSnapshotPhase = phase,
+        uploadAttempted = uploadState.attempted,
+        uploadAttemptStatus = uploadAttemptStage(),
+        uploadStatus = uploadState.status,
+        receiverReportStatus = receiverReportStatus(),
+        downstreamAvailabilityStatus = "not-validated",
+        acknowledgedParts = uploadState.acknowledgedParts,
+        expectedParts = uploadState.expectedParts,
+        acknowledgedPartDigests = digests,
+        acknowledgedDigestParts = #digests,
+        lastError = uploadState.lastError,
+        receiverIntegrityVerified = false,
+        downstreamReportAvailable = false,
+        note = "Receiver acknowledgements require separate integrity verification before downstream use"
+    }
+end
 local UPLOAD_RETRY_DELAYS = {1, 3, 6}
+local LIMITS = {
+    uploadAttempts = 3,
+    maxConcurrentUploads = 1,
+    scanYieldBudgetSeconds = 0.012,
+    watchIntervalSeconds = 30,
+    watchBatchSize = 1500,
+    maxStateSnapshotCandidates = 1000,
+    maxInteractionHistory = 180,
+    maxPendingActions = 24,
+    maxStateChanges = 24,
+    maxGuiChanges = 16,
+    maxTransactionSignatures = 2000,
+    maxPendingGuiReveals = 100,
+    guiRevealFollowupSeconds = 15,
+    followupLinkMaxAgeSeconds = 6,
+    followupLinkMinContextOverlap = 3,
+    workflowRecordingSeconds = 60,
+    maxWorkflowRecordingEvents = 8,
+}
 local alive = true
 local watchEnabled = true
 local watchConnections = {}
@@ -35,20 +113,41 @@ local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
 local lastGameName = nil
-local WATCH_INTERVAL = 30
+local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
+local QUICK_ROOT_LABELS = {"ReplicatedStorage", "Workspace", "PlayerGui", "LocalPlayer", "Character"}
+
 local watchSeen = {}
 local watchSkippedCharacters = 0
 local watchUploaded = 0
 local changeQueue = {}
 local changeCount = 0
+local pendingObservationEvents = 0
 local observed = setmetatable({}, {__mode = "k"})
+local stateSnapshotCandidates = {}
+local stateSnapshotCandidateSeen = setmetatable({}, {__mode = "k"})
 local changeUploaded = 0
-local WATCH_BATCH = 1500
 local interactionObserveEnabled = true
 local AUTO_EVIDENCE_ENABLED = true
-local AUTO_EVIDENCE_IDLE_SECONDS = 12
+local OBSERVATION_IDLE_OPTIONS = {8, 12, 20, 30}
+local observationIdleIndex = 2
+local SCAN_PROFILES = {
+    full = {
+        label = "FULL", scanMode = "universal-snapshot-v4.1", rootLabels = ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 4, defaultObservationSeconds = 12, quickTargeted = false,
+        recordingPolicy = "full-client-visible-root-inventory"
+    },
+    quick = {
+        label = "QUICK", scanMode = "quick-targeted-snapshot-v1", rootLabels = QUICK_ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 1, defaultObservationSeconds = 8, quickTargeted = true,
+        recordingPolicy = "targeted-client-visible-evidence-not-full-inventory"
+    }
+}
+local activeScanProfileId = "full"
+local AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
 local AUTO_EVIDENCE_COOLDOWN_SECONDS = 45
-local AUTO_EVIDENCE_MAX_RESCANS = 4
+local AUTO_EVIDENCE_MAX_RESCANS = SCAN_PROFILES[activeScanProfileId].maxAutomaticRescans
 local autoEvidenceLastInteraction = 0
 local autoEvidenceLastScan = 0
 local autoEvidenceLastSequence = 0
@@ -60,30 +159,94 @@ local interactionEventCount = 0
 local attributedInteractionCount = 0
 local unattributedInteractionCount = 0
 local interactionHistory = {}
-local MAX_INTERACTION_HISTORY = 180
-local MAX_PENDING_ACTIONS = 24
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
-local MAX_STATE_CHANGES = 24
-local MAX_GUI_CHANGES = 16
 local transactionEvidenceSeen = {}
 local transactionEvidenceCount = 0
-local MAX_TRANSACTION_SIGNATURES = 2000
 local pendingActions = {}
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
+local pendingGuiReveals = {}
+local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, backfilledOutcomeCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
+local sessionId = HttpService:GenerateGUID(false)
+local sessionStartedClock = os.clock()
+local workflowRecording = {active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0}
+local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
+    recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil}
+local refreshWorkflowRecorder = nil
+local refreshEvidenceControls = nil
+local scanGeneration = 0
+
+local function stopWorkflowRecording(reason)
+    if not workflowRecording.active then return end
+    workflowRecording.active=false
+    workflowRecording.id=nil
+    workflowRecording.startedClock=nil
+    workflowRecording.startedElapsed=nil
+    workflowRecordingStats.lastRecordedEventCount=workflowRecording.eventCount
+    workflowRecording.eventCount=0
+    workflowRecordingStats.stopped=workflowRecordingStats.stopped+1
+    workflowRecordingStats.lastStopReason=reason
+    if reason=="duration-limit" then
+        workflowRecordingStats.durationExpired=workflowRecordingStats.durationExpired+1
+    elseif reason=="event-limit" then
+        workflowRecordingStats.capacityReached=workflowRecordingStats.capacityReached+1
+    end
+    if refreshWorkflowRecorder then refreshWorkflowRecorder(reason) end
+end
+local function startWorkflowRecording()
+    if workflowRecording.active then return false end
+    local startedClock=os.clock()
+    workflowRecording.active=true
+    workflowRecording.id="user-recorded-"..HttpService:GenerateGUID(false)
+    workflowRecording.startedClock=startedClock
+    workflowRecording.startedElapsed=math.floor((startedClock-sessionStartedClock)*1000+0.5)/1000
+    workflowRecording.eventCount=0
+    workflowRecordingStats.started=workflowRecordingStats.started+1
+    local recordingId=workflowRecording.id
+    task.delay(LIMITS.workflowRecordingSeconds,function()
+        if alive and workflowRecording.active and workflowRecording.id==recordingId then
+            stopWorkflowRecording("duration-limit")
+        end
+    end)
+    if refreshWorkflowRecorder then refreshWorkflowRecorder("started") end
+    return true
+end
+local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
+    if not workflowRecording.active then return nil end
+    if activationClock-workflowRecording.startedClock>LIMITS.workflowRecordingSeconds then
+        stopWorkflowRecording("duration-limit")
+        return nil
+    end
+    workflowRecording.eventCount=workflowRecording.eventCount+1
+    workflowRecordingStats.recordedEvents=workflowRecordingStats.recordedEvents+1
+    local result={recordingId=workflowRecording.id,order=workflowRecording.eventCount,
+        startedElapsedSeconds=workflowRecording.startedElapsed,
+        maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+        maxEvents=LIMITS.maxWorkflowRecordingEvents,
+        linkageSource="explicit-user-armed-recording",explicitUserArmed=true,
+        establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false}
+    if workflowRecording.eventCount>=LIMITS.maxWorkflowRecordingEvents then
+        stopWorkflowRecording("event-limit")
+    elseif refreshWorkflowRecorder then
+        refreshWorkflowRecorder("event-recorded")
+    end
+    return result
+end
+
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
-local sessionId = HttpService:GenerateGUID(false)
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,preActivationCaptureFailures=0}
 local snapshotId = nil
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
 -- paths. This prevents 'LiveRequest' being classified as a quest.
+local EVIDENCE_HELPERS = {}
+do
 local FEATURE_TERMS = {
  training={"training","gym","strength","agility","treadmill"},
+ progression={"progression","bubble","capacity","blow","farm"},
  rebirth={"rebirth"}, pets={"pet","hatch","egg"},
- shops={"shop","purchase","store"}, travel={"teleport","portal"},
+ shops={"shop","purchase","store","sell","upgrade"}, travel={"teleport","portal"},
  bosses={"boss","arena"}, quests={"quest","mission"},
- combat={"combat","attack","damage"}, inventory={"inventory","equip"},
+ combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
 }
 -- Readiness is evidence-based: discovery never implies a working feature.
@@ -122,6 +285,64 @@ local function interactionGuiContext(obj)
     end
     return context
 end
+
+local function guiControlSnapshot(obj)
+    local text,interactable="",nil
+    pcall(function() text=obj.Text end)
+    pcall(function() interactable=obj.Interactable end)
+    local ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true
+    local current=obj.Parent
+    while current do
+        if current:IsA("GuiObject") then
+            if not current.Visible then ancestorVisible=false end
+            if current:IsA("ScrollingFrame") then
+                local targetPosition,targetSize=obj.AbsolutePosition,obj.AbsoluteSize
+                local framePosition,frameSize=current.AbsolutePosition,current.AbsoluteSize
+                local intersects=targetPosition.X+targetSize.X>framePosition.X
+                    and targetPosition.Y+targetSize.Y>framePosition.Y
+                    and targetPosition.X<framePosition.X+frameSize.X
+                    and targetPosition.Y<framePosition.Y+frameSize.Y
+                if not intersects then withinScrollingBounds=false end
+            end
+        elseif current:IsA("ScreenGui") and not current.Enabled then
+            screenEnabled=false
+        end
+        if current:IsA("PlayerGui") then break end
+        current=current.Parent
+    end
+    local visible=obj.Visible and ancestorVisible and screenEnabled
+    return {controlClass=obj.ClassName,text=tostring(text or ""):sub(1,100):gsub("[%c]"," "),
+        visible=obj.Visible,active=obj.Active,selectable=obj.Selectable,
+        autoButtonColor=obj.AutoButtonColor,interactable=interactable,
+        ancestorVisible=ancestorVisible,screenEnabled=screenEnabled,
+        withinScrollingBounds=withinScrollingBounds,effectiveVisible=visible}
+end
+
+local function interactionPathIdentity(obj,root,label)
+    local identity,current={},obj
+    while current and current~=root and #identity<20 do
+        local ordinal=1
+        local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(label) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>400 then return nil end
+    return identity
+end
+
+
 -- Capture nearby GUI state without collecting text, input contents or private data.
 local function safeNearbyGuiState(obj)
     local result, count = {}, 0
@@ -146,7 +367,7 @@ local function safeNearbyGuiState(obj)
             end
             local key=table.concat(segments,"/"):sub(1,180)
             if key ~= "" and not key:lower():find("password",1,true) then
-                result[key] = {visible=node.Visible}
+                result[key] = {visible=node.Visible,node=node}
                 if node:IsA("GuiButton") then
                     result[key].active=node.Active
                 end
@@ -156,31 +377,87 @@ local function safeNearbyGuiState(obj)
     end
     return result
 end
+local function guiTransitionIdentity(sample,fallbackPath)
+    local node=sample and sample.node
+    local guiRoot=player:FindFirstChildOfClass("PlayerGui")
+    if not node or not guiRoot then return fallbackPath,nil end
+    local pathIdentity=interactionPathIdentity(node,guiRoot,"PlayerGui")
+    if not pathIdentity then return fallbackPath,nil end
+    local names={}
+    for _,segment in ipairs(pathIdentity) do names[#names+1]=segment.name end
+    local path=table.concat(names,".")
+    if path:lower():find("password",1,true) then return fallbackPath,nil end
+    return path,pathIdentity
+end
+
+local function guiChangeLess(a,b)
+    if a.path~=b.path then return a.path<b.path end
+    local left,right=a.pathIdentity or {},b.pathIdentity or {}
+    for index=1,math.min(#left,#right) do
+        if left[index].className~=right[index].className then
+            return left[index].className<right[index].className
+        end
+        if left[index].ordinal~=right[index].ordinal then
+            return left[index].ordinal<right[index].ordinal
+        end
+    end
+    return #left<#right
+end
+
 local function compareNearbyGuiState(before, after)
     local changes={}
     for key, value in pairs(before) do
         local nextValue=after[key]
         if nextValue and (value.visible ~= nextValue.visible or value.active ~= nextValue.active) then
-            changes[#changes+1]={path=key,beforeVisible=value.visible,afterVisible=nextValue.visible,
+            local path,pathIdentity=guiTransitionIdentity(nextValue,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                beforeVisible=value.visible,afterVisible=nextValue.visible,
                 beforeActive=value.active,afterActive=nextValue.active}
-            if #changes >= 16 then break end
         end
     end
     for key, value in pairs(after) do
-        if not before[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="appeared",afterVisible=value.visible,afterActive=value.active}
+        if not before[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="appeared",afterVisible=value.visible,afterActive=value.active}
         end
     end
     for key, value in pairs(before) do
-        if not after[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
+        if not after[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
         end
     end
-    table.sort(changes,function(a,b) return a.path < b.path end)
+    table.sort(changes,guiChangeLess)
+    while #changes>LIMITS.maxGuiChanges do table.remove(changes) end
     return changes
 end
+local function stateValueIdentity(obj,root)
+    local identity,current={},obj
+    while current and current~=root and #identity<6 do
+        local ordinal=1 local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(root.Name) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>180 then return nil end
+    return identity
+end
+
 local function safeInteractionState()
-    local state, count = {}, 0
+    local state,identities,count = {},{},0
     local roots = {}
     for _, name in ipairs({"leaderstats", "Data"}) do
         local root = player:FindFirstChild(name)
@@ -190,7 +467,7 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= 1000 then break end
+                if count >= LIMITS.maxStateSnapshotCandidates then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
                     local segments = {}
                     local parent = obj
@@ -205,15 +482,28 @@ local function safeInteractionState()
                         or low:find("userid",1,true)) then
                         local v = obj.Value
                         if type(v) == "boolean" or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
-                            state[key] = v
-                            count = count + 1
+                            if state[key]==nil then
+                                state[key]=v identities[key]=stateValueIdentity(obj,root) count=count+1
+                            else
+                                identities[key]=nil
+                            end
                         end
                     end
                 end
             end
         end
     end
-    return state
+    for _,candidate in ipairs(stateSnapshotCandidates) do
+        if count>=LIMITS.maxStateSnapshotCandidates then break end
+        local obj=candidate.object
+        local ok,value=pcall(function() return obj.Value end)
+        if ok and (type(value)=="boolean" or (type(value)=="number"
+            and value==value and math.abs(value)<=1e12)) then
+            if state[candidate.path]==nil then state[candidate.path]=value count=count+1 end
+            identities[candidate.path]=nil
+        end
+    end
+    return state,identities
 end
 -- v5.5: stable, unique relative paths and change-only inventory evidence.
 local function inventoryGuiPath(obj,gui)
@@ -342,11 +632,13 @@ local function buildReadiness(evidence, observedCount)
             discovered = discovered,
             observed = featureInteractions[feature] ~= nil and featureInteractions[feature].count > 0,
             observedStateChange = featureInteractions[feature] ~= nil and featureInteractions[feature].stateChanges > 0,
+            temporalStateChanges = featureInteractions[feature] and featureInteractions[feature].temporalStateChanges or 0,
+            observableOutcomeCandidates = featureInteractions[feature] and featureInteractions[feature].outcomeCandidates or 0,
             interactionEvidence = featureInteractions[feature],
             implemented = false,
             tested = false,
             readiness = not discovered and "not-discovered"
-                or (featureInteractions[feature] and featureInteractions[feature].stateChanges > 0 and "state-change-candidate-needs-validation")
+                or (featureInteractions[feature] and featureInteractions[feature].outcomeCandidates > 0 and "observable-outcome-candidate-needs-causal-validation")
                 or (featureInteractions[feature] and featureInteractions[feature].count > 0 and "interaction-observed-needs-state-verification")
                 or "needs-observed-interaction",
             controllerCandidates = item.counts.controllers,
@@ -358,7 +650,7 @@ local function buildReadiness(evidence, observedCount)
                 "Implement the feature in the game-specific script",
                 "Execute and verify the implementation"
             },
-            note = "Unattributed interaction count is not feature verification",
+            note = "Only feature-consistent observable changes become candidates; temporal correlation is not causation or verification",
             unattributedInteractionEvents = unattributedInteractionCount or 0
         }
     end
@@ -409,11 +701,87 @@ local function buildFeatureEvidence(objects)
     end
     return features
 end
-local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
+
+EVIDENCE_HELPERS.featureForName = featureForName
+EVIDENCE_HELPERS.interactionGuiContext = interactionGuiContext
+EVIDENCE_HELPERS.guiControlSnapshot = guiControlSnapshot
+EVIDENCE_HELPERS.interactionPathIdentity = interactionPathIdentity
+EVIDENCE_HELPERS.safeNearbyGuiState = safeNearbyGuiState
+EVIDENCE_HELPERS.compareNearbyGuiState = compareNearbyGuiState
+EVIDENCE_HELPERS.safeInteractionState = safeInteractionState
+EVIDENCE_HELPERS.safeInventorySummary = safeInventorySummary
+EVIDENCE_HELPERS.compareInventoryGuiSamples = compareInventoryGuiSamples
+EVIDENCE_HELPERS.compareFeatureSnapshots = compareFeatureSnapshots
+EVIDENCE_HELPERS.buildReadiness = buildReadiness
+EVIDENCE_HELPERS.buildFeatureEvidence = buildFeatureEvidence
+EVIDENCE_HELPERS.featureInteractions = featureInteractions
+end
 
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
+local QUICK_PROFILE_PATH_TERMS = {
+    "egg", "hatch", "pet", "shop", "sell", "quest", "reward", "rebirth",
+    "portal", "teleport", "travel", "inventory", "equip", "upgrade", "currency",
+    "coins", "gems", "gold", "bubble", "capacity", "train", "index"
+}
+
+local function activeScanProfile()
+    return SCAN_PROFILES[activeScanProfileId] or SCAN_PROFILES.full
+end
+
+local function setObservationIdleSeconds(seconds)
+    for i, value in ipairs(OBSERVATION_IDLE_OPTIONS) do
+        if value == seconds then
+            observationIdleIndex = i
+            break
+        end
+    end
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+end
+
+local function applyScanProfile(profileId)
+    activeScanProfileId = profileId == "quick" and "quick" or "full"
+    local profile = activeScanProfile()
+    AUTO_EVIDENCE_MAX_RESCANS = profile.maxAutomaticRescans
+    setObservationIdleSeconds(profile.defaultObservationSeconds)
+    autoEvidenceRescans = 0
+    autoEvidenceLastFailure = nil
+    autoEvidenceLastScan = 0
+    if refreshEvidenceControls then refreshEvidenceControls("profile-changed") end
+end
+
+local function cycleObservationIdleSeconds()
+    observationIdleIndex = (observationIdleIndex % #OBSERVATION_IDLE_OPTIONS) + 1
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+    if refreshEvidenceControls then refreshEvidenceControls("observation-seconds") end
+end
+
+local function quickPathHint(path)
+    local lower = string.lower(path)
+    for _, token in ipairs(QUICK_PROFILE_PATH_TERMS) do
+        if lower:find(token, 1, true) then return true end
+    end
+    return false
+end
+
+local function shouldRecordObjectForProfile(profile, obj, path, label)
+    if not profile or profile.quickTargeted ~= true then return true end
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent")
+        or obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector")
+        or obj:IsA("Tool") or obj:IsA("ValueBase")
+        or obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
+        return true
+    end
+    if label == "PlayerGui" and (obj:IsA("LayerCollector") or obj:IsA("GuiObject")) then
+        return true
+    end
+    return quickPathHint(path)
+end
+
+applyScanProfile(activeScanProfileId)
+
+
 
 local function validEndpoint(value)
     if type(value) ~= "string" then return false end
@@ -463,15 +831,19 @@ local panel = create("Frame", {
     Active = true
 }, gui)
 
+create("Frame", {
+    Name = "HeaderBackground", Size = UDim2.new(1, 0, 0, 48),
+    BackgroundColor3 = Color3.fromRGB(80, 80, 80), BorderSizePixel = 0
+}, panel)
 create("TextLabel", {
     Text = "Lycoles Universal Inspector v" .. VERSION,
-    Size = UDim2.new(1, -50, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+    Size = UDim2.fromOffset(260, 48), BackgroundTransparency = 1,
     TextXAlignment = Enum.TextXAlignment.Left,
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
-    Font = Enum.Font.GothamBold
+    Font = Enum.Font.GothamBold,
+    ZIndex = 2
 }, panel)
 
 local function button(label, x)
@@ -487,6 +859,19 @@ local function button(label, x)
         Active = true
     }, panel)
 end
+
+local inspectorTab = create("TextButton", {
+    Name = "InspectorTab", Text = "Inspector",
+    Size = UDim2.fromOffset(78, 28), Position = UDim2.fromOffset(270, 10),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
+local generatedScriptTab = create("TextButton", {
+    Name = "GeneratedScriptTab", Text = "Generated Script",
+    Size = UDim2.fromOffset(112, 28), Position = UDim2.fromOffset(352, 10),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
 
 -- Draggable panel and compact minimised launcher.
 local UserInputService = game:GetService("UserInputService")
@@ -557,7 +942,7 @@ end)
 
 local scan = button("SCAN", 12)
 local copy = button("COPY JSON", 136)
-local save = button("SAVE JSON", 260)
+local save = button("SAVE REPORT", 260)
 local close = button("CLOSE", 384)
 local watchToggle = create("TextButton", {
     Text = "WATCH: ON", Size = UDim2.fromOffset(116, 28),
@@ -653,7 +1038,608 @@ local automatic = create("TextButton", {
     BorderSizePixel = 2
 }, config)
 
+local generatedScriptPane = create("Frame", {
+    Name = "GeneratedScriptPane", Size = UDim2.fromOffset(510, 396),
+    Position = UDim2.fromOffset(0, 48), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderSizePixel = 0, Visible = false, ZIndex = 7
+}, panel)
+create("TextLabel", {
+    Text = "Request an evidence-grounded client utility",
+    Size = UDim2.fromOffset(486, 30), Position = UDim2.fromOffset(12, 10),
+    BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1),
+    TextXAlignment = Enum.TextXAlignment.Left, TextSize = 15, ZIndex = 8
+}, generatedScriptPane)
+local featureRequestInput = create("TextBox", {
+    Name = "FeatureRequest", Text = "",
+    PlaceholderText = "Describe the client-visible capability to generate",
+    Size = UDim2.fromOffset(486, 72), Position = UDim2.fromOffset(12, 46),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.new(1, 1, 1),
+    PlaceholderColor3 = Color3.fromRGB(165, 172, 180), TextSize = 13,
+    TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
+    TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+    ZIndex = 8
+}, generatedScriptPane)
+local produceScript = create("TextButton", {
+    Name = "ProduceScript", Text = "PRODUCE SCRIPT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(12, 128),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+local loadGeneratedResult = create("TextButton", {
+    Name = "LoadGeneratedResult", Text = "LOAD RESULT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(204, 128),
+    BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+
+local generatedStatus = create("TextLabel", {
+    Name = "GenerationStatus",
+    Text = "No generated script is loaded. Enter a request to capture it with the next full scan.\n\nGeneration and static validation run offline from complete numbered parts. Gameplay remains unverified.",
+    Size = UDim2.fromOffset(486, 112), Position = UDim2.fromOffset(12, 176),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(215, 224, 232),
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+local generatedCodeOutput = create("TextBox", {
+    Name = "GeneratedCodeOutput", Text = "-- Generated Luau becomes available only after offline compilation and validation.",
+    Size = UDim2.fromOffset(486, 78), Position = UDim2.fromOffset(12, 302),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
+    TextSize = 11, Font = Enum.Font.Code, TextWrapped = true, MultiLine = true,
+    TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 8
+}, generatedScriptPane)
+local function showGeneratedScriptPane(visible)
+    generatedScriptPane.Visible = visible
+    inspectorTab.BackgroundColor3 = visible and Color3.fromRGB(95, 95, 95) or Color3.fromRGB(48, 116, 150)
+    generatedScriptTab.BackgroundColor3 = visible and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+end
+inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(false) end)
+generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(true) end)
+local function refreshGeneratedHandoff(phase)
+    if not pendingManifest then return end
+    local requestText=pendingManifest.featureRequest
+    local requestLine="Request (not evidence): none"
+    if type(requestText)=="string" and requestText~="" then
+        requestLine="Request (not evidence): "..requestText:sub(1,96)
+    end
+    local exported=pendingManifest.localExport
+    local exportLine="Local export: not attempted"
+    if type(exported)=="table" then
+        local manifestState=exported.manifestSaved==true and "saved"
+            or (exported.manifestSaved==false and "not saved" or "unknown")
+        exportLine="Local export: "..tostring(exported.status).." "
+            ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0)
+            .." parts; manifest "..manifestState
+    end
+    local attemptLine="Upload: "..uploadAttemptStage()
+    if uploadState.attempted then
+        attemptLine=attemptLine.."; status "..tostring(uploadState.status)
+    elseif uploadState.status=="configuration-error" then
+        attemptLine=attemptLine.."; "..tostring(uploadState.lastError or "configuration unavailable")
+    end
+    local downstreamLine="Downstream: not validated; save complete local parts or upload"
+    if type(exported)=="table" and exported.status=="complete"
+        and exported.manifestSaved==true then
+        downstreamLine="Downstream: local files claimed complete; import and validate offline"
+    elseif receiverReportStatus()=="acknowledged-awaiting-integrity" then
+        downstreamLine="Downstream: receiver integrity verification required"
+    end
+    local snapshotLine = "Snapshot: pending"
+    local profileLine = "Scan profile: unknown"
+    if type(pendingManifest.scanStats)=="table" then
+        snapshotLine = "Snapshot: "..(pendingManifest.scanStats.complete==true and "complete" or "partial")
+        profileLine = "Scan profile: "..tostring(pendingManifest.scanStats.profile or "unknown")
+    end
+    generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
+        .."\n"..profileLine
+        .."\n"..snapshotLine
+        .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
+        ..tostring(uploadState.expectedParts).." numbered parts"
+        .."\n"..exportLine
+        .."\n"..attemptLine
+        .."\nReceiver: "..receiverReportStatus().."; ACK "
+        ..tostring(uploadState.acknowledgedParts).."/"..tostring(uploadState.expectedParts)
+        .."; integrity unverified"
+        .."\n"..downstreamLine
+        .."\nGeneration: offline compilation/validation pending; gameplay unverified"
+end
+
+do
+local function boundedResultText(value,limit)
+    return type(value)=="string" and #value>=1 and #value<=limit
+        and value:find("[%c]")==nil
+end
+local function boundedResultInteger(value,maximum)
+    return type(value)=="number" and value>=0 and value<=maximum and value%1==0
+end
+local function falseResultClaims(claims)
+    return type(claims)=="table" and claims.sourceAuthenticityVerified==false
+        and claims.causalityProven==false and claims.serverAuthorityVerified==false
+        and claims.runtimeVerified==false and claims.gameplayVerified==false
+        and claims.actionOutcomesVerified==false
+end
+local function validateWorkflowSelection(selection)
+    if type(selection)~="table" or type(selection.available)~="boolean"
+        or type(selection.candidates)~="table" or #selection.candidates>20
+        or not boundedResultInteger(selection.totalCandidates,1000000)
+        or not boundedResultInteger(selection.shownCandidates,20)
+        or not boundedResultInteger(selection.omittedCandidates,1000000)
+        or selection.shownCandidates~=#selection.candidates
+        or selection.totalCandidates~=#selection.candidates+selection.omittedCandidates then
+        return false
+    end
+    local diagnostics=selection.planningDiagnostics
+    if diagnostics~=nil then
+        local fields={"transactionGroups","linkedTransactions","singletonTransactions",
+            "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
+            "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
+            "unlinkedEvents","executionReadyWorkflows"}
+        local statuses={
+            ["execution-ready-candidates"]=true,["review-only-candidates"]=true,
+            ["no-multi-step-generation-ready-contract"]=true,
+            ["singleton-transactions-only"]=true,["no-explicit-linkage"]=true,
+            ["no-interaction-events"]=true}
+        if type(diagnostics)~="table" or statuses[diagnostics.status]~=true
+            or diagnostics.readinessImpact~="limitations-only"
+            or diagnostics.causalityProven~=false or diagnostics.runtimeVerified~=false
+            or diagnostics.gameplayVerified~=false then return false end
+        for _,field in ipairs(fields) do
+            if not boundedResultInteger(diagnostics[field],10000000) then return false end
+        end
+        if diagnostics.transactionGroups~=diagnostics.singletonTransactions
+                +diagnostics.multiEventTransactions
+            or diagnostics.linkedTransactions~=diagnostics.multiEventTransactions
+            or diagnostics.workflowCandidates~=selection.totalCandidates
+            or diagnostics.transactionsWithInsufficientGenerationReadySteps
+                >diagnostics.multiEventTransactions
+            or diagnostics.partiallyMappedTransactions>diagnostics.workflowCandidates
+            or diagnostics.transactionsOverStepBound>diagnostics.workflowCandidates
+            or diagnostics.executionReadyWorkflows>diagnostics.workflowCandidates then return false end
+        local expected
+        if diagnostics.executionReadyWorkflows>0 then expected="execution-ready-candidates"
+        elseif diagnostics.workflowCandidates>0 then expected="review-only-candidates"
+        elseif diagnostics.multiEventTransactions>0 then
+            expected="no-multi-step-generation-ready-contract"
+        elseif diagnostics.singletonTransactions>0 then expected="singleton-transactions-only"
+        elseif diagnostics.unlinkedEvents>0 then expected="no-explicit-linkage"
+        else expected="no-interaction-events" end
+        if diagnostics.status~=expected then return false end
+    end
+
+    local selectedId=selection.selectedCandidateId
+    if selectedId~=nil and not boundedResultText(selectedId,120) then return false end
+    local validReason={
+        ["selected-highest-ranked-execution-ready-candidate"]=true,
+        ["not-execution-ready"]=true,["lower-request-evidence-score"]=true,
+        ["more-user-involvement-tiebreak"]=true,["stable-identity-tiebreak"]=true
+    }
+    local validMode={["review-only"]=true,["mixed-guided"]=true,["bounded-automatic"]=true}
+    local selectedCount=0
+    for _,item in ipairs(selection.candidates) do
+        if type(item)~="table" or not boundedResultText(item.candidateId,120)
+            or not boundedResultInteger(item.requestScore,10000)
+            or type(item.matchedTerms)~="table" or #item.matchedTerms>128
+            or validMode[item.executionMode]~=true or type(item.executionReady)~="boolean"
+            or type(item.selected)~="boolean" or validReason[item.selectionReason]~=true then
+            return false
+        end
+        local previous=nil
+        for _,term in ipairs(item.matchedTerms) do
+            if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                or previous~=nil and term<=previous then return false end
+            previous=term
+        end
+        if (item.requestScore>0)~=(#item.matchedTerms>0) then return false end
+        if item.selected then
+            selectedCount=selectedCount+1
+            if item.candidateId~=selectedId
+                or item.selectionReason~="selected-highest-ranked-execution-ready-candidate" then
+                return false
+            end
+        end
+    end
+    if selectedCount~=(selectedId~=nil and 1 or 0) then return false end
+    if selection.available==false and (selection.totalCandidates~=0 or selectedId~=nil) then
+        return false
+    end
+    return true
+end
+local function validateGuidedFeedbackCorrelation(correlation,selectedWorkflowId)
+    if correlation==nil then return true end
+    if type(correlation)~="table" or type(correlation.available)~="boolean"
+        or not falseResultClaims(correlation.claims) then return false end
+    if correlation.available==false then
+        return correlation.readinessImpact=="none" and boundedResultText(correlation.reason,160)
+    end
+    if correlation.schemaVersion~="116.guided-workflow-feedback-aggregate.1"
+        or correlation.readinessImpact~="informational-only"
+        or correlation.candidateId~=selectedWorkflowId
+        or not boundedResultText(correlation.candidateId,160)
+        or type(correlation.workflowPlanSHA256)~="string"
+        or #correlation.workflowPlanSHA256~=64
+        or correlation.workflowPlanSHA256:match("^[a-f0-9]+$")==nil
+        or type(correlation.completeSequenceRecurrenceObserved)~="boolean"
+        or type(correlation.summary)~="table" or type(correlation.steps)~="table"
+        or #correlation.steps<1 or #correlation.steps>64 then return false end
+    local summary=correlation.summary
+    local summaryFields={"sessions","runs","submittedEntries","activationEventsObserved",
+        "expectedChangesObserved","completeClientObservationSequences",
+        "sessionsWithCompleteClientObservationSequence","stepsWithStatusConflict"}
+    for _,field in ipairs(summaryFields) do
+        if not boundedResultInteger(summary[field],1000000) then return false end
+    end
+    if correlation.completeSequenceRecurrenceObserved
+            ~=(summary.sessionsWithCompleteClientObservationSequence>=2)
+        or summary.sessions<1
+        or summary.sessionsWithCompleteClientObservationSequence>summary.sessions
+        or summary.completeClientObservationSequences>summary.runs
+        or summary.expectedChangesObserved>summary.activationEventsObserved
+        or summary.activationEventsObserved>summary.submittedEntries then return false end
+    local validStatus={["expected-change-observed"]=true,["outcome-not-observed"]=true,
+        ["activation-timeout"]=true,["control-or-state-unavailable"]=true,
+        ["metadata-drift"]=true,["state-unreadable"]=true}
+    local validExpected={increased=true,decreased=true,changed=true}
+    local validScalar={boolean=true,number=true,string=true}
+    local totalAttempts,totalActivations,totalChanges,totalConflicts=0,0,0,0
+    for index,step in ipairs(correlation.steps) do
+        if type(step)~="table" or step.stepSequence~=index
+            or not boundedResultText(step.targetPath,512)
+            or not boundedResultText(step.outcomeKey,256)
+            or validExpected[step.expected]~=true or type(step.statuses)~="table"
+            or type(step.observedScalarTypes)~="table"
+            or type(step.statusConflictObserved)~="boolean"
+            or type(step.statusConflictAcrossSessions)~="boolean"
+            or type(step.scalarTypeConflictObserved)~="boolean"
+            or type(step.expectedDirectionAcrossMultipleSessions)~="boolean" then return false end
+        local countFields={"attempts","sessionsObserved","activationEventsObserved",
+            "expectedChangesObserved","sessionsWithExpectedChange"}
+        for _,field in ipairs(countFields) do
+            if not boundedResultInteger(step[field],1000000) then return false end
+        end
+        local statusKinds,statusCount=0,0
+        for statusValue,count in pairs(step.statuses) do
+            if validStatus[statusValue]~=true or not boundedResultInteger(count,1000000)
+                or count<1 then return false end
+            statusKinds=statusKinds+1;statusCount=statusCount+count
+        end
+        local previous=nil
+        for _,scalarType in ipairs(step.observedScalarTypes) do
+            if validScalar[scalarType]~=true or previous~=nil and scalarType<=previous then return false end
+            previous=scalarType
+        end
+        if statusCount~=step.attempts
+            or step.expectedChangesObserved>step.activationEventsObserved
+            or step.activationEventsObserved>step.attempts
+            or step.sessionsWithExpectedChange>step.sessionsObserved
+            or step.statusConflictObserved~=(statusKinds>1)
+            or step.scalarTypeConflictObserved~=(#step.observedScalarTypes>1)
+            or step.expectedDirectionAcrossMultipleSessions~=(step.sessionsWithExpectedChange>=2) then
+            return false
+        end
+        totalAttempts=totalAttempts+step.attempts
+        totalActivations=totalActivations+step.activationEventsObserved
+        totalChanges=totalChanges+step.expectedChangesObserved
+        if step.statusConflictObserved then totalConflicts=totalConflicts+1 end
+    end
+    return totalAttempts==summary.submittedEntries
+        and totalActivations==summary.activationEventsObserved
+        and totalChanges==summary.expectedChangesObserved
+        and totalConflicts==summary.stepsWithStatusConflict
+end
+
+local function validateGeneratedObservationBaseline(value,workflow)
+    if value==nil then return true end
+    if type(value)~="table" or value.readinessImpact~="limitations-only"
+        or value.causalityProven~=false or value.runtimeVerified~=false
+        or value.gameplayVerified~=false or type(value.possibleSynchronousLoss)~="boolean" then
+        return false
+    end
+    local total=workflow and value.steps or value.events
+    local pre=workflow and value.preActivationSteps or value.preActivationEvents
+    local callback=workflow and value.activationCallbackSteps or value.activationCallbackEvents
+    local unknown=workflow and value.unknownTimingSteps or value.unknownTimingEvents
+    if not boundedResultInteger(total,2000) or total<1
+        or not boundedResultInteger(pre,2000) or not boundedResultInteger(callback,2000)
+        or not boundedResultInteger(unknown,2000) or total~=pre+callback+unknown
+        or value.possibleSynchronousLoss~=(callback>0 or unknown>0) then return false end
+    local expected=unknown>0 and "timing-unknown" or callback>0 and "callback-fallback-present"
+        or workflow and "pre-activation-baseline-available-for-all-steps"
+        or "pre-activation-baseline-available-for-all-observations"
+    return value.classification==expected
+end
+
+local function validateInteractionObservationCoverage(value)
+    if value==nil then return true end
+    if type(value)~="table" or type(value.available)~="boolean"
+        or value.readinessImpact~="limitations-only" or value.causalityProven~=false
+        or value.runtimeVerified~=false or value.gameplayVerified~=false
+        or type(value.limitations)~="table" or #value.limitations>8 then return false end
+    for _,item in ipairs(value.limitations) do if not boundedResultText(item,160) then return false end end
+    if value.available==false then
+        return value.classification=="unavailable-legacy" and value.evidenceLossPossible==nil
+    end
+    local counts={value.callbacksFired,value.preActivationBaselinesUsed,value.callbackBaselinesUsed,
+        value.pendingObservationEvents,value.observationWindowsExpected,
+        value.observationWindowsCompleted,value.observationWindowsFailed}
+    for _,count in ipairs(counts) do if not boundedResultInteger(count,10000000) then return false end end
+    if value.preActivationCaptureFailures~=nil
+        and not boundedResultInteger(value.preActivationCaptureFailures,10000000) then return false end
+    if value.observationWindowAccountingValid~=true
+        or type(value.evidenceLossPossible)~="boolean"
+        or value.preActivationBaselinesUsed+value.callbackBaselinesUsed~=value.callbacksFired
+        or value.observationWindowsCompleted+value.observationWindowsFailed
+            +value.pendingObservationEvents~=value.observationWindowsExpected then return false end
+    local knownPossible=value.callbackBaselinesUsed>0 or value.pendingObservationEvents>0
+        or value.observationWindowsFailed>0
+    local possible=value.evidenceLossPossible
+    if value.preActivationCaptureFailures~=nil then
+        possible=knownPossible or value.preActivationCaptureFailures>0
+    end
+    if knownPossible and value.evidenceLossPossible~=true then return false end
+    local expected=possible and "possible-evidence-loss"
+        or value.callbacksFired==0 and "accounted-no-interactions"
+        or "accounted-pre-activation-observation"
+    return value.evidenceLossPossible==possible and value.classification==expected
+end
+
+
+local function validateGeneratedReadiness(result)
+    if result.schemaVersion=="110.generated-result.1" then return true,nil end
+    if result.schemaVersion~="113.generated-result.1" then return false,nil end
+    local readiness=result.generationReadiness
+    if type(readiness)~="table" or readiness.schemaVersion~="113.generation-readiness.1"
+        or readiness.placeId~=result.placeId or readiness.scanId~=result.scanId then
+        return false,nil
+    end
+    local claims=readiness.claims
+    if type(claims)~="table" or claims.sourceAuthenticityVerified~=false
+        or claims.causalityProven~=false or claims.serverAuthorityVerified~=false
+        or claims.runtimeVerified~=false or claims.gameplayVerified~=false
+        or claims.actionOutcomesVerified~=false then
+        return false,nil
+    end
+    local workflowSelection=readiness.workflowSelection
+    if not validateWorkflowSelection(workflowSelection)
+        or not validateGuidedFeedbackCorrelation(readiness.guidedWorkflowFeedbackCorrelation,
+            workflowSelection.selectedCandidateId)
+        or not validateInteractionObservationCoverage(readiness.interactionObservationCoverage) then
+        return false,nil
+    end
+    local request=readiness.request
+    local validStatus={
+        ["no-capability-requested"]=true,["generated-bounded-subset"]=true,
+        ["evidence-only-no-replay-contract"]=true,["unsupported-by-current-evidence"]=true
+    }
+    if type(request)~="table" or request.request~=result.requestedCapability
+        or validStatus[request.status]~=true
+        or request.fullRequestImplemented~=false or request.implementationReady~=false
+        or request.runtimeVerified~=false or request.gameplayVerified~=false
+        or request.causalityProven~=false or request.actionOutcomesVerified~=false
+        or type(request.generatedSubsetAvailable)~="boolean"
+        or type(request.supportedSubset)~="table" or #request.supportedSubset>16
+        or type(request.matchedGeneratedCapabilityIds)~="table"
+        or #request.matchedGeneratedCapabilityIds>64 then
+        return false,nil
+    end
+    for _,item in ipairs(request.supportedSubset) do
+        if not boundedResultText(item,160) then return false,nil end
+    end
+    local matchedSeen={}
+    for _,item in ipairs(request.matchedGeneratedCapabilityIds) do
+        if not boundedResultText(item,80) or matchedSeen[item] then return false,nil end
+        matchedSeen[item]=true
+    end
+    local generated=readiness.generatedCapabilities
+    local unavailable=readiness.unavailableRequestedBehavior
+    local discovery=readiness.discoveryOnlyCapabilities
+    if type(generated)~="table" or #generated>64 or type(unavailable)~="table"
+        or #unavailable>16 or type(discovery)~="table" or #discovery>16 then
+        return false,nil
+    end
+    local generatedSeen={}
+    local workflowCapabilityId=nil
+    local validStepKind={["guided-gui-activation-trial"]=true,
+        ["official-tool-activation-trial"]=true,["proximity-prompt-trial"]=true}
+    for _,item in ipairs(generated) do
+        if type(item)~="table" or not boundedResultText(item.id,80) or generatedSeen[item.id]
+            or item.runtimeVerified~=false or item.gameplayVerified~=false
+            or item.causalityProven~=false or item.actionOutcomeVerified~=false then
+            return false,nil
+        end
+        local workflowKind=item.kind=="mixed-action-workflow-trial"
+        if not validateGeneratedObservationBaseline(item.observationBaseline,workflowKind) then
+            return false,nil
+        end
+        if workflowKind then
+            local expectedMode=item.manualGuiActivationRequired and "mixed-guided" or "bounded-automatic"
+            if workflowCapabilityId~=nil or not boundedResultText(item.candidateId,120)
+                or not boundedResultText(item.transactionId,200)
+                or item.executionMode~=expectedMode
+                or not boundedResultInteger(item.stepCount,64) or item.stepCount<2
+                or item.observationBaseline~=nil and item.observationBaseline.steps~=item.stepCount
+                or type(item.stepKinds)~="table" or #item.stepKinds~=item.stepCount
+                or type(item.targetPaths)~="table" or #item.targetPaths~=item.stepCount
+                or type(item.requestMatchedTerms)~="table" or #item.requestMatchedTerms>128
+                or not boundedResultInteger(item.requestMatchScore,10000)
+                or type(item.manualGuiActivationRequired)~="boolean"
+                or item.automaticallyExecutable~=(not item.manualGuiActivationRequired)
+                or item.operatorStartRequired~=true or item.stopOnFirstUnobservedOutcome~=true then
+                return false,nil
+            end
+            for index,stepKind in ipairs(item.stepKinds) do
+                if validStepKind[stepKind]~=true
+                    or not boundedResultText(item.targetPaths[index],500) then return false,nil end
+            end
+            local previous=nil
+            for _,term in ipairs(item.requestMatchedTerms) do
+                if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                    or previous~=nil and term<=previous then return false,nil end
+                previous=term
+            end
+            if (item.requestMatchScore>0)~=(#item.requestMatchedTerms>0) then return false,nil end
+            workflowCapabilityId=item.candidateId
+        else
+            if validStepKind[item.kind]~=true
+                or item.kind=="guided-gui-activation-trial" and
+                    (item.automaticActivation~=false or item.manualActivationRequired~=true
+                        or item.exactControlHighlighting~=true)
+                or not boundedResultText(item.targetLabel,120)
+                or not boundedResultText(item.selectedOutcomeKey,200)
+                or (item.expectedChange~="increased" and item.expectedChange~="decreased"
+                    and item.expectedChange~="changed") then return false,nil end
+        end
+        generatedSeen[item.id]=true
+    end
+    if workflowCapabilityId~=workflowSelection.selectedCandidateId then return false,nil end
+    local generatedStatus=request.status=="generated-bounded-subset"
+    if ((result.requestedCapability==nil)~=(request.status=="no-capability-requested"))
+        or generatedStatus~=request.generatedSubsetAvailable
+        or generatedStatus~=(#request.matchedGeneratedCapabilityIds>0)
+        or generatedStatus~=(#request.supportedSubset>0) then return false,nil end
+    for identifier in pairs(matchedSeen) do
+        if not generatedSeen[identifier] then return false,nil end
+    end
+
+    for _,item in ipairs(unavailable) do
+        if type(item)~="table" or not boundedResultText(item.id,80)
+            or item.status~="unavailable" then return false,nil end
+    end
+    for _,item in ipairs(discovery) do
+        if type(item)~="table" or not boundedResultText(item.family,80)
+            or type(item.candidateCount)~="number" or item.candidateCount<0
+            or item.candidateCount>1000000 or item.candidateCount%1~=0
+            or type(item.observedCount)~="number" or item.observedCount<0
+            or item.observedCount>item.candidateCount or item.observedCount%1~=0
+            or item.replayContractAvailable~=false then return false,nil end
+    end
+    return true,readiness
+end
+
+loadGeneratedResult.MouseButton1Click:Connect(function()
+    if type(readfile)~="function" then
+        generatedStatus.Text="Result loading unavailable: readfile is not supported."
+        return
+    end
+    local filename="Lycoles-"..tostring(game.PlaceId).."-generated-result.json"
+    local readOk,raw=pcall(readfile,filename)
+    if not readOk or type(raw)~="string" or #raw>1200000 then
+        generatedStatus.Text="Result load failed: expected bounded file "..filename
+        return
+    end
+    local decodeOk,result=pcall(function() return HttpService:JSONDecode(raw) end)
+    local code=decodeOk and type(result)=="table" and result.generatedCode or nil
+    local schemaValid=decodeOk and type(result)=="table" and
+        (result.schemaVersion=="110.generated-result.1"
+            or result.schemaVersion=="113.generated-result.1")
+    local readinessValid,readiness=false,nil
+    if schemaValid then readinessValid,readiness=validateGeneratedReadiness(result) end
+    local valid=schemaValid and readinessValid
+        and result.placeId==game.PlaceId and type(result.scanId)=="string"
+        and result.staticValidationPassed==true and result.packageAuthenticityVerified==false
+        and result.runtimeVerified==false and result.gameplayVerified==false
+        and result.executionAuthorized==false and type(code)=="string" and #code<=1000000
+        and code:find("assert(game.PlaceId == "..tostring(game.PlaceId),1,true)~=nil
+    if not valid then
+        generatedStatus.Text="Result rejected: schema, place guard, readiness, or verification claims are invalid."
+        return
+    end
+    generatedCodeOutput.Text=code
+    if readiness then
+        local generated=readiness.generatedCapabilities
+        local unavailable={}
+        for index,item in ipairs(readiness.unavailableRequestedBehavior) do
+            if index>4 then break end unavailable[#unavailable+1]=item.id
+        end
+        local details={"Loaded display-only result for scan "..result.scanId,
+            "Readiness: "..readiness.request.status,
+            "Generated bounded capabilities: "..tostring(#generated),
+            "Full request implemented: false | Runtime/gameplay verified: false"}
+        local coverage=readiness.interactionObservationCoverage
+        if type(coverage)=="table" then
+            if coverage.available then
+                details[#details+1]="Observation coverage: "..coverage.classification.." | pre="
+                    ..tostring(coverage.preActivationBaselinesUsed).." callback="
+                    ..tostring(coverage.callbackBaselinesUsed).." | causality unproven"
+            else
+                details[#details+1]="Observation coverage: unavailable for legacy evidence"
+            end
+        end
+        local planning=readiness.workflowSelection.planningDiagnostics
+        if type(planning)=="table" then
+            details[#details+1]="Workflow planning: "..planning.status.." | shared="
+                ..tostring(planning.multiEventTransactions).." singleton="
+                ..tostring(planning.singletonTransactions).." unlinked="
+                ..tostring(planning.unlinkedEvents).." | limitations only"
+        end
+
+        local workflowCapability=nil
+        local singleCapability=nil
+        for _,item in ipairs(generated) do
+            if item.kind=="mixed-action-workflow-trial" then workflowCapability=item
+            elseif singleCapability==nil then singleCapability=item end
+        end
+        if workflowCapability then
+            details[#details+1]="Workflow: "..workflowCapability.candidateId.." | "
+                ..workflowCapability.executionMode.." | "..tostring(workflowCapability.stepCount).." steps"
+        elseif singleCapability then
+            details[#details+1]="Evidence: "..singleCapability.targetLabel.." -> "
+                ..singleCapability.selectedOutcomeKey.." "..singleCapability.expectedChange
+        else
+            details[#details+1]="Evidence: no generated replay capability"
+        end
+        local selectedCapability=workflowCapability or singleCapability
+        local selectedBaseline=selectedCapability and selectedCapability.observationBaseline or nil
+        if type(selectedBaseline)=="table" then
+            details[#details+1]="Selected evidence baseline: "..selectedBaseline.classification
+                .." | limitations only; not causal proof"
+        end
+
+        local correlation=readiness.guidedWorkflowFeedbackCorrelation
+        if type(correlation)=="table" and correlation.available then
+            local summary=correlation.summary
+            details[#details+1]="Workflow feedback: "..tostring(summary.sessions).." sessions | "
+                ..tostring(summary.completeClientObservationSequences)
+                .." complete client-observation sequences | informational only"
+            local statusOrder={"expected-change-observed","outcome-not-observed",
+                "activation-timeout","control-or-state-unavailable","metadata-drift","state-unreadable"}
+            for index,step in ipairs(correlation.steps) do
+                if index>4 then break end
+                local statuses={}
+                for _,statusValue in ipairs(statusOrder) do
+                    local count=step.statuses[statusValue]
+                    if type(count)=="number" and count>0 then
+                        statuses[#statuses+1]=statusValue.."="..tostring(count)
+                    end
+                end
+                local path=step.targetPath
+                if #path>72 then path=path:sub(1,69).."..." end
+                details[#details+1]="Step "..tostring(index).." "..path..": "
+                    ..(#statuses>0 and table.concat(statuses,", ") or "not observed")
+                    .." | expected changes "..tostring(step.expectedChangesObserved)
+                    .."/"..tostring(step.attempts)
+            end
+            if #correlation.steps>4 then
+                details[#details+1]="Workflow feedback: "..tostring(#correlation.steps-4)
+                    .." additional steps omitted from this display"
+            end
+        elseif type(correlation)=="table" then
+            details[#details+1]="Workflow feedback: unavailable ("..correlation.reason..")"
+        end
+        details[#details+1]="Unsupported: "
+            ..(#unavailable>0 and table.concat(unavailable,", ") or "see packaged limitations")
+        details[#details+1]="Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+        generatedStatus.TextSize=11
+        generatedStatus.Text=table.concat(details,"\n")
+    else
+        generatedStatus.Text="Loaded legacy display-only offline result for scan "..result.scanId
+            ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+    end
+    showGeneratedScriptPane(true)
+end)
+end
+
 _G.LycolesInspectorClose = function()
+    stopWorkflowRecording("inspector-closed")
     alive = false
     uploadGeneration = uploadGeneration + 1
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
@@ -665,7 +1651,7 @@ end
 -- Return a verified acknowledgement; never log the secret-bearing endpoint.
 local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCount)
     local lastError = "request not attempted"
-    for attempt = 1, MAX_UPLOAD_ATTEMPTS do
+    for attempt = 1, LIMITS.uploadAttempts do
         if not alive then return false, "inspector closed" end
         local ok, response = pcall(requestFn, {
             Url = receiver, Method = "POST",
@@ -679,15 +1665,17 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
             end)
             if decodedOk and type(ack) == "table" and ack.ok == true
                 and ack.scanId == scanId and ack.partIndex == partIndex
-                and ack.partCount == partCount and type(ack.id) == "string" then
-                return true, ack.id
+                and ack.partCount == partCount and type(ack.id) == "string"
+                and type(ack.sha256) == "string" and #ack.sha256 == 64
+                and ack.sha256:match("^[a-f0-9]+$") then
+                return true, {id=ack.id,sha256=ack.sha256}
             end
             lastError = "invalid acknowledgement"
         else
             lastError = "HTTP " .. tostring(code or "request error")
         end
         warn("Lycoles upload attempt failed", partIndex, attempt, lastError)
-        if attempt < MAX_UPLOAD_ATTEMPTS then
+        if attempt < LIMITS.uploadAttempts then
             task.wait(UPLOAD_RETRY_DELAYS[attempt])
         end
     end
@@ -705,11 +1693,19 @@ local function transmit()
     end
     endpoint = trim(url.Text)
     if not validEndpoint(endpoint) then
+        uploadState.status="configuration-error"
+        uploadState.lastError="invalid receiver endpoint"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Use https://HOST/ingest/KEY"
         return
     end
     local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="HTTP requests unavailable"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "HTTP requests unavailable"
         return
     end
@@ -718,6 +1714,10 @@ local function transmit()
     local parts = pendingParts
     local firstOk, first = pcall(function() return HttpService:JSONDecode(parts[1]) end)
     if not firstOk or type(first)~="table" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="malformed first part"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Upload blocked: malformed first part"
         return
     end
@@ -730,10 +1730,25 @@ local function transmit()
         if not ok or type(item)~="table" or item.scanId~=scanId
             or item.partIndex~=i or item.partCount~=partCount
             or item.placeId~=game.PlaceId then
+            uploadState.status="configuration-error"
+            uploadState.lastError="inconsistent part "..tostring(i)
+            refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
             status.Text="Upload blocked: inconsistent part "..tostring(i)
             return
         end
     end
+    local acknowledgedBefore=0
+    for i=1,partCount do
+        if pendingAcknowledged[i] then acknowledgedBefore=acknowledgedBefore+1 end
+    end
+    uploadState.attempted=true
+    uploadState.status="uploading"
+    uploadState.acknowledgedParts=acknowledgedBefore
+    uploadState.expectedParts=partCount
+    uploadState.lastError=nil
+    refreshLocalManifest("upload-started")
+    refreshGeneratedHandoff("Upload started")
     uploading = true
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
@@ -743,7 +1758,8 @@ local function transmit()
         for i = 1, partCount do
             if pendingAcknowledged[i] then succeeded = succeeded + 1 end
         end
-        local workers = math.min(MAX_CONCURRENT_UPLOADS, partCount)
+        uploadState.acknowledgedParts=succeeded
+        local workers = math.min(LIMITS.maxConcurrentUploads, partCount)
         for _ = 1, workers do
             active = active + 1
             task.spawn(function()
@@ -759,6 +1775,7 @@ local function transmit()
                         end
                         pendingAcknowledged[i] = message
                         succeeded = succeeded + 1
+                        uploadState.acknowledgedParts=succeeded
                         status.Text = "Receiver ACK " .. succeeded .. "/" .. partCount .. " parts"
                     end
                 end
@@ -769,16 +1786,48 @@ local function transmit()
         uploading = false
         if not alive or generation ~= uploadGeneration then return end
         local elapsed = math.floor((os.clock()-started)*100)/100
+        uploadState.acknowledgedParts=succeeded
         if failed then
+            uploadState.status="failed"
+            uploadState.lastError=failed
             status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
         elseif succeeded == partCount then
+            uploadState.status="acknowledged"
+            uploadState.lastError=nil
             status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
                 .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
         else
+            uploadState.status="incomplete"
+            uploadState.lastError="not all parts acknowledged"
             status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
         end
+        refreshLocalManifest("post-upload")
+        refreshGeneratedHandoff("Upload finished")
     end)
 end
+
+local function cancelActiveOperation()
+    if running then
+        scanGeneration = scanGeneration + 1
+        running = false
+        status.Text = "Scan cancelled; start a new snapshot when ready"
+        refreshGeneratedHandoff("Scan cancelled")
+        return true
+    end
+    if uploading then
+        uploadGeneration = uploadGeneration + 1
+        uploading = false
+        uploadState.status = "cancelled"
+        uploadState.lastError = "operator cancelled"
+        refreshLocalManifest("upload-cancelled")
+        refreshGeneratedHandoff("Upload cancelled")
+        status.Text = "Upload cancelled; SEND JSON to resume from acknowledged parts"
+        return true
+    end
+    status.Text = "No active scan or upload to cancel"
+    return false
+end
+
 
 -- Convert inspection data to JSON-safe primitives without circular references.
 local function jsonSafe(value, active, depth)
@@ -819,6 +1868,17 @@ local function encodeStage(stage, value)
     end)
     if not ok then error(stage .. ": " .. tostring(encoded), 2) end
     return encoded
+end
+
+refreshLocalManifest = function(phase)
+    if not pendingManifest then return false end
+    pendingManifest.uploadedParts = uploadState.acknowledgedParts
+    pendingManifest.reportTransport = uploadSnapshot(phase)
+    local ok, encoded = pcall(function()
+        return encodeStage("scan-manifest-refresh", pendingManifest)
+    end)
+    if ok then last=encoded end
+    return ok
 end
 
 local function prepareParts(report)
@@ -895,6 +1955,7 @@ local function prepareParts(report)
             version=report.version,placeId=report.placeId,gameId=report.gameId,
             placeVersion=report.placeVersion,inspectedAt=report.inspectedAt,
             gameName=report.gameName,scanId=scanId,partIndex=index,partCount=total,
+            featureRequest=meta and report.featureRequest or nil,
             counts=meta and report.counts or nil,
             groups=meta and report.groups or nil,
             scanStats=meta and report.scanStats or nil,
@@ -991,7 +2052,7 @@ local function prepareParts(report)
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
-    return parts
+    return parts, scanId
 end
 
 -- Dynamic discovery records newly replicated instances without accessing script source.
@@ -1026,7 +2087,8 @@ end
 
 -- v4.0: bounded, read-only metadata. Never inspect script source or private player text.
 local siblingContextCache = nil
-local function enrichEntry(entry, obj)
+local function enrichEntry(entry, obj, profile)
+    local quick = profile and profile.quickTargeted == true
     local function privateKey(k)
         k = string.lower(tostring(k))
         return k:find("password",1,true) or k:find("token",1,true)
@@ -1041,17 +2103,19 @@ local function enrichEntry(entry, obj)
         if t == "string" then return v:sub(1,100):gsub("[%c]"," ") end
         return nil
     end
-    local ok, attrs = pcall(function() return obj:GetAttributes() end)
-    if ok and type(attrs) == "table" then
-        local safe, n = {}, 0
-        for k,v in pairs(attrs) do
-            if n >= 24 then break end
-            if not privateKey(k) then
-                local value = scalar(v)
-                if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+    if not quick then
+        local ok, attrs = pcall(function() return obj:GetAttributes() end)
+        if ok and type(attrs) == "table" then
+            local safe, n = {}, 0
+            for k,v in pairs(attrs) do
+                if n >= 24 then break end
+                if not privateKey(k) then
+                    local value = scalar(v)
+                    if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+                end
             end
+            if n > 0 then entry.attributes = safe end
         end
-        if n > 0 then entry.attributes = safe end
     end
     local isQuestCurrency =
         obj.Name == "Tokens"
@@ -1086,15 +2150,7 @@ local function enrichEntry(entry, obj)
         }
     end
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end)
-        local interactable = nil
-        pcall(function() interactable = obj.Interactable end)
-        entry.guiControl = {
-            text = tostring(buttonText):sub(1,100):gsub("[%c]", " "),
-            autoButtonColor = obj.AutoButtonColor,
-            enabled = interactable
-        }
+        entry.guiControl = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.guiControl = {placeholder = tostring(obj.PlaceholderText):sub(1,100)}
     end
@@ -1110,7 +2166,9 @@ local function enrichEntry(entry, obj)
     if obj:IsA("Humanoid") then
         entry.health, entry.maxHealth, entry.walkSpeed = obj.Health, obj.MaxHealth, obj.WalkSpeed
     elseif obj:IsA("Tool") then
-        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,tooltip=obj.ToolTip:sub(1,120)}
+        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly,
+            tooltip=obj.ToolTip:sub(1,120):gsub("[%c]"," ")}
     elseif obj:IsA("ProximityPrompt") then
         entry.interaction = {actionText=obj.ActionText:sub(1,120),objectText=obj.ObjectText:sub(1,120),
             enabled=obj.Enabled,holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance}
@@ -1125,10 +2183,10 @@ local function enrichEntry(entry, obj)
     local haystack = lower .. " " .. objectName .. " " .. parentName
     local groups = {
         training={"train","training","gym","strength","agility","durability","rep","machine"},
-        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement"},
+        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement","bubble","capacity","blow"},
         quests={"quest","mission","objective","daily","weekly","task"},
         pets={"pet","companion","egg","hatch","enchant","evolve"},
-        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase"},
+        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase","sell","upgrade"},
         rewards={"reward","claim","chest","crate","gift","spin","drop"},
         bosses={"boss","raid","elite","arena"},
         travel={"teleport","portal","spawn","vehicle","mount","area"},
@@ -1163,23 +2221,25 @@ local function enrichEntry(entry, obj)
             class = parent.ClassName,
             path = parentPath
         }
-        local ancestors, current = {}, parent
-        for depth = 1, 4 do
-            if not current then break end
-            local fullName = nil
-            pcall(function() fullName = current:GetFullName() end)
-            ancestors[#ancestors + 1] = {
-                name = tostring(current.Name):sub(1,100),
-                class = current.ClassName,
-                path = fullName
-            }
-            current = current.Parent
+        if not quick then
+            local ancestors, current = {}, parent
+            for depth = 1, 4 do
+                if not current then break end
+                local fullName = nil
+                pcall(function() fullName = current:GetFullName() end)
+                ancestors[#ancestors + 1] = {
+                    name = tostring(current.Name):sub(1,100),
+                    class = current.ClassName,
+                    path = fullName
+                }
+                current = current.Parent
+            end
+            if #ancestors > 0 then entry.ancestorContext = ancestors end
         end
-        if #ancestors > 0 then entry.ancestorContext = ancestors end
     end
 
     -- Bounded sibling ValueBase context supports cross-system relationship mapping.
-    if obj:IsA("ValueBase") and parent then
+    if not quick and obj:IsA("ValueBase") and parent then
         local cached = siblingContextCache and siblingContextCache[parent]
         if not cached then
             local related, total = {}, 0
@@ -1256,17 +2316,7 @@ local function enrichEntry(entry, obj)
 
     -- Capture UI control structure only. Never collect text entered into TextBoxes.
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end) -- ImageButton has no Text property.
-        entry.controlMetadata = {
-            controlType = obj.ClassName,
-            text = tostring(buttonText or ""):sub(1,100):gsub("[%c]"," "),
-            visible = obj.Visible,
-            active = obj.Active,
-            selectable = obj.Selectable
-        }
-        local okInteractable, interactable = pcall(function() return obj.Interactable end)
-        if okInteractable then entry.controlMetadata.interactable = interactable end
+        entry.controlMetadata = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.controlMetadata = {
             controlType = "TextBox",
@@ -1329,6 +2379,21 @@ local function observeObject(obj, root, label)
     if not property then return end
     local path = watchPath(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return end
+    if property=="Value" and label=="LocalPlayer"
+        and not stateSnapshotCandidateSeen[obj]
+        and #stateSnapshotCandidates<LIMITS.maxStateSnapshotCandidates then
+        local top=obj
+        while top.Parent and top.Parent~=player do top=top.Parent end
+        local low=path:lower()
+        local primary=top.Name=="Data" or top.Name=="leaderstats"
+        local private=low:find("token",1,true) or low:find("secret",1,true)
+            or low:find("auth",1,true) or low:find("password",1,true)
+            or low:find("userid",1,true)
+        if not primary and not private then
+            stateSnapshotCandidateSeen[obj]=true
+            stateSnapshotCandidates[#stateSnapshotCandidates+1]={object=obj,path=path:sub(1,180)}
+        end
+    end
     observed[obj] = true
     local ok, signal = pcall(function() return obj:GetPropertyChangedSignal(property) end)
     if not ok then return end
@@ -1351,60 +2416,240 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
+local WORKFLOW_HELPERS = {}
+do
 local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
     rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
-    freegiftsgui="rewards", freegiftsnewmenu="rewards",
+    freegiftsgui="rewards", freegiftsnewmenu="rewards", season="rewards",
+    dailyperks="rewards", shadowleviathan="bosses",
     shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel",
     travelareanewmenu="travel", petsrightbase="pets", petsbutton="pets",
     confirmSellNewMenu="inventory", confirmsellnewmenu="inventory",
     fortunewheelmenugui="rewards", fortuneothermenusgui="rewards",
-    buyspinsmenu="shops"
+    robuxshop="shops", buyspinsmenu="shops",
+    runecrafting="progression", enchants="progression", gemgenie="progression",
+    powerups="progression", boxcondenser="progression", potions="progression"
 }
-local function relevantStateEvidence(feature, changes)
-    if not feature then return nil end
-    if feature == "rebirth" then
-        local rebirthIncreased, strengthReset = false, false
-        for _, change in ipairs(changes) do
-            local key = change.key:lower()
-            if key:find("rebirth",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after > change.before then
-                rebirthIncreased = true
-            end
-            if key:find("strength",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after < change.before then
-                strengthReset = true
-            end
-        end
-        if rebirthIncreased then
-            return {rule="rebirth-counter-increased", corroboratingStrengthReset=strengthReset,
-                status="client-state-consistent", serverVerified=false}
-        end
-    elseif feature == "training" then
-        for _, change in ipairs(changes) do
-            if change.key:lower():find("strength",1,true)
-                and type(change.before)=="number" and type(change.after)=="number"
-                and change.after > change.before then
-                return {rule="strength-increased", status="client-state-consistent", serverVerified=false}
+local CONTEXT_TOKEN_IGNORES = {
+    button=true, frame=true, main=true, inner=true, top=true, bottom=true,
+    left=true, right=true, close=true, template=true, item=true, items=true,
+    hud=true, players=true, playergui=true, screengui=true, localplayer=true,
+    scrollingframe=true, screen=true, gui=true, label=true, text=true,
+    image=true, content=true, action=true, buttons=true
+}
+local function contextTokensForNames(names)
+    local seen,tokens={},{}
+    if type(names)~="table" then return tokens end
+    for _,name in ipairs(names) do
+        for token in tostring(name):lower():gmatch("[%a%d]+") do
+            if #token>=3 and not CONTEXT_TOKEN_IGNORES[token] and not seen[token] then
+                seen[token]=true
+                tokens[#tokens+1]=token
             end
         end
     end
-    return nil
+    table.sort(tokens)
+    return tokens
 end
+local function contextTokenOverlap(left,right)
+    if type(left)~="table" or type(right)~="table" then return 0 end
+    local seen,score={},0
+    for _,token in ipairs(left) do seen[token]=true end
+    for _,token in ipairs(right) do if seen[token] then score=score+1 end end
+    return score
+end
+local function scoredFeatureFromInteractionContext(obj,path)
+    local scores={}
+    local function add(feature,weight)
+        if feature then scores[feature]=(scores[feature] or 0)+weight end
+    end
+    local function scan(value,weight)
+        local text=tostring(value)
+        local hint=MENU_FEATURE_HINTS[text:lower()]
+        if hint then add(hint,weight+1) end
+        local feature=EVIDENCE_HELPERS.featureForName(text)
+        if feature then add(feature,weight) end
+    end
+    scan(obj.Name,2)
+    if obj:IsA("GuiButton") then
+        local ok,text=pcall(function() return obj.Text end)
+        if ok and type(text)=="string" and #text>0 then scan(text:sub(1,80),2) end
+    end
+    local node=obj.Parent
+    for depth=1,9 do
+        if not node then break end
+        scan(node.Name,1)
+        if node:IsA("ScreenGui") then break end
+        node=node.Parent
+    end
+    for segment in tostring(path or ""):gmatch("[^%.]+") do scan(segment,1) end
+    local ranked={}
+    for feature,score in pairs(scores) do ranked[#ranked+1]={feature=feature,score=score} end
+    table.sort(ranked,function(a,b)
+        return a.score==b.score and a.feature<b.feature or a.score>b.score
+    end)
+    if #ranked==0 then return nil,0,nil end
+    local first,second=ranked[1],ranked[2]
+    if first.score>=3 and (not second or first.score>=second.score+2) then
+        return first.feature,#ranked,"context-score-heuristic"
+    end
+    return nil,#ranked,nil
+end
+local function featureConsistentStateEvidence(feature, changes)
+    if not feature then return nil end
+    local matched={}
+    local strengthReset=false
+    for _,change in ipairs(changes) do
+        local key=change.key:lower()
+        local relevant=(feature=="rebirth" and key:find("rebirth",1,true))
+            or (feature=="training" and (key:find("strength",1,true) or key:find("agility",1,true)))
+            or (feature=="progression" and (key:find("bubble",1,true) or key:find("capacity",1,true)))
+            or (feature=="shops" and (key:find("coin",1,true) or key:find("gem",1,true)
+                or key:find("currency",1,true) or key:find("cash",1,true)))
+            or (feature=="pets" and (key:find("pet",1,true) or key:find("hatch",1,true) or key:find("egg",1,true)))
+            or (feature=="inventory" and (key:find("inventory",1,true) or key:find("equip",1,true)))
+            or (feature=="quests" and (key:find("quest",1,true) or key:find("mission",1,true)))
+            or (feature=="rewards" and (key:find("reward",1,true) or key:find("claim",1,true)))
+        if relevant and change.before~=change.after then
+            matched[#matched+1]=change.key
+        end
+        if feature=="rebirth" and key:find("strength",1,true)
+            and type(change.before)=="number" and type(change.after)=="number"
+            and change.after<change.before then strengthReset=true end
+    end
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="feature-key-changed",feature=feature,matchedKeys=matched,
+        corroboratingStrengthReset=strengthReset,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
+end
+local function featureConsistentGuiEvidence(feature, changes)
+    if feature~="rewards" then return nil end
+    local matched={}
+    for _,change in ipairs(changes) do
+        local path=change.path:lower()
+        if change.afterVisible==true and (path:find("claimed",1,true)
+            or path:find("completed",1,true)) then
+            matched[#matched+1]=change.path
+        end
+    end
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="reward-status-became-visible",feature=feature,matchedPaths=matched,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
+end
+
+local function collectOutcomeChanges(historyItem, primaryKey, windowKey)
+    local merged={}
+    local function append(list)
+        if type(list)~="table" then return end
+        for _,item in ipairs(list) do
+            if type(item)=="table" then merged[#merged+1]=item end
+        end
+    end
+    append(historyItem and historyItem[primaryKey])
+    local windows=historyItem and historyItem.observationWindows
+    if type(windows)=="table" then
+        for _,window in ipairs(windows) do
+            if type(window)=="table" then append(window[windowKey]) end
+        end
+    end
+    return merged
+end
+
+local function backfillObservableOutcomeCandidates(history)
+    local recovered=0
+    if type(history)~="table" then return recovered end
+    for _,historyItem in ipairs(history) do
+        local feature=historyItem and historyItem.featureCandidate
+        if type(historyItem)=="table" and not historyItem.observableOutcomeCandidate
+            and type(feature)=="string" and feature~="" then
+            local mergedState=collectOutcomeChanges(historyItem,"stateChanges","stateChanges")
+            local mergedGui=collectOutcomeChanges(historyItem,"guiStateChanges","guiChanges")
+            local stateEvidence=featureConsistentStateEvidence(feature,mergedState)
+            local guiEvidence=featureConsistentGuiEvidence(feature,mergedGui)
+            if stateEvidence or guiEvidence then
+                if stateEvidence then historyItem.featureStateEvidence=stateEvidence end
+                if guiEvidence then historyItem.featureGuiEvidence=guiEvidence end
+                historyItem.observableOutcomeCandidate={feature=feature,
+                    classification="feature-consistent-observable-change",
+                    evidenceKinds={stateEvidence and "state-change" or "gui-change",
+                        stateEvidence and guiEvidence and "gui-change" or nil},
+                    overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                    causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                historyItem.outcomeVerified=false
+                recovered=recovered+1
+                workflowStats.backfilledOutcomeCandidates=workflowStats.backfilledOutcomeCandidates+1
+                workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                local item=EVIDENCE_HELPERS.featureInteractions[feature]
+                if item then item.outcomeCandidates=(item.outcomeCandidates or 0)+1 end
+            end
+        end
+    end
+    return recovered
+end
+
 local function actionKind(name)
     local n=name:lower()
     if n:find("unequipall",1,true) then return "unequip-all" end
     if n:find("unequip",1,true) then return "unequip" end
+    if n:find("blow",1,true) or n=="bubble" or n=="bubbles" then return "blow" end
     if n:find("sell",1,true) then return "sell" end
     if n:find("equip",1,true) then return "equip" end
     if n:find("craft",1,true) or n:find("fuse",1,true) then return "craft" end
-    if n:find("claim",1,true) then return "claim" end
+    if n:find("claim",1,true) or n:find("reward",1,true) then return "claim" end
     if n:find("buy",1,true) or n:find("purchase",1,true) then return "purchase" end
+    if n:find("hatch",1,true) or n=="egg" then return "hatch" end
     if n:find("rebirth",1,true) then return "rebirth" end
     if n:find("travel",1,true) or n:find("teleport",1,true) then return "travel" end
     return nil
 end
-local function workflowContext(obj, feature)
+local function semanticActionKind(obj, feature)
+    local direct=actionKind(obj.Name)
+    if direct then return direct,"control-name" end
+    local parentName=obj.Parent and obj.Parent.Name:lower() or ""
+    if obj.Name:lower():find("close",1,true) or parentName:find("close",1,true)
+        or obj.Name:lower():find("cancel",1,true) or parentName:find("cancel",1,true) then
+        return nil,nil
+    end
+    local generic=obj.Name:lower()=="button" or obj.Name:lower()=="action"
+        or obj.Name:lower()=="template" or obj:IsA("ProximityPrompt")
+    if not generic then return nil,nil end
+    local node=obj.Parent
+    for depth=1,7 do
+        if not node or node:IsA("ScreenGui") then break end
+        local lower=node.Name:lower()
+        if feature=="pets" and (lower:find("hatch",1,true) or lower:find("egg",1,true)) then
+            return "hatch","bounded-feature-ancestor-name"
+        end
+        local kind=actionKind(node.Name)
+        if kind then return kind,"bounded-ancestor-name" end
+        node=node.Parent
+    end
+    if feature=="shops" then return "purchase","bounded-feature-default-kind" end
+    if feature=="rewards" or feature=="quests" then
+        return "claim","bounded-feature-default-kind"
+    end
+    if feature=="rebirth" then return "rebirth","bounded-feature-default-kind" end
+    if feature=="travel" then return "travel","bounded-feature-default-kind" end
+    return nil,nil
+end
+local function defaultFeatureForActionKind(kind)
+    if kind=="hatch" then return "pets" end
+    if kind=="rebirth" then return "rebirth" end
+    if kind=="travel" then return "travel" end
+    if kind=="claim" then return "rewards" end
+    if kind=="purchase" then return "shops" end
+    if kind=="sell" then return "inventory" end
+    if kind=="blow" or kind=="craft" then return "progression" end
+    return nil
+end
+local function workflowContext(obj, feature, kind, actionSource)
     local names, node={},obj
     for i=1,9 do
         if not node then break end
@@ -1412,9 +2657,10 @@ local function workflowContext(obj, feature)
         node=node.Parent
     end
     return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
-        kind=actionKind(obj.Name), clientOnly=true}
+        contextTokens=contextTokensForNames(names),
+        kind=kind, actionSource=actionSource, clientOnly=true}
 end
-local function classifyInteraction(obj)
+local function classifyInteraction(obj,path)
     -- Specific local menu context wins over generic controls like EquipButton.
     local node=obj.Parent
     local depth=0
@@ -1431,14 +2677,14 @@ local function classifyInteraction(obj)
         node=node.Parent
         depth=depth+1
     end
-    local feature,count=featureForName(obj.Name)
+    local feature,count=EVIDENCE_HELPERS.featureForName(obj.Name)
     if feature then return feature,count,"control-name" end
     node=obj.Parent
     depth=0
     while node and depth<8 do
         local hint=MENU_FEATURE_HINTS[node.Name:lower()]
         if hint then return hint,1,"menu-context-hint" end
-        local candidate,matches=featureForName(node.Name)
+        local candidate,matches=EVIDENCE_HELPERS.featureForName(node.Name)
         if candidate then return candidate,matches,"ancestor-name" end
         if node:IsA("ScreenGui") then break end
         node=node.Parent
@@ -1447,14 +2693,20 @@ local function classifyInteraction(obj)
     local lower=obj.Name:lower()
     if lower=="items" then return "inventory",1,"known-navigation-control" end
     if lower=="claim" then return "rewards",1,"known-navigation-control" end
-    return nil,0,"unattributed"
+    local contextualFeature, contextualCount, contextualSource =
+        scoredFeatureFromInteractionContext(obj,path)
+    if contextualFeature then
+        return contextualFeature,contextualCount,contextualSource
+    end
+    return nil,contextualCount or 0,"unattributed"
 end
 local function linkWorkflow(obj, feature, sequence)
     local name=obj.Name:lower()
-    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confimbutton"
-        or name=="confirm" or name=="acceptbutton" or name=="okbutton"
-    local isNo=name=="nobutton" or name=="cancelbutton" or name=="cancel"
-        or name=="declinebutton"
+    local isYes=name=="yesbutton" or name=="yes" or name=="confirmbutton"
+        or name=="confimbutton" or name=="confirm" or name=="acceptbutton"
+        or name=="accept" or name=="okbutton" or name=="ok"
+    local isNo=name=="nobutton" or name=="no" or name=="cancelbutton"
+        or name=="cancel" or name=="declinebutton" or name=="decline"
     local now=os.clock()
     for i=#pendingActions,1,-1 do
         if now-pendingActions[i].clock > 15 then
@@ -1466,12 +2718,15 @@ local function linkWorkflow(obj, feature, sequence)
     local contextFeature=feature
     local dialog=false
     local menuName=nil
+    local contextNames={}
     for i=1,9 do
         if not node then break end
+        contextNames[#contextNames+1]=node.Name
         local n=node.Name:lower()
         if n:find("confirm",1,true) or n:find("confim",1,true)
-            or n:find("choice",1,true) or n=="travelareanewmenu"
-            or n=="rebirthnewmenu" then
+            or n:find("choice",1,true) or n:find("prompt",1,true)
+            or n:find("purchase",1,true) or n:find("unlock",1,true)
+            or n=="travelareanewmenu" or n=="rebirthnewmenu" then
             dialog=true
             menuName=node.Name
         end
@@ -1479,6 +2734,7 @@ local function linkWorkflow(obj, feature, sequence)
     end
     if (isYes or isNo) and dialog then
         local bestIndex=nil
+        local matchConfidence="context-and-time-heuristic"
         for i=#pendingActions,1,-1 do
             local pending=pendingActions[i]
             if (contextFeature and pending.feature==contextFeature)
@@ -1488,13 +2744,35 @@ local function linkWorkflow(obj, feature, sequence)
                 break
             end
         end
+        if not bestIndex then
+            local contextTokens=contextTokensForNames(contextNames)
+            local bestScore=0
+            if #contextTokens>0 then
+                for i=#pendingActions,1,-1 do
+                    local pending=pendingActions[i]
+                    local age=now-pending.clock
+                    if age<=8 and (not contextFeature or not pending.feature or pending.feature==contextFeature) then
+                        local overlap=contextTokenOverlap(contextTokens,pending.contextTokens)
+                        if overlap>bestScore then
+                            bestScore=overlap
+                            bestIndex=i
+                        end
+                    end
+                end
+            end
+            if bestIndex and bestScore>=2 then
+                matchConfidence="context-token-overlap-heuristic"
+            else
+                bestIndex=nil
+            end
+        end
         if bestIndex then
             local previous=table.remove(pendingActions,bestIndex)
             if isNo then workflowStats.cancelled=workflowStats.cancelled+1
             else workflowStats.linkedConfirmations=workflowStats.linkedConfirmations+1 end
             return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
                 inferredFeature=previous.feature,action=previous.kind,context=previous.context,
-                dialog=menuName,confidence="context-and-time-heuristic",verified=false}
+                dialog=menuName,confidence=matchConfidence,verified=false}
         end
         if contextFeature=="travel" and isYes then
             return {phase="travel-confirmed-unlinked",action="travel",
@@ -1506,25 +2784,111 @@ local function linkWorkflow(obj, feature, sequence)
     if isYes and feature=="travel" then
         return {phase="travel-confirmed",action="travel",confidence="menu-context-heuristic",verified=false}
     end
-    local kind=actionKind(obj.Name)
+    local kind, actionSource = semanticActionKind(obj,feature)
     if kind then
-        local context=workflowContext(obj,feature)
-        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
-        if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
-        return {phase="initiated",action=kind,confidence="control-name-heuristic",verified=false}
+        local inferredFeature=feature or defaultFeatureForActionKind(kind)
+        local context=workflowContext(obj,inferredFeature,kind,actionSource)
+        local bestPending=nil
+        local bestOverlap=0
+        for i=#pendingActions,1,-1 do
+            local pending=pendingActions[i]
+            local age=now-pending.clock
+            if age>=0 and age<=LIMITS.followupLinkMaxAgeSeconds and pending.sequence<sequence
+                and (not inferredFeature or not pending.feature or pending.feature==inferredFeature) then
+                local overlap=contextTokenOverlap(context.contextTokens,pending.contextTokens)
+                if overlap>bestOverlap then
+                    bestOverlap=overlap
+                    bestPending=pending
+                end
+            end
+        end
+        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=inferredFeature,
+            kind=kind,context=context,contextTokens=context.contextTokens}
+        if #pendingActions>LIMITS.maxPendingActions then table.remove(pendingActions,1) end
+        if bestPending and bestOverlap>=LIMITS.followupLinkMinContextOverlap then
+            workflowStats.linkedFollowups=workflowStats.linkedFollowups+1
+            return {phase="followup-linked",linkedSequence=bestPending.sequence,
+                linkedAction=bestPending.kind,action=kind,actionSource=actionSource,
+                inferredFeature=bestPending.feature or inferredFeature,context=context,
+                contextOverlap=bestOverlap,confidence="context-followup-heuristic",verified=false}
+        end
+        return {phase="initiated",action=kind,actionSource=actionSource,
+            inferredFeature=inferredFeature,
+            confidence="bounded-name-context-heuristic",verified=false}
     end
     return nil
 end
+local function identityIsPrefix(prefix,target)
+    if type(prefix)~="table" or type(target)~="table" or #prefix>#target then return false end
+    for index,segment in ipairs(prefix) do
+        local candidate=target[index]
+        if not candidate or segment.name~=candidate.name or segment.className~=candidate.className
+            or segment.ordinal~=candidate.ordinal then return false end
+    end
+    return true
+end
+local function matchGuiRevealFollowup(targetIdentity,targetSequence,targetElapsed)
+    for index=#pendingGuiReveals,1,-1 do
+        local sourceAge=targetElapsed-pendingGuiReveals[index].sourceElapsed
+        if sourceAge<0 or sourceAge>LIMITS.guiRevealFollowupSeconds then
+            table.remove(pendingGuiReveals,index)
+            workflowStats.guiRevealCandidatesExpired=workflowStats.guiRevealCandidatesExpired+1
+        end
+    end
+    if not targetIdentity then return nil end
+    local best=nil
+    for _,candidate in ipairs(pendingGuiReveals) do
+        if candidate.sourceSequence<targetSequence
+            and identityIsPrefix(candidate.revealedPathIdentity,targetIdentity)
+            and (not best or #candidate.revealedPathIdentity>#best.revealedPathIdentity
+                or (#candidate.revealedPathIdentity==#best.revealedPathIdentity
+                    and candidate.observedClock>best.observedClock)) then
+            best=candidate
+        end
+    end
+    if not best then return nil end
+    workflowStats.guiRevealFollowups=workflowStats.guiRevealFollowups+1
+    return {sourceSequence=best.sourceSequence,sourcePath=best.sourcePath,
+        sourcePathIdentity=best.sourcePathIdentity,revealedPath=best.revealedPath,
+        revealedPathIdentity=best.revealedPathIdentity,
+        sourceObservationWindowSeconds=best.observationWindowSeconds,
+        elapsedSinceSourceSeconds=math.floor((targetElapsed-best.sourceElapsed)*1000+0.5)/1000,
+        classification="observed-gui-reveal-descendant-followup",
+        explicitlyLinked=false,temporalCorrelationOnly=true,causalityProven=false,
+        runtimeVerified=false,gameplayVerified=false}
+end
+local function registerGuiRevealCandidates(changes,historyItem,observationWindowSeconds)
+    for _,change in ipairs(changes) do
+        if change.afterVisible==true and change.beforeVisible~=true and change.pathIdentity
+            and historyItem.pathIdentity then
+            pendingGuiReveals[#pendingGuiReveals+1]={observedClock=os.clock(),
+                sourceSequence=historyItem.sequence,sourcePath=historyItem.path,
+                sourcePathIdentity=historyItem.pathIdentity,sourceElapsed=historyItem.sessionElapsedSeconds,
+                revealedPath=change.path,revealedPathIdentity=change.pathIdentity,
+                observationWindowSeconds=observationWindowSeconds}
+            workflowStats.guiRevealCandidates=workflowStats.guiRevealCandidates+1
+            if #pendingGuiReveals>LIMITS.maxPendingGuiReveals then
+                table.remove(pendingGuiReveals,1)
+                workflowStats.guiRevealCandidatesDropped=workflowStats.guiRevealCandidatesDropped+1
+            end
+        end
+    end
+end
+
 local function relevantActionEvidence(feature, workflow, changes)
     local kind=workflow and workflow.action
     if not kind and feature=="rebirth" then kind="rebirth" end
     local signals={}
     for _,change in ipairs(changes) do
         local key=change.key:lower()
-        if key:find("strength",1,true) then
+        if key:find("bubble",1,true) or key:find("capacity",1,true) then
+            signals[#signals+1]="progression-resource-change"
+        elseif key:find("strength",1,true) then
             signals[#signals+1]="strength-change"
         elseif key:find("rebirth",1,true) then
             signals[#signals+1]="rebirth-change"
+        elseif key:find("hatch",1,true) or key:find("egg",1,true) then
+            signals[#signals+1]="hatch-related-value-change"
         elseif key:find("pet",1,true) or key:find("equip",1,true)
             or key:find("inventory",1,true) then
             signals[#signals+1]="inventory-related-value-change"
@@ -1542,9 +2906,34 @@ local function relevantActionEvidence(feature, workflow, changes)
                 type(change.before)=="number" and type(change.after)=="number"
                 and change.after>change.before then corroborated=true end
         end
-    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="sell" or kind=="craft" then
+    elseif kind=="blow" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                and type(change.before)=="number" and type(change.after)=="number"
+                and change.after>change.before then corroborated=true end
+        end
+    elseif kind=="sell" then
+        local resourceDecrease,currencyIncrease=false,false
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number" then
+                if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                    and change.after<change.before then resourceDecrease=true end
+                if (key:find("coin",1,true) or key:find("gem",1,true)
+                    or key:find("currency",1,true) or key:find("cash",1,true))
+                    and change.after>change.before then currencyIncrease=true end
+            end
+        end
+        corroborated=resourceDecrease and currencyIncrease
+    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="craft" then
         for _,signal in ipairs(signals) do
             if signal=="inventory-related-value-change" then corroborated=true end
+        end
+    elseif kind=="hatch" then
+        for _,signal in ipairs(signals) do
+            if signal=="hatch-related-value-change" or signal=="inventory-related-value-change" then
+                corroborated=true end
         end
     elseif kind=="purchase" or kind=="claim" then
         for _,signal in ipairs(signals) do
@@ -1554,6 +2943,34 @@ local function relevantActionEvidence(feature, workflow, changes)
     end
     return {action=kind,signals=signals,clientStateCorroborated=corroborated,
         serverVerified=false,causalVerification=false,confidence="temporal-observation"}
+end
+
+local function interactionDescriptor(obj,root,label)
+    if obj:IsA("ProximityPrompt") then
+        local anchor=obj.Parent
+        for _=1,5 do
+            if not anchor or anchor:IsA("BasePart") then break end
+            anchor=anchor.Parent
+        end
+        return {actionText=tostring(obj.ActionText):sub(1,120),
+            objectText=tostring(obj.ObjectText):sub(1,120),enabled=obj.Enabled,
+            holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance,
+            keyboardKeyCode=obj.KeyboardKeyCode.Name,gamepadKeyCode=obj.GamepadKeyCode.Name,
+            anchorPath=anchor and watchPath(anchor,root,label) or nil,
+            anchorPosition=anchor and anchor:IsA("BasePart") and watchVec(anchor.Position) or nil}
+    end
+    if obj:IsA("GuiButton") then
+        return EVIDENCE_HELPERS.guiControlSnapshot(obj)
+    end
+    if obj:IsA("ClickDetector") then
+        return {maxActivationDistance=obj.MaxActivationDistance}
+    end
+    if obj:IsA("Tool") then
+        return {tooltip=tostring(obj.ToolTip):sub(1,120):gsub("[%c]"," "),
+            requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly}
+    end
+    return nil
 end
 
 local function observeInteractionObject(obj, root, label)
@@ -1567,19 +2984,67 @@ local function observeInteractionObject(obj, root, label)
         signal, controlType = obj.Triggered, "ProximityPrompt.Triggered"
     elseif obj:IsA("ClickDetector") then
         signal, controlType = obj.MouseClick, "ClickDetector.MouseClick"
+    elseif obj:IsA("Tool") then
+        signal, controlType = obj.Activated, "Tool.Activated"
     end
     if not signal then return end
     interactionObserved[obj] = true
     interactionObservedCount = interactionObservedCount + 1
     observerStats.listenersAttached = observerStats.listenersAttached + 1
+    local preActivationCapture=nil
+    local function capturePreActivation(source,maxAge)
+        local ok,state,identities,guiState,position=pcall(function()
+            local values,valueIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            return values,valueIdentities,EVIDENCE_HELPERS.safeNearbyGuiState(obj),rootPart and rootPart.Position or nil
+        end)
+        if not ok then
+            observerStats.preActivationCaptureFailures=observerStats.preActivationCaptureFailures+1
+            return
+        end
+        preActivationCapture={clock=os.clock(),source=source,maxAge=maxAge,
+            state=state,stateIdentities=identities,guiState=guiState,position=position}
+        observerStats.preActivationCaptures=observerStats.preActivationCaptures+1
+    end
+    local function registerPreActivation(preSignal,source,maxAge,filter)
+        local ok,preConnection=pcall(function()
+            return preSignal:Connect(function(input)
+                if not alive or not interactionObserveEnabled then return end
+                if filter and not filter(input) then return end
+                capturePreActivation(source,maxAge)
+            end)
+        end)
+        if ok then
+            table.insert(watchConnections,preConnection)
+            observerStats.preActivationListenersAttached=
+                observerStats.preActivationListenersAttached+1
+        else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    end
+    if obj:IsA("GuiButton") then
+        registerPreActivation(obj.InputBegan,"GuiButton.InputBegan",2,function(input)
+            return input.UserInputType==Enum.UserInputType.MouseButton1
+                or input.UserInputType==Enum.UserInputType.Touch
+                or input.KeyCode==Enum.KeyCode.ButtonA
+                or input.KeyCode==Enum.KeyCode.Return
+                or input.KeyCode==Enum.KeyCode.Space
+        end)
+    elseif obj:IsA("ProximityPrompt") then
+        registerPreActivation(obj.PromptButtonHoldBegan,"ProximityPrompt.PromptButtonHoldBegan",
+            math.max(2,obj.HoldDuration+1))
+    elseif obj:IsA("Tool") then
+        registerPreActivation(obj.Equipped,"Tool.Equipped",5)
+    end
+
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
-        autoEvidenceLastInteraction = os.clock()
+        local activationClock=os.clock()
+        local sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000
+        autoEvidenceLastInteraction = activationClock
         observerStats.callbacksFired = observerStats.callbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
-        local feature, matchCount, attributionSource = classifyInteraction(obj)
+        local feature, matchCount, attributionSource = classifyInteraction(obj,path)
         if feature then
             attributedInteractionCount = attributedInteractionCount + 1
         else
@@ -1588,21 +3053,62 @@ local function observeInteractionObject(obj, root, label)
         local workflow = linkWorkflow(obj, feature, observationSequence + 1)
         if workflow and workflow.inferredFeature and not feature then
             feature=workflow.inferredFeature
-            attributionSource="linked-confirmation-heuristic"
+            attributionSource=(workflow.phase=="followup-linked")
+                and "linked-followup-heuristic" or "linked-confirmation-heuristic"
             unattributedInteractionCount=unattributedInteractionCount-1
             attributedInteractionCount=attributedInteractionCount+1
         end
+        local captured=preActivationCapture
+        preActivationCapture=nil
+        local captureAge=captured and activationClock-captured.clock or nil
+        local before,beforeStateIdentities,beforeGui,beforePosition,baselineSource
+        if captured and captureAge>=0 and captureAge<=captured.maxAge then
+            before=captured.state;beforeStateIdentities=captured.stateIdentities
+            beforeGui=captured.guiState;beforePosition=captured.position
+            baselineSource=captured.source
+            observerStats.preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed+1
+        else
+            if captured then
+                observerStats.stalePreActivationCaptures=observerStats.stalePreActivationCaptures+1
+            end
+            before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            beforeGui=EVIDENCE_HELPERS.safeNearbyGuiState(obj)
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            beforePosition=rootPart and rootPart.Position or nil
+            baselineSource="activation-callback-fallback"
+            observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
+        end
+        local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)
+        local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
+            observationSequence+1,sessionElapsedSeconds)
+        local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
+        local transactionId=explicitRecording and explicitRecording.recordingId
+            or (workflow and workflow.linkedSequence) or (observationSequence+1)
+        local transactionLinkSource=explicitRecording and explicitRecording.linkageSource
+            or (workflow and workflow.linkedSequence and
+                (workflow.phase=="followup-linked" and "observed-followup-link"
+                    or "observed-confirmation-link")
+                or "singleton-event")
         local historyItem = {
-            path=path:sub(1,400), featureCandidate=feature,
-            attribution=attributionSource, controlType=controlType,
+            path=path:sub(1,400), pathIdentity=targetPathIdentity,
+            featureCandidate=feature, attribution=attributionSource, controlType=controlType,
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
-            stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
+            sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
+            transactionId=transactionId,
+            transactionOrder=explicitRecording and explicitRecording.order or nil,
+            transactionLinkSource=transactionLinkSource,
+            explicitWorkflowRecording=explicitRecording,
+            stateChangeCount=0, guiContext=EVIDENCE_HELPERS.interactionGuiContext(obj), workflow=workflow,
+            guiRevealFollowup=guiRevealFollowup,
+            controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
+            baselineTiming=baselineSource=="activation-callback-fallback"
+                and "activation-callback" or "pre-activation",
+            baselineAgeSeconds=captureAge and math.floor(captureAge*1000+0.5)/1000 or nil,
+            preActivationBaselineAvailable=baselineSource~="activation-callback-fallback",
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
-        if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
-        local before = safeInteractionState()
-        local beforeGui = safeNearbyGuiState(obj)
+        if #interactionHistory > LIMITS.maxInteractionHistory then table.remove(interactionHistory, 1) end
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
@@ -1620,50 +3126,59 @@ local function observeInteractionObject(obj, root, label)
                 inventoryAction="selection"
             end
         end
-        local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
-        local beforePosition = nil
-        local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if rootPart then beforePosition=rootPart.Position end
+        local inventorySummaryBefore=inventoryRelevant and EVIDENCE_HELPERS.safeInventorySummary() or nil
         if feature then
-            local item = featureInteractions[feature] or {count=0,stateChanges=0}
+            local item = EVIDENCE_HELPERS.featureInteractions[feature] or {
+                count=0,stateChanges=0,temporalStateChanges=0,outcomeCandidates=0}
             item.count = item.count + 1
-            featureInteractions[feature] = item
+            EVIDENCE_HELPERS.featureInteractions[feature] = item
         end
         observationSequence = observationSequence + 1
         changeCount = changeCount + 1
         changeQueue[#changeQueue + 1] = {
-            path = path:sub(1,400), class = obj.ClassName,
+            path = path:sub(1,400), pathIdentity=historyItem.pathIdentity, class = obj.ClassName,
             featureCandidate = feature, featureMatchCount = matchCount,
             attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
+            controlMetadata=historyItem.controlMetadata,baselineSource=baselineSource,
+            baselineTiming=historyItem.baselineTiming,
+            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
+            evidence = "manual-user-interaction", sessionId = sessionId,
+            sessionElapsedSeconds=sessionElapsedSeconds,snapshotId = snapshotId, sequence = observationSequence,
+            transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
+            transactionLinkSource=historyItem.transactionLinkSource
         }
-        local interactionSequence = observationSequence
-        local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
-        historyItem.transactionId=transactionId
         local seenStateKeys={}
         local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+            pendingObservationEvents=pendingObservationEvents+1
             task.delay(delaySeconds, function()
+                pendingObservationEvents=math.max(0,pendingObservationEvents-1)
                 if not alive then return end
                 local ok,err=pcall(function()
-                    local after=safeInteractionState()
-                    local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
+                    local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+                    local guiChanges=EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,EVIDENCE_HELPERS.safeNearbyGuiState(obj))
                     local changes={}
                     for key,value in pairs(before) do
-                        if after[key]~=nil and after[key]~=value and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,before=value,after=after[key]}
+                        if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(after) do
-                        if before[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="added",after=value}
+                        if before[key]==nil and #changes<LIMITS.maxStateChanges then
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(before) do
-                        if after[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="removed",before=value}
+                        if after[key]==nil and #changes<LIMITS.maxStateChanges then
+                            local identity=beforeStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     local distance=nil
@@ -1689,6 +3204,7 @@ local function observeInteractionObject(obj, root, label)
                             freshGui[#freshGui+1]=change
                         end
                     end
+                    registerGuiRevealCandidates(freshGui,historyItem,delaySeconds)
                     -- Deduplicate across related initiation/confirmation interactions.
                     -- Retain per-interaction evidence, but count a shared transition once.
                     local transactionFresh={}
@@ -1702,34 +3218,48 @@ local function observeInteractionObject(obj, root, label)
                             transactionFresh[#transactionFresh+1]=change
                         end
                     end
-                    if transactionEvidenceCount>MAX_TRANSACTION_SIGNATURES then
+                    if transactionEvidenceCount>LIMITS.maxTransactionSignatures then
                         transactionEvidenceSeen={}
                         transactionEvidenceCount=0
                     end
                     workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
                     workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                    local featureStateEvidence=featureConsistentStateEvidence(feature,transactionFresh)
+                    local featureGuiEvidence=featureConsistentGuiEvidence(feature,freshGui)
                     if feature=="travel" and distance and distance>100 and not historyItem.travelCandidate then
                         historyItem.travelCandidate=true
                         workflowStats.travelCandidates=workflowStats.travelCandidates+1
                     end
-                    if feature=="rewards" and not historyItem.rewardClaimGuiCandidate then
-                        for _,g in ipairs(guiChanges) do
-                            if g.path:lower():find("claimed",1,true) and g.afterVisible==true then
-                                historyItem.rewardClaimGuiCandidate=true
-                                workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
-                                break
-                            end
-                        end
+                    if featureGuiEvidence and not historyItem.rewardClaimGuiCandidate then
+                        historyItem.rewardClaimGuiCandidate=true
+                        workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
+                    end
+                    if featureStateEvidence then historyItem.featureStateEvidence=featureStateEvidence end
+                    if featureGuiEvidence then historyItem.featureGuiEvidence=featureGuiEvidence end
+                    if (featureStateEvidence or featureGuiEvidence) and not historyItem.observableOutcomeCandidate then
+                        historyItem.observableOutcomeCandidate={feature=feature,
+                            classification="feature-consistent-observable-change",
+                            evidenceKinds={featureStateEvidence and "state-change" or "gui-change",
+                                featureStateEvidence and featureGuiEvidence and "gui-change" or nil},
+                            overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                            causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                        historyItem.outcomeVerified=false
+                        workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                        local item=feature and EVIDENCE_HELPERS.featureInteractions[feature]
+                        if item then item.outcomeCandidates=item.outcomeCandidates+1 end
                     end
                     local window={seconds=delaySeconds,stateChanges=freshState,
                         stateChangeCount=#freshState,guiChanges=freshGui,
                         guiChangeCount=#freshGui,travelDistanceStuds=distance,
-                        actionEvidence=evidence}
+                        baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                        preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
+                        featureStateEvidence=featureStateEvidence,
+                        featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
                     if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
-                        local inventoryAfter=safeInventorySummary()
-                        local guiEvidence=compareInventoryGuiSamples(
+                        local inventoryAfter=EVIDENCE_HELPERS.safeInventorySummary()
+                        local guiEvidence=EVIDENCE_HELPERS.compareInventoryGuiSamples(
                             inventorySummaryBefore,inventoryAfter)
                         historyItem.inventoryObservationScope={
                             actionContext=inventoryAction,
@@ -1767,11 +3297,13 @@ local function observeInteractionObject(obj, root, label)
                         historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
                         historyItem.stateChanges=historyItem.stateChanges or {}
                         for _,change in ipairs(transactionFresh) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
-                        historyItem.featureStateEvidence=relevantStateEvidence(feature,transactionFresh)
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
-                            local item=featureInteractions[feature]
-                            if item then item.stateChanges=item.stateChanges+1 end
+                            local item=EVIDENCE_HELPERS.featureInteractions[feature]
+                            if item then
+                                item.temporalStateChanges=item.temporalStateChanges+1
+                                if featureStateEvidence then item.stateChanges=item.stateChanges+1 end
+                            end
                         end
                     end
                     if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
@@ -1783,8 +3315,12 @@ local function observeInteractionObject(obj, root, label)
                         changeQueue[#changeQueue+1]={
                             path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
                             featureCandidate=feature,sequence=historyItem.sequence,
+                            baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
                             observationWindowSeconds=delaySeconds,changes=transactionFresh,
                             guiChanges=freshGui,travelDistanceStuds=distance,
+                            featureStateEvidence=featureStateEvidence,
+                            featureGuiEvidence=featureGuiEvidence,
                             actionEvidence=evidence,causalVerification=false,
                             sessionId=sessionId,snapshotId=snapshotId}
                     end
@@ -1794,6 +3330,10 @@ local function observeInteractionObject(obj, root, label)
         end
     end)
     table.insert(watchConnections, connection)
+end
+
+WORKFLOW_HELPERS.observeInteractionObject = observeInteractionObject
+WORKFLOW_HELPERS.backfillObservableOutcomeCandidates = backfillObservableOutcomeCandidates
 end
 
 local function sweepInteractionControls()
@@ -1808,7 +3348,7 @@ local function sweepInteractionControls()
     for i, obj in ipairs(descendants) do
         if not alive then return end
         if obj:IsA("GuiButton") then
-            local success = pcall(observeInteractionObject, obj, gui, "PlayerGui")
+            local success = pcall(WORKFLOW_HELPERS.observeInteractionObject, obj, gui, "PlayerGui")
             if not success then observerStats.bindingErrors = observerStats.bindingErrors + 1 end
         end
         observerStats.sweepScanned = i
@@ -1826,7 +3366,7 @@ local function flushWatch()
     watchBusy = true
     local batch = {}
     local changesInBatch = 0
-    local take = math.min(changeCount, WATCH_BATCH)
+    local take = math.min(changeCount, LIMITS.watchBatchSize)
     for i = 1, take do
         batch[#batch + 1] = changeQueue[i]
     end
@@ -1838,11 +3378,11 @@ local function flushWatch()
     end
     changeCount = changeCount - take
     changesInBatch = take
-    if #batch < WATCH_BATCH then for path, entry in pairs(watchQueue) do
+    if #batch < LIMITS.watchBatchSize then for path, entry in pairs(watchQueue) do
         batch[#batch + 1] = entry
         watchQueue[path] = nil
         watchCount = watchCount - 1
-        if #batch >= WATCH_BATCH then break end
+        if #batch >= LIMITS.watchBatchSize then break end
     end end
     task.spawn(function()
         local report = {
@@ -1851,8 +3391,8 @@ local function flushWatch()
             inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             objects = batch, counts = {}, groups = {},
             sessionId = sessionId, parentSnapshotId = snapshotId,
-            featureEvidence = buildFeatureEvidence(batch),
-            featureReadiness = buildReadiness(buildFeatureEvidence(batch), interactionEventCount),
+            featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(batch),
+            featureReadiness = EVIDENCE_HELPERS.buildReadiness(EVIDENCE_HELPERS.buildFeatureEvidence(batch), interactionEventCount),
             scanStats = {
                 mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
@@ -1941,7 +3481,7 @@ local function startWatching()
                         return
                     end
                     observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -1957,7 +3497,7 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
                     if i % 500 == 0 then task.wait() end
                 end
             end)
@@ -1974,7 +3514,7 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
                     if i % 300 == 0 then task.wait() end
                 end
             end
@@ -1983,7 +3523,7 @@ local function startWatching()
                 task.defer(function()
                     if not alive or not watchEnabled then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
                     local good, entry = pcall(watchEntry, obj, character, label)
                     if good and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -1998,7 +3538,7 @@ local function startWatching()
 
     task.spawn(function()
         while alive do
-            task.wait(WATCH_INTERVAL)
+            task.wait(LIMITS.watchIntervalSeconds)
             if alive then
                 refreshQueue()
                 flushWatch()
@@ -2026,6 +3566,7 @@ interactionToggle.MouseButton1Click:Connect(function()
             end
         end)
     else
+        stopWorkflowRecording("observer-disabled")
         observerStats.deactivationCount = observerStats.deactivationCount + 1
         observerStats.lastDisabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastDisabledReason = "manual-toggle"
@@ -2040,25 +3581,84 @@ interactionToggle.MouseButton1Click:Connect(function()
         or "Manual interaction observation paused"
 end)
 
-local function inspect(requestType)
+
+local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedInteractions,
+        unattributedInteractions)
+    local blockers = {}
+    local linkedWorkflowEvents = workflowStats.linkedConfirmations + workflowStats.linkedFollowups
+    local derivedWorkflowEvidenceEvents = math.max(linkedWorkflowEvents,
+        workflowStats.completedCandidates)
+    if totalInteractions <= 0 then
+        blockers[#blockers+1] = "no-interaction-events-observed"
+    else
+        if attributedInteractions <= 0 then
+            blockers[#blockers+1] = "no-feature-attributed-interactions"
+        end
+        if (workflowRecordingStats.started <= 0 and linkedWorkflowEvents <= 0
+                and workflowStats.completedCandidates <= 0) then
+            blockers[#blockers+1] = "explicit-workflow-recording-not-armed"
+        end
+        if linkedWorkflowEvents <= 0 and workflowStats.completedCandidates <= 0 then
+            blockers[#blockers+1] = "no-linked-confirmation-events"
+        end
+        if workflowStats.actionOutcomesCorroborated <= 0 then
+            blockers[#blockers+1] = "no-corroborated-action-outcomes"
+        end
+        if workflowStats.completedCandidates <= 0 then
+            blockers[#blockers+1] = "no-completed-workflow-candidates"
+        end
+        if workflowStats.multiWindowSamples <= 0 then
+            blockers[#blockers+1] = "no-observation-window-samples"
+        end
+        if unattributedInteractions > 0 then
+            blockers[#blockers+1] = "some-interactions-remain-unattributed"
+        end
+    end
+    return {
+        available = true,
+        interactionEvents = totalInteractions,
+        attributedInteractions = attributedInteractions,
+        unattributedInteractions = unattributedInteractions,
+        linkedConfirmations = workflowStats.linkedConfirmations,
+        linkedFollowups = workflowStats.linkedFollowups,
+        linkedWorkflowEvents = linkedWorkflowEvents,
+        derivedWorkflowEvidenceEvents = derivedWorkflowEvidenceEvents,
+        corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
+        completedWorkflowCandidates = workflowStats.completedCandidates,
+        explicitWorkflowRecordings = workflowRecordingStats.started,
+        blockers = blockers,
+        readinessImpact = "limitations-only",
+        causalProof = false,
+        runtimeVerified = false,
+        gameplayVerified = false,
+    }
+end
+
+local function inspect(requestType, featureRequest)
     if running or uploading then
-        status.Text = "Wait for current scan/upload to finish"
-        return
+        status.Text = "Wait for current scan/upload or press SCAN to cancel"
+        return false
     end
     if pendingParts and #pendingParts > 0 then
         for i = 1, #pendingParts do
             if not pendingAcknowledged[i] then
                 status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
-                return
+                return false
             end
         end
     end
 
+    stopWorkflowRecording("scan-started")
     scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or (requestType == "auto-evidence" and "auto-evidence" or "manual")
+    scanRequestType = requestType == "startup-baseline" and "startup-baseline"
+        or (requestType == "auto-evidence" and "auto-evidence"
+        or (requestType == "feature-request" and "feature-request" or "manual"))
+    scanGeneration = scanGeneration + 1
+    local generation = scanGeneration
     running = true
     siblingContextCache = setmetatable({}, {__mode="k"})
-    status.Text = "Scanning..."
+    local profile = activeScanProfile()
+    status.Text = "Scanning (" .. profile.label .. ")..."
 
     task.spawn(function()
         local scanStarted = os.clock()
@@ -2071,6 +3671,7 @@ local function inspect(requestType)
                 placeVersion = game.PlaceVersion,
                 inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 gameName = nil,
+                featureRequest = featureRequest,
                 objects = {},
                 counts = {},
                 groups = {}
@@ -2085,32 +3686,43 @@ local function inspect(requestType)
             end
 
 
-            -- Universal snapshot: collect every instance in the three client-visible roots.
-            -- Names, hierarchy, spatial data, and interaction metadata only.
-            -- Never collect chat text, player identifiers, script source, or remote payloads.
-            local roots = {
-                {instance = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
-                {instance = game:GetService("ReplicatedFirst"), label = "ReplicatedFirst"},
-                {instance = workspace, label = "Workspace"},
-                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"},
-                {instance = player, label = "LocalPlayer"},
-                {instance = player.Character, label = "Character"},
-                {instance = game:GetService("Lighting"), label = "Lighting"},
-                {instance = game:GetService("Teams"), label = "Teams"},
-                {instance = game:GetService("SoundService"), label = "SoundService"}
+            local rootInstances = {
+                ReplicatedStorage = game:GetService("ReplicatedStorage"),
+                ReplicatedFirst = game:GetService("ReplicatedFirst"),
+                Workspace = workspace,
+                PlayerGui = player:FindFirstChild("PlayerGui"),
+                LocalPlayer = player,
+                Character = player.Character,
+                Lighting = game:GetService("Lighting"),
+                Teams = game:GetService("Teams"),
+                SoundService = game:GetService("SoundService")
             }
+            local roots = {}
+            local plannedRoots = {}
+            for _, label in ipairs(profile.rootLabels) do
+                plannedRoots[#plannedRoots + 1] = label
+                roots[#roots + 1] = {instance = rootInstances[label], label = label}
+            end
             report.scanStats = {
                 scanned = 0, eligible = 0, recorded = 0, omitted = 0,
-                mode = "universal-snapshot-v4.1", byCategory = {}, byRoot = {},
+                mode = profile.scanMode, profile = activeScanProfileId,
+                quickTargeted = profile.quickTargeted == true,
+                recordingPolicy = profile.recordingPolicy,
+                plannedRoots = plannedRoots,
+                byCategory = {}, byRoot = {},
                 rootCoverage = {}, byClass = {},
                 valueBase = {scanned = 0, recorded = 0, byClass = {}},
                 guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
-                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
+                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0, profileFiltered = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
                 pathCollisionsResolved = 0,
-                siblingContextLimit = 8,
-                limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
+                siblingContextLimit = profile.quickTargeted and 0 or 8,
+                limitations = {
+                    scriptSource = "not-read", serverState = "not-visible", remotePayloads = "not-collected",
+                    coverage = profile.quickTargeted and "quick-targeted-not-full-object-inventory"
+                        or "full-client-visible-root-inventory"
+                }
             }
             local function categoryOf(obj)
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
@@ -2161,13 +3773,13 @@ local function inspect(requestType)
                     z = math.floor(v.Z * 100) / 100}
             end
             report.scanStats.rootAvailability = {}
-            local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
+            local requiredRoots = profile.requiredRoots
             local scanAborted = false
             local pathOccurrences = {}
             local nextInstanceId = 0
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
-                local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                local yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                 local root = spec.instance
                 stablePathCache = {}
                 local coverage = {
@@ -2181,7 +3793,7 @@ local function inspect(requestType)
                     if okDescendants and type(descendants) == "table" then
                         coverage.success = true
                         for i, obj in ipairs(descendants) do
-                        if not alive then break end
+                        if not alive or generation ~= scanGeneration then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
                         coverage.scanned = coverage.scanned + 1
                         report.scanStats.byRoot[spec.label] = (report.scanStats.byRoot[spec.label] or 0) + 1
@@ -2214,9 +3826,16 @@ local function inspect(requestType)
                             report.scanStats.omissions.inspectorSelf = report.scanStats.omissions.inspectorSelf + 1
                         end
                         if path then
-                            -- Roblox permits identically named siblings. Preserve each object
-                            -- with an unambiguous scan-local occurrence suffix.
-                            local count = (pathOccurrences[path] or 0) + 1
+                            local includeByProfile = shouldRecordObjectForProfile(profile, obj, path, spec.label)
+                            if not includeByProfile then
+                                report.scanStats.omitted = report.scanStats.omitted + 1
+                                coverage.omitted = coverage.omitted + 1
+                                report.scanStats.omissions.profileFiltered =
+                                    report.scanStats.omissions.profileFiltered + 1
+                            else
+                                -- Roblox permits identically named siblings. Preserve each object
+                                -- with an unambiguous scan-local occurrence suffix.
+                                local count = (pathOccurrences[path] or 0) + 1
                             pathOccurrences[path] = count
                             if count > 1 then
                                 path = path:sub(1, 380) .. "[occurrence:" .. tostring(count) .. "]"
@@ -2255,7 +3874,7 @@ local function inspect(requestType)
                                     "ReplicatedStorage%.([%w_]+)") or "other"
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
-                            enrichEntry(entry, obj)
+                            enrichEntry(entry, obj, profile)
                             if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
                                 local n = string.lower(obj.Name)
                                 if n:find("controller",1,true) or n:find("manager",1,true)
@@ -2264,13 +3883,15 @@ local function inspect(requestType)
                                     entry.controllerEvidence = "name-based-candidate-only"
                                 end
                             end
-                            local tagOk, tags = pcall(function()
-                                return game:GetService("CollectionService"):GetTags(obj)
-                            end)
-                            if tagOk and type(tags) == "table" and #tags > 0 then
-                                entry.tags = {}
-                                for ti = 1, math.min(#tags, 20) do
-                                    entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                            if not profile.quickTargeted then
+                                local tagOk, tags = pcall(function()
+                                    return game:GetService("CollectionService"):GetTags(obj)
+                                end)
+                                if tagOk and type(tags) == "table" and #tags > 0 then
+                                    entry.tags = {}
+                                    for ti = 1, math.min(#tags, 20) do
+                                        entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                                    end
                                 end
                             end
                             table.insert(report.objects, entry)
@@ -2290,17 +3911,22 @@ local function inspect(requestType)
                             end
                             cat.eligible = cat.eligible + 1
                             cat.recorded = cat.recorded + 1
+                            end
                         else
                             report.scanStats.omitted = report.scanStats.omitted + 1
                             coverage.omitted = coverage.omitted + 1
                             if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
                         if os.clock() >= yieldDeadline then
-                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects (" .. profile.label .. ")..."
                             report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
-                            yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                            yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                         end
+                        end
+                        if generation ~= scanGeneration then
+                            coverage.error = "scan cancelled"
+                            scanAborted = true
                         end
                     else
                         coverage.error = tostring(descendants)
@@ -2311,6 +3937,7 @@ local function inspect(requestType)
                 end
                 if coverage.required and not coverage.success then scanAborted = true end
                 report.scanStats.performance.rootSeconds[spec.label] = math.floor((os.clock()-rootStarted)*1000+0.5)/1000
+                if generation ~= scanGeneration then break end
             end
             report.scanStats.performance.scanSeconds = math.floor((os.clock()-scanStarted)*1000+0.5)/1000
             report.scanStats.recorded = #report.objects
@@ -2327,30 +3954,75 @@ local function inspect(requestType)
                     requiredRootsPresent = false
                 end
             end
+            local scanCancelled = generation ~= scanGeneration
+            if scanCancelled then scanAborted = true end
             local scanComplete = not scanAborted and requiredRootsPresent
                 and rootAccountingValid
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
             report.scanStats.complete = scanComplete
-            report.featureEvidence = buildFeatureEvidence(report.objects)
-            report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
+            report.featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(report.objects)
+            report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
+            local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             report.interactionDiagnostics = {
                 scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
+                scanProfile=activeScanProfileId, scanMode=profile.scanMode,
+                quickTargeted=profile.quickTargeted==true,
+                profileFilteredObjects=report.scanStats.omissions.profileFiltered,
                 observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
                 callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
+                preActivationListenersAttached=observerStats.preActivationListenersAttached,
+                preActivationCaptures=observerStats.preActivationCaptures,
+                preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed,
+                callbackBaselinesUsed=observerStats.callbackBaselinesUsed,
+                stalePreActivationCaptures=observerStats.stalePreActivationCaptures,
+                preActivationCaptureFailures=observerStats.preActivationCaptureFailures,
+                baselineTimingPolicy="pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback",
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=0, cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
+                pendingObservationEvents=pendingObservationEvents,
+                observationWindowsExpected=interactionEventCount*#OBSERVATION_WINDOWS,
+                observationWindowsCompleted=workflowStats.multiWindowSamples,
+                observationWindowsFailed=workflowStats.observationFailures,
+                observationWindowAccountingValid=
+                    workflowStats.multiWindowSamples+workflowStats.observationFailures
+                        +pendingObservationEvents==interactionEventCount*#OBSERVATION_WINDOWS,
+                evidenceLossPossible=pendingObservationEvents>0
+                    or workflowStats.observationFailures>0
+                    or observerStats.preActivationCaptureFailures>0
+                    or observerStats.callbackBaselinesUsed>0,
+                cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
-                recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
-                workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
+                recentInteractions=interactionHistory, interactionHistoryLimit=LIMITS.maxInteractionHistory,
+                workflowStats=workflowStats,
+                backfilledOutcomeCandidates=recoveredOutcomeCandidates,
+                workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
+                    interactionEventCount, attributedInteractionCount, unattributedInteractionCount),
+                pendingWorkflowCount=#pendingActions,
+                pendingGuiRevealCount=#pendingGuiReveals,
+                workflowRecordingActive=workflowRecording.active,
+                workflowRecordingStats=workflowRecordingStats,
+                workflowRecordingLimits={maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+                    maxEvents=LIMITS.maxWorkflowRecordingEvents},
+                workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof",
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
+                guiRevealFollowupPolicy="visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only",
                 inventoryDiscovery="candidate-first-gui-sampling-parent-aware-pagination",
-                evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
-                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
-                stateChangeLimit=MAX_STATE_CHANGES,
-                featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
+                evidenceLevels={"interaction-observed","temporal-state-change-observed",
+                    "feature-consistent-observable-change","gameplay-outcome-verified"},
+                gameplayOutcomesVerified=0,
+                completedCandidateDefinition="feature-consistent observable change; causality and gameplay remain unverified",
+                actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
+                stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates"},
+                stateSnapshotCandidateCount=#stateSnapshotCandidates,
+                stateSnapshotMaxValues=LIMITS.maxStateSnapshotCandidates,
+                observationWindowsSeconds=OBSERVATION_WINDOWS,
+                observationIdleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
+                scanCancelled=scanCancelled,
+                stateChangeLimit=LIMITS.maxStateChanges,
+                featureEvidenceRules={"feature-key-changed","reward-status-became-visible",
+                    "post-capture-window-evidence-backfill"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
@@ -2358,10 +4030,12 @@ local function inspect(requestType)
                 sweepStartedAt=observerStats.sweepStartedAt, sweepFinishedAt=observerStats.sweepFinishedAt,
                 lastSweepError=observerStats.lastSweepError
             }
-            report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
+            report.featureSnapshotDelta = EVIDENCE_HELPERS.compareFeatureSnapshots(report.featureEvidence)
             report.automationDiagnostics = {
                 enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
+                scanProfile=activeScanProfileId, quickTargeted=profile.quickTargeted==true,
+                coveragePolicy=profile.recordingPolicy,
                 automaticRescans=autoEvidenceRescans, lastFailure=autoEvidenceLastFailure,
                 capturedInteractionCount=interactionEventCount,
                 indexIntegrityWarning="Use receiver GET /reports/READ_KEY/SCAN_ID/integrity to verify object indexing",
@@ -2369,12 +4043,16 @@ local function inspect(requestType)
             }
             report.diagnostics = {
                 complete = scanComplete,
+                scanCancelled = scanCancelled,
                 completenessBasis = "required-root-success-and-object-accounting",
                 requiredRootsPresent = requiredRootsPresent,
                 rootAccountingValid = rootAccountingValid,
                 scannedObjects = report.scanStats.scanned,
                 recordedObjects = report.scanStats.recorded,
                 omittedObjects = report.scanStats.omitted,
+                profileFilteredObjects = report.scanStats.omissions.profileFiltered,
+                scanProfile = activeScanProfileId,
+                targetedCoverage = profile.quickTargeted == true,
                 completeButLimitedToClientVisibleRoots = true,
                 scanMode = "client-visible-read-only",
                 rootsScanned = report.scanStats.byRoot,
@@ -2402,21 +4080,30 @@ local function inspect(requestType)
             return report
         end)
 
-        if not alive then return end
+        if not alive or generation ~= scanGeneration then return end
 
         if not ok then
             status.Text = "Scan error: " .. tostring(result)
             siblingContextCache = nil
-        running = false
+            running = false
+            return
+        end
+        if result and result.diagnostics and result.diagnostics.scanCancelled then
+            status.Text = "Scan cancelled"
+            siblingContextCache = nil
+            running = false
             return
         end
 
         local encoded, resultData = pcall(function()
             -- Large universal scans must never be encoded as one JSON document.
             -- The receiver accepts bounded parts; keep only a small clipboard manifest.
-            local parts = prepareParts(result)
-            local manifest = encodeStage('scan-manifest', {
+            local parts, reportScanId = prepareParts(result)
+            uploadState={attempted=false,status="not-attempted",acknowledgedParts=0,
+                expectedParts=#parts,lastError=nil}
+            local manifestData = {
                 version = VERSION, gameName = result.gameName,
+                scanId = reportScanId,
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
@@ -2424,30 +4111,53 @@ local function inspect(requestType)
                 automationDiagnostics = result.automationDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
+                featureRequest = result.featureRequest,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
+                reportTransport = uploadSnapshot("pre-upload"),
+                localExport = {attempted=false,status="not-attempted",exportedParts=0,
+                    expectedParts=#parts,manifestSaved=false,manifestWriteAttempts=0,
+                    localPartContentDigestsComputed=false},
                 localPerformance = result.localPerformance,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
-                note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
-            })
-            return {json = manifest, parts = parts}
+                note = "Inspection snapshot is uploaded in numbered parts; manifest includes scan profile and coverage diagnostics"
+            }
+            local manifest = encodeStage("scan-manifest", manifestData)
+            return {json=manifest,parts=parts,manifest=manifestData,scanId=reportScanId}
         end)
+        if generation ~= scanGeneration then
+            running = false
+            return
+        end
         if encoded then
             snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
+            pendingManifest = resultData.manifest
             pendingAcknowledged = {}
-            status.Text = (result.diagnostics.complete and "Scan complete - " or "PARTIAL SCAN - ")
-                .. #result.objects .. " entries in " .. #pendingParts .. " part(s)"
+            local scanSeconds = result.scanStats and result.scanStats.performance
+                and result.scanStats.performance.scanSeconds or 0
+            local packageSeconds = result.localPerformance and result.localPerformance.serializationSeconds or 0
+            local plannedRootCount = result.scanStats and type(result.scanStats.plannedRoots)=="table"
+                and #result.scanStats.plannedRoots or #ROOT_LABELS
+            status.Text = (result.diagnostics.complete and "Snapshot complete - " or "SNAPSHOT PARTIAL - ")
+                .. #result.objects .. " entries in " .. #pendingParts .. " part(s); snapshot "
+                .. tostring(scanSeconds) .. "s; packaging " .. tostring(packageSeconds)
+                .. "s; upload " .. uploadAttemptStage()
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
+                .. "\\nScan ID: " .. tostring(resultData.scanId)
+                .. "\\nScan profile: " .. tostring(result.scanStats and result.scanStats.profile or activeScanProfileId)
                 .. "\\nEntries: " .. #result.objects
                 .. "\\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0) .. " events, "
                 .. tostring(result.counts.RemoteFunction or 0) .. " functions"
                 .. "\\nParts: " .. #pendingParts
-                .. "\\nRoots: " .. tostring(result.scanStats and result.scanStats.byRoot and #ROOT_LABELS or 0)
+                .. "\\nRoots: " .. tostring(plannedRootCount)
+                .. "\\nSnapshot stage: " .. (result.diagnostics.complete and "complete" or "partial")
+                .. "\\nPackaging stage: prepared " .. #pendingParts .. " numbered parts"
+                .. "\\nUpload stage: " .. uploadAttemptStage()
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
                 .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
@@ -2455,18 +4165,20 @@ local function inspect(requestType)
                 .. "\\nScan type: " .. scanRequestType
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
+            refreshGeneratedHandoff("Scan complete")
             if autoSend and validEndpoint(endpoint) then transmit() end
         else
             status.Text = "JSON error: " .. tostring(resultData)
         end
         running = false
     end)
+    return true
 end
 
 -- v6 automatic evidence collection: observe ordinary user gameplay without requiring
 -- the user to perform a fresh manual scan after every interaction.
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
-local autoEvidenceToggle = Instance.new("TextButton")
+autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
 autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
 autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)
@@ -2477,22 +4189,69 @@ autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
 autoEvidenceToggle.Parent = panel
 -- Keep evidence control below INTERACT and outside the report viewport.
 autoEvidenceToggle.ZIndex = 4
-local evidenceHint = create("TextLabel", {
+workflowRecordToggle = create("TextButton", {
+    Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF",
+    Size=UDim2.fromOffset(120,26),Position=UDim2.fromOffset(380,201),
+    TextSize=10,TextColor3=Color3.fromRGB(245,245,245),
+    BackgroundColor3=Color3.fromRGB(85,85,105),ZIndex=4
+},panel)
+refreshWorkflowRecorder=function(reason)
+    if workflowRecording.active then
+        workflowRecordToggle.Text="RECORD: "..workflowRecording.eventCount.."/"..LIMITS.maxWorkflowRecordingEvents
+        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(145,90,45)
+        if reason=="started" then
+            status.Text="Workflow recording armed for 60 seconds or 8 interactions"
+        end
+    else
+        workflowRecordToggle.Text="RECORD FLOW: OFF"
+        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(85,85,105)
+        if reason=="operator-stopped" then
+            status.Text="Workflow recording stopped; ordering recorded without causal proof"
+        elseif reason=="event-limit" then
+            status.Text="Workflow recording reached the 8-interaction limit"
+        elseif reason=="duration-limit" then
+            status.Text="Workflow recording reached the 60-second limit"
+        end
+    end
+end
+workflowRecordToggle.MouseButton1Click:Connect(function()
+    if workflowRecording.active then
+        stopWorkflowRecording("operator-stopped")
+    elseif not interactionObserveEnabled or not observerStats.sweepCompleted then
+        status.Text="Workflow recording unavailable until interaction observer is ready"
+    else
+        startWorkflowRecording()
+    end
+end)
+
+scanModeToggle = create("TextButton", {
+    Name = "ScanModeToggle", Text = "SCAN MODE: FULL",
+    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 232),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, panel)
+observationToggle = create("TextButton", {
+    Name = "ObservationWindowToggle", Text = "OBSERVE: 12s",
+    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 263),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, panel)
+evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
-    Text = "After interaction: up to 4 full rescans",
-    Position = UDim2.fromOffset(379, 201),
-    Size = UDim2.fromOffset(121, 55),
+    Text = "Auto rescans: 0/4",
+    Position = UDim2.fromOffset(379, 294),
+    Size = UDim2.fromOffset(121, 36),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
     TextSize = 10,
     TextWrapped = true,
     TextYAlignment = Enum.TextYAlignment.Top
 }, panel)
-local uploadHint = create("TextLabel", {
+uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
-    Position = UDim2.fromOffset(379, 263),
-    Size = UDim2.fromOffset(121, 65),
+    Position = UDim2.fromOffset(379, 332),
+    Size = UDim2.fromOffset(121, 18),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
     TextSize = 10,
@@ -2500,16 +4259,38 @@ local uploadHint = create("TextLabel", {
     TextYAlignment = Enum.TextYAlignment.Top
 }, panel)
 
-autoEvidenceToggle.MouseButton1Click:Connect(function()
-    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+refreshEvidenceControls = function(reason)
+    local profile = activeScanProfile()
     autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
     autoEvidenceToggle.BackgroundColor3 = AUTO_EVIDENCE_ENABLED
         and Color3.fromRGB(50,105,85) or Color3.fromRGB(85,85,105)
+    scanModeToggle.Text = "SCAN MODE: " .. profile.label
+    observationToggle.Text = "OBSERVE: " .. tostring(AUTO_EVIDENCE_IDLE_SECONDS) .. "s"
+    evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+        .. "\nCoverage: " .. (profile.quickTargeted and "targeted" or "full")
+    if reason=="profile-changed" then
+        status.Text = "Scan mode " .. profile.label .. " | auto rescans "
+            .. AUTO_EVIDENCE_MAX_RESCANS .. " | observation " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+    end
+end
+
+autoEvidenceToggle.MouseButton1Click:Connect(function()
+    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+    refreshEvidenceControls("evidence-toggle")
     status.Text = AUTO_EVIDENCE_ENABLED and "Automatic evidence enabled" or "Automatic evidence paused"
 end)
+scanModeToggle.MouseButton1Click:Connect(function()
+    local nextProfile = activeScanProfileId == "full" and "quick" or "full"
+    applyScanProfile(nextProfile)
+end)
+observationToggle.MouseButton1Click:Connect(function()
+    cycleObservationIdleSeconds()
+    status.Text = "Observation window set to " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+end)
+refreshEvidenceControls("initial")
 
 -- Existing observer already captures pre/post state and GUI transitions. This
--- scheduler consolidates those records into full reports after activity settles.
+-- scheduler consolidates those records into profile-selected reports after activity settles.
 task.spawn(function()
     while alive do
         task.wait(3)
@@ -2530,15 +4311,44 @@ task.spawn(function()
                 autoEvidenceLastSequence=interactionEventCount
                 autoEvidenceLastScan=os.clock()
                 autoEvidenceRescans=autoEvidenceRescans+1
-                evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+                refreshEvidenceControls("auto-rescan")
                 inspect("auto-evidence")
             else
                 autoEvidenceLastFailure="Previous scan parts not acknowledged"
+                refreshEvidenceControls("auto-rescan-blocked")
             end
         end
     end
 end)
-scan.MouseButton1Click:Connect(function() inspect("manual") end)
+produceScript.MouseButton1Click:Connect(function()
+    local request = trim(featureRequestInput.Text:gsub("[%c]+", " "))
+    if request == "" then
+        generatedStatus.Text = "Enter a client-visible capability request first."
+        return
+    end
+    if #request > 240 then
+        generatedStatus.Text = "Request is too long; use 240 bytes or fewer."
+        return
+    end
+    featureRequestInput.Text = request
+    if activeScanProfileId ~= "full" then
+        applyScanProfile("full")
+        status.Text = "Feature request capture switched to FULL scan for complete evidence"
+    end
+    if inspect("feature-request", request) then
+        generatedStatus.Text = "Capturing a complete evidence package for offline generation.\n\nNo gameplay implementation or outcome is verified in-game."
+    else
+        generatedStatus.Text = "Evidence capture not started:\n" .. status.Text
+    end
+end)
+
+scan.MouseButton1Click:Connect(function()
+    if running or uploading then
+        cancelActiveOperation()
+    else
+        inspect("manual")
+    end
+end)
 
 copy.MouseButton1Click:Connect(function()
     if not last then
@@ -2556,23 +4366,80 @@ copy.MouseButton1Click:Connect(function()
 end)
 
 save.MouseButton1Click:Connect(function()
-    if not last then
+    if not last or not pendingManifest or not pendingParts or #pendingParts==0 then
         status.Text = "Scan not finished"
         return
     end
-
     if type(writefile) ~= "function" then
+        pendingManifest.localExport={attempted=true,status="failed",exportedParts=0,
+            expectedParts=#pendingParts,manifestSaved=false,manifestWriteAttempts=0,
+            localPartContentDigestsComputed=false,lastError="file writing unavailable"}
+        refreshLocalManifest("local-export")
+        refreshGeneratedHandoff("Local export finished")
         status.Text = "File saving unavailable"
         return
     end
 
-    local ok = pcall(
-        writefile,
-        "Lycoles_" .. tostring(game.PlaceId) .. ".json",
-        last
-    )
-
-    status.Text = ok and "Saved JSON" or "Save failed"
+    local safeScanId=tostring(pendingManifest.scanId or "unknown"):gsub("[^%w%-]","")
+    local prefix="Lycoles_"..tostring(game.PlaceId).."_"..safeScanId
+    local exported=0
+    local firstError=nil
+    for i,body in ipairs(pendingParts) do
+        local ok,err=pcall(writefile,prefix.."_part-"..string.format("%04d",i)..".json",body)
+        if ok then exported=exported+1 elseif not firstError then firstError=tostring(err) end
+    end
+    pendingManifest.localExport={
+        attempted=true,status=exported==#pendingParts and "incomplete" or "failed",
+        exportedParts=exported,expectedParts=#pendingParts,
+        filenamePrefix=prefix,manifestSaved=false,manifestWriteAttempts=1,
+        localPartContentDigestsComputed=false,
+        lastError=exported==#pendingParts and "manifest finalization pending" or "one or more part writes failed",
+        note="Raw numbered part bytes are preserved; compare offline SHA-256 with receiver acknowledgement digests when available"
+    }
+    refreshLocalManifest("local-export")
+    local manifestOk,manifestError=pcall(writefile,prefix.."_manifest.json",last)
+    if manifestOk and exported==#pendingParts then
+        pendingManifest.localExport.status="complete"
+        pendingManifest.localExport.manifestSaved=true
+        pendingManifest.localExport.manifestWriteAttempts=2
+        pendingManifest.localExport.lastError=nil
+        refreshLocalManifest("local-export")
+        local finalOk,finalError=pcall(writefile,prefix.."_manifest.json",last)
+        if finalOk then
+            status.Text="Saved complete report: "..exported.." part(s) + manifest"
+        else
+            manifestOk=false;manifestError=finalError
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.manifestSaved=false
+            pendingManifest.localExport.lastError="final manifest write failed"
+            refreshLocalManifest("local-export")
+        end
+    end
+    if not manifestOk or exported~=#pendingParts then
+        if manifestOk then
+            pendingManifest.localExport.status="incomplete"
+            pendingManifest.localExport.manifestSaved=true
+            pendingManifest.localExport.manifestWriteAttempts=2
+            pendingManifest.localExport.lastError="one or more numbered parts were not saved"
+            refreshLocalManifest("local-export")
+            local partialOk,partialError=pcall(writefile,prefix.."_manifest.json",last)
+            if not partialOk then
+                manifestOk=false;manifestError=partialError
+                pendingManifest.localExport.status="failed"
+                pendingManifest.localExport.manifestSaved=false
+                pendingManifest.localExport.lastError="final manifest write failed"
+                refreshLocalManifest("local-export")
+            end
+        else
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.lastError="manifest write failed"
+            refreshLocalManifest("local-export")
+        end
+        status.Text="Report save incomplete: "..exported.."/"..#pendingParts
+        if firstError then warn("Lycoles local report export failed",firstError) end
+        if manifestError then warn("Lycoles local manifest export failed",tostring(manifestError)) end
+    end
+    refreshGeneratedHandoff("Local export finished")
 end)
 
 close.MouseButton1Click:Connect(_G.LycolesInspectorClose)

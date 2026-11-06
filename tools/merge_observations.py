@@ -4,6 +4,62 @@
 This is an evidence overlay, not object reconstruction or gameplay execution.
 """
 import copy
+import re
+
+
+_UNVERIFIED_PROVENANCE=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
+    "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
+    "serverAuthorityVerified","replayable","gameplayVerified","actionOutcomesVerified")
+
+
+def _valid_local_digests(provenance):
+    if provenance.get("schemaVersion")=="30.2.source-provenance.1":
+        return True
+    count=provenance.get("partCount")
+    entries=provenance.get("partContentDigests")
+    if (provenance.get("schemaVersion")!="30.2.source-provenance.2"
+            or provenance.get("inputMode")!="local-multipart"
+            or type(count) is not int or not 1<=count<=2000
+            or provenance.get("localPartContentDigestsComputed") is not True
+            or not isinstance(entries,list) or len(entries)!=count):
+        return False
+    indexes=set()
+    for entry in entries:
+        if (not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}
+                or type(entry.get("partIndex")) is not int or not 1<=entry["partIndex"]<=count
+                or not isinstance(entry.get("sha256"),str)
+                or re.fullmatch(r"[a-f0-9]{64}",entry["sha256"]) is None
+                or entry["partIndex"] in indexes):
+            return False
+        indexes.add(entry["partIndex"])
+    return indexes==set(range(1,count+1))
+
+
+def _observation_provenance(observation,integrity):
+    provenance=observation.get("sourceProvenance")
+    mode=provenance.get("inputMode") if isinstance(provenance,dict) else None
+    receiver=mode in ("receiver-import","receiver-import-legacy-v11")
+    digest_receiver=mode=="receiver-import"
+    digest_verified=provenance.get("receiverStoredPayloadDigestsVerified") if provenance else None
+    integrity_verified=provenance.get("receiverIntegrityVerified") if provenance else None
+    acknowledgement=provenance.get("receiverAcknowledgementDigestEquivalent") if provenance else None
+    revalidated=provenance.get("receiverStoredPayloadDigestsRevalidatedThisRun") if provenance else None
+    if (not isinstance(provenance,dict)
+            or provenance.get("schemaVersion") not in
+                ("30.2.source-provenance.1","30.2.source-provenance.2")
+            or not _valid_local_digests(provenance)
+            or mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11")
+            or provenance.get("scanId")!=integrity.get("scanId")
+            or provenance.get("placeId")!=integrity.get("placeId")
+            or provenance.get("partCount")!=integrity.get("parts")
+            or any(provenance.get(field) is not False for field in _UNVERIFIED_PROVENANCE)
+            or type(digest_verified) is not bool or digest_verified is not digest_receiver
+            or type(integrity_verified) is not bool or integrity_verified is not receiver
+            or type(acknowledgement) is not bool or type(revalidated) is not bool
+            or (mode!="receiver-import" and revalidated)
+            or (not receiver and acknowledgement)):
+        raise ValueError("Invalid observation source provenance")
+    return copy.deepcopy(provenance)
 
 def merge_evidence(baseline, observations):
     base=baseline.get("integrity") or {}
@@ -29,6 +85,7 @@ def merge_evidence(baseline, observations):
         seen.add(sid)
         if (obs.get("sourceDiagnostics") or {}).get("scanMode")!="dynamic-observations":
             raise ValueError("Only dynamic observations may be overlaid")
+        provenance=_observation_provenance(obs,integrity)
         for feature in obs.get("features",[]):
             name=feature.get("feature")
             if not isinstance(name,str) or not name:
@@ -49,7 +106,8 @@ def merge_evidence(baseline, observations):
                 target[key]=old+value
             target["implementationReady"]=False
         overlays.append({"scanId":sid,"parts":integrity.get("parts"),
-                         "interactionEvents":integrity.get("interactionEvents",0)})
+                         "interactionEvents":integrity.get("interactionEvents",0),
+                         "sourceProvenance":provenance})
     result["features"]=sorted(by_name.values(),key=lambda x:x["feature"])
     result["featureCount"]=len(result["features"])
     result["evidenceOverlays"]=overlays
