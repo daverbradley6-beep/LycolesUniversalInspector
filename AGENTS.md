@@ -226,3 +226,7 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `GET /v1/generation/jobs/{jobId}`
 - The service currently uses deterministic pipeline artifacts (`build_release`, `generation-readiness`, `generated_result`) and keeps all authenticity/runtime/gameplay claims false.
 - `tests/test_lycoles_generation_service.py` is the regression guard for manifest-blocked, multipart-generated, and async lifecycle flows.
+- Receiver bridge: `tools/receiver_generation_pipeline.py`
+  - local parts: `python3 tools/receiver_generation_pipeline.py from-parts --parts-dir <dir> --output-root <dir> [--requested-capability <text>]`
+  - receiver fetch + generation: `python3 tools/receiver_generation_pipeline.py from-receiver --receiver-endpoint <https-origin> --scan-id <id> --output-root <dir> [--local-manifest <manifest.json>] [--resume-dir <dir>] [--requested-capability <text>]`
+  - receiver mode requires `LYCOLES_READ_KEY` in the environment.

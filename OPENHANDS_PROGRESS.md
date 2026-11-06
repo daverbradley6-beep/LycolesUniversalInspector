@@ -19,9 +19,14 @@
   - uses `build_release.build_manifest_readiness` for manifest-only evidence,
   - uses `build_release.build` + `generation-readiness.json` + `LycolesGeneratedUtility.lua` for multipart evidence,
   - uses `generated_result.build` for bounded display-only delivery payloads with all verification claims false.
-- Added regression coverage: `tests/test_lycoles_generation_service.py` (manifest blocked flow, multipart generated flow, async lifecycle flow).
+- Added receiver-to-generation orchestration: `tools/receiver_generation_pipeline.py`.
+  - `from-parts` mode runs generation directly from a local numbered parts directory.
+  - `from-receiver` mode fetches verified numbered parts with `fetch_receiver_scan` then runs generation service jobs.
+- Added regression coverage:
+  - `tests/test_lycoles_generation_service.py` (manifest blocked flow, multipart generated flow, async lifecycle flow),
+  - `tests/test_receiver_generation_pipeline.py` (local parts end-to-end and receiver-mode read-key guard).
 - Validation passed after this increment:
-  - complete Python suite: **1,596 tests passed**,
+  - complete Python suite: **1,598 tests passed**,
   - receiver + parser suite: all Node/Luau tests passed,
   - `python3 -m compileall -q tools tests`,
   - `git diff --check`.
