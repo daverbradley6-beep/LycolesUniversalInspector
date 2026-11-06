@@ -107,6 +107,13 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertFalse(generated["gameplayVerified"])
             self.assertFalse(generated["executionAuthorized"])
 
+            readiness_path = pathlib.Path(result["evidence"]["generationReadinessPath"])
+            readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+            self.assertEqual(readiness["request"]["request"],
+                             "Automatically hatch the selected egg")
+            self.assertNotEqual(readiness["request"]["status"], "no-capability-requested")
+            self.assertGreater(len(readiness["requestFeatureReadiness"]["requestedTerms"]), 0)
+
     def test_async_submission_exposes_job_lifecycle(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

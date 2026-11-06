@@ -78,6 +78,11 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             generated_result = pathlib.Path(result["delivery"]["generatedResultPath"])
             self.assertTrue(generated_result.is_file())
 
+            readiness = json.loads(pathlib.Path(result["evidence"]["generationReadinessPath"]).read_text(encoding="utf-8"))
+            self.assertEqual(readiness["request"]["request"],
+                             "Automatically hatch the selected egg")
+            self.assertNotEqual(readiness["request"]["status"], "no-capability-requested")
+
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
