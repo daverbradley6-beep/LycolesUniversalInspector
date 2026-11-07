@@ -83,6 +83,7 @@ class GenerationRequest:
     evidence_kind: str
     evidence_path: Path
     requested_capability: Optional[str] = None
+    observation_paths: tuple[Path, ...] = ()
 
 
 @dataclass
@@ -120,6 +121,7 @@ class JobRecord:
                 "evidenceKind": self.request.evidence_kind,
                 "evidencePath": str(self.request.evidence_path),
                 "requestedCapability": self.request.requested_capability,
+                "observationPaths": [str(path) for path in self.request.observation_paths],
             },
             "result": self.result,
         }
@@ -396,10 +398,22 @@ class EvidenceProcessor:
         if request.evidence_kind != "parts_dir":
             raise ValueError("Unsupported evidence kind")
 
+        observation_dirs: list[Path] = []
+        observation_files: list[Path] = []
+        for path in request.observation_paths:
+            if path.is_dir():
+                observation_dirs.append(path)
+            elif path.is_file():
+                observation_files.append(path)
+            else:
+                raise ValueError(f"Observation path not found: {path}")
+
         manifest = self._build_release.build(
             request.evidence_path,
             output_dir,
             requested_capability=request.requested_capability,
+            observation_dirs=observation_dirs,
+            observation_files=observation_files,
         )
         readiness_path = output_dir / "generation-readiness.json"
         script_path = output_dir / "LycolesGeneratedUtility.lua"
@@ -737,10 +751,14 @@ class LycolesGenerationService:
                 if parts == ["v1", "generation", "jobs"]:
                     try:
                         payload = self._read_json()
+                        raw_observations = payload.get("observationPaths") or []
+                        if not isinstance(raw_observations, list) or any(not isinstance(item, str) for item in raw_observations):
+                            raise ValueError("observationPaths must be a list of strings")
                         request = GenerationRequest(
                             evidence_kind=str(payload.get("evidenceKind")),
                             evidence_path=Path(str(payload.get("evidencePath"))).expanduser().resolve(),
                             requested_capability=payload.get("requestedCapability"),
+                            observation_paths=tuple(Path(item).expanduser().resolve() for item in raw_observations),
                         )
                         job_id = service.submit(request)
                         return self._json({"jobId": job_id, "status": "queued", "statusUrl": f"/v1/generation/jobs/{job_id}"}, 202)
@@ -752,10 +770,12 @@ class LycolesGenerationService:
 
 
 def _request_from_args(args: argparse.Namespace) -> GenerationRequest:
+    raw_paths = getattr(args, "observation_path", None) or []
     return GenerationRequest(
         evidence_kind=args.evidence_kind,
         evidence_path=Path(args.evidence_path).expanduser().resolve(),
         requested_capability=args.requested_capability,
+        observation_paths=tuple(Path(item).expanduser().resolve() for item in raw_paths),
     )
 
 
@@ -775,6 +795,8 @@ def main() -> int:
     run_parser.add_argument("--evidence-kind", choices=("manifest", "parts_dir"), required=True)
     run_parser.add_argument("--evidence-path", required=True)
     run_parser.add_argument("--requested-capability", default=None)
+    run_parser.add_argument("--observation-path", action="append", default=[],
+                            help="Additional observation overlay path (dynamic JSON file or compiled observation directory); repeatable")
     run_parser.add_argument("--output-root", default="build/generation-jobs")
 
     serve_parser = subparsers.add_parser("serve", help="Run HTTP job service")

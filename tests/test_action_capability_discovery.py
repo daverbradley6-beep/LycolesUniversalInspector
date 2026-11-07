@@ -329,6 +329,37 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertTrue(all(not item["causalityProven"] and not item["replayContractAvailable"]
             for item in relationships))
 
+    def test_input_cadence_patterns_capture_sustained_and_burst_sequences(self):
+        plan=self.real_plan()
+        for sequence in range(200,208):
+            plan["observedInteractionHistory"].append({
+                "path":"UserInput.MouseButton1",
+                "controlType":"Input.MouseButton1",
+                "sequence":sequence,
+                "inferredAction":{"kind":"fire","source":"input-observed"},
+            })
+        for sequence in (300,301,302):
+            plan["observedInteractionHistory"].append({
+                "path":"UserInput.KeyCode.R",
+                "controlType":"Input.KeyCode",
+                "sequence":sequence,
+                "workflow":{"action":"reload"},
+            })
+        result=discovery.analyze(plan)
+        generic=result["genericCapabilities"]
+        patterns={item["actionKind"]:item for item in generic["inputCadencePatterns"]}
+        self.assertIn("fire",patterns)
+        self.assertEqual(patterns["fire"]["cadence"],"sustained")
+        self.assertGreaterEqual(patterns["fire"]["maxEpisodeLength"],6)
+        self.assertIn("reload",patterns)
+        self.assertEqual(patterns["reload"]["cadence"],"burst")
+        summary=generic["inputCadenceSummary"]
+        self.assertGreaterEqual(summary["actionsWithSustainedCadence"],1)
+        self.assertGreaterEqual(summary["actionsWithBurstCadence"],1)
+        observed=result["observedActions"]
+        fire_event=next(item for item in observed if item.get("inferredActionKind")=="fire")
+        self.assertFalse(fire_event["causalityProven"])
+
     def test_malformed_generic_observation_windows_fail_closed(self):
         plan=self.real_plan();plan["observedInteractionHistory"][0]["observationWindows"]="invalid"
         with self.assertRaisesRegex(ValueError,"Malformed observation windows"):

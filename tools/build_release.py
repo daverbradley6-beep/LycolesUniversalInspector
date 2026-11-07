@@ -503,9 +503,34 @@ def build_manifest_readiness(manifest_path,output):
 
 
 
+def _load_observation_file(path):
+    file_path=pathlib.Path(path)
+    if not file_path.is_file() or file_path.is_symlink():
+        raise ValueError("observation file must be a regular file")
+    if file_path.stat().st_size>20_000_000:
+        raise ValueError("observation file is oversized")
+    document=json.loads(file_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(document,dict):
+        raise ValueError("observation file must contain a JSON object")
+    diagnostics=document.get("sourceDiagnostics")
+    if not isinstance(diagnostics,dict) or diagnostics.get("scanMode")!="dynamic-observations":
+        raise ValueError("observation file must declare dynamic-observations scan mode")
+    integrity=document.get("integrity")
+    if (not isinstance(integrity,dict)
+            or integrity.get("scanComplete") is not True
+            or type(integrity.get("placeId")) is not int
+            or not isinstance(integrity.get("scanId"),str)
+            or not integrity.get("scanId")):
+        raise ValueError("observation file integrity is invalid")
+    features=document.get("features")
+    if not isinstance(features,list):
+        raise ValueError("observation file missing features list")
+    return document
+
+
 def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_path=None,
           audit_path=None,prompt_feedback_path=None,guided_feedback_path=None,
-          guided_feedback_paths=None,requested_capability=None):
+          guided_feedback_paths=None,requested_capability=None,observation_files=None):
     parts_path=pathlib.Path(parts_dir)
     if parts_path.is_file():
         return build_manifest_readiness(parts_path,output)
@@ -514,9 +539,13 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     workflows_compiler=load_module("compile_workflows.py","lycoles_workflows")
     plan=compiler.compile_scan(parts_dir)
     source_provenance=plan["sourceProvenance"]
+    observations=[]
     if observation_dirs:
+        observations.extend(compiler.compile_scan(folder) for folder in observation_dirs)
+    if observation_files:
+        observations.extend(_load_observation_file(path) for path in observation_files)
+    if observations:
         merger=load_module('merge_observations.py','lycoles_merge')
-        observations=[compiler.compile_scan(folder) for folder in observation_dirs]
         plan=merger.merge_evidence(plan,observations)
     evidence_overlays=plan.get("evidenceOverlays",[])
     if requested_capability is not None:
@@ -909,6 +938,8 @@ def main():
     parser.add_argument("parts_dir");parser.add_argument("--output",default="build")
     parser.add_argument("--contracts",default=None)
     parser.add_argument("--observation",action="append",default=[],help="Additional complete dynamic observation scan folder; repeatable")
+    parser.add_argument("--observation-file",action="append",default=[],
+        help="Additional dynamic-observations JSON export file; repeatable")
     parser.add_argument("--feedback",default=None,help="Optional manual runtime observation report (v22 schema)")
     parser.add_argument("--prompt-feedback",default=None,
         help="Optional generated prompt trial feedback (v112 schema)")
@@ -919,9 +950,12 @@ def main():
         help="Optional requested capability override used for readiness/generation scoring")
     args=parser.parse_args()
     try:
-        result=build(args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
+        result=build(
+            args.parts_dir,args.output,args.contracts,args.observation,args.feedback,
             args.audit,args.prompt_feedback,guided_feedback_paths=args.guided_feedback,
-            requested_capability=args.requested_capability)
+            requested_capability=args.requested_capability,
+            observation_files=args.observation_file)
+
         schema = result.get("schemaVersion")
         if isinstance(schema, str) and schema.startswith("109.manifest-readiness."):
             print("BUILD BLOCKED: manifest-only input lacks numbered object parts; see manifest-readiness-v109.json",file=sys.stderr)

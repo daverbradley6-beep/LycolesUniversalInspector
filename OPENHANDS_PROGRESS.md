@@ -3,6 +3,86 @@
 
 
 
+## Update — 2026-11-06 — direct live-observation overlay ingestion (pipeline + generation service)
+
+- Expanded end-to-end evidence ingestion so **live `COPY JSON` observation exports can be consumed directly** by generation tooling without repackaging into synthetic multipart observation folders.
+
+Implemented:
+- `tools/build_release.py`
+  - Added repeatable `--observation-file` CLI input for dynamic observation JSON overlays.
+  - Added `_load_observation_file(...)` validation:
+    - regular-file only,
+    - bounded size,
+    - JSON object shape,
+    - `sourceDiagnostics.scanMode == "dynamic-observations"`,
+    - integrity identity fields present,
+    - features list present.
+  - Unified merge path so folder-based overlays (`--observation`) and direct JSON overlays (`--observation-file`) both flow through `merge_observations.py`.
+
+- `tools/lycoles_generation_service.py`
+  - `GenerationRequest` now supports `observation_paths`.
+  - HTTP API now accepts optional `observationPaths` list when creating jobs.
+  - CLI `run-job` now supports repeatable `--observation-path`.
+  - Evidence processor now routes observation paths by type (directory vs file), validates presence, and passes both sets into `build_release.build(...)`.
+  - Job snapshot now records `observationPaths` for traceability.
+
+Regression coverage added:
+- `tests/test_build_release.py`
+  - `test_dynamic_overlay_from_live_observation_file_without_rescan` validates direct live export overlay merge path and generated artifact presence.
+- `tests/test_lycoles_generation_service.py`
+  - Added live observation export fixture helper.
+  - `test_parts_job_accepts_live_observation_overlay_file` validates service-level ingestion of overlay file and persisted overlay provenance.
+
+Validation executed:
+- Focused suites:
+  - `tests.test_build_release`
+  - `tests.test_lycoles_generation_service`
+  - `tests.test_merge_observations`
+  - `tests.test_inspector_ui`
+- Node/Luau suite: `npm test`
+- Full Python suite: **1611 tests passed** (`skipped=17`)
+
+Impact:
+- Reduces manual friction between live executor observation capture and offline/server generation runs.
+- Preserves conservative verification policy (no upgrade to runtime/causality/server/gameplay claims).
+
+
+
+## Update — 2026-11-06 — universal input cadence analytics for sustained/burst detection
+
+- Extended `tools/discover_action_capabilities.py` with additive, non-breaking cadence analytics over observed interaction history.
+
+Implemented:
+- Added normalized action-kind extraction from:
+  - `event.inferredAction.kind` (preferred),
+  - `event.workflow.action` (fallback),
+  - bounded control-type fallback tokens.
+- Added sequence-based episode grouping and cadence classification per action kind:
+  - `single`, `burst`, `sustained`.
+- Added new additive outputs under `genericCapabilities`:
+  - `inputCadencePatterns`
+  - `inputCadenceSummary`
+- Added `inferredActionKind` to each `observedActions` item.
+- Preserved explicit non-verification semantics (`temporalCorrelationOnly`, no causal/server/runtime/gameplay proof).
+
+Regression coverage:
+- `tests/test_action_capability_discovery.py`
+  - Added `test_input_cadence_patterns_capture_sustained_and_burst_sequences`.
+
+Validation executed:
+- Focused suites:
+  - `tests.test_action_capability_discovery`
+  - `tests.test_generated_workflow_planning`
+  - `tests.test_build_release`
+  - `tests.test_lycoles_generation_service`
+- Node/Luau suite: `npm test`
+- Full Python suite: **1612 tests passed** (`skipped=17`)
+
+Impact:
+- Improves universal gameplay-understanding quality for held/repeated-input patterns (e.g., semi/burst/sustained behavior) without hardcoding to specific games.
+- Provides stronger deterministic signals for downstream workflow planning and generation heuristics while keeping claims conservative.
+
+
 ## Update — 2026-11-06 — v30.6.40 live gameplay capture export fix (Arsenal scan `E377D12B-FD9A-4644-B439-F76FFB3163AB`)
 
 - Investigated live report of smooth gameplay but zero interactions in copied JSON.

@@ -116,8 +116,13 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertFalse(candidate["automaticallyExecutable"])
         self.assertTrue(candidate["executionReady"])
         self.assertEqual(candidate["executionMode"],"mixed-guided")
+        cadence=candidate["inputCadenceSignals"]
+        self.assertEqual(cadence["strongestCadence"],"single")
+        self.assertIn("gui-activate",cadence["actionKinds"])
+        self.assertFalse(cadence["causalityProven"])
         self.assertFalse(result["claims"]["causalityProven"])
         self.assertEqual(result["summary"]["executionReadyWorkflows"],1)
+        self.assertEqual(result["summary"]["workflowsWithBurstCadenceSignals"],0)
         self.assertTrue(all(step["observationBaseline"]=={
             "timing":"unknown","preActivationBaselineAvailable":False,
             "possibleSynchronousLoss":True} for step in candidate["steps"]))
@@ -126,6 +131,19 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
             "possibleSynchronousLoss"]=False
         with self.assertRaisesRegex(ValueError,"step contract"):
             generator.validate(forged)
+
+    def test_workflow_cadence_signals_capture_burst_sequences(self):
+        value=plan()
+        value["observedInteractionHistory"].append(event("Finalize",3,4,5))
+        for item in value["observedInteractionHistory"]:
+            item["workflow"]={"action":"reload"}
+        result=self.analyze(value)
+        candidate=result["workflowCandidates"][0]
+        cadence=candidate["inputCadenceSignals"]
+        self.assertEqual(cadence["strongestCadence"],"burst")
+        self.assertIn("reload",cadence["actionKinds"])
+        self.assertEqual(result["summary"]["workflowsWithBurstCadenceSignals"],1)
+        self.assertEqual(result["summary"]["workflowsWithSustainedCadenceSignals"],0)
 
     def test_explicit_user_recording_establishes_order_without_causality(self):
         value=plan();transaction="user-recorded-12345678"

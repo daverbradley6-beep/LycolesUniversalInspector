@@ -14,6 +14,7 @@ MAX_ADJACENCY_CANDIDATES=100
 ADJACENCY_WINDOW_SECONDS=15
 FALSE_CLAIMS=("sourceAuthenticityVerified","causalityProven","serverAuthorityVerified",
     "runtimeVerified","gameplayVerified","actionOutcomesVerified")
+SAFE_ACTION_KIND=re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 def _text(value,limit):
     return (isinstance(value,str) and 1<=len(value.encode("utf-8"))<=limit
@@ -72,6 +73,87 @@ def _selection(steps,request):
     matched=sorted(requested&set(weighted))
     return {"requestAligned":bool(matched),"requestScore":sum(weighted[token] for token in matched),
         "matchedTerms":matched,"requestedTerms":sorted(requested)}
+
+
+def _event_action_kind(event):
+    inferred=event.get("inferredAction")
+    if isinstance(inferred,dict):
+        kind=inferred.get("kind")
+        if isinstance(kind,str):
+            normalized=kind.strip().lower()
+            if SAFE_ACTION_KIND.fullmatch(normalized):
+                return normalized
+    workflow=event.get("workflow")
+    if isinstance(workflow,dict):
+        kind=workflow.get("action")
+        if isinstance(kind,str):
+            normalized=kind.strip().lower().replace(" ","-")
+            if SAFE_ACTION_KIND.fullmatch(normalized):
+                return normalized
+    control=event.get("controlType")
+    if control=="Tool.Activated":
+        return "tool-activate"
+    if control=="GuiButton.Activated":
+        return "gui-activate"
+    if control=="ProximityPrompt.Triggered":
+        return "prompt-trigger"
+    return "unknown"
+
+
+def _cadence_index(actions):
+    generic=actions.get("genericCapabilities")
+    if not isinstance(generic,dict):
+        return {}
+    patterns=generic.get("inputCadencePatterns")
+    if patterns is None:
+        return {}
+    if not isinstance(patterns,list) or len(patterns)>2048:
+        raise ValueError("Malformed input cadence patterns")
+    index={}
+    for item in patterns:
+        if not isinstance(item,dict):
+            raise ValueError("Malformed input cadence patterns")
+        kind=item.get("actionKind")
+        cadence=item.get("cadence")
+        if (not isinstance(kind,str) or not SAFE_ACTION_KIND.fullmatch(kind)
+                or cadence not in ("single","burst","sustained")):
+            raise ValueError("Malformed input cadence patterns")
+        for field in ("eventCount","episodeCount","maxEpisodeLength"):
+            if type(item.get(field)) is not int or item[field]<0:
+                raise ValueError("Malformed input cadence patterns")
+        index[kind]={
+            "actionKind":kind,
+            "cadence":cadence,
+            "eventCount":item["eventCount"],
+            "episodeCount":item["episodeCount"],
+            "maxEpisodeLength":item["maxEpisodeLength"],
+        }
+    return index
+
+
+def _candidate_cadence(events,cadence_index):
+    kinds=sorted({_event_action_kind(event) for event in events if isinstance(event,dict)})
+    matched=[]
+    for kind in kinds:
+        pattern=cadence_index.get(kind)
+        if pattern is not None:
+            matched.append(copy.deepcopy(pattern))
+    matched.sort(key=lambda item:(-item["eventCount"],-item["maxEpisodeLength"],item["actionKind"]))
+    cadence_order={"single":0,"burst":1,"sustained":2}
+    strongest=(max((item["cadence"] for item in matched),
+        key=lambda value:cadence_order[value]) if matched else "none")
+    return {
+        "actionKinds":kinds,
+        "matchedPatterns":matched,
+        "strongestCadence":strongest,
+        "burstPatternCount":sum(item["cadence"]=="burst" for item in matched),
+        "sustainedPatternCount":sum(item["cadence"]=="sustained" for item in matched),
+        "temporalCorrelationOnly":True,
+        "causalityProven":False,
+        "runtimeVerified":False,
+        "gameplayVerified":False,
+    }
+
 
 
 def _identity(value):
@@ -438,6 +520,7 @@ def plan(plan_document,actions):
     if not isinstance(history,list) or len(history)>MAX_EVENTS:
         raise ValueError("Invalid interaction history")
     targets=_targets(actions);review_only_targets=_review_only_gui_targets(actions)
+    cadence_index=_cadence_index(actions)
     groups={};unlinked=0
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
@@ -506,6 +589,8 @@ def plan(plan_document,actions):
                     "stateContinuityLinks":[],"operatorStartRequired":True,
                     "manualGuiActivationRequired":True,
                     "selection":_selection(review_steps,request),
+                    "inputCadenceSignals":_candidate_cadence(
+                        [event for _,event,_ in review_only_mapped],cadence_index),
                     "guidedTrialGenerationReady":False,"executionMode":"review-only",
                     "automaticallyExecutable":False,"executionReady":False,
                     "reviewEvidenceType":"linked-gui-transition-only",
@@ -545,6 +630,8 @@ def plan(plan_document,actions):
             "allStepsGenerationReady":len(mapped)==len(events),
             "stateContinuityLinks":_continuity(steps),"operatorStartRequired":True,
             "manualGuiActivationRequired":manual_gui,"selection":_selection(steps,request),
+            "inputCadenceSignals":_candidate_cadence(
+                [event for _,event,_ in mapped],cadence_index),
             "guidedTrialGenerationReady":guided_ready,"executionMode":execution_mode,
             "automaticallyExecutable":automatic,"executionReady":guided_ready,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
@@ -584,6 +671,12 @@ def plan(plan_document,actions):
                 "linked-gui-transition-only" for item in candidates),
             "requestAlignedReviewOnlyLinkedCandidates":sum(item.get("reviewEvidenceType")==
                 "linked-gui-transition-only" and item["selection"]["requestAligned"]
+                for item in candidates),
+            "workflowsWithBurstCadenceSignals":sum(
+                item.get("inputCadenceSignals",{}).get("strongestCadence") in ("burst","sustained")
+                for item in candidates),
+            "workflowsWithSustainedCadenceSignals":sum(
+                item.get("inputCadenceSignals",{}).get("strongestCadence")=="sustained"
                 for item in candidates),
             "guiRevealFollowupCandidates":gui_reveal_followups["candidateCount"],
             "selectedExecutionCandidateId":selected["id"] if selected else None,

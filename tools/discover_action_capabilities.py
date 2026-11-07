@@ -7,6 +7,7 @@ import re
 
 SCHEMA="111.action-capabilities.1"
 SAFE_PATH=re.compile(r"^[^\x00-\x1f]{1,400}$")
+SAFE_ACTION_KIND=re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def _increased(change):
@@ -145,6 +146,90 @@ def _prompt_objective(path,feature,action,label,request,state_signals):
         "requestAligned":bool(request_tokens and matched),
         "classification":"gameplay-objective-candidate" if score>=5 else "interaction-candidate",
         "objectiveVerified":False}
+
+
+def _action_kind(event):
+    inferred=event.get("inferredAction")
+    if isinstance(inferred,dict):
+        kind=inferred.get("kind")
+        if isinstance(kind,str):
+            normalized=kind.strip().lower()
+            if SAFE_ACTION_KIND.fullmatch(normalized):
+                return normalized
+    workflow=event.get("workflow")
+    if isinstance(workflow,dict):
+        kind=workflow.get("action")
+        if isinstance(kind,str):
+            normalized=kind.strip().lower().replace(" ","-")
+            if SAFE_ACTION_KIND.fullmatch(normalized):
+                return normalized
+    control=event.get("controlType")
+    if control=="Tool.Activated":
+        return "tool-activate"
+    if control=="GuiButton.Activated":
+        return "gui-activate"
+    if control=="ProximityPrompt.Triggered":
+        return "prompt-trigger"
+    return "unknown"
+
+
+def _input_cadence_patterns(history):
+    grouped={}
+    for index,event in enumerate(history):
+        if not isinstance(event,dict):
+            continue
+        action_kind=_action_kind(event)
+        sequence=event.get("sequence")
+        order=sequence if type(sequence) is int else index+1
+        path=event.get("path") if isinstance(event.get("path"),str) else "unknown"
+        grouped.setdefault(action_kind,[]).append((order,path))
+
+    patterns=[]
+    for action_kind,entries in grouped.items():
+        entries.sort(key=lambda item:(item[0],item[1]))
+        episode_lengths=[]
+        previous=None
+        current=0
+        paths=set()
+        for order,path in entries:
+            paths.add(path)
+            if previous is None or order-previous<=2:
+                current+=1
+            else:
+                episode_lengths.append(current)
+                current=1
+            previous=order
+        if current>0:
+            episode_lengths.append(current)
+        event_count=len(entries)
+        max_episode=max(episode_lengths) if episode_lengths else 0
+        average=(sum(episode_lengths)/len(episode_lengths)) if episode_lengths else 0.0
+        cadence=("sustained" if max_episode>=6 else
+            "burst" if max_episode>=3 else "single")
+        patterns.append({
+            "actionKind":action_kind,
+            "eventCount":event_count,
+            "uniquePathCount":len(paths),
+            "episodeCount":len(episode_lengths),
+            "maxEpisodeLength":max_episode,
+            "averageEpisodeLength":round(average,2),
+            "cadence":cadence,
+            "temporalCorrelationOnly":True,
+            "causalityProven":False,
+            "runtimeVerified":False,
+            "gameplayVerified":False,
+        })
+
+    patterns.sort(key=lambda item:(-item["eventCount"],-item["maxEpisodeLength"],item["actionKind"]))
+    summary={
+        "actionsWithPatterns":len(patterns),
+        "actionsWithBurstCadence":sum(item["cadence"]=="burst" for item in patterns),
+        "actionsWithSustainedCadence":sum(item["cadence"]=="sustained" for item in patterns),
+        "observedActionKinds":[item["actionKind"] for item in patterns[:64]],
+        "note":"Cadence patterns describe repeated client-visible input timing only; no causal or gameplay verification.",
+    }
+    return patterns,summary
+
 
 
 def _rank_outcomes(signals,request,context):
@@ -355,10 +440,12 @@ def analyze(plan):
                 else "active-changed")} for change in gui_changes]
         tier=_evidence_tier(state_signals,gui_signals)
         baseline=_baseline_evidence(event)
+        inferred_action_kind=_action_kind(event)
         observed_actions.append({"path":path,"pathIdentity":identity,"controlType":control,
             "featureCandidate":event.get("featureCandidate"),
             "actionCandidate":(event.get("workflow") or {}).get("action")
                 if isinstance(event.get("workflow"),dict) else None,
+            "inferredActionKind":inferred_action_kind,
             "evidenceTier":tier,"observableOutcomeCandidate":bool(state_signals or gui_signals),
             "stateChanges":changes,"stateOutcomeSignals":state_signals,
             "linkedTransactionOutcomeSignals":inherited_state_signals,
@@ -765,10 +852,13 @@ def analyze(plan):
         json.dumps(item["stateSignals"],sort_keys=True,ensure_ascii=False),
         json.dumps(item["guiSignals"],sort_keys=True,ensure_ascii=False)))
     candidate_count=len(relationships)
+    cadence_patterns,cadence_summary=_input_cadence_patterns(history)
     generic={"families":families,"stateSignalKeys":state_signal_keys[:500],
         "stateSignalKeysTruncated":len(state_signal_keys)>500,"combatCandidates":combat_candidates,
         "temporalActionOutcomeCandidates":relationships[:500],
         "temporalActionOutcomeCandidatesTruncated":candidate_count>500,
+        "inputCadencePatterns":cadence_patterns,
+        "inputCadenceSummary":cadence_summary,
         "generationReadiness":{"temporalCandidateCount":candidate_count,
             "replayContractCount":0,"generationReadyCount":0,
             "blockers":["temporal correlation does not establish causality",

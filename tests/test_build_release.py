@@ -526,6 +526,64 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("separate provenance",bundled_readme)
             with zipfile.ZipFile(next(output.glob("*.zip"))) as archive:
                 self.assertIn("evidence-overlay-provenance.json",archive.namelist())
+    def test_dynamic_overlay_from_live_observation_file_without_rescan(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
+            make_parts(parts)
+            observation_path=base/"live-observation.json"
+            observation={
+                "schemaVersion":"30.6.live-observation-export.1",
+                "exportKind":"dynamic-observations",
+                "scanId":"testscan123",
+                "baselineScanId":"testscan123",
+                "integrity":{
+                    "scanComplete":True,"placeId":3623096087,
+                    "scanId":"live-observation-arsenal-1","baselineScanId":"testscan123",
+                    "parts":2,"interactionEvents":9,
+                },
+                "sourceDiagnostics":{
+                    "scanMode":"dynamic-observations",
+                    "requiresFullObjectRescan":False,
+                    "baselineScanId":"testscan123",
+                },
+                "sourceProvenance":{
+                    "schemaVersion":"30.2.source-provenance.1",
+                    "inputMode":"local-multipart",
+                    "scanId":"live-observation-arsenal-1",
+                    "placeId":3623096087,
+                    "partCount":2,
+                    "receiverStoredPayloadDigestsVerified":False,
+                    "receiverStoredPayloadDigestsRevalidatedThisRun":False,
+                    "receiverAcknowledgementDigestEquivalent":False,
+                    "receiverIntegrityVerified":False,
+                    "resumeCheckpointAuthenticated":False,
+                    "receiverResponseAuthenticityVerified":False,
+                    "localPayloadEquivalent":False,
+                    "sourceAuthenticityVerified":False,
+                    "causalityProven":False,
+                    "serverAuthorityVerified":False,
+                    "replayable":False,
+                    "gameplayVerified":False,
+                    "actionOutcomesVerified":False,
+                },
+                "features":[{
+                    "feature":"combat","interactionEvents":9,"observedEvents":9,
+                    "verifiedClientOutcomes":0,"clientCorroboratedEvents":2,
+                    "temporalTransitionEvents":2,
+                }],
+            }
+            observation_path.write_text(json.dumps(observation),encoding="utf-8")
+            output=base/"out"
+            manifest=builder.build(parts,output,observation_files=[observation_path])
+            overlays=json.loads((output/"evidence-overlay-provenance.json").read_text())
+            generated=(output/"LycolesGeneratedUtility.lua").read_text()
+            self.assertEqual(overlays["overlayCount"],1)
+            self.assertEqual(overlays["overlays"][0]["scanId"],"live-observation-arsenal-1")
+            self.assertEqual(overlays["overlays"][0]["sourceProvenance"]["scanId"],"live-observation-arsenal-1")
+            self.assertFalse(overlays["sourceAuthenticityVerified"])
+            self.assertEqual(manifest["evidenceOverlayProvenance"]["overlayCount"],1)
+            self.assertIn("Dynamic evidence overlays: 1",generated)
+
     def test_v301_candidate_reaches_workflow_artifacts_without_action_approval(self):
         with tempfile.TemporaryDirectory() as temp:
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()

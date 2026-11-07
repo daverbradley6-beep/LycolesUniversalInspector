@@ -62,6 +62,60 @@ def make_parts(directory, event=None, request=None, scan_id="service_scan_001"):
     (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
 
 
+
+
+def make_live_observation_export(path, scan_id="live-observation-service-1"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": "service_scan_001",
+        "baselineScanId": "service_scan_001",
+        "integrity": {
+            "scanComplete": True,
+            "placeId": 3623096087,
+            "scanId": scan_id,
+            "baselineScanId": "service_scan_001",
+            "parts": 2,
+            "interactionEvents": 7,
+        },
+        "sourceDiagnostics": {
+            "scanMode": "dynamic-observations",
+            "requiresFullObjectRescan": False,
+            "baselineScanId": "service_scan_001",
+        },
+        "sourceProvenance": {
+            "schemaVersion": "30.2.source-provenance.1",
+            "inputMode": "local-multipart",
+            "scanId": scan_id,
+            "placeId": 3623096087,
+            "partCount": 2,
+            "receiverStoredPayloadDigestsVerified": False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun": False,
+            "receiverAcknowledgementDigestEquivalent": False,
+            "receiverIntegrityVerified": False,
+            "resumeCheckpointAuthenticated": False,
+            "receiverResponseAuthenticityVerified": False,
+            "localPayloadEquivalent": False,
+            "sourceAuthenticityVerified": False,
+            "causalityProven": False,
+            "serverAuthorityVerified": False,
+            "replayable": False,
+            "gameplayVerified": False,
+            "actionOutcomesVerified": False,
+        },
+        "features": [
+            {
+                "feature": "combat",
+                "interactionEvents": 7,
+                "observedEvents": 7,
+                "verifiedClientOutcomes": 0,
+                "clientCorroboratedEvents": 2,
+                "temporalTransitionEvents": 2,
+            }
+        ],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
 class LycolesGenerationServiceTests(unittest.TestCase):
     def test_manifest_only_job_is_blocked_but_structured(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,6 +167,33 @@ class LycolesGenerationServiceTests(unittest.TestCase):
                              "Automatically hatch the selected egg")
             self.assertNotEqual(readiness["request"]["status"], "no-capability-requested")
             self.assertGreater(len(readiness["requestFeatureReadiness"]["requestedTerms"]), 0)
+
+    def test_parts_job_accepts_live_observation_overlay_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Track combat observations")
+            overlay = root / "live-observation.json"
+            make_live_observation_export(overlay)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Track combat observations",
+                observation_paths=(overlay,),
+            )
+            result = service.run_sync(request)
+
+            self.assertEqual(result["status"], "succeeded")
+            release_manifest_path = pathlib.Path(result["evidence"]["releaseManifestPath"])
+            release_manifest = json.loads(release_manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(release_manifest["evidenceOverlayProvenance"]["overlayCount"], 1)
+            overlay_provenance_path = pathlib.Path(result["outputDir"]) / "evidence-overlay-provenance.json"
+            overlay_provenance = json.loads(overlay_provenance_path.read_text(encoding="utf-8"))
+            self.assertEqual(overlay_provenance["overlays"][0]["scanId"], "live-observation-service-1")
+            self.assertFalse(release_manifest["runtimeVerified"])
 
     def test_async_submission_exposes_job_lifecycle(self):
         with tempfile.TemporaryDirectory() as tmp:
