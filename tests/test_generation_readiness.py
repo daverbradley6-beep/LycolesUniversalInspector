@@ -147,6 +147,30 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertIn("request_aligned_state_transition_not_observed",blockers)
 
 
+
+    def test_combat_request_uses_observed_input_actions_for_evidence_alignment(self):
+        value={"integrity":{"scanComplete":True,"placeId":286090429,"scanId":"arsenal-input-actions"},
+            "requestedCapability":"Automatically shoot and reload in Arsenal",
+            "features":[feature("combat",2,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"UserInputService","controlType":"InputBegan.MouseButton1",
+                "actionKind":"shooting","featureCandidate":"combat",
+                "stateChanges":[{"key":"HUD.CrosshairHit","before":0,"after":1}],
+                "workflow":{"phase":"initiated","action":"fire",
+                    "confidence":"bounded-name-context-heuristic","verified":False}},
+                {"path":"UserInputService","controlType":"InputBegan.R",
+                "actionKind":"reload","featureCandidate":"combat",
+                "stateChanges":[{"key":"HUD.ReloadPulse","before":0,"after":1}],
+                "workflow":{"phase":"initiated","action":"reload",
+                    "confidence":"bounded-name-context-heuristic","verified":False}}]}
+        result=assess(value)
+        self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
+        request_feature=result["requestFeatureReadiness"]
+        self.assertIn("fire",request_feature["requestedTerms"])
+        self.assertGreaterEqual(request_feature["summary"]["matchedObservedActions"],1)
+        self.assertNotIn("no_request_feature_token_overlap",request_feature["explicitBlockers"])
+
+
     def test_exact_tool_evidence_produces_bounded_official_activation_trial(self):
         value={"integrity":{"scanComplete":True,"placeId":456,"scanId":"tool-ready-scan"},
             "requestedCapability":"Attack using the training sword",

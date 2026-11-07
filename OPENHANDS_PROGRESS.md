@@ -3,6 +3,40 @@
 
 
 
+## Update — 2026-11-07 — live evidence exercise orchestration (Arsenal + Phantom)
+
+- Extended `tools/receiver_generation_pipeline.py` with end-to-end live-evidence exercise support:
+  - Added repeatable `--observation-path` to `from-parts` and `from-receiver`.
+  - Added dynamic observation discovery/validation by baseline scan (`30.6.live-observation-export.1`, `dynamic-observations`, provenance/integrity guards).
+  - Added `exercise-live` mode to run known game scenarios and emit a structured executable-vs-observational report.
+
+- Added generation result summarization:
+  - implemented capability categories,
+  - executable logic readiness signals (generated capability IDs, request-aligned execution-ready workflows),
+  - observational-only blockers,
+  - unsupported behavior declarations.
+
+- Strengthened request/evidence alignment for combat phrasing in `tools/assess_generation_readiness.py`:
+  - Added token aliases (`shoot`/`shooting`/`firing` → `fire`, `switching` → `switch`, `reloading` → `reload`).
+  - Added `_request_action_alignment(...)` to derive request-aligned observed action tokens from validated interaction history + cadence patterns.
+  - Merged inferred aligned actions into request assessment without upgrading runtime/gameplay/causality claims.
+
+- Added receiver pipeline regressions in `tests/test_receiver_generation_pipeline.py`:
+  - overlay ingestion via direct live observation file,
+  - summary classification behavior when request remains evidence-only.
+
+Live exercise run:
+- Command: `python3 tools/receiver_generation_pipeline.py exercise-live --output-root build/live_evidence_exercise --observation-path build/live_scans --observation-path .tmp`
+- Report artifact: `build/live_evidence_exercise/live-evidence-exercise-report.json`
+- Arsenal (`7965AF57-8E47-4E2F-B857-7DBEABD4CC0B`): succeeded, overlays discovered `0`, request status `evidence-only-no-replay-contract`, request-aligned execution-ready workflows `0`, generated capability IDs `[]`.
+- Phantom Forces: blocked (baseline parts evidence unavailable in workspace).
+
+Validation:
+- Focused suites including receiver pipeline, service, build, workflow, and discovery tests passed.
+- Full Python suite: **1616 tests passed** (`skipped=17`).
+- Node/Luau suite (`npm test`) passed.
+
+
 ## Update — 2026-11-06 — direct live-observation overlay ingestion (pipeline + generation service)
 
 - Expanded end-to-end evidence ingestion so **live `COPY JSON` observation exports can be consumed directly** by generation tooling without repackaging into synthetic multipart observation folders.

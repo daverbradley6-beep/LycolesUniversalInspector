@@ -35,6 +35,9 @@ _TOKEN_ALIASES={
     "collected":"collect","fighting":"fight","hatching":"hatch",
     "hatched":"hatch","purchasing":"purchase","purchased":"purchase",
     "rebirthing":"rebirth","selling":"sell","sold":"sell",
+    "shoot":"fire","shooting":"fire","shot":"fire","firing":"fire",
+    "fired":"fire","switching":"switch","switched":"switch",
+    "reloading":"reload","reloaded":"reload",
     "training":"train","trained":"train","traveling":"travel",
     "travelled":"travel","travelling":"travel","upgrading":"upgrade",
     "upgraded":"upgrade",
@@ -548,6 +551,59 @@ def _request_observation_gap_blockers(plan,request_token_set):
     return blockers
 
 
+def _request_action_alignment(plan,actions,request_token_set):
+    if not request_token_set:
+        return []
+    history=plan.get("observedInteractionHistory",[])
+    if not isinstance(history,list) or len(history)>20_000:
+        raise ValueError("compiled plan has malformed interaction history")
+    generic=actions.get("genericCapabilities",{}) if isinstance(actions,dict) else None
+    if not isinstance(generic,dict):
+        raise ValueError("action capabilities have malformed generic capabilities")
+    cadence=generic.get("inputCadencePatterns",[])
+    if not isinstance(cadence,list) or len(cadence)>4_096:
+        raise ValueError("action capabilities have malformed cadence patterns")
+
+    matches=set()
+
+    def consider(value):
+        if not isinstance(value,str):
+            return
+        tokenized=_tokens(value.replace("."," ").replace("-"," "))
+        if not tokenized:
+            return
+        overlap=tokenized&request_token_set
+        if overlap:
+            matches.update(overlap)
+            return
+        if request_token_set&_COMBAT_REQUEST_TOKENS:
+            combat_overlap=tokenized&_COMBAT_INPUT_ACTION_TOKENS
+            if combat_overlap:
+                matches.update(combat_overlap)
+
+    for event in history:
+        if not isinstance(event,dict):
+            raise ValueError("compiled plan has malformed interaction history")
+        consider(event.get("actionKind"))
+        consider(event.get("controlType"))
+        inferred=event.get("inferredAction")
+        if inferred is not None and not isinstance(inferred,dict):
+            raise ValueError("compiled plan has malformed interaction history")
+        if isinstance(inferred,dict):
+            consider(inferred.get("kind"))
+        workflow=event.get("workflow")
+        if workflow is not None and not isinstance(workflow,dict):
+            raise ValueError("compiled plan has malformed interaction history")
+        if isinstance(workflow,dict):
+            consider(workflow.get("action"))
+
+    for item in cadence:
+        if not isinstance(item,dict):
+            raise ValueError("action capabilities have malformed cadence patterns")
+        consider(item.get("actionKind"))
+
+    return sorted(matches)[:32]
+
 
 def _request_feature_readiness(plan,request,status,generated,matched_generated,gameplay_request,
         unavailable,discovery_only,workflow_selection,workflow_target,actions):
@@ -571,6 +627,10 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
            (gameplay_systems,gameplay_actions,gameplay_resources,request_blockers)
            for value in values):
         raise ValueError("gameplay requested capability assessment is malformed")
+    combat_action_evidence=bool(
+        request_token_set&_COMBAT_REQUEST_TOKENS
+        and any(value in _COMBAT_INPUT_ACTION_TOKENS for value in gameplay_actions)
+    )
     workflow_candidates=(workflow_selection.get("candidates",[])
         if isinstance(workflow_selection,dict) and workflow_selection.get("available") is True else [])
     execution_ready_workflows=sum(item.get("executionReady") is True for item in workflow_candidates)
@@ -593,8 +653,10 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         blockers.extend("discovery-only:"+item["family"] for item in discovery_only)
         blockers.extend(observation_gap_blockers)
         if not matched_generated:blockers.append("bounded_generated_contract_unavailable")
-        if not feature_values:blockers.append("no_request_feature_token_overlap")
-        if meaningful_feature_matches==0:blockers.append("no_meaningful_gameplay_feature_matches")
+        if not feature_values and not (gameplay_systems or gameplay_actions or gameplay_resources):
+            blockers.append("no_request_feature_token_overlap")
+        if meaningful_feature_matches==0 and not combat_action_evidence:
+            blockers.append("no_meaningful_gameplay_feature_matches")
         if execution_ready_workflows==0:blockers.append("no_execution_ready_workflow_candidates")
         if (not matched_generated and request_aligned_review_only_gui>0):
             blockers.append("request_aligned_gui_transition_outcomes_without_scalar_contract")
@@ -748,6 +810,18 @@ def assess(plan,gameplay,actions,workflow_plan=None,guided_feedback_documents=No
     prompt_aligned=bool(target and target.get("objective",{}).get("requestAligned") is True)
     unavailable=_unavailable_requested(request_words,actions,is_egg and prompt_aligned,request)
     gameplay_request=gameplay.get("requestedCapabilityAssessment")
+    if gameplay_request is not None and not isinstance(gameplay_request,dict):
+        raise ValueError("gameplay requested capability assessment is malformed")
+    inferred_action_matches=_request_action_alignment(plan,actions,request_words)
+    if isinstance(gameplay_request,dict) and inferred_action_matches:
+        observed_actions=gameplay_request.get("matchedObservedActions",[])
+        if (not isinstance(observed_actions,list)
+                or any(not isinstance(value,str) or not 1<=len(value)<=160 for value in observed_actions)):
+            raise ValueError("gameplay requested capability assessment is malformed")
+        merged_actions=sorted(set(observed_actions)|set(inferred_action_matches))
+        if merged_actions!=observed_actions:
+            gameplay_request=dict(gameplay_request)
+            gameplay_request["matchedObservedActions"]=merged_actions
     evidence_matched=bool(gameplay_request and (gameplay_request.get("matchedSystems")
         or gameplay_request.get("matchedObservedActions") or gameplay_request.get("matchedResources")))
     if request is None:
