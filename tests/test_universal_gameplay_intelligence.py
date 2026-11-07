@@ -53,6 +53,14 @@ def plan():
              "featureCandidate":"pets","outcomeVerified":False,
              "workflow":{"action":"hatch","phase":"initiated","confidence":"heuristic"},
              "stateChanges":[{"key":"Data.Pets.Count","before":2,"after":3}]},
+            {"sequence":3,"sessionId":"s1","sessionElapsedSeconds":3.1,
+             "transactionId":"input-1","path":"LocalPlayer.Input.MouseButton1",
+             "controlType":"InputBegan.MouseButton1","featureCandidate":"combat",
+             "outcomeVerified":False,
+             "workflow":{"action":"fire","phase":"input-observed","confidence":"bounded-input-observation"},
+             "controlMetadata":{"source":"UserInputService.InputBegan","inputType":"MouseButton1",
+                 "keyCode":"Unknown","combatToolContext":True,"equippedToolCount":1},
+             "stateChanges":[{"key":"HUD.Signal.playergui.weapon.ammo","before":"30","after":"29"}]},
         ],
     }
 
@@ -64,8 +72,13 @@ class UniversalGameplayIntelligenceTests(unittest.TestCase):
         self.assertEqual(result["world"]["summary"]["regions"],1)
         self.assertEqual(result["world"]["summary"]["interactables"],1)
         self.assertEqual(result["economy"]["summary"]["signals"],1)
-        self.assertGreaterEqual(result["summary"]["actionRecords"],2)
+        self.assertGreaterEqual(result["summary"]["actionRecords"],3)
+        self.assertEqual(result["summary"]["inputActionRecords"],1)
+        self.assertEqual(result["summary"]["actionSourceBreakdown"].get("user-input"),1)
         self.assertGreaterEqual(result["summary"]["workflowCandidates"],1)
+        input_records=[record for record in result["actions"] if record["during"].get("actionSource")=="user-input"]
+        self.assertTrue(input_records)
+        self.assertEqual(input_records[0]["during"]["controlMetadata"].get("inputType"),"MouseButton1")
         self.assertFalse(result["claims"]["runtimeVerified"])
         self.assertFalse(result["claims"]["gameplayVerified"])
 

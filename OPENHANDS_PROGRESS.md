@@ -25,6 +25,11 @@
   - updated interaction rule descriptions to automatic observer semantics.
 - Updated UI/source contract tests for new workflow-recording behavior and blocker naming.
 - Version updated to `30.6.39` (`LycolesUniversalInspector.lua`, `version.txt`).
+- Continued autonomous pipeline work after inspector refactor:
+  - enhanced `tools/universal_gameplay_intelligence.py` action records with normalized `actionSource` classification (`user-input`, `tool`, `humanoid`, etc.) and bounded input metadata extraction (`inputType`, `keyCode`, `equippedToolCount`, combat context flags),
+  - expanded intelligence summary with `inputActionRecords` and `actionSourceBreakdown` to make downstream model-routing/generation decisions aware of newly captured non-GUI gameplay evidence,
+  - added regression coverage updates in `tests/test_universal_gameplay_intelligence.py` for user-input action-source extraction.
+
 
 Validation:
 - Full Python regression suite: **1604 tests passed** (`python3 -m unittest discover -s tests`).

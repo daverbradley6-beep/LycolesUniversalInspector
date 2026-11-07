@@ -89,6 +89,43 @@ def _action(event):
 
 
 
+def _action_source(control_type,metadata):
+    control=control_type.casefold() if _safe_text(control_type,120) else ""
+    source=str(metadata.get("source","")).casefold() if isinstance(metadata,dict) else ""
+    if control.startswith("inputbegan") or control.startswith("inputchanged") or "userinputservice" in source:
+        return "user-input"
+    if control.startswith("tool."):
+        return "tool"
+    if control.startswith("humanoid."):
+        return "humanoid"
+    if control.startswith("proximityprompt"):
+        return "proximity-prompt"
+    if control.startswith("guibutton"):
+        return "gui-button"
+    if control.startswith("clickdetector"):
+        return "click-detector"
+    return "interaction-control"
+
+
+
+def _bounded_metadata(metadata):
+    if not isinstance(metadata,dict):
+        return None
+    result={}
+    for key in ("source","inputType","keyCode","userInputState","stage"):
+        value=metadata.get(key)
+        if _safe_text(value,120):
+            result[key]=value
+    for key in ("equippedToolCount",):
+        value=metadata.get(key)
+        if type(value) is int and 0<=value<=64:
+            result[key]=value
+    if metadata.get("combatToolContext") is True:
+        result["combatToolContext"]=True
+    return result or None
+
+
+
 def _validate_plan(plan):
     if not isinstance(plan,dict):
         raise ValueError("plan must be an object")
@@ -191,6 +228,8 @@ def _action_records(history):
         if not _safe_text(path,400):
             continue
         workflow=event.get("workflow") if isinstance(event.get("workflow"),dict) else {}
+        metadata=_bounded_metadata(event.get("controlMetadata"))
+        control_type=event.get("controlType") if _safe_text(event.get("controlType"),120) else None
         changes=_changes(event)
         windows=[]
         for window in (event.get("observationWindows") or []):
@@ -215,12 +254,13 @@ def _action_records(history):
                 "baselineAgeSeconds":event.get("baselineAgeSeconds") if type(event.get("baselineAgeSeconds")) in (int,float) else None,
                 "guiContext":event.get("guiContext") if isinstance(event.get("guiContext"),dict) else None},
             "during":{"path":path,
-                "controlType":event.get("controlType") if _safe_text(event.get("controlType"),120) else None,
+                "controlType":control_type,
+                "actionSource":_action_source(control_type,metadata),
                 "featureCandidate":event.get("featureCandidate") if _safe_text(event.get("featureCandidate"),120) else None,
                 "actionCandidate":_action(event),
                 "workflowPhase":workflow.get("phase") if _safe_text(workflow.get("phase"),80) else None,
                 "workflowConfidence":workflow.get("confidence") if _safe_text(workflow.get("confidence"),80) else None,
-                "controlMetadata":event.get("controlMetadata") if isinstance(event.get("controlMetadata"),dict) else None},
+                "controlMetadata":metadata},
             "after":{"stateChanges":changes,"stateChangeCount":len(changes),
                 "guiStateChanges":gui_changes,"guiStateChangeCount":len(gui_changes),
                 "observationWindows":windows,
@@ -420,6 +460,14 @@ def analyze(plan):
     economy=_economy(discovery,actions)
     workflows=_workflows(actions)
     relationships=_relationships(actions,workflows,economy)
+    source_counts={}
+    input_records=0
+    for item in actions:
+        source=item.get("during",{}).get("actionSource") if isinstance(item.get("during"),dict) else None
+        if _safe_text(source,60):
+            source_counts[source]=source_counts.get(source,0)+1
+            if source in {"user-input","tool","humanoid"}:
+                input_records+=1
     return {"schemaVersion":SCHEMA_VERSION,
         "placeId":integrity["placeId"],"scanId":integrity["scanId"],
         "world":world,"economy":economy,"actions":actions,
@@ -428,7 +476,9 @@ def analyze(plan):
             "interactables":world["summary"]["interactables"],
             "economySignals":economy["summary"]["signals"],
             "stateSignals":economy["summary"]["stateSignals"],
-            "actionRecords":len(actions),"workflowCandidates":len(workflows),
+            "actionRecords":len(actions),"inputActionRecords":input_records,
+            "actionSourceBreakdown":dict(sorted(source_counts.items())),
+            "workflowCandidates":len(workflows),
             "relationships":len(relationships)},
         "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
             "serverAuthorityVerified":False,"runtimeVerified":False,
