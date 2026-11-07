@@ -2,6 +2,47 @@
 
 
 
+
+## Update — 2026-11-06 — v30.6.40 live-performance + action-correlation optimization pass
+
+- Implemented runtime-overhead reductions in `LycolesUniversalInspector.lua` while preserving universal architecture and bounded evidence contracts:
+  - Added adaptive queued input processing with strict frame budget (`0.003s`) and bounded queue size (`96`).
+  - Added queue backpressure behavior and adaptive observation windows (single/dual/triple-window based on pressure and action priority).
+  - Added low-overhead observation lifecycle state (`idle` / `activity` / `action`) with transition telemetry.
+- Reduced irrelevant observer noise and listener fanout:
+  - Universal Humanoid observation now binds only to the LocalPlayer character humanoid.
+  - Universal Tool observation now binds only to LocalPlayer-owned tools (Character/Backpack).
+  - Initial Workspace observer sweep now skips player-character descendants consistently (matching dynamic skip behavior) and no longer binds universal-input observers outside LocalPlayer/Character roots.
+- Prioritized meaningful gameplay actions while reducing costly noise:
+  - Wrapper now deprioritizes low-value repetitive input noise (e.g. background animation/move spam) before expensive correlation.
+  - Meaningful actions (`fire`, `reload`, `switch`, `equip`, `unequip`, `interact`) remain queued for bounded heavy correlation.
+  - Low-priority repetitive events no longer consume workflow recording capacity as aggressively.
+- Optimized state correlation cost:
+  - `safeInteractionState` now supports scoped options (candidate budget, HUD sampling limit, inventory inclusion).
+  - Heavy input correlation uses action-priority state options rather than always sampling the full default footprint.
+  - Added state-snapshot timing instrumentation (calls, cumulative seconds, peak seconds).
+- Added performance diagnostics surfaced in `interactionDiagnostics.inputObservationStats`:
+  - queue enqueued/processed/dropped/peak/length,
+  - over-budget frames and backpressure activations,
+  - callback peak-per-second,
+  - phase/phase reason/transitions/duration,
+  - queue frame average/peak seconds,
+  - state snapshot average/peak timing.
+- Added scan gating to avoid expensive auto-rescans during active action processing:
+  - auto-rescan now requires empty input queue and non-`action` observation phase.
+- Added explicit inferred-action confidence metadata to input history/queue entries without promoting causal/server/gameplay claims.
+
+Validation:
+- Targeted compiler/input/readiness regressions: `53` tests ✅
+- Inspector UI regression: `27` tests ✅
+- Full Python regression suite: **1605 tests passed** (`skipped=17`) ✅
+- Node receiver + Luau parser suite: ✅ (`4/4` parser tests)
+- Potassium local-register safety gate passed again (`tests.test_inspector_compiler_limits`).
+
+Live status:
+- Potassium live FPS/action-recognition verification remains pending user in-game run on this commit.
+
+
 ## Update — 2026-11-06 — Live Arsenal/Bubble scan ingestion + explicit combat evidence-gap blockers
 
 - Ingested the user-provided real scan IDs and GitHub artifact:

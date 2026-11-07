@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.39
+-- Lycoles Universal Inspector v30.6.40
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.39"
+local VERSION = "30.6.40"
 
 local endpoint = ""
 local autoSend = true
@@ -105,6 +105,13 @@ local LIMITS = {
     followupLinkMinContextOverlap = 3,
     workflowRecordingSeconds = 60,
     maxWorkflowRecordingEvents = 8,
+    maxInputObservationQueue = 96,
+    inputQueueFrameBudgetSeconds = 0.003,
+    inputQueueMaxPerFrame = 4,
+    inputQueueBackpressureWatermark = 48,
+    inputQueueCriticalWatermark = 80,
+    inputObservationIdleSeconds = 1.2,
+    stateSnapshotDefaultCandidateBudget = 260,
 }
 local alive = true
 local watchEnabled = true
@@ -257,7 +264,23 @@ end
 
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,preActivationCaptureFailures=0,inputEventsCaptured=0,inputEventsDropped=0,inputEventWindowsCompleted=0,inputEventWindowFailures=0,toolEquipsObserved=0,toolUnequipsObserved=0,movementEventsObserved=0,animationEventsObserved=0,lastInputEventAt=nil,inputBindingReady=false}
+local observerStats = {
+    listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0,
+    sweepCompleted=false, sweepScanned=0, lastEventPath=nil,
+    activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,
+    lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,
+    lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,
+    preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,
+    preActivationCaptureFailures=0,inputEventsCaptured=0,inputEventsDropped=0,
+    inputEventWindowsCompleted=0,inputEventWindowFailures=0,toolEquipsObserved=0,
+    toolUnequipsObserved=0,movementEventsObserved=0,animationEventsObserved=0,
+    lastInputEventAt=nil,inputBindingReady=false,
+    inputQueueEnqueued=0,inputQueueProcessed=0,inputQueueDropped=0,inputQueuePeak=0,
+    inputQueueOverBudgetFrames=0,inputQueueBackpressureActivations=0,
+    queueFrameCount=0,queueFrameSecondsTotal=0,queueFramePeakSeconds=0,
+    callbacksThisSecond=0,callbacksPeakPerSecond=0,lastCallbackSecond=nil,
+    stateSnapshotCalls=0,stateSnapshotSeconds=0,stateSnapshotPeakSeconds=0
+}
 local snapshotId = nil
 local inputObserverState = {
     captureByKey = {},
@@ -266,6 +289,17 @@ local inputObserverState = {
     lastSequence = 0,
     recent = {},
     movementBaseline = nil,
+    queue = {},
+    queueHead = 1,
+    queueTail = 0,
+    phase = "idle",
+    phaseSince = os.clock(),
+    phaseTransitions = 0,
+    phaseReason = "startup",
+    lastActivityClock = 0,
+    lastMeaningfulActionClock = 0,
+    backpressureActive = false,
+    backpressureCount = 0,
 }
 
 local observationSequence = 0
@@ -489,10 +523,22 @@ local function stateValueIdentity(obj,root)
     return identity
 end
 
-local function safeInteractionState()
+local function safeInteractionState(options)
+    local started=os.clock()
+    options=type(options)=="table" and options or {}
+    local candidateBudget=options.candidateBudget or LIMITS.maxStateSnapshotCandidates
+    if type(candidateBudget)~="number" or candidateBudget<24 then candidateBudget=24 end
+    candidateBudget=math.floor(candidateBudget)
+    if candidateBudget>LIMITS.maxStateSnapshotCandidates then
+        candidateBudget=LIMITS.maxStateSnapshotCandidates
+    end
+    local includeHudSignals=options.includeHudSignals~=false
+    local includeInventory=options.includeInventory~=false
+    local hudSignalLimit=type(options.hudSignalLimit)=="number"
+        and math.max(0,math.floor(options.hudSignalLimit)) or 28
     local state,identities,count = {},{},0
     local function addState(key,value,identity)
-        if count>=LIMITS.maxStateSnapshotCandidates then return end
+        if count>=candidateBudget then return end
         if type(key)~="string" or #key==0 or #key>220 then return end
         local valueType=type(value)
         if valueType=="number" then
@@ -521,7 +567,7 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= LIMITS.maxStateSnapshotCandidates then break end
+                if count >= candidateBudget then break end
                 if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") or obj:IsA("StringValue") then
                     local segments = {}
                     local parent = obj
@@ -545,7 +591,7 @@ local function safeInteractionState()
         end
     end
     for _,candidate in ipairs(stateSnapshotCandidates) do
-        if count>=LIMITS.maxStateSnapshotCandidates then break end
+        if count>=candidateBudget then break end
         local obj=candidate.object
         local ok,value=pcall(function() return obj.Value end)
         if ok and (type(value)=="boolean" or type(value)=="string" or (type(value)=="number"
@@ -607,7 +653,7 @@ local function safeInteractionState()
     end
 
     local backpack=player:FindFirstChildOfClass("Backpack")
-    if backpack then
+    if includeInventory and backpack then
         local names={}
         for _,child in ipairs(backpack:GetChildren()) do
             if child:IsA("Tool") then names[#names+1]=child.Name:sub(1,60) end
@@ -619,11 +665,11 @@ local function safeInteractionState()
     end
 
     local gui=player:FindFirstChildOfClass("PlayerGui")
-    if gui and count<LIMITS.maxStateSnapshotCandidates then
+    if gui and includeHudSignals and hudSignalLimit>0 and count<candidateBudget then
         local scanned,signals=0,0
         for _,node in ipairs(gui:GetDescendants()) do
             scanned=scanned+1
-            if scanned>4500 or signals>=28 or count>=LIMITS.maxStateSnapshotCandidates then break end
+            if scanned>3600 or signals>=hudSignalLimit or count>=candidateBudget then break end
             if node:IsA("GuiObject") and (node:IsA("TextLabel") or node:IsA("TextButton")) then
                 local text=tostring(node.Text or ""):gsub("[%c]"," ")
                 if #text>0 and #text<=48 and text:find("%d") then
@@ -656,6 +702,12 @@ local function safeInteractionState()
         end
     end
 
+    local elapsed=os.clock()-started
+    observerStats.stateSnapshotCalls=observerStats.stateSnapshotCalls+1
+    observerStats.stateSnapshotSeconds=observerStats.stateSnapshotSeconds+elapsed
+    if elapsed>observerStats.stateSnapshotPeakSeconds then
+        observerStats.stateSnapshotPeakSeconds=elapsed
+    end
     return state,identities
 end
 -- v5.5: stable, unique relative paths and change-only inventory evidence.
@@ -3571,6 +3623,166 @@ WORKFLOW_HELPERS.inputThrottleAllowed = function(key,minInterval)
     return true
 end
 
+WORKFLOW_HELPERS.bumpCallbackRate = function(now)
+    local second=math.floor(now)
+    if observerStats.lastCallbackSecond~=second then
+        if observerStats.callbacksThisSecond>observerStats.callbacksPeakPerSecond then
+            observerStats.callbacksPeakPerSecond=observerStats.callbacksThisSecond
+        end
+        observerStats.lastCallbackSecond=second
+        observerStats.callbacksThisSecond=0
+    end
+    observerStats.callbacksThisSecond=observerStats.callbacksThisSecond+1
+end
+
+WORKFLOW_HELPERS.setObservationPhase = function(nextPhase,reason,now)
+    local phase=tostring(nextPhase or "idle")
+    local clock=now or os.clock()
+    if inputObserverState.phase~=phase then
+        inputObserverState.phase=phase
+        inputObserverState.phaseSince=clock
+        inputObserverState.phaseTransitions=inputObserverState.phaseTransitions+1
+    end
+    if reason then inputObserverState.phaseReason=tostring(reason):sub(1,120) end
+end
+
+WORKFLOW_HELPERS.inputQueueLength = function()
+    local length=inputObserverState.queueTail-inputObserverState.queueHead+1
+    if length<0 then return 0 end
+    return length
+end
+
+WORKFLOW_HELPERS.inputActionPriority = function(actionKind,featureCandidate,metadata)
+    local action=tostring(actionKind or "")
+    if action=="fire" or action=="reload" or action=="switch"
+        or action=="equip" or action=="unequip" then
+        return 3
+    end
+    if action=="interact" or action=="pointer-activate" then return 2 end
+    if action=="aim-adjust" and metadata and metadata.combatToolContext then return 2 end
+    if featureCandidate=="combat" and action~="animation" and action~="combat-animation"
+        and action~="move" and action~="move-start" and action~="move-stop" then
+        return 2
+    end
+    if action=="jump" or action=="sprint" then return 1 end
+    return 0
+end
+
+WORKFLOW_HELPERS.stateOptionsForInput = function(actionKind,priority,metadata)
+    local options={candidateBudget=LIMITS.stateSnapshotDefaultCandidateBudget,
+        includeHudSignals=false,hudSignalLimit=0,includeInventory=false}
+    if priority>=3 then
+        options.candidateBudget=320
+        options.includeHudSignals=true
+        options.hudSignalLimit=20
+        options.includeInventory=true
+    elseif priority==2 then
+        options.candidateBudget=220
+        options.includeHudSignals=metadata and metadata.combatToolContext==true
+        options.hudSignalLimit=options.includeHudSignals and 12 or 0
+        options.includeInventory=actionKind=="interact" or actionKind=="pointer-activate"
+    else
+        options.candidateBudget=120
+    end
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    if queueLength>=LIMITS.inputQueueBackpressureWatermark then
+        options.candidateBudget=math.max(80,math.floor(options.candidateBudget*0.55))
+        options.hudSignalLimit=math.max(0,math.floor((options.hudSignalLimit or 0)*0.5))
+    end
+    return options
+end
+
+WORKFLOW_HELPERS.observationWindowsForInput = function(priority)
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    if queueLength>=LIMITS.inputQueueCriticalWatermark then
+        return {0.45}
+    end
+    if queueLength>=LIMITS.inputQueueBackpressureWatermark then
+        return priority>=3 and {0.35,1.25} or {0.45}
+    end
+    if priority>=3 then return OBSERVATION_WINDOWS end
+    if priority==2 then return {0.35,1.25} end
+    return {0.35}
+end
+
+WORKFLOW_HELPERS.enqueueInputObservationTask = function(task)
+    local priority=type(task.priority)=="number" and task.priority or 0
+    local length=WORKFLOW_HELPERS.inputQueueLength()
+    if length>=LIMITS.maxInputObservationQueue then
+        if priority>=3 and inputObserverState.queueHead<=inputObserverState.queueTail then
+            inputObserverState.queue[inputObserverState.queueHead]=nil
+            inputObserverState.queueHead=inputObserverState.queueHead+1
+            observerStats.inputQueueDropped=observerStats.inputQueueDropped+1
+        else
+            observerStats.inputQueueDropped=observerStats.inputQueueDropped+1
+            inputObserverState.backpressureCount=inputObserverState.backpressureCount+1
+            return false
+        end
+    end
+    inputObserverState.queueTail=inputObserverState.queueTail+1
+    inputObserverState.queue[inputObserverState.queueTail]=task
+    observerStats.inputQueueEnqueued=observerStats.inputQueueEnqueued+1
+    local updatedLength=WORKFLOW_HELPERS.inputQueueLength()
+    if updatedLength>observerStats.inputQueuePeak then observerStats.inputQueuePeak=updatedLength end
+    if updatedLength>=LIMITS.inputQueueBackpressureWatermark then
+        if not inputObserverState.backpressureActive then
+            observerStats.inputQueueBackpressureActivations=observerStats.inputQueueBackpressureActivations+1
+        end
+        inputObserverState.backpressureActive=true
+        inputObserverState.backpressureCount=inputObserverState.backpressureCount+1
+    end
+    return true
+end
+
+WORKFLOW_HELPERS.processInputObservationQueue = function()
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    local now=os.clock()
+    if queueLength<=0 then
+        if now-inputObserverState.lastActivityClock>=LIMITS.inputObservationIdleSeconds then
+            WORKFLOW_HELPERS.setObservationPhase("idle","queue-empty",now)
+        elseif inputObserverState.phase=="action" and now-inputObserverState.lastMeaningfulActionClock>0.9 then
+            WORKFLOW_HELPERS.setObservationPhase("activity","recent-action-cooled",now)
+        end
+        inputObserverState.backpressureActive=false
+        return
+    end
+    local frameStarted=os.clock()
+    local processed=0
+    while processed<LIMITS.inputQueueMaxPerFrame and inputObserverState.queueHead<=inputObserverState.queueTail do
+        if os.clock()-frameStarted>=LIMITS.inputQueueFrameBudgetSeconds then
+            observerStats.inputQueueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames+1
+            break
+        end
+        local item=inputObserverState.queue[inputObserverState.queueHead]
+        inputObserverState.queue[inputObserverState.queueHead]=nil
+        inputObserverState.queueHead=inputObserverState.queueHead+1
+        processed=processed+1
+        if item then
+            local ok=pcall(function()
+                WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy(
+                    item.path,item.controlType,item.actionKind,item.metadata,item.featureCandidate,item.sourceObject)
+            end)
+            if ok then
+                observerStats.inputQueueProcessed=observerStats.inputQueueProcessed+1
+            else
+                observerStats.inputEventWindowFailures=observerStats.inputEventWindowFailures+1
+                workflowStats.observationFailures=workflowStats.observationFailures+1
+            end
+        end
+    end
+    if inputObserverState.queueHead>inputObserverState.queueTail then
+        inputObserverState.queueHead=1
+        inputObserverState.queueTail=0
+        inputObserverState.backpressureActive=false
+    end
+    local frameSeconds=os.clock()-frameStarted
+    observerStats.queueFrameCount=observerStats.queueFrameCount+1
+    observerStats.queueFrameSecondsTotal=observerStats.queueFrameSecondsTotal+frameSeconds
+    if frameSeconds>observerStats.queueFramePeakSeconds then
+        observerStats.queueFramePeakSeconds=frameSeconds
+    end
+end
+
 WORKFLOW_HELPERS.equippedToolSnapshot = function()
     local character=player.Character
     local result={count=0,names={},hasCombatTool=false}
@@ -3624,7 +3836,7 @@ WORKFLOW_HELPERS.inferInputFeature = function(action,toolSnapshot)
     return nil
 end
 
-WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
+WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
     if not alive or not interactionObserveEnabled then return end
     if type(path)~="string" or path=="" then return end
     local activationClock=os.clock()
@@ -3633,6 +3845,7 @@ WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,act
     interactionEventCount=interactionEventCount+1
     observerStats.inputEventsCaptured=observerStats.inputEventsCaptured+1
     observerStats.callbacksFired=observerStats.callbacksFired+1
+    WORKFLOW_HELPERS.bumpCallbackRate(activationClock)
     observerStats.lastCallbackAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
     observerStats.lastEventPath=path:sub(1,180)
     observerStats.lastInputEventAt=observerStats.lastCallbackAt
@@ -3642,13 +3855,15 @@ WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,act
         unattributedInteractionCount=unattributedInteractionCount+1
     end
 
-    local before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+    local priority=WORKFLOW_HELPERS.inputActionPriority(actionKind,featureCandidate,metadata)
+    local stateOptions=WORKFLOW_HELPERS.stateOptionsForInput(actionKind,priority,metadata)
+    local before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState(stateOptions)
     local beforeGui=(sourceObject and sourceObject:IsA("GuiObject"))
         and EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject) or {}
     local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local beforePosition=rootPart and rootPart.Position or nil
-    local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds,
-        "automatic-activity-window")
+    local explicitRecording=(priority>=2) and recordWorkflowInteraction(
+        activationClock,sessionElapsedSeconds,"automatic-activity-window") or nil
     local transactionId=explicitRecording and explicitRecording.recordingId or (observationSequence+1)
     local workflow={phase="input-observed",confidence="bounded-input-observation",
         action=actionKind,featureCandidate=featureCandidate,
@@ -3670,7 +3885,12 @@ WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,act
         controlMetadata=metadata,baselineSource="input-event-callback",
         baselineTiming="input-event-callback",baselineAgeSeconds=nil,
         preActivationBaselineAvailable=false,
-        evidenceLevel="interaction-observed", outcomeVerified=false
+        evidenceLevel="interaction-observed", outcomeVerified=false,
+        observedInput=true,
+        inferredAction={kind=actionKind,
+            confidence=(priority>=3 and "high") or (priority==2 and "moderate") or "low",
+            evidenceSignals={"local-input-event"},serverVerified=false,
+            causalVerification=false,gameplayVerified=false}
     }
     interactionHistory[#interactionHistory+1]=historyItem
     if #interactionHistory>LIMITS.maxInteractionHistory then table.remove(interactionHistory,1) end
@@ -3690,18 +3910,20 @@ WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,act
         sessionElapsedSeconds=sessionElapsedSeconds,snapshotId=snapshotId,sequence=observationSequence,
         transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
         transactionLinkSource=historyItem.transactionLinkSource,
-        actionKind=actionKind
+        actionKind=actionKind,
+        actionConfidence=historyItem.inferredAction and historyItem.inferredAction.confidence or "low"
     }
 
     local seenStateKeys={}
     local seenGuiKeys={}
-    for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+    local plannedWindows=WORKFLOW_HELPERS.observationWindowsForInput(priority)
+    for _,delaySeconds in ipairs(plannedWindows) do
         pendingObservationEvents=pendingObservationEvents+1
         task.delay(delaySeconds,function()
             pendingObservationEvents=math.max(0,pendingObservationEvents-1)
             if not alive then return end
             local ok=pcall(function()
-                local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+                local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState(stateOptions)
                 local guiChanges=(sourceObject and sourceObject:IsA("GuiObject"))
                     and EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,
                         EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject)) or {}
@@ -3833,10 +4055,46 @@ WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,act
     end
 end
 
+WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
+    if not alive or not interactionObserveEnabled then return end
+    local priority=WORKFLOW_HELPERS.inputActionPriority(actionKind,featureCandidate,metadata)
+    local now=os.clock()
+    inputObserverState.lastActivityClock=now
+    if priority>=2 then
+        inputObserverState.lastMeaningfulActionClock=now
+        WORKFLOW_HELPERS.setObservationPhase("action","meaningful-input",now)
+    else
+        WORKFLOW_HELPERS.setObservationPhase("activity","input-observed",now)
+    end
+    if priority<=0 then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return
+    end
+    local signature=(tostring(actionKind or "").."|"..tostring(featureCandidate or "").."|"
+        ..tostring(metadata and metadata.keyCode or metadata and metadata.inputType or "").."|"
+        ..tostring(metadata and metadata.source or ""))
+    if inputObserverState.recent.inputSignature==signature
+        and now-(inputObserverState.recent.inputSignatureClock or 0)<0.08 then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return
+    end
+    inputObserverState.recent.inputSignature=signature
+    inputObserverState.recent.inputSignatureClock=now
+    WORKFLOW_HELPERS.enqueueInputObservationTask({
+        path=path,controlType=controlType,actionKind=actionKind,metadata=metadata,
+        featureCandidate=featureCandidate,sourceObject=sourceObject,priority=priority
+    })
+end
+
 WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
     if not alive then return end
     if universalInputObserved[obj] then return end
     if obj:IsA("Tool") then
+        local character=player.Character
+        local backpack=player:FindFirstChildOfClass("Backpack")
+        local localTool=(character and obj:IsDescendantOf(character))
+            or (backpack and obj:IsDescendantOf(backpack))
+        if not localTool then return end
         universalInputObserved[obj]=true
         local toolPath=watchPath(obj,root,label)
         if not toolPath then return end
@@ -3876,6 +4134,9 @@ WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
         end)
         if okUnequip then table.insert(watchConnections,connUnequip) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
     elseif obj:IsA("Humanoid") then
+        local character=player.Character
+        local localHumanoid=character and character:FindFirstChildOfClass("Humanoid")
+        if obj~=localHumanoid then return end
         universalInputObserved[obj]=true
         local okRun,runConn=pcall(function()
             return obj.Running:Connect(function(speed)
@@ -3883,7 +4144,7 @@ WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
                 local moving=speed>=2
                 if inputObserverState.movementBaseline==moving then return end
                 inputObserverState.movementBaseline=moving
-                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-running-"..tostring(moving),0.35) then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-running-"..tostring(moving),0.5) then return end
                 observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
                 local stateTag=moving and "move-start" or "move-stop"
                 local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
@@ -3897,7 +4158,7 @@ WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
         local okJump,jumpConn=pcall(function()
             return obj.Jumping:Connect(function(active)
                 if not alive or not interactionObserveEnabled or not active then return end
-                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-jump",0.45) then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-jump",0.55) then return end
                 observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
                 local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
                 WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Jumping","Humanoid.Jumping",
@@ -3911,8 +4172,8 @@ WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
                 if not alive or not interactionObserveEnabled then return end
                 local animationId=track and track.Animation and tostring(track.Animation.AnimationId or "") or ""
                 if animationId=="" then return end
-                local key="animation:"..animationId:sub(1,80)
-                if not WORKFLOW_HELPERS.inputThrottleAllowed(key,0.75) then return end
+                local key="local-animation:"..animationId:sub(1,80)
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(key,1.8) then return end
                 observerStats.animationEventsObserved=observerStats.animationEventsObserved+1
                 local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
                 local action=snapshot.hasCombatTool and "combat-animation" or "animation"
@@ -3929,10 +4190,14 @@ end
 WORKFLOW_HELPERS.startUniversalInputObservation = function()
     if observerStats.inputBindingReady then return end
     observerStats.inputBindingReady=true
+    WORKFLOW_HELPERS.setObservationPhase("idle","input-observation-started",os.clock())
+    table.insert(watchConnections,game:GetService("RunService").Heartbeat:Connect(function()
+        if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+    end))
     local keyActions={
         R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",
         Four="switch",Five="switch",Six="switch",Seven="switch",Eight="switch",Nine="switch",
-        Zero="switch",Space="jump",LeftShift="sprint",RightShift="sprint",W="move",A="move",S="move",D="move",
+        Zero="switch",Space="jump",LeftShift="sprint",RightShift="sprint",
         ButtonR2="fire",ButtonL2="aim",ButtonA="jump",ButtonX="reload",ButtonY="switch"
     }
     local beganConnection=UserInputService.InputBegan:Connect(function(input,gameProcessed)
@@ -3946,7 +4211,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         if not action then return end
         if gameProcessed and action~="fire" and action~="reload" and action~="switch" then return end
         local controlKey=("input:%s:%s"):format(inputName,keyName)
-        if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.1) then return end
+        if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.12) then return end
         inputObserverState.buttonsDown[inputName]=true
         local feature=WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
         local path=("LocalPlayer.Input.%s.%s"):format(inputName,keyName):sub(1,220)
@@ -3971,7 +4236,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         local now=os.clock()
         local pointerDown=inputObserverState.buttonsDown.MouseButton1
             or inputObserverState.buttonsDown.MouseButton2
-        if not pointerDown or now-inputObserverState.lastMovementCapture<0.75 then return end
+        if not pointerDown or now-inputObserverState.lastMovementCapture<0.9 then return end
         local delta=input.Delta
         local magnitude=math.floor(delta.Magnitude*10+0.5)/10
         if magnitude<18 then return end
@@ -4140,7 +4405,9 @@ local function startWatching()
                     end
                     observeObject(obj, spec.root, spec.label)
                     WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
-                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                    if spec.label=="LocalPlayer" or spec.label=="Character" then
+                        WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                    end
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -4153,11 +4420,18 @@ local function startWatching()
         if spec.root then
             task.spawn(function()
                 local descendants = spec.root:GetDescendants()
+                local observeUniversal=(spec.label=="LocalPlayer" or spec.label=="Character")
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
-                    observeObject(obj, spec.root, spec.label)
-                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
-                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                    if spec.label == "Workspace" and isCharacterDescendant(obj) then
+                        watchSkippedCharacters = watchSkippedCharacters + 1
+                    else
+                        observeObject(obj, spec.root, spec.label)
+                        WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
+                        if observeUniversal then
+                            WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                        end
+                    end
                     if i % 500 == 0 then task.wait() end
                 end
             end)
@@ -4690,7 +4964,28 @@ local function inspect(requestType, featureRequest)
                     movementEventsObserved=observerStats.movementEventsObserved,
                     animationEventsObserved=observerStats.animationEventsObserved,
                     inputBindingReady=observerStats.inputBindingReady,
-                    lastInputEventAt=observerStats.lastInputEventAt},
+                    lastInputEventAt=observerStats.lastInputEventAt,
+                    queueEnqueued=observerStats.inputQueueEnqueued,
+                    queueProcessed=observerStats.inputQueueProcessed,
+                    queueDropped=observerStats.inputQueueDropped,
+                    queuePeak=observerStats.inputQueuePeak,
+                    queueLength=WORKFLOW_HELPERS.inputQueueLength(),
+                    queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
+                    queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                    callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
+                    phase=inputObserverState.phase,
+                    phaseReason=inputObserverState.phaseReason,
+                    phaseTransitions=inputObserverState.phaseTransitions,
+                    phaseSinceSeconds=math.floor((os.clock()-inputObserverState.phaseSince)*1000+0.5)/1000,
+                    frameAverageSeconds=(observerStats.queueFrameCount>0)
+                        and math.floor((observerStats.queueFrameSecondsTotal/observerStats.queueFrameCount)*100000+0.5)/100000
+                        or 0,
+                    framePeakSeconds=math.floor(observerStats.queueFramePeakSeconds*100000+0.5)/100000,
+                    stateSnapshotCalls=observerStats.stateSnapshotCalls,
+                    stateSnapshotAverageSeconds=(observerStats.stateSnapshotCalls>0)
+                        and math.floor((observerStats.stateSnapshotSeconds/observerStats.stateSnapshotCalls)*100000+0.5)/100000
+                        or 0,
+                    stateSnapshotPeakSeconds=math.floor(observerStats.stateSnapshotPeakSeconds*100000+0.5)/100000},
                 stateSnapshotCandidateCount=#stateSnapshotCandidates,
                 stateSnapshotMaxValues=LIMITS.maxStateSnapshotCandidates,
                 observationWindowsSeconds=OBSERVATION_WINDOWS,
@@ -4980,6 +5275,8 @@ task.spawn(function()
             and os.clock()-autoEvidenceLastInteraction >= AUTO_EVIDENCE_IDLE_SECONDS
             and os.clock()-autoEvidenceLastScan >= AUTO_EVIDENCE_COOLDOWN_SECONDS
             and autoEvidenceRescans < AUTO_EVIDENCE_MAX_RESCANS
+            and WORKFLOW_HELPERS.inputQueueLength()==0
+            and inputObserverState.phase~="action"
             and not running and not uploading then
             local allSent = true
             if pendingParts then
