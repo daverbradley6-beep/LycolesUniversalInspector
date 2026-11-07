@@ -2,6 +2,39 @@
 
 
 
+## Update — 2026-11-06 — Live Arsenal/Bubble scan ingestion + explicit combat evidence-gap blockers
+
+- Ingested the user-provided real scan IDs and GitHub artifact:
+  - Arsenal: `7965AF57-8E47-4E2F-B857-7DBEABD4CC0B` (place `286090429`)
+  - Bubble Gum Simulator INFINITY: `AC79D385-BCB0-4928-85D5-6C3D960C44AE` (place `85896571713843`)
+  - archive: `Lycoles_85896571713843_AC79D385-BCB0-4928-85D5-6C3D960C44AE_part-1249.zip` on `origin/main`
+- Verified the uploaded archive is a combined dataset container (not a single part):
+  - Bubble dataset extracted: 1,254 JSON files (manifest + parts)
+  - Arsenal dataset extracted: 1,235 JSON files (manifest + parts)
+- Ran offline release generation on both extracted datasets:
+  - Arsenal release bundle generated successfully.
+  - Bubble release bundle generated successfully.
+- Requested-capability diagnostics from real Arsenal evidence remained `evidence-only-no-replay-contract` and exposed the core gap: no bounded combat input/state-outcome contract was captured in that dataset.
+- Implemented readiness-diagnostic improvement in `tools/assess_generation_readiness.py`:
+  - New explicit combat-request blockers when evidence is missing:
+    - `request_aligned_input_observation_not_captured`
+    - `request_aligned_state_transition_not_observed`
+  - These blockers are diagnostics only and do not change causality/runtime/gameplay verification guarantees.
+- Added/updated regression coverage in `tests/test_generation_readiness.py`:
+  - strengthened FPS discovery-only test with required state-transition-gap blocker,
+  - new Arsenal-style GUI-only combat request test requiring both new blockers.
+
+Validation:
+- Focused readiness suite: `python3 -m unittest -v tests.test_generation_readiness` ✅
+- Impacted pipeline suites (readiness/release/generated-result/service/receiver-pipeline): 55 tests ✅
+- Full Python suite: **1605 tests passed** (`python3 -m unittest discover -s tests`, skipped=17).
+- Node receiver/Luau parser suite: `npm run test` ✅ (4/4 parser tests + receiver checks).
+
+Live status:
+- Potassium `loadstring(source)` confirmation remains pending user live execution.
+
+
+
 ## Update — 2026-11-06 — Arsenal-focused universal input/combat observation expansion (v30.6.39)
 
 - Implemented structural observation expansion in `LycolesUniversalInspector.lua` to capture non-GUI gameplay activity paths needed by Arsenal-like games while preserving bounded read-only evidence rules:

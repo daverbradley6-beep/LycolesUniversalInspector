@@ -39,6 +39,10 @@ _TOKEN_ALIASES={
     "travelled":"travel","travelling":"travel","upgrading":"upgrade",
     "upgraded":"upgrade",
 }
+_COMBAT_REQUEST_TOKENS={"combat","attack","fight","fire","reload","weapon",
+    "gun","rifle","pistol","shotgun","sniper","ammo","arsenal","switch","enemy"}
+_COMBAT_INPUT_ACTION_TOKENS={"fire","reload","switch","equip","unequip",
+    "aim-adjust","combat-animation"}
 
 
 def _token_forms(token):
@@ -494,12 +498,64 @@ def _review_only_gui_request_evidence(actions,request_words):
         "requestAlignedPaths":aligned[:20]}
 
 
+def _request_observation_gap_blockers(plan,request_token_set):
+    if not request_token_set or not (request_token_set&_COMBAT_REQUEST_TOKENS):
+        return []
+    history=plan.get("observedInteractionHistory",[])
+    if not isinstance(history,list) or len(history)>20_000:
+        raise ValueError("compiled plan has malformed interaction history")
+    input_observed=False
+    state_transition_observed=False
+    for event in history:
+        if not isinstance(event,dict):
+            raise ValueError("compiled plan has malformed interaction history")
+        control=event.get("controlType")
+        control_lower=control.casefold() if isinstance(control,str) else ""
+        action=event.get("actionKind")
+        action_lower=action.casefold() if isinstance(action,str) else ""
+        path=event.get("path")
+        path_lower=path.casefold() if isinstance(path,str) else ""
+        if (control_lower.startswith("inputbegan.")
+                or control_lower.startswith("inputchanged.")
+                or control_lower.startswith("tool.")
+                or control_lower.startswith("humanoid.")
+                or control_lower.startswith("inputevent.")
+                or action_lower in _COMBAT_INPUT_ACTION_TOKENS
+                or ".input." in path_lower):
+            input_observed=True
+        state_changes=event.get("stateChanges")
+        if isinstance(state_changes,list) and state_changes:
+            state_transition_observed=True
+        windows=event.get("observationWindows")
+        if isinstance(windows,list):
+            for window in windows:
+                if not isinstance(window,dict):
+                    continue
+                state_count=window.get("stateChangeCount")
+                if type(state_count) is int and state_count>0:
+                    state_transition_observed=True
+                    break
+                if isinstance(window.get("stateChanges"),list) and window["stateChanges"]:
+                    state_transition_observed=True
+                    break
+        if input_observed and state_transition_observed:
+            break
+    blockers=[]
+    if not input_observed:
+        blockers.append("request_aligned_input_observation_not_captured")
+    if not state_transition_observed:
+        blockers.append("request_aligned_state_transition_not_observed")
+    return blockers
+
+
 
 def _request_feature_readiness(plan,request,status,generated,matched_generated,gameplay_request,
         unavailable,discovery_only,workflow_selection,workflow_target,actions):
-    request_words=sorted(_tokens(request))
-    feature_matches=_request_feature_matches(plan,set(request_words))
+    request_token_set=_tokens(request)
+    request_words=sorted(request_token_set)
+    feature_matches=_request_feature_matches(plan,request_token_set)
     review_only_gui=_review_only_gui_request_evidence(actions,request_words)
+    observation_gap_blockers=_request_observation_gap_blockers(plan,request_token_set)
     feature_values=feature_matches[:32]
     meaningful_feature_matches=sum(item.get("gameplayPriorityScore",0)>0 for item in feature_matches)
     gameplay_systems=gameplay_request.get("matchedSystems",[]) if isinstance(gameplay_request,dict) else []
@@ -535,6 +591,7 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         blockers.extend("request-assessment:"+value for value in request_blockers)
         blockers.extend("unavailable:"+item["id"] for item in unavailable)
         blockers.extend("discovery-only:"+item["family"] for item in discovery_only)
+        blockers.extend(observation_gap_blockers)
         if not matched_generated:blockers.append("bounded_generated_contract_unavailable")
         if not feature_values:blockers.append("no_request_feature_token_overlap")
         if meaningful_feature_matches==0:blockers.append("no_meaningful_gameplay_feature_matches")

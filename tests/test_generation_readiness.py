@@ -127,8 +127,25 @@ class GenerationReadinessTests(unittest.TestCase):
             "evidence-aligned-no-generated-contract")
         self.assertIn("bounded_generated_contract_unavailable",
                       result["requestFeatureReadiness"]["explicitBlockers"])
+        self.assertIn("request_aligned_state_transition_not_observed",
+                      result["requestFeatureReadiness"]["explicitBlockers"])
         self.assertEqual(result["discoveryOnlyCapabilities"][0]["family"],"combat-tool-action")
         self.assertFalse(result["discoveryOnlyCapabilities"][0]["replayContractAvailable"])
+
+
+    def test_gui_only_combat_request_reports_missing_input_and_state_gaps(self):
+        value={"integrity":{"scanComplete":True,"placeId":286090429,"scanId":"arsenal-gui-only"},
+            "requestedCapability":"Automatically shoot, reload, and switch weapons in Arsenal",
+            "features":[feature("combat",1,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{"path":"LocalPlayer.PlayerGui.Menew_Main.Container.Play",
+                "controlType":"GuiButton.Activated","featureCandidate":None,
+                "outcomeVerified":False}]}
+        result=assess(value)
+        self.assertEqual(result["request"]["status"],"evidence-only-no-replay-contract")
+        blockers=result["requestFeatureReadiness"]["explicitBlockers"]
+        self.assertIn("request_aligned_input_observation_not_captured",blockers)
+        self.assertIn("request_aligned_state_transition_not_observed",blockers)
+
 
     def test_exact_tool_evidence_produces_bounded_official_activation_trial(self):
         value={"integrity":{"scanComplete":True,"placeId":456,"scanId":"tool-ready-scan"},
