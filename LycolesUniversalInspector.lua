@@ -3783,6 +3783,200 @@ WORKFLOW_HELPERS.processInputObservationQueue = function()
     end
 end
 
+WORKFLOW_HELPERS.flushInputObservationQueueForExport = function()
+    for _=1,8 do
+        if WORKFLOW_HELPERS.inputQueueLength()<=0 then break end
+        WORKFLOW_HELPERS.processInputObservationQueue()
+    end
+end
+
+WORKFLOW_HELPERS.liveObservationFeatureSummary = function()
+    local features={}
+    for feature,item in pairs(EVIDENCE_HELPERS.featureInteractions) do
+        if type(feature)=="string" and type(item)=="table" then
+            local interactions=type(item.count)=="number" and item.count or 0
+            local stateChanges=type(item.stateChanges)=="number" and item.stateChanges or 0
+            local temporalChanges=type(item.temporalStateChanges)=="number" and item.temporalStateChanges or 0
+            local outcomeCandidates=type(item.outcomeCandidates)=="number" and item.outcomeCandidates or 0
+            if interactions>0 or stateChanges>0 or temporalChanges>0 or outcomeCandidates>0 then
+                features[#features+1]={
+                    feature=feature,
+                    interactionEvents=interactions,
+                    observedEvents=interactions,
+                    verifiedClientOutcomes=0,
+                    clientCorroboratedEvents=stateChanges,
+                    temporalTransitionEvents=temporalChanges,
+                    observableOutcomeCandidates=outcomeCandidates,
+                    implementationReady=false,
+                    readiness=(outcomeCandidates>0 and "observable-outcome-candidate-needs-causal-validation")
+                        or (interactions>0 and "interaction-observed-needs-state-verification")
+                        or "needs-observed-interaction",
+                    note="Observed client-side interaction evidence only; runtime, causal, and gameplay verification remain false"
+                }
+            end
+        end
+    end
+    table.sort(features,function(a,b) return a.feature<b.feature end)
+    return features
+end
+
+WORKFLOW_HELPERS.buildLiveObservationExport = function()
+    if not pendingManifest or type(pendingManifest.scanId)~="string" then
+        error("scan manifest unavailable for live observation export")
+    end
+    WORKFLOW_HELPERS.flushInputObservationQueueForExport()
+    local baselineScanId=pendingManifest.scanId
+    local baselinePartCount=pendingManifest.partCount or pendingManifest.expectedParts or 1
+    if type(baselinePartCount)~="number" or baselinePartCount<1 then baselinePartCount=1 end
+    baselinePartCount=math.floor(baselinePartCount)
+    local observationScanId="live-observation-"..HttpService:GenerateGUID(false)
+    local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
+    local features=WORKFLOW_HELPERS.liveObservationFeatureSummary()
+    local actionClassifications={}
+    for _,entry in ipairs(interactionHistory) do
+        local inferred=(type(entry)=="table" and type(entry.inferredAction)=="table") and entry.inferredAction or nil
+        local key=tostring((inferred and inferred.kind) or entry.actionKind or entry.controlType or "unknown"):sub(1,80)
+        actionClassifications[key]=(actionClassifications[key] or 0)+1
+    end
+    local readiness={}
+    for _,entry in ipairs(features) do
+        readiness[entry.feature]={
+            discovered=true,
+            observed=entry.interactionEvents>0,
+            observedStateChange=entry.clientCorroboratedEvents>0,
+            temporalStateChanges=entry.temporalTransitionEvents,
+            observableOutcomeCandidates=entry.observableOutcomeCandidates,
+            implemented=false,tested=false,
+            readiness=entry.readiness,
+            note="Observed interaction/state correlation only; causality, server authority, and gameplay remain unverified"
+        }
+    end
+    return {
+        schemaVersion="30.6.live-observation-export.1",
+        exportKind="dynamic-observations",
+        placeId=game.PlaceId,
+        gameId=game.GameId,
+        gameName=lastGameName or game.Name,
+        inspectedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        scanId=baselineScanId,
+        baselineScanId=baselineScanId,
+        sessionId=sessionId,
+        snapshotId=pendingManifest.snapshotId or snapshotId,
+        sourceDiagnostics={
+            scanMode="dynamic-observations",
+            baselineScanId=baselineScanId,
+            observationOnly=true,
+            requiresFullObjectRescan=false,
+            observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
+            observerInputBindingReady=observerStats.inputBindingReady,
+            uploadInProgress=uploading,
+            note="Post-scan live observations intended to overlay baseline evidence"
+        },
+        integrity={
+            scanComplete=true,
+            placeId=game.PlaceId,
+            scanId=observationScanId,
+            baselineScanId=baselineScanId,
+            parts=baselinePartCount,
+            interactionEvents=interactionEventCount,
+            sourceAuthenticityVerified=false,
+            causalityProven=false,
+            serverAuthorityVerified=false,
+            gameplayVerified=false
+        },
+        sourceProvenance={
+            schemaVersion="30.2.source-provenance.1",
+            inputMode="local-multipart",
+            scanId=observationScanId,
+            placeId=game.PlaceId,
+            partCount=baselinePartCount,
+            receiverStoredPayloadDigestsVerified=false,
+            receiverStoredPayloadDigestsRevalidatedThisRun=false,
+            receiverAcknowledgementDigestEquivalent=false,
+            receiverIntegrityVerified=false,
+            resumeCheckpointAuthenticated=false,
+            receiverResponseAuthenticityVerified=false,
+            localPayloadEquivalent=false,
+            sourceAuthenticityVerified=false,
+            causalityProven=false,
+            serverAuthorityVerified=false,
+            replayable=false,
+            gameplayVerified=false,
+            actionOutcomesVerified=false
+        },
+        features=features,
+        featureReadiness=readiness,
+        interactionDiagnostics={
+            observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
+            enabledAtExport=interactionObserveEnabled,
+            listenersAttached=observerStats.listenersAttached,
+            callbacksFired=observerStats.callbacksFired,
+            stateDeltaEvents=observerStats.stateDeltaEvents,
+            pendingObservationEvents=pendingObservationEvents,
+            cumulativeChangeEvents=changeCount,
+            totalInteractionEvents=interactionEventCount,
+            attributedEvents=attributedInteractionCount,
+            unattributedEvents=unattributedInteractionCount,
+            recentInteractions=interactionHistory,
+            interactionHistoryLimit=LIMITS.maxInteractionHistory,
+            workflowStats=workflowStats,
+            backfilledOutcomeCandidates=recoveredOutcomeCandidates,
+            actionClassifications=actionClassifications,
+            inputObservationStats={
+                captured=observerStats.inputEventsCaptured,
+                dropped=observerStats.inputEventsDropped,
+                windowsCompleted=observerStats.inputEventWindowsCompleted,
+                windowFailures=observerStats.inputEventWindowFailures,
+                toolEquipsObserved=observerStats.toolEquipsObserved,
+                toolUnequipsObserved=observerStats.toolUnequipsObserved,
+                movementEventsObserved=observerStats.movementEventsObserved,
+                animationEventsObserved=observerStats.animationEventsObserved,
+                inputBindingReady=observerStats.inputBindingReady,
+                lastInputEventAt=observerStats.lastInputEventAt,
+                queueEnqueued=observerStats.inputQueueEnqueued,
+                queueProcessed=observerStats.inputQueueProcessed,
+                queueDropped=observerStats.inputQueueDropped,
+                queuePeak=observerStats.inputQueuePeak,
+                queueLength=WORKFLOW_HELPERS.inputQueueLength(),
+                queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
+                queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
+                phase=inputObserverState.phase,
+                phaseReason=inputObserverState.phaseReason,
+                phaseTransitions=inputObserverState.phaseTransitions,
+                phaseSinceSeconds=math.floor((os.clock()-inputObserverState.phaseSince)*1000+0.5)/1000,
+                frameAverageSeconds=(observerStats.queueFrameCount>0)
+                    and math.floor((observerStats.queueFrameSecondsTotal/observerStats.queueFrameCount)*100000+0.5)/100000
+                    or 0,
+                framePeakSeconds=math.floor(observerStats.queueFramePeakSeconds*100000+0.5)/100000,
+                stateSnapshotCalls=observerStats.stateSnapshotCalls,
+                stateSnapshotAverageSeconds=(observerStats.stateSnapshotCalls>0)
+                    and math.floor((observerStats.stateSnapshotSeconds/observerStats.stateSnapshotCalls)*100000+0.5)/100000
+                    or 0,
+                stateSnapshotPeakSeconds=math.floor(observerStats.stateSnapshotPeakSeconds*100000+0.5)/100000
+            },
+            stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates","character humanoid/equipment/animation snapshots","bounded HUD numeric signals"},
+            actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
+            gameplayOutcomesVerified=0
+        },
+        pipelineIngestion={
+            supported=true,
+            requiresFullObjectRescan=false,
+            baselineScanId=baselineScanId,
+            mergeTool="tools/merge_observations.py",
+            mergeMode="evidence-overlay",
+            notes={"Use this export as a dynamic observation overlay on the baseline full scan","Observed inputs and inferred action classes are not verified gameplay outcomes"}
+        },
+        readOnly=true,
+        runtimeVerified=false,
+        sourceAuthenticityVerified=false,
+        causalityProven=false,
+        serverAuthorityVerified=false,
+        gameplayVerified=false
+    }
+end
+
+
 WORKFLOW_HELPERS.equippedToolSnapshot = function()
     local character=player.Character
     local result={count=0,names={},hasCombatTool=false}
@@ -5328,7 +5522,7 @@ scan.MouseButton1Click:Connect(function()
 end)
 
 copy.MouseButton1Click:Connect(function()
-    if not last then
+    if not pendingManifest or not pendingManifest.scanId then
         status.Text = "Scan not finished"
         return
     end
@@ -5338,8 +5532,16 @@ copy.MouseButton1Click:Connect(function()
         return
     end
 
-    local ok = pcall(setclipboard, last)
-    status.Text = ok and "Copied JSON" or "Copy failed"
+    local ok,payload=pcall(function()
+        local exportData=WORKFLOW_HELPERS.buildLiveObservationExport()
+        return encodeStage("live-observation-export",exportData)
+    end)
+    if not ok then
+        status.Text = "Live export failed"
+        return
+    end
+    local copied=pcall(setclipboard,payload)
+    status.Text = copied and "Copied live observation JSON" or "Copy failed"
 end)
 
 save.MouseButton1Click:Connect(function()

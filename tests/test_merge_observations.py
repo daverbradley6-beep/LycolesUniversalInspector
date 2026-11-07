@@ -68,6 +68,42 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(provenance["inputMode"],"receiver-import")
         self.assertTrue(provenance["receiverStoredPayloadDigestsVerified"])
         self.assertFalse(provenance["receiverResponseAuthenticityVerified"])
+    def test_live_observation_export_shape_merges_without_full_rescan(self):
+        obs={
+          "schemaVersion":"30.6.live-observation-export.1",
+          "exportKind":"dynamic-observations",
+          "scanId":"base",
+          "baselineScanId":"base",
+          "integrity":{"scanComplete":True,"placeId":123,"scanId":"live-observation-1","baselineScanId":"base","parts":2,"interactionEvents":3},
+          "sourceDiagnostics":{"scanMode":"dynamic-observations","requiresFullObjectRescan":False,"baselineScanId":"base"},
+          "sourceProvenance":{
+            "schemaVersion":"30.2.source-provenance.1","inputMode":"local-multipart",
+            "scanId":"live-observation-1","placeId":123,"partCount":2,
+            "receiverStoredPayloadDigestsVerified":False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun":False,
+            "receiverAcknowledgementDigestEquivalent":False,
+            "receiverIntegrityVerified":False,
+            "resumeCheckpointAuthenticated":False,
+            "receiverResponseAuthenticityVerified":False,
+            "localPayloadEquivalent":False,
+            "sourceAuthenticityVerified":False,
+            "causalityProven":False,
+            "serverAuthorityVerified":False,
+            "replayable":False,
+            "gameplayVerified":False,
+            "actionOutcomesVerified":False,
+          },
+          "features":[{"feature":"combat","interactionEvents":3,"observedEvents":3,
+            "verifiedClientOutcomes":0,"clientCorroboratedEvents":1,
+            "temporalTransitionEvents":1}],
+        }
+        merged=m.merge_evidence(self.baseline(),[obs])
+        by_feature={item["feature"]:item for item in merged["features"]}
+        self.assertEqual(by_feature["combat"]["interactionEvents"],3)
+        self.assertEqual(by_feature["rebirth"]["interactionEvents"],1)
+        self.assertEqual(merged["evidenceOverlays"][0]["scanId"],"live-observation-1")
+        self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["inputMode"],"local-multipart")
+
     def test_duplicate_rejected(self):
         with self.assertRaises(ValueError):
             m.merge_evidence(self.baseline(),[self.observation(),self.observation()])

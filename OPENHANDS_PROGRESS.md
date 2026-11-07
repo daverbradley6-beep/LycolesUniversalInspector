@@ -3,6 +3,46 @@
 
 
 
+## Update — 2026-11-06 — v30.6.40 live gameplay capture export fix (Arsenal scan `E377D12B-FD9A-4644-B439-F76FFB3163AB`)
+
+- Investigated live report of smooth gameplay but zero interactions in copied JSON.
+- Root cause confirmed: `COPY JSON` was exporting `last` (scan-manifest snapshot refreshed during upload), not a fresh post-scan live-observation payload. This could legitimately remain at startup interaction counts despite ongoing gameplay.
+- Implemented live export path in `LycolesUniversalInspector.lua`:
+  - Added `WORKFLOW_HELPERS.buildLiveObservationExport()` producing `schemaVersion: 30.6.live-observation-export.1`.
+  - Added bounded queue flush before export (`flushInputObservationQueueForExport`) so queued high-priority input events are processed before clipboard serialization.
+  - Export now includes:
+    - baseline linkage (`scanId` + `baselineScanId`),
+    - recent interactions with inferred action classifications,
+    - state-change / observation-window evidence,
+    - queue/backpressure/callback/frame/snapshot telemetry,
+    - explicit all-false runtime/authenticity/causality/server/gameplay verification claims.
+  - `COPY JSON` now copies this fresh live payload (`live-observation-export`) instead of stale `last` manifest text.
+- Kept upload + observer behavior non-blocking:
+  - upload flow still does not disable interaction observation,
+  - heartbeat queue processing remains active while uploads run.
+- Added overlay-ingestion compatibility for downstream no-rescan analysis:
+  - export `sourceDiagnostics.scanMode="dynamic-observations"`,
+  - includes merge-compatible `sourceProvenance` and `integrity` overlay identity,
+  - includes explicit ingestion hints (`mergeTool="tools/merge_observations.py"`, `requiresFullObjectRescan=false`).
+
+Regression coverage added:
+- `tests/test_inspector_ui.py`
+  - copy button exports live observation payload (not stale manifest copy path),
+  - dynamic-observation overlay schema/insertion hints present,
+  - upload progress does not disable queue processing.
+- `tests/test_merge_observations.py`
+  - live export shape merges as dynamic observation overlay without requiring another full object scan.
+
+Validation:
+- Focused suites: `tests.test_inspector_ui`, `tests.test_merge_observations`, `tests.test_inspector_compiler_limits` ✅
+- Node/Luau: `npm test` ✅
+- Full Python suite: **1609 tests passed** (`skipped=17`) ✅
+
+Live status:
+- FPS/lag improvement already user-confirmed.
+- New live verification required: confirm copied live export now contains observed fire/reload/switch evidence for post-scan gameplay while upload is in progress.
+
+
 ## Update — 2026-11-06 — v30.6.40 live-performance + action-correlation optimization pass
 
 - Implemented runtime-overhead reductions in `LycolesUniversalInspector.lua` while preserving universal architecture and bounded evidence contracts:

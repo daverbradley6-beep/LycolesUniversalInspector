@@ -276,4 +276,27 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('property=="Value" and label=="LocalPlayer"',SRC)
         self.assertIn("for _,candidate in ipairs(stateSnapshotCandidates) do",SRC)
         self.assertIn('local primary=top.Name=="Data" or top.Name=="leaderstats"',SRC)
+    def test_copy_json_exports_live_observations_not_stale_manifest_snapshot(self):
+        self.assertIn('WORKFLOW_HELPERS.buildLiveObservationExport = function()',SRC)
+        self.assertIn('WORKFLOW_HELPERS.flushInputObservationQueueForExport = function()',SRC)
+        self.assertIn('return encodeStage("live-observation-export",exportData)',SRC)
+        self.assertIn('status.Text = copied and "Copied live observation JSON" or "Copy failed"',SRC)
+        self.assertNotIn('local ok = pcall(setclipboard, last)',SRC)
+
+    def test_live_observation_export_is_overlay_ingestable_without_full_rescan(self):
+        self.assertIn('schemaVersion="30.6.live-observation-export.1"',SRC)
+        self.assertIn('exportKind="dynamic-observations"',SRC)
+        self.assertIn('scanMode="dynamic-observations"',SRC)
+        self.assertIn('requiresFullObjectRescan=false',SRC)
+        self.assertIn('mergeTool="tools/merge_observations.py"',SRC)
+        self.assertIn('baselineScanId=baselineScanId',SRC)
+        self.assertIn('sourceProvenance={',SRC)
+        self.assertIn('receiverStoredPayloadDigestsVerified=false',SRC)
+
+    def test_upload_progress_does_not_disable_input_queue_processing(self):
+        self.assertIn('uploading = true',SRC)
+        self.assertIn('uploading = false',SRC)
+        self.assertIn('if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end',SRC)
+        self.assertNotIn('and interactionObserveEnabled and not uploading',SRC)
+
 if __name__=="__main__":unittest.main()
