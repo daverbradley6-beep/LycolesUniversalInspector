@@ -2,6 +2,40 @@
 
 
 
+## Update — 2026-11-06 — Arsenal-focused universal input/combat observation expansion (v30.6.39)
+
+- Implemented structural observation expansion in `LycolesUniversalInspector.lua` to capture non-GUI gameplay activity paths needed by Arsenal-like games while preserving bounded read-only evidence rules:
+  - global input capture (`InputBegan`/`InputChanged`) with throttling and bounded metadata,
+  - tool equip/unequip activity capture,
+  - humanoid movement/jump/animation activity capture,
+  - automatic workflow recording windows from observed gameplay activity (manual override remains available),
+  - bounded per-window before/after state correlation for input-origin interactions.
+- Expanded state snapshot evidence surface (still bounded and client-visible only):
+  - replicated `StringValue` support,
+  - character/humanoid/tool/backpack snapshots,
+  - bounded HUD numeric signal extraction for ammo/health/score-like indicators.
+- Improved action-outcome correlation for combat-style actions:
+  - added `fire`/`reload`/`switch` corroboration branches and ammo/weapon/character state signals.
+- Reduced false positive feature discovery pressure from decorative world objects:
+  - `buildFeatureEvidence` now requires contextual structural signals for world-class keyword matches.
+- Kept Potassium lexical-local safety budget intact after added functionality by refactoring new helper logic into `WORKFLOW_HELPERS` method assignments (instead of introducing additional top-level locals).
+- Updated inspector diagnostics/export contracts:
+  - `workflowRecordingPolicy` now reflects automatic activity-window behavior,
+  - added `inputObservationStats` in `interactionDiagnostics`,
+  - updated interaction rule descriptions to automatic observer semantics.
+- Updated UI/source contract tests for new workflow-recording behavior and blocker naming.
+- Version updated to `30.6.39` (`LycolesUniversalInspector.lua`, `version.txt`).
+
+Validation:
+- Full Python regression suite: **1604 tests passed** (`python3 -m unittest discover -s tests`).
+- Inspector compiler/register safety gates passed (`tests.test_inspector_compiler_limits`).
+- Node/Luau parser suite passed (`npm run test`, 4/4 parser tests + receiver checks).
+- Luau compile matrix passed (`-O0..2`, `-g0..2`) with no register overflow.
+
+Live status:
+- Potassium compatibility remains **offline-verified only** until user confirms live `loadstring(source)` success on the new commit.
+
+
 ## Update — 2026-11-06 — Gameplay-first generation architecture pass
 
 - Refocused generated utility behavior from diagnostic-only tabs toward gameplay-action execution while preserving safety boundaries.

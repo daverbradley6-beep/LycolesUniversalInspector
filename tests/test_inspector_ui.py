@@ -46,7 +46,7 @@ class InspectorUITests(unittest.TestCase):
 
     def test_workflow_generation_root_cause_diagnostics(self):
         self.assertIn('local function buildWorkflowGenerationDiagnostics',SRC)
-        self.assertIn('explicit-workflow-recording-not-armed',SRC)
+        self.assertIn('no-workflow-recording-events-observed',SRC)
         self.assertIn('no-linked-confirmation-events',SRC)
         self.assertIn('no-completed-workflow-candidates',SRC)
         self.assertIn('workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics',SRC)
@@ -222,13 +222,14 @@ class InspectorUITests(unittest.TestCase):
     def test_explicit_workflow_recording_is_bounded_and_order_only(self):
         self.assertIn('workflowRecordingSeconds = 60',SRC)
         self.assertIn('maxWorkflowRecordingEvents = 8',SRC)
-        self.assertIn('Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF"',SRC)
-        self.assertIn('workflowRecording.id="user-recorded-"..HttpService:GenerateGUID(false)',SRC)
+        self.assertIn('Name="WorkflowRecordToggle",Text="FLOW: AUTO-IDLE"',SRC)
+        self.assertIn('workflowRecording.id=(workflowRecording.automatic and "auto-recorded-" or "user-recorded-")',SRC)
         self.assertIn('task.delay(LIMITS.workflowRecordingSeconds,function()',SRC)
-        self.assertIn('linkageSource="explicit-user-armed-recording",explicitUserArmed=true',SRC)
+        self.assertIn('local linkageSource=workflowRecording.source or "explicit-user-armed-recording"',SRC)
+        self.assertIn('local explicitUserArmed=linkageSource=="explicit-user-armed-recording"',SRC)
         self.assertIn('establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false',SRC)
         self.assertIn('transactionOrder=explicitRecording and explicitRecording.order or nil',SRC)
-        self.assertIn('workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof"',SRC)
+        self.assertIn('workflowRecordingPolicy="automatic-activity-window-with-optional-manual-override-not-causal-proof"',SRC)
         self.assertIn('stopWorkflowRecording("scan-started")',SRC)
 
     def test_semantic_actions_use_bounded_context(self):

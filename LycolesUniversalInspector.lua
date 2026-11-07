@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.38
+-- Lycoles Universal Inspector v30.6.39
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.38"
+local VERSION = "30.6.39"
 
 local endpoint = ""
 local autoSend = true
@@ -154,6 +154,7 @@ local autoEvidenceLastSequence = 0
 local autoEvidenceRescans = 0
 local autoEvidenceLastFailure = nil
 local interactionObserved = setmetatable({}, {__mode = "k"})
+local universalInputObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
 local attributedInteractionCount = 0
@@ -167,9 +168,13 @@ local pendingGuiReveals = {}
 local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, backfilledOutcomeCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local sessionId = HttpService:GenerateGUID(false)
 local sessionStartedClock = os.clock()
-local workflowRecording = {active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0}
+local workflowRecording = {
+    active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0,
+    source=nil,automatic=false
+}
 local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
-    recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil}
+    recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil,
+    automaticStarts=0,manualStarts=0}
 local refreshWorkflowRecorder = nil
 local refreshEvidenceControls = nil
 local scanGeneration = 0
@@ -180,6 +185,8 @@ local function stopWorkflowRecording(reason)
     workflowRecording.id=nil
     workflowRecording.startedClock=nil
     workflowRecording.startedElapsed=nil
+    workflowRecording.source=nil
+    workflowRecording.automatic=false
     workflowRecordingStats.lastRecordedEventCount=workflowRecording.eventCount
     workflowRecording.eventCount=0
     workflowRecordingStats.stopped=workflowRecordingStats.stopped+1
@@ -191,15 +198,25 @@ local function stopWorkflowRecording(reason)
     end
     if refreshWorkflowRecorder then refreshWorkflowRecorder(reason) end
 end
-local function startWorkflowRecording()
+local function startWorkflowRecording(source)
     if workflowRecording.active then return false end
+    local linkageSource=source=="automatic-activity-window"
+        and "automatic-activity-window" or "explicit-user-armed-recording"
     local startedClock=os.clock()
     workflowRecording.active=true
-    workflowRecording.id="user-recorded-"..HttpService:GenerateGUID(false)
+    workflowRecording.source=linkageSource
+    workflowRecording.automatic=linkageSource=="automatic-activity-window"
+    workflowRecording.id=(workflowRecording.automatic and "auto-recorded-" or "user-recorded-")
+        ..HttpService:GenerateGUID(false)
     workflowRecording.startedClock=startedClock
     workflowRecording.startedElapsed=math.floor((startedClock-sessionStartedClock)*1000+0.5)/1000
     workflowRecording.eventCount=0
     workflowRecordingStats.started=workflowRecordingStats.started+1
+    if workflowRecording.automatic then
+        workflowRecordingStats.automaticStarts=workflowRecordingStats.automaticStarts+1
+    else
+        workflowRecordingStats.manualStarts=workflowRecordingStats.manualStarts+1
+    end
     local recordingId=workflowRecording.id
     task.delay(LIMITS.workflowRecordingSeconds,function()
         if alive and workflowRecording.active and workflowRecording.id==recordingId then
@@ -209,19 +226,26 @@ local function startWorkflowRecording()
     if refreshWorkflowRecorder then refreshWorkflowRecorder("started") end
     return true
 end
-local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
-    if not workflowRecording.active then return nil end
+local function ensureWorkflowRecordingForActivity(source)
+    if workflowRecording.active then return true end
+    return startWorkflowRecording(source or "automatic-activity-window")
+end
+local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds,source)
+    if not ensureWorkflowRecordingForActivity(source) then return nil end
     if activationClock-workflowRecording.startedClock>LIMITS.workflowRecordingSeconds then
         stopWorkflowRecording("duration-limit")
-        return nil
+        if not ensureWorkflowRecordingForActivity(source) then return nil end
     end
     workflowRecording.eventCount=workflowRecording.eventCount+1
     workflowRecordingStats.recordedEvents=workflowRecordingStats.recordedEvents+1
+    local linkageSource=workflowRecording.source or "explicit-user-armed-recording"
+    local explicitUserArmed=linkageSource=="explicit-user-armed-recording"
     local result={recordingId=workflowRecording.id,order=workflowRecording.eventCount,
         startedElapsedSeconds=workflowRecording.startedElapsed,
         maxDurationSeconds=LIMITS.workflowRecordingSeconds,
         maxEvents=LIMITS.maxWorkflowRecordingEvents,
-        linkageSource="explicit-user-armed-recording",explicitUserArmed=true,
+        linkageSource=linkageSource,explicitUserArmed=explicitUserArmed,
+        automaticWindow=not explicitUserArmed,
         establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false}
     if workflowRecording.eventCount>=LIMITS.maxWorkflowRecordingEvents then
         stopWorkflowRecording("event-limit")
@@ -233,8 +257,17 @@ end
 
 local scanInvocationCount = 0
 local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,preActivationCaptureFailures=0}
+local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,preActivationCaptureFailures=0,inputEventsCaptured=0,inputEventsDropped=0,inputEventWindowsCompleted=0,inputEventWindowFailures=0,toolEquipsObserved=0,toolUnequipsObserved=0,movementEventsObserved=0,animationEventsObserved=0,lastInputEventAt=nil,inputBindingReady=false}
 local snapshotId = nil
+local inputObserverState = {
+    captureByKey = {},
+    buttonsDown = {},
+    lastMovementCapture = 0,
+    lastSequence = 0,
+    recent = {},
+    movementBaseline = nil,
+}
+
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
 -- paths. This prevents 'LiveRequest' being classified as a quest.
@@ -458,6 +491,27 @@ end
 
 local function safeInteractionState()
     local state,identities,count = {},{},0
+    local function addState(key,value,identity)
+        if count>=LIMITS.maxStateSnapshotCandidates then return end
+        if type(key)~="string" or #key==0 or #key>220 then return end
+        local valueType=type(value)
+        if valueType=="number" then
+            if value~=value or math.abs(value)>1e12 then return end
+        elseif valueType~="boolean" and valueType~="string" then
+            return
+        end
+        if valueType=="string" and #value>120 then
+            value=value:sub(1,120)
+        end
+        if state[key]==nil then
+            state[key]=value
+            identities[key]=identity
+            count=count+1
+        else
+            identities[key]=nil
+        end
+    end
+
     local roots = {}
     for _, name in ipairs({"leaderstats", "Data"}) do
         local root = player:FindFirstChild(name)
@@ -468,7 +522,7 @@ local function safeInteractionState()
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
                 if count >= LIMITS.maxStateSnapshotCandidates then break end
-                if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
+                if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") or obj:IsA("StringValue") then
                     local segments = {}
                     local parent = obj
                     while parent and parent ~= root and #segments < 6 do
@@ -481,12 +535,9 @@ local function safeInteractionState()
                         or low:find("auth",1,true) or low:find("password",1,true)
                         or low:find("userid",1,true)) then
                         local v = obj.Value
-                        if type(v) == "boolean" or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
-                            if state[key]==nil then
-                                state[key]=v identities[key]=stateValueIdentity(obj,root) count=count+1
-                            else
-                                identities[key]=nil
-                            end
+                        if type(v) == "boolean" or type(v)=="string"
+                            or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
+                            addState(key,v,stateValueIdentity(obj,root))
                         end
                     end
                 end
@@ -497,12 +548,114 @@ local function safeInteractionState()
         if count>=LIMITS.maxStateSnapshotCandidates then break end
         local obj=candidate.object
         local ok,value=pcall(function() return obj.Value end)
-        if ok and (type(value)=="boolean" or (type(value)=="number"
+        if ok and (type(value)=="boolean" or type(value)=="string" or (type(value)=="number"
             and value==value and math.abs(value)<=1e12)) then
-            if state[candidate.path]==nil then state[candidate.path]=value count=count+1 end
-            identities[candidate.path]=nil
+            addState(candidate.path,value,nil)
         end
     end
+
+    local character=player.Character
+    if character then
+        local humanoid=character:FindFirstChildOfClass("Humanoid")
+        local rootPart=character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            addState("Character.Humanoid.Health",math.floor(humanoid.Health*100+0.5)/100,nil)
+            addState("Character.Humanoid.MaxHealth",math.floor(humanoid.MaxHealth*100+0.5)/100,nil)
+            addState("Character.Humanoid.WalkSpeed",math.floor(humanoid.WalkSpeed*100+0.5)/100,nil)
+            addState("Character.Humanoid.JumpPower",math.floor(humanoid.JumpPower*100+0.5)/100,nil)
+            addState("Character.Humanoid.Sit",humanoid.Sit,nil)
+            addState("Character.Humanoid.MoveDirectionMagnitude",
+                math.floor(humanoid.MoveDirection.Magnitude*100+0.5)/100,nil)
+            local stateType=humanoid:GetState()
+            addState("Character.Humanoid.State",stateType and stateType.Name or "Unknown",nil)
+            addState("Character.Humanoid.FloorMaterial",tostring(humanoid.FloorMaterial),nil)
+            local animator=humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                local tracks={}
+                local okTracks,playing=pcall(function() return animator:GetPlayingAnimationTracks() end)
+                if okTracks and type(playing)=="table" then
+                    for _,track in ipairs(playing) do
+                        if #tracks>=6 then break end
+                        if track and track.Animation then
+                            local animationId=tostring(track.Animation.AnimationId or "")
+                            if #animationId>0 then tracks[#tracks+1]=animationId:sub(1,80) end
+                        end
+                    end
+                end
+                table.sort(tracks)
+                if #tracks>0 then
+                    addState("Character.Humanoid.ActiveAnimationCount",#tracks,nil)
+                    addState("Character.Humanoid.ActiveAnimations",table.concat(tracks,","),nil)
+                end
+            end
+        end
+        if rootPart then
+            addState("Character.RootPart.VelocityMagnitude",
+                math.floor(rootPart.AssemblyLinearVelocity.Magnitude*100+0.5)/100,nil)
+        end
+        local equippedTools={}
+        for _,child in ipairs(character:GetChildren()) do
+            if child:IsA("Tool") then
+                equippedTools[#equippedTools+1]=child.Name:sub(1,60)
+            end
+        end
+        table.sort(equippedTools)
+        addState("Character.Tools.EquippedCount",#equippedTools,nil)
+        if #equippedTools>0 then
+            addState("Character.Tools.EquippedNames",table.concat(equippedTools,","),nil)
+        end
+    end
+
+    local backpack=player:FindFirstChildOfClass("Backpack")
+    if backpack then
+        local names={}
+        for _,child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then names[#names+1]=child.Name:sub(1,60) end
+            if #names>=24 then break end
+        end
+        table.sort(names)
+        addState("Backpack.Tools.Count",#names,nil)
+        if #names>0 then addState("Backpack.Tools.Sample",table.concat(names,","),nil) end
+    end
+
+    local gui=player:FindFirstChildOfClass("PlayerGui")
+    if gui and count<LIMITS.maxStateSnapshotCandidates then
+        local scanned,signals=0,0
+        for _,node in ipairs(gui:GetDescendants()) do
+            scanned=scanned+1
+            if scanned>4500 or signals>=28 or count>=LIMITS.maxStateSnapshotCandidates then break end
+            if node:IsA("GuiObject") and (node:IsA("TextLabel") or node:IsA("TextButton")) then
+                local text=tostring(node.Text or ""):gsub("[%c]"," ")
+                if #text>0 and #text<=48 and text:find("%d") then
+                    local parts={}
+                    local parent=node
+                    local steps=0
+                    while parent and parent~=gui and steps<6 do
+                        parts[#parts+1]=parent.Name
+                        parent=parent.Parent
+                        steps=steps+1
+                    end
+                    local path=table.concat(parts,"."):lower()
+                    if not (path:find("chat",1,true) or path:find("whisper",1,true)
+                        or path:find("message",1,true) or path:find("name",1,true)) then
+                        local matches=path:find("ammo",1,true) or path:find("health",1,true)
+                            or path:find("hp",1,true) or path:find("score",1,true)
+                            or path:find("kill",1,true) or path:find("coin",1,true)
+                            or path:find("gem",1,true) or path:find("cash",1,true)
+                            or path:find("currency",1,true) or path:find("round",1,true)
+                            or path:find("weapon",1,true) or path:find("clip",1,true)
+                            or path:find("mag",1,true) or path:find("reload",1,true)
+                        if matches then
+                            local key=("HUD.Signal."..path):sub(1,200)
+                            addState(key,text:sub(1,48),nil)
+                            signals=signals+1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     return state,identities
 end
 -- v5.5: stable, unique relative paths and change-only inventory evidence.
@@ -659,11 +812,29 @@ end
 
 local function buildFeatureEvidence(objects)
     local features = {}
+    local decorativeWorldClasses={Part=true,MeshPart=true,UnionOperation=true,TrussPart=true,
+        WedgePart=true,CornerWedgePart=true,Model=true,ParticleEmitter=true,
+        Trail=true,Beam=true,Smoke=true,Fire=true,Sparkles=true,Decal=true,Texture=true}
+    local function contextualSignal(pathLower,className,kind)
+        if kind~="world" then return true end
+        if pathLower:find("button",1,true) or pathLower:find("prompt",1,true)
+            or pathLower:find("detector",1,true) or pathLower:find("menu",1,true)
+            or pathLower:find("shop",1,true) or pathLower:find("quest",1,true)
+            or pathLower:find("inventory",1,true) or pathLower:find("leaderstats",1,true)
+            or pathLower:find("data",1,true) or pathLower:find("value",1,true)
+            or pathLower:find("controller",1,true) or pathLower:find("remote",1,true)
+            or pathLower:find("tool",1,true) then
+            return true
+        end
+        if decorativeWorldClasses[className] then return false end
+        return false
+    end
+
     for name in pairs(FEATURE_TERMS) do
         features[name] = {
             counts={controllers=0,remotes=0,gui=0,values=0,world=0},
             examples={}, status="not-discovered",
-            confidence="object-name-candidate-only", serverVerified=false,
+            confidence="context-bounded-name-candidate-only", serverVerified=false,
             missingEvidence={"Observed normal interaction","Before/after state verification","Authorised implementation test"}
         }
     end
@@ -684,15 +855,18 @@ local function buildFeatureEvidence(objects)
         elseif class=="RemoteEvent" or class=="RemoteFunction" or class=="UnreliableRemoteEvent" then kind="remotes"
         elseif class=="TextButton" or class=="ImageButton" or class=="ProximityPrompt" or class=="ClickDetector" then kind="gui"
         elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
+        local pathLower=path:lower()
         for name,terms in pairs(FEATURE_TERMS) do
             for _,term in ipairs(terms) do
                 if tokens[term] or tokens[term.."s"] or
                    (term=="rebirth" and tokens.rebirthing) then
-                    local item=features[name]
-                    item.counts[kind]=item.counts[kind]+1
-                    item.status="candidate-needs-verification"
-                    if #item.examples < 6 then
-                        item.examples[#item.examples+1]={path=path:sub(1,220),class=class,kind=kind}
+                    if contextualSignal(pathLower,class,kind) then
+                        local item=features[name]
+                        item.counts[kind]=item.counts[kind]+1
+                        item.status="candidate-needs-verification"
+                        if #item.examples < 6 then
+                            item.examples[#item.examples+1]={path=path:sub(1,220),class=class,kind=kind}
+                        end
                     end
                     break
                 end
@@ -2369,7 +2543,7 @@ local function observeObject(obj, root, label)
     if observed[obj] then return end
     if label == "Workspace" and isCharacterDescendant(obj) then return end
     local property
-    if obj:IsA("BoolValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
+    if obj:IsA("BoolValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
         property = "Value"
     elseif obj:IsA("ProximityPrompt") then
         property = "Enabled"
@@ -2400,8 +2574,12 @@ local function observeObject(obj, root, label)
     local connection = signal:Connect(function()
         if not alive or not watchEnabled then return end
         local valid, value = pcall(function() return obj[property] end)
-        if not valid or (type(value) ~= "boolean" and type(value) ~= "number") then return end
+        if not valid or (type(value) ~= "boolean" and type(value) ~= "number" and type(value) ~= "string") then return end
         if type(value) == "number" and (value ~= value or math.abs(value) > 1e12) then return end
+        if type(value) == "string" then
+            value = value:gsub("[%c]", " "):sub(1,120)
+            if value == "" then return end
+        end
         local currentPath = watchPath(obj, root, label)
         if not currentPath then return end
         -- Preserve every transition instead of overwriting earlier values.
@@ -2895,6 +3073,16 @@ local function relevantActionEvidence(feature, workflow, changes)
         elseif key:find("coin",1,true) or key:find("gem",1,true)
             or key:find("currency",1,true) then
             signals[#signals+1]="currency-related-value-change"
+        elseif key:find("ammo",1,true) or key:find("clip",1,true)
+            or key:find("mag",1,true) or key:find("bullet",1,true)
+            or key:find("reserve",1,true) then
+            signals[#signals+1]="weapon-ammo-related-change"
+        elseif key:find("tool",1,true) or key:find("weapon",1,true)
+            or key:find("loadout",1,true) then
+            signals[#signals+1]="weapon-selection-change"
+        elseif key:find("humanoid",1,true) or key:find("character",1,true)
+            or key:find("animation",1,true) then
+            signals[#signals+1]="character-state-change"
         elseif key:find("quest",1,true) or key:find("reward",1,true) then
             signals[#signals+1]="quest-or-reward-related-value-change"
         end
@@ -2926,9 +3114,49 @@ local function relevantActionEvidence(feature, workflow, changes)
             end
         end
         corroborated=resourceDecrease and currencyIncrease
+    elseif kind=="fire" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number"
+                and (key:find("ammo",1,true) or key:find("clip",1,true)
+                    or key:find("mag",1,true) or key:find("reserve",1,true)
+                    or key:find("bullet",1,true)) and change.after~=change.before then
+                corroborated=true
+            end
+        end
+        if not corroborated then
+            for _,signal in ipairs(signals) do
+                if signal=="weapon-ammo-related-change" or signal=="character-state-change" then
+                    corroborated=true
+                end
+            end
+        end
+    elseif kind=="reload" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number"
+                and (key:find("ammo",1,true) or key:find("clip",1,true)
+                    or key:find("mag",1,true) or key:find("reserve",1,true)
+                    or key:find("bullet",1,true)) and change.after>change.before then
+                corroborated=true
+            end
+        end
+        if not corroborated then
+            for _,signal in ipairs(signals) do
+                if signal=="weapon-ammo-related-change" then corroborated=true end
+            end
+        end
+    elseif kind=="switch" then
+        for _,signal in ipairs(signals) do
+            if signal=="weapon-selection-change" or signal=="inventory-related-value-change" then
+                corroborated=true
+            end
+        end
     elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="craft" then
         for _,signal in ipairs(signals) do
-            if signal=="inventory-related-value-change" then corroborated=true end
+            if signal=="inventory-related-value-change" or signal=="weapon-selection-change" then
+                corroborated=true
+            end
         end
     elseif kind=="hatch" then
         for _,signal in ipairs(signals) do
@@ -3332,6 +3560,436 @@ local function observeInteractionObject(obj, root, label)
     table.insert(watchConnections, connection)
 end
 
+WORKFLOW_HELPERS.inputThrottleAllowed = function(key,minInterval)
+    local now=os.clock()
+    local previous=inputObserverState.captureByKey[key]
+    if previous and now-previous<minInterval then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return false
+    end
+    inputObserverState.captureByKey[key]=now
+    return true
+end
+
+WORKFLOW_HELPERS.equippedToolSnapshot = function()
+    local character=player.Character
+    local result={count=0,names={},hasCombatTool=false}
+    if not character then return result end
+    for _,child in ipairs(character:GetChildren()) do
+        if child:IsA("Tool") then
+            local name=child.Name:sub(1,60)
+            result.names[#result.names+1]=name
+            local lower=name:lower()
+            if lower:find("gun",1,true) or lower:find("rifle",1,true)
+                or lower:find("pistol",1,true) or lower:find("shot",1,true)
+                or lower:find("sniper",1,true) or lower:find("smg",1,true)
+                or lower:find("blade",1,true) or lower:find("sword",1,true)
+                or lower:find("knife",1,true) then
+                result.hasCombatTool=true
+            end
+        end
+    end
+    table.sort(result.names)
+    result.count=#result.names
+    return result
+end
+
+WORKFLOW_HELPERS.inferInputAction = function(keyCode,inputType,toolSnapshot)
+    local keyName=tostring(keyCode and keyCode.Name or "")
+    if keyName=="R" then return "reload" end
+    if keyName=="Q" or keyName=="One" or keyName=="Two" or keyName=="Three"
+        or keyName=="Four" or keyName=="Five" or keyName=="Six" or keyName=="Seven"
+        or keyName=="Eight" or keyName=="Nine" or keyName=="Zero" then
+        return "switch"
+    end
+    if keyName=="Space" then return "jump" end
+    if keyName=="LeftShift" or keyName=="RightShift" then return "sprint" end
+    local inputName=tostring(inputType and inputType.Name or "")
+    if inputName=="MouseButton1" or inputName=="MouseButton2"
+        or keyName=="ButtonR2" or keyName=="ButtonL2" then
+        if toolSnapshot and toolSnapshot.count>0 then return "fire" end
+        return "pointer-activate"
+    end
+    return nil
+end
+
+WORKFLOW_HELPERS.inferInputFeature = function(action,toolSnapshot)
+    if action=="fire" or action=="reload" or action=="switch" then
+        return toolSnapshot and toolSnapshot.hasCombatTool and "combat" or "inventory"
+    end
+    if action=="jump" or action=="sprint" then return "movement" end
+    if action=="equip" or action=="unequip" then
+        return toolSnapshot and toolSnapshot.hasCombatTool and "combat" or "inventory"
+    end
+    return nil
+end
+
+WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
+    if not alive or not interactionObserveEnabled then return end
+    if type(path)~="string" or path=="" then return end
+    local activationClock=os.clock()
+    local sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000
+    autoEvidenceLastInteraction=activationClock
+    interactionEventCount=interactionEventCount+1
+    observerStats.inputEventsCaptured=observerStats.inputEventsCaptured+1
+    observerStats.callbacksFired=observerStats.callbacksFired+1
+    observerStats.lastCallbackAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    observerStats.lastEventPath=path:sub(1,180)
+    observerStats.lastInputEventAt=observerStats.lastCallbackAt
+    if featureCandidate then
+        attributedInteractionCount=attributedInteractionCount+1
+    else
+        unattributedInteractionCount=unattributedInteractionCount+1
+    end
+
+    local before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+    local beforeGui=(sourceObject and sourceObject:IsA("GuiObject"))
+        and EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject) or {}
+    local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local beforePosition=rootPart and rootPart.Position or nil
+    local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds,
+        "automatic-activity-window")
+    local transactionId=explicitRecording and explicitRecording.recordingId or (observationSequence+1)
+    local workflow={phase="input-observed",confidence="bounded-input-observation",
+        action=actionKind,featureCandidate=featureCandidate,
+        linkedSequence=nil,sourceAuthenticityVerified=false,
+        causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+
+    local historyItem={
+        path=path:sub(1,400),pathIdentity=nil,
+        featureCandidate=featureCandidate,attribution=featureCandidate and "input-context" or "unattributed-input",
+        controlType=controlType,actionKind=actionKind,
+        observedAt=observerStats.lastCallbackAt,sequence=observationSequence+1,
+        sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
+        transactionId=transactionId,
+        transactionOrder=explicitRecording and explicitRecording.order or nil,
+        transactionLinkSource=explicitRecording and explicitRecording.linkageSource or "singleton-input-event",
+        explicitWorkflowRecording=explicitRecording,
+        stateChangeCount=0,guiContext=EVIDENCE_HELPERS.interactionGuiContext(sourceObject or player),
+        workflow=workflow,guiRevealFollowup=nil,
+        controlMetadata=metadata,baselineSource="input-event-callback",
+        baselineTiming="input-event-callback",baselineAgeSeconds=nil,
+        preActivationBaselineAvailable=false,
+        evidenceLevel="interaction-observed", outcomeVerified=false
+    }
+    interactionHistory[#interactionHistory+1]=historyItem
+    if #interactionHistory>LIMITS.maxInteractionHistory then table.remove(interactionHistory,1) end
+
+    observationSequence=observationSequence+1
+    changeCount=changeCount+1
+    changeQueue[#changeQueue+1]={
+        path=path:sub(1,400),pathIdentity=nil,class="InputEvent",
+        featureCandidate=featureCandidate,featureMatchCount=featureCandidate and 1 or 0,
+        attribution=historyItem.attribution,
+        category="user-input",controlType=controlType,
+        controlMetadata=metadata,baselineSource=historyItem.baselineSource,
+        baselineTiming=historyItem.baselineTiming,
+        preActivationBaselineAvailable=false,
+        action="user-input",observedAt=historyItem.observedAt,
+        evidence="manual-user-input",sessionId=sessionId,
+        sessionElapsedSeconds=sessionElapsedSeconds,snapshotId=snapshotId,sequence=observationSequence,
+        transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
+        transactionLinkSource=historyItem.transactionLinkSource,
+        actionKind=actionKind
+    }
+
+    local seenStateKeys={}
+    local seenGuiKeys={}
+    for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+        pendingObservationEvents=pendingObservationEvents+1
+        task.delay(delaySeconds,function()
+            pendingObservationEvents=math.max(0,pendingObservationEvents-1)
+            if not alive then return end
+            local ok=pcall(function()
+                local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+                local guiChanges=(sourceObject and sourceObject:IsA("GuiObject"))
+                    and EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,
+                        EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject)) or {}
+                local changes={}
+                for key,value in pairs(before) do
+                    if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
+                        local identity=afterStateIdentities[key]
+                        changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                for key,value in pairs(after) do
+                    if before[key]==nil and #changes<LIMITS.maxStateChanges then
+                        local identity=afterStateIdentities[key]
+                        changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                for key,value in pairs(before) do
+                    if after[key]==nil and #changes<LIMITS.maxStateChanges then
+                        local identity=beforeStateIdentities[key]
+                        changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                local distance=nil
+                local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if beforePosition and currentRoot then
+                    distance=(currentRoot.Position-beforePosition).Magnitude
+                    distance=math.floor(distance*10+0.5)/10
+                end
+                local evidence=relevantActionEvidence(featureCandidate,workflow,changes)
+                local freshState={}
+                for _,change in ipairs(changes) do
+                    local identity=change.key.."|"..tostring(change.before).."|"..tostring(change.after).."|"..tostring(change.transition)
+                    if not seenStateKeys[identity] then
+                        seenStateKeys[identity]=true
+                        freshState[#freshState+1]=change
+                    end
+                end
+                local freshGui={}
+                for _,change in ipairs(guiChanges) do
+                    local identity=change.path.."|"..tostring(change.beforeVisible).."|"..tostring(change.afterVisible).."|"..tostring(change.transition)
+                    if not seenGuiKeys[identity] then
+                        seenGuiKeys[identity]=true
+                        freshGui[#freshGui+1]=change
+                    end
+                end
+                local transactionFresh={}
+                for _,change in ipairs(freshState) do
+                    local identity=tostring(transactionId).."|"..change.key.."|"..
+                        tostring(change.before).."|"..tostring(change.after).."|"..
+                        tostring(change.transition)
+                    if not transactionEvidenceSeen[identity] then
+                        transactionEvidenceSeen[identity]=true
+                        transactionEvidenceCount=transactionEvidenceCount+1
+                        transactionFresh[#transactionFresh+1]=change
+                    end
+                end
+                if transactionEvidenceCount>LIMITS.maxTransactionSignatures then
+                    transactionEvidenceSeen={}
+                    transactionEvidenceCount=0
+                end
+                workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
+                workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                local featureStateEvidence=featureConsistentStateEvidence(featureCandidate,transactionFresh)
+                local featureGuiEvidence=featureConsistentGuiEvidence(featureCandidate,freshGui)
+                if featureStateEvidence then historyItem.featureStateEvidence=featureStateEvidence end
+                if featureGuiEvidence then historyItem.featureGuiEvidence=featureGuiEvidence end
+                if (featureStateEvidence or featureGuiEvidence) and not historyItem.observableOutcomeCandidate then
+                    historyItem.observableOutcomeCandidate={feature=featureCandidate,
+                        classification="feature-consistent-observable-change",
+                        evidenceKinds={featureStateEvidence and "state-change" or "gui-change",
+                            featureStateEvidence and featureGuiEvidence and "gui-change" or nil},
+                        overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                        causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                    historyItem.outcomeVerified=false
+                    workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                end
+                local window={seconds=delaySeconds,stateChanges=freshState,
+                    stateChangeCount=#freshState,guiChanges=freshGui,
+                    guiChangeCount=#freshGui,travelDistanceStuds=distance,
+                    baselineSource="input-event-callback",baselineTiming="input-event-callback",
+                    preActivationBaselineAvailable=false,
+                    featureStateEvidence=featureStateEvidence,
+                    featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
+                historyItem.observationWindows=historyItem.observationWindows or {}
+                historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                historyItem.guiStateChanges=historyItem.guiStateChanges or {}
+                for _,g in ipairs(freshGui) do historyItem.guiStateChanges[#historyItem.guiStateChanges+1]=g end
+                historyItem.guiStateChangeCount=#historyItem.guiStateChanges
+                if #transactionFresh>0 then
+                    historyItem.evidenceLevel="temporal-state-change-observed"
+                    historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
+                    historyItem.stateChanges=historyItem.stateChanges or {}
+                    for _,change in ipairs(transactionFresh) do
+                        historyItem.stateChanges[#historyItem.stateChanges+1]=change
+                    end
+                    observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
+                end
+                if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
+                    historyItem.clientStateCorroborated=true
+                    workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
+                end
+                if #transactionFresh>0 or #freshGui>0 then
+                    changeCount=changeCount+1
+                    changeQueue[#changeQueue+1]={
+                        path=path:sub(1,400),class="InputEvent",category="input-observation-window",
+                        featureCandidate=featureCandidate,sequence=historyItem.sequence,
+                        baselineSource="input-event-callback",baselineTiming="input-event-callback",
+                        preActivationBaselineAvailable=false,
+                        observationWindowSeconds=delaySeconds,changes=transactionFresh,
+                        guiChanges=freshGui,travelDistanceStuds=distance,
+                        featureStateEvidence=featureStateEvidence,
+                        featureGuiEvidence=featureGuiEvidence,
+                        actionEvidence=evidence,causalVerification=false,
+                        sessionId=sessionId,snapshotId=snapshotId,
+                        actionKind=actionKind
+                    }
+                end
+                observerStats.inputEventWindowsCompleted=observerStats.inputEventWindowsCompleted+1
+                workflowStats.multiWindowSamples=workflowStats.multiWindowSamples+1
+            end)
+            if not ok then
+                observerStats.inputEventWindowFailures=observerStats.inputEventWindowFailures+1
+                workflowStats.observationFailures=workflowStats.observationFailures+1
+            end
+        end)
+    end
+end
+
+WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
+    if not alive then return end
+    if universalInputObserved[obj] then return end
+    if obj:IsA("Tool") then
+        universalInputObserved[obj]=true
+        local toolPath=watchPath(obj,root,label)
+        if not toolPath then return end
+        local function toolMetadata(stage)
+            local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+            return {
+                stage=stage,toolName=obj.Name:sub(1,80),
+                tooltip=tostring(obj.ToolTip or ""):sub(1,80),
+                equippedToolCount=snapshot.count,
+                equippedTools=snapshot.names,
+                combatToolContext=snapshot.hasCombatTool,
+                source="Tool."..stage,
+            }
+        end
+        local okEquip,connEquip=pcall(function()
+            return obj.Equipped:Connect(function()
+                if not alive or not interactionObserveEnabled then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(toolPath.."|equipped",0.2) then return end
+                observerStats.toolEquipsObserved=observerStats.toolEquipsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local feature=snapshot.hasCombatTool and "combat" or "inventory"
+                WORKFLOW_HELPERS.recordUniversalInputInteraction(toolPath..".Equipped","Tool.Equipped",
+                    "equip",toolMetadata("equipped"),feature,obj)
+            end)
+        end)
+        if okEquip then table.insert(watchConnections,connEquip) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okUnequip,connUnequip=pcall(function()
+            return obj.Unequipped:Connect(function()
+                if not alive or not interactionObserveEnabled then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(toolPath.."|unequipped",0.2) then return end
+                observerStats.toolUnequipsObserved=observerStats.toolUnequipsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local feature=snapshot.hasCombatTool and "combat" or "inventory"
+                WORKFLOW_HELPERS.recordUniversalInputInteraction(toolPath..".Unequipped","Tool.Unequipped",
+                    "unequip",toolMetadata("unequipped"),feature,obj)
+            end)
+        end)
+        if okUnequip then table.insert(watchConnections,connUnequip) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    elseif obj:IsA("Humanoid") then
+        universalInputObserved[obj]=true
+        local okRun,runConn=pcall(function()
+            return obj.Running:Connect(function(speed)
+                if not alive or not interactionObserveEnabled then return end
+                local moving=speed>=2
+                if inputObserverState.movementBaseline==moving then return end
+                inputObserverState.movementBaseline=moving
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-running-"..tostring(moving),0.35) then return end
+                observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
+                local stateTag=moving and "move-start" or "move-stop"
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Running","Humanoid.Running",
+                    stateTag,{speed=math.floor(speed*100+0.5)/100,
+                        equippedTools=snapshot.names,source="Humanoid.Running"},
+                    "movement",obj)
+            end)
+        end)
+        if okRun then table.insert(watchConnections,runConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okJump,jumpConn=pcall(function()
+            return obj.Jumping:Connect(function(active)
+                if not alive or not interactionObserveEnabled or not active then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-jump",0.45) then return end
+                observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Jumping","Humanoid.Jumping",
+                    "jump",{active=true,equippedTools=snapshot.names,source="Humanoid.Jumping"},
+                    "movement",obj)
+            end)
+        end)
+        if okJump then table.insert(watchConnections,jumpConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okAnim,animConn=pcall(function()
+            return obj.AnimationPlayed:Connect(function(track)
+                if not alive or not interactionObserveEnabled then return end
+                local animationId=track and track.Animation and tostring(track.Animation.AnimationId or "") or ""
+                if animationId=="" then return end
+                local key="animation:"..animationId:sub(1,80)
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(key,0.75) then return end
+                observerStats.animationEventsObserved=observerStats.animationEventsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local action=snapshot.hasCombatTool and "combat-animation" or "animation"
+                local feature=snapshot.hasCombatTool and "combat" or nil
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Animation","Humanoid.AnimationPlayed",
+                    action,{animationId=animationId:sub(1,80),source="Humanoid.AnimationPlayed",
+                        equippedTools=snapshot.names},feature,obj)
+            end)
+        end)
+        if okAnim then table.insert(watchConnections,animConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    end
+end
+
+WORKFLOW_HELPERS.startUniversalInputObservation = function()
+    if observerStats.inputBindingReady then return end
+    observerStats.inputBindingReady=true
+    local keyActions={
+        R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",
+        Four="switch",Five="switch",Six="switch",Seven="switch",Eight="switch",Nine="switch",
+        Zero="switch",Space="jump",LeftShift="sprint",RightShift="sprint",W="move",A="move",S="move",D="move",
+        ButtonR2="fire",ButtonL2="aim",ButtonA="jump",ButtonX="reload",ButtonY="switch"
+    }
+    local beganConnection=UserInputService.InputBegan:Connect(function(input,gameProcessed)
+        if not alive or not interactionObserveEnabled then return end
+        local toolSnapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+        local inputType=input.UserInputType
+        local keyCode=input.KeyCode
+        local keyName=tostring(keyCode and keyCode.Name or "")
+        local inputName=tostring(inputType and inputType.Name or "")
+        local action=keyActions[keyName] or WORKFLOW_HELPERS.inferInputAction(keyCode,inputType,toolSnapshot)
+        if not action then return end
+        if gameProcessed and action~="fire" and action~="reload" and action~="switch" then return end
+        local controlKey=("input:%s:%s"):format(inputName,keyName)
+        if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.1) then return end
+        inputObserverState.buttonsDown[inputName]=true
+        local feature=WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
+        local path=("LocalPlayer.Input.%s.%s"):format(inputName,keyName):sub(1,220)
+        WORKFLOW_HELPERS.recordUniversalInputInteraction(path,"InputBegan."..inputName,action,{
+            keyCode=keyName,inputType=inputName,gameProcessed=gameProcessed,
+            equippedTools=toolSnapshot.names,equippedToolCount=toolSnapshot.count,
+            combatToolContext=toolSnapshot.hasCombatTool,
+            userInputState=tostring(input.UserInputState),source="UserInputService.InputBegan"
+        },feature,nil)
+    end)
+    table.insert(watchConnections,beganConnection)
+
+    local endedConnection=UserInputService.InputEnded:Connect(function(input)
+        local inputName=tostring(input.UserInputType and input.UserInputType.Name or "")
+        inputObserverState.buttonsDown[inputName]=nil
+    end)
+    table.insert(watchConnections,endedConnection)
+
+    local changedConnection=UserInputService.InputChanged:Connect(function(input)
+        if not alive or not interactionObserveEnabled then return end
+        if input.UserInputType~=Enum.UserInputType.MouseMovement then return end
+        local now=os.clock()
+        local pointerDown=inputObserverState.buttonsDown.MouseButton1
+            or inputObserverState.buttonsDown.MouseButton2
+        if not pointerDown or now-inputObserverState.lastMovementCapture<0.75 then return end
+        local delta=input.Delta
+        local magnitude=math.floor(delta.Magnitude*10+0.5)/10
+        if magnitude<18 then return end
+        inputObserverState.lastMovementCapture=now
+        local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+        local feature=snapshot.hasCombatTool and "combat" or "movement"
+        local action=snapshot.hasCombatTool and "aim-adjust" or "pointer-adjust"
+        WORKFLOW_HELPERS.recordUniversalInputInteraction("LocalPlayer.Input.MouseMovement",
+            "InputChanged.MouseMovement",action,{
+                delta={x=math.floor(delta.X+0.5),y=math.floor(delta.Y+0.5),magnitude=magnitude},
+                pointerDown=true,equippedTools=snapshot.names,
+                combatToolContext=snapshot.hasCombatTool,
+                source="UserInputService.InputChanged"
+            },feature,nil)
+    end)
+    table.insert(watchConnections,changedConnection)
+end
+
 WORKFLOW_HELPERS.observeInteractionObject = observeInteractionObject
 WORKFLOW_HELPERS.backfillObservableOutcomeCandidates = backfillObservableOutcomeCandidates
 end
@@ -3482,6 +4140,7 @@ local function startWatching()
                     end
                     observeObject(obj, spec.root, spec.label)
                     WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -3498,6 +4157,7 @@ local function startWatching()
                     if not alive then return end
                     observeObject(obj, spec.root, spec.label)
                     WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
                     if i % 500 == 0 then task.wait() end
                 end
             end)
@@ -3515,6 +4175,7 @@ local function startWatching()
                     if not alive then return end
                     observeObject(obj, character, label)
                     WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, character, label)
                     if i % 300 == 0 then task.wait() end
                 end
             end
@@ -3524,6 +4185,7 @@ local function startWatching()
                     if not alive or not watchEnabled then return end
                     observeObject(obj, character, label)
                     WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, character, label)
                     local good, entry = pcall(watchEntry, obj, character, label)
                     if good and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -3535,6 +4197,8 @@ local function startWatching()
             table.insert(watchConnections, connection)
         end)
     end))
+
+    WORKFLOW_HELPERS.startUniversalInputObservation()
 
     task.spawn(function()
         while alive do
@@ -3577,7 +4241,7 @@ interactionToggle.MouseButton1Click:Connect(function()
     interactionToggle.BackgroundColor3 = interactionObserveEnabled
         and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
     status.Text = interactionObserveEnabled
-        and "Observer ON; perform gameplay actions, then press SCAN for fresh evidence"
+        and "Observer ON; gameplay inputs and interactions are captured automatically"
         or "Manual interaction observation paused"
 end)
 
@@ -3596,7 +4260,7 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         end
         if (workflowRecordingStats.started <= 0 and linkedWorkflowEvents <= 0
                 and workflowStats.completedCandidates <= 0) then
-            blockers[#blockers+1] = "explicit-workflow-recording-not-armed"
+            blockers[#blockers+1] = "no-workflow-recording-events-observed"
         end
         if linkedWorkflowEvents <= 0 and workflowStats.completedCandidates <= 0 then
             blockers[#blockers+1] = "no-linked-confirmation-events"
@@ -3626,6 +4290,8 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
         corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
         completedWorkflowCandidates = workflowStats.completedCandidates,
         explicitWorkflowRecordings = workflowRecordingStats.started,
+        automaticWorkflowRecordings = workflowRecordingStats.automaticStarts,
+        manualWorkflowRecordings = workflowRecordingStats.manualStarts,
         blockers = blockers,
         readinessImpact = "limitations-only",
         causalProof = false,
@@ -4004,7 +4670,7 @@ local function inspect(requestType, featureRequest)
                 workflowRecordingStats=workflowRecordingStats,
                 workflowRecordingLimits={maxDurationSeconds=LIMITS.workflowRecordingSeconds,
                     maxEvents=LIMITS.maxWorkflowRecordingEvents},
-                workflowRecordingPolicy="explicit-user-armed-ordering-only-not-causal-proof",
+                workflowRecordingPolicy="automatic-activity-window-with-optional-manual-override-not-causal-proof",
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
                 guiRevealFollowupPolicy="visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only",
@@ -4014,7 +4680,17 @@ local function inspect(requestType, featureRequest)
                 gameplayOutcomesVerified=0,
                 completedCandidateDefinition="feature-consistent observable change; causality and gameplay remain unverified",
                 actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
-                stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates"},
+                stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates","character humanoid/equipment/animation snapshots","bounded HUD numeric signals"},
+                inputObservationStats={captured=observerStats.inputEventsCaptured,
+                    dropped=observerStats.inputEventsDropped,
+                    windowsCompleted=observerStats.inputEventWindowsCompleted,
+                    windowFailures=observerStats.inputEventWindowFailures,
+                    toolEquipsObserved=observerStats.toolEquipsObserved,
+                    toolUnequipsObserved=observerStats.toolUnequipsObserved,
+                    movementEventsObserved=observerStats.movementEventsObserved,
+                    animationEventsObserved=observerStats.animationEventsObserved,
+                    inputBindingReady=observerStats.inputBindingReady,
+                    lastInputEventAt=observerStats.lastInputEventAt},
                 stateSnapshotCandidateCount=#stateSnapshotCandidates,
                 stateSnapshotMaxValues=LIMITS.maxStateSnapshotCandidates,
                 observationWindowsSeconds=OBSERVATION_WINDOWS,
@@ -4061,7 +4737,7 @@ local function inspect(requestType, featureRequest)
                 evidenceRules = {
                     controllerCandidates = "Name-based candidates only; no source inspection",
                     guiControls = "Visible client-side GUI hierarchy and button labels",
-                    interactions = "Manual interaction observer must be enabled separately",
+                    interactions = "Automatic GUI, tool, and input observation while inspector is active",
                     configuration = "Replicated ValueBase objects and safe attributes only",
                     serverLogic = "Not observable from this client scan"
                 },
@@ -4190,37 +4866,41 @@ autoEvidenceToggle.Parent = panel
 -- Keep evidence control below INTERACT and outside the report viewport.
 autoEvidenceToggle.ZIndex = 4
 workflowRecordToggle = create("TextButton", {
-    Name="WorkflowRecordToggle",Text="RECORD FLOW: OFF",
+    Name="WorkflowRecordToggle",Text="FLOW: AUTO-IDLE",
     Size=UDim2.fromOffset(120,26),Position=UDim2.fromOffset(380,201),
     TextSize=10,TextColor3=Color3.fromRGB(245,245,245),
     BackgroundColor3=Color3.fromRGB(85,85,105),ZIndex=4
 },panel)
 refreshWorkflowRecorder=function(reason)
     if workflowRecording.active then
-        workflowRecordToggle.Text="RECORD: "..workflowRecording.eventCount.."/"..LIMITS.maxWorkflowRecordingEvents
-        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(145,90,45)
+        local mode=workflowRecording.automatic and "AUTO" or "MANUAL"
+        workflowRecordToggle.Text=mode.." FLOW: "..workflowRecording.eventCount.."/"..LIMITS.maxWorkflowRecordingEvents
+        workflowRecordToggle.BackgroundColor3=workflowRecording.automatic
+            and Color3.fromRGB(90,120,55) or Color3.fromRGB(145,90,45)
         if reason=="started" then
-            status.Text="Workflow recording armed for 60 seconds or 8 interactions"
+            status.Text=workflowRecording.automatic
+                and "Workflow recording auto-armed from gameplay activity"
+                or "Workflow recording manually armed for this session"
         end
     else
-        workflowRecordToggle.Text="RECORD FLOW: OFF"
+        workflowRecordToggle.Text="FLOW: AUTO-IDLE"
         workflowRecordToggle.BackgroundColor3=Color3.fromRGB(85,85,105)
         if reason=="operator-stopped" then
-            status.Text="Workflow recording stopped; ordering recorded without causal proof"
+            status.Text="Workflow recording paused; auto mode resumes on next activity"
         elseif reason=="event-limit" then
-            status.Text="Workflow recording reached the 8-interaction limit"
+            status.Text="Workflow window reached 8 interactions; auto resumes on next activity"
         elseif reason=="duration-limit" then
-            status.Text="Workflow recording reached the 60-second limit"
+            status.Text="Workflow window reached 60 seconds; auto resumes on next activity"
         end
     end
 end
 workflowRecordToggle.MouseButton1Click:Connect(function()
     if workflowRecording.active then
         stopWorkflowRecording("operator-stopped")
-    elseif not interactionObserveEnabled or not observerStats.sweepCompleted then
-        status.Text="Workflow recording unavailable until interaction observer is ready"
+    elseif not interactionObserveEnabled then
+        status.Text="Workflow recording unavailable while observer is paused"
     else
-        startWorkflowRecording()
+        startWorkflowRecording("explicit-user-armed-recording")
     end
 end)
 
