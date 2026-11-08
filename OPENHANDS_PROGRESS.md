@@ -5,6 +5,61 @@
 
 
 
+## Update — 2026-11-08 — strict automatic executable gating + Bubble manifest-assisted compatibility
+
+- Implemented strict automatic-request enforcement end-to-end:
+  - `tools/assess_generation_readiness.py`
+    - automatic-request detection now parses raw request text and recognizes `automatically` phrasing;
+    - added robust automatic workflow counting for summarized workflow candidates (`executionMode == bounded-automatic` fallback).
+  - `tools/lycoles_generation_service.py`
+    - `delivery.executableWorkflow` now reports automatic requirement + automatic candidate counts;
+    - strict fail-closed gating now blocks automatic requests when only manual GUI activation is available.
+  - `tools/plan_generated_workflows.py`
+    - planning summary now includes `automaticExecutionReadyWorkflows` and `requestAlignedAutomaticExecutionReadyWorkflows`.
+  - `tools/receiver_generation_pipeline.py`
+    - summary now surfaces automatic execution requirement/candidate diagnostics.
+
+- Added manifest-assisted compatibility for Bubble wrapper artifacts:
+  - manifest mode now resolves `30.6.manifest-assisted-workflow.5` `sourceManifest` via sibling path, absolute path, or workspace-root fallback.
+  - previously failing Bubble wrapper ingestion now completes as expected in fail-closed manifest-only blocked state.
+
+- Added regression coverage:
+  - `tests/test_lycoles_generation_service.py`
+    - strict automatic request fails for manual-guided-only workflow,
+    - strict automatic request succeeds for request-aligned bounded-automatic workflow fixture,
+    - manifest-assisted `sourceManifest` compatibility path.
+  - `tests/test_receiver_generation_pipeline.py`
+    - strict automatic fail/pass behavior through receiver pipeline entrypoints.
+  - `tests/test_generation_readiness.py`
+    - asserts automatic-request-specific blocker in GUI-only combat evidence.
+
+- New strict package artifact for Potassium handoff:
+  - `potassium_artifacts/automatic_workflow_live_package/`
+    - `LycolesGeneratedUtility.lua`
+    - `LycolesGuidedWorkflow.lua`
+    - `generation-readiness.json`
+    - `release-manifest.json`
+    - `generation-job-result.json`
+    - `PotassiumLoader.template.lua`
+
+- Verified strict automatic generation run:
+  - command: `python3 tools/lycoles_generation_service.py run-job --evidence-kind parts_dir --evidence-path build/automatic_workflow_parts_fixture --requested-capability "Automatically train and open shop prompt" --require-executable --output-root build/automatic_execution_job`
+  - status: `succeeded`
+  - request status: `generated-bounded-subset`
+  - `automaticExecutionRequired: true`
+  - `requestAlignedAutomaticExecutionReadyWorkflowCandidates: 1`
+  - `manualGuiActivationRequired: false`
+  - `automaticActivationSupported: true`
+  - `requestAlignedExecutableWorkflowAvailable: true`
+
+Validation:
+- `python3 -m unittest tests.test_lycoles_generation_service tests.test_receiver_generation_pipeline tests.test_generation_readiness tests.test_generated_workflow_planning` → **71 passed**.
+- `python3 -m unittest tests.test_generate_script tests.test_build_release tests.test_generate_guided_workflow tests.test_controlled_guided_workflow` → **52 passed**.
+- `build/luau-0.744/luau-compile` succeeded for `potassium_artifacts/automatic_workflow_live_package/LycolesGeneratedUtility.lua` and `LycolesGuidedWorkflow.lua`.
+
+
+
+
 ## Update — 2026-11-08 — executable singleton workflow expansion + strict package generation checkpoint
 
 - Expanded executable workflow generation beyond multi-step-only linkage:

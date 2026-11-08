@@ -46,6 +46,14 @@ _COMBAT_REQUEST_TOKENS={"combat","attack","fight","fire","reload","weapon",
     "gun","rifle","pistol","shotgun","sniper","ammo","arsenal","switch","enemy"}
 _COMBAT_INPUT_ACTION_TOKENS={"fire","reload","switch","equip","unequip",
     "aim-adjust","combat-animation"}
+_AUTOMATIC_REQUEST_TOKENS={"auto","automate","automatic","automatically",
+    "autofarm","farm","loop","repeat","grind","afk"}
+
+
+def _request_requires_automatic_execution(request):
+    if not isinstance(request,str):return False
+    raw_tokens=set(re.findall(r"[a-z0-9]+",request.casefold())[:128])
+    return bool(raw_tokens&_AUTOMATIC_REQUEST_TOKENS)
 
 
 def _token_forms(token):
@@ -647,9 +655,20 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
     )
     workflow_candidates=(workflow_selection.get("candidates",[])
         if isinstance(workflow_selection,dict) and workflow_selection.get("available") is True else [])
+
+    def _candidate_auto(item):
+        return item.get("automaticallyExecutable") is True or item.get("executionMode")=="bounded-automatic"
+
     execution_ready_workflows=sum(item.get("executionReady") is True for item in workflow_candidates)
+    automatic_execution_ready_workflows=sum(
+        item.get("executionReady") is True and _candidate_auto(item)
+        for item in workflow_candidates)
     request_aligned_workflows=sum(item.get("executionReady") is True and bool(
         item.get("matchedTerms")) for item in workflow_candidates)
+    request_aligned_automatic_workflows=sum(
+        item.get("executionReady") is True and _candidate_auto(item)
+        and bool(item.get("matchedTerms")) for item in workflow_candidates)
+    automatic_execution_required=_request_requires_automatic_execution(request)
     request_aligned_review_only_gui=review_only_gui["requestAlignedCandidates"]
     if request is None:
         request_status="no-capability-requested"
@@ -672,6 +691,10 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         if meaningful_feature_matches==0 and not combat_action_evidence:
             blockers.append("no_meaningful_gameplay_feature_matches")
         if execution_ready_workflows==0:blockers.append("no_execution_ready_workflow_candidates")
+        if automatic_execution_required and automatic_execution_ready_workflows==0:
+            blockers.append("no_automatic_execution_ready_workflow_candidates")
+        if automatic_execution_required and request_aligned_automatic_workflows==0:
+            blockers.append("no_request_aligned_automatic_execution_ready_workflow_candidates")
         if (not matched_generated and request_aligned_review_only_gui>0):
             blockers.append("request_aligned_gui_transition_outcomes_without_scalar_contract")
         if request_status=="unsupported-by-current-evidence":
@@ -685,14 +708,21 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "matchSignalsBounded":True},
         "workflowEvidence":{"available":workflow_selection["available"],
             "planningStatus":workflow_selection.get("planningDiagnostics",{}).get("status"),
+            "automaticExecutionRequired":automatic_execution_required,
             "executionReadyCandidates":execution_ready_workflows,
+            "automaticExecutionReadyCandidates":automatic_execution_ready_workflows,
             "requestAlignedExecutionReadyCandidates":request_aligned_workflows,
+            "requestAlignedAutomaticExecutionReadyCandidates":request_aligned_automatic_workflows,
             "reviewOnlyGuiTransitionCandidates":review_only_gui["totalCandidates"],
             "requestAlignedReviewOnlyGuiTransitionCandidates":request_aligned_review_only_gui,
             "requestAlignedReviewOnlyGuiTransitionPaths":review_only_gui["requestAlignedPaths"],
             "selectedCandidateId":workflow_selection.get("selectedCandidateId"),
             "selectedCandidateRequestAligned":bool(workflow_target and _workflow_request_aligned(
                 workflow_target,request)) if request is not None else False,
+            "selectedCandidateAutomaticallyExecutable":(
+                bool(workflow_target.get("automaticallyExecutable"))
+                or workflow_target.get("executionMode")=="bounded-automatic"
+            ) if isinstance(workflow_target,dict) else False,
             "temporalCorrelationOnly":True},
         "generatedEvidence":{"generatedCapabilityIds":generated_ids,
             "matchedGeneratedCapabilityIds":list(matched_generated),
@@ -703,7 +733,10 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "matchedSystems":len(gameplay_systems),
             "matchedObservedActions":len(gameplay_actions),
             "matchedResources":len(gameplay_resources),
+            "automaticExecutionRequired":automatic_execution_required,
+            "automaticExecutionReadyWorkflows":automatic_execution_ready_workflows,
             "requestAlignedExecutionReadyWorkflows":request_aligned_workflows,
+            "requestAlignedAutomaticExecutionReadyWorkflows":request_aligned_automatic_workflows,
             "requestAlignedReviewOnlyGuiTransitions":request_aligned_review_only_gui,
             "blockers":len(blockers)},
         "nameMatchingSufficientForImplementation":False,

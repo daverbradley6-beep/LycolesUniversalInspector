@@ -157,6 +157,118 @@ def make_workflow_ready_parts(directory, request="Complete observed shop flow", 
     (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
     (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
 
+
+
+def make_automatic_workflow_ready_parts(directory, request="Automatically train and open shop prompt", scan_id="receiver_pipeline_auto_scan"):
+    scan = {
+        "scanId": scan_id,
+        "placeId": 3623096087,
+        "partCount": 2,
+        "version": "10.0",
+        "objects": [],
+    }
+    one = dict(
+        scan,
+        partIndex=1,
+        scanStats={"recorded": 3, "complete": True},
+        featureEvidence={"training": {}, "shops": {}},
+        featureRequest=request,
+        objects=[
+            {
+                "path": "LocalPlayer.Backpack.Sword",
+                "class": "Tool",
+                "scanOrdinal": 1,
+                "interaction": {
+                    "toolTip": "Train",
+                    "requiresHandle": True,
+                    "canBeDropped": False,
+                    "enabled": True,
+                    "manualActivationOnly": False,
+                },
+            },
+            {
+                "path": "Workspace.Shop.Door.Prompt",
+                "class": "ProximityPrompt",
+                "scanOrdinal": 2,
+                "interaction": {
+                    "actionText": "Open",
+                    "objectText": "Shop Door",
+                    "holdDuration": 0,
+                    "maxActivationDistance": 10,
+                },
+            },
+        ],
+    )
+    tool_step = {
+        "featureCandidate": "training",
+        "path": "LocalPlayer.Backpack.Sword",
+        "pathIdentity": [
+            {"name": "LocalPlayer", "className": "Player", "ordinal": 1},
+            {"name": "Backpack", "className": "Backpack", "ordinal": 1},
+            {"name": "Sword", "className": "Tool", "ordinal": 1},
+        ],
+        "controlType": "Tool.Activated",
+        "transactionId": "auto-shop-training",
+        "sequence": 1,
+        "controlMetadata": {
+            "tooltip": "Train",
+            "requiresHandle": True,
+            "canBeDropped": False,
+            "enabled": True,
+            "manualActivationOnly": False,
+        },
+        "stateChanges": [{
+            "key": "Data.TrainingProgress",
+            "before": 1,
+            "after": 2,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "TrainingProgress", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    prompt_step = {
+        "featureCandidate": "shops",
+        "path": "Workspace.Shop.Door.Prompt",
+        "pathIdentity": [
+            {"name": "Workspace", "className": "Workspace", "ordinal": 1},
+            {"name": "Shop", "className": "Model", "ordinal": 1},
+            {"name": "Door", "className": "Part", "ordinal": 1},
+            {"name": "Prompt", "className": "ProximityPrompt", "ordinal": 1},
+        ],
+        "controlType": "ProximityPrompt.Triggered",
+        "transactionId": "auto-shop-training",
+        "sequence": 2,
+        "controlMetadata": {
+            "actionText": "Open",
+            "objectText": "Shop Door",
+            "enabled": True,
+            "holdDuration": 0,
+            "maxActivationDistance": 10,
+            "anchorPath": "Workspace.Shop.Door",
+            "anchorPosition": {"x": 1, "y": 2, "z": 3},
+        },
+        "stateChanges": [{
+            "key": "Data.ShopOpened",
+            "before": 0,
+            "after": 1,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopOpened", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    two = dict(
+        scan,
+        partIndex=2,
+        objects=[{"path": "Workspace.Shop.Door", "class": "Part", "scanOrdinal": 3}],
+        interactionHistoryChunk=[tool_step, prompt_step],
+    )
+    (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
+    (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
 def make_live_observation_export(path, baseline_scan_id="receiver_pipeline_scan"):
     payload = {
         "schemaVersion": "30.6.live-observation-export.1",
@@ -260,6 +372,41 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 (pathlib.Path(result["outputDir"]) / "evidence-overlay-provenance.json").read_text(encoding="utf-8")
             )
             self.assertEqual(overlay_provenance["overlays"][0]["scanId"], "live-observation-receiver-1")
+
+    def test_generate_from_parts_require_executable_blocks_manual_guided_subset_for_automatic_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_workflow_ready_parts(parts, request="Automatically complete observed shop flow")
+
+            with self.assertRaisesRegex(ValueError, "Executable workflow required but unavailable"):
+                MODULE.generate_from_parts(
+                    parts_dir=parts,
+                    output_root=root / "output",
+                    requested_capability="Automatically complete observed shop flow",
+                    require_executable=True,
+                )
+
+    def test_generate_from_parts_require_executable_succeeds_for_automatic_workflow_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_automatic_workflow_ready_parts(parts)
+
+            result = MODULE.generate_from_parts(
+                parts_dir=parts,
+                output_root=root / "output",
+                requested_capability="Automatically train and open shop prompt",
+                require_executable=True,
+            )
+            summary = MODULE.summarize_generation_result(result)
+            self.assertEqual(summary["executableLogic"]["requestExecutableStatus"], "request-executable-ready")
+            self.assertTrue(summary["executableLogic"]["automaticExecutionRequired"])
+            self.assertGreaterEqual(summary["executableLogic"]["requestAlignedAutomaticExecutionReadyWorkflows"], 1)
+            self.assertGreaterEqual(summary["executableLogic"]["automaticExecutionReadyWorkflowCandidates"], 1)
+            self.assertEqual(summary["observationalOnly"], [])
 
     def test_summarize_generation_result_flags_observational_only_when_not_ready(self):
         with tempfile.TemporaryDirectory() as tmp:

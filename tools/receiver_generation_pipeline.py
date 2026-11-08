@@ -158,14 +158,17 @@ def summarize_generation_result(result: dict[str, Any]) -> dict[str, Any]:
         "executableLogic": {
             "requestStatus": request.get("status"),
             "requestImplementationReady": request.get("implementationReady") is True,
+            "automaticExecutionRequired": executable.get("automaticExecutionRequired") is True,
             "generatedCapabilityIds": capability_ids,
             "requestMatchedGeneratedCapabilityIds": generated_evidence.get("matchedGeneratedCapabilityIds")
             if isinstance(generated_evidence.get("matchedGeneratedCapabilityIds"), list)
             else [],
             "requestAlignedExecutionReadyWorkflows": workflow.get("requestAlignedExecutionReadyCandidates", 0),
+            "requestAlignedAutomaticExecutionReadyWorkflows": workflow.get("requestAlignedAutomaticExecutionReadyCandidates", 0),
             "reviewOnlyGuiTransitionCandidates": workflow.get("reviewOnlyGuiTransitionCandidates", 0),
             "requestExecutableStatus": "request-executable-ready" if executable.get("requestAlignedExecutableWorkflowAvailable") is True else "request-executable-unavailable",
             "executionReadyWorkflowCandidates": executable.get("executionReadyWorkflowCandidates", 0),
+            "automaticExecutionReadyWorkflowCandidates": executable.get("automaticExecutionReadyWorkflowCandidates", 0),
             "guidedWorkflowScriptGenerated": executable.get("guidedWorkflowScriptGenerated") is True,
             "selectedWorkflowCandidateId": executable.get("selectedWorkflowCandidateId"),
         },

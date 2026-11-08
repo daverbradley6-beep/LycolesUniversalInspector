@@ -1,0 +1,369 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "discoveryOnlyCapabilities": [
+    {
+      "candidateCount": 1,
+      "family": "world-interaction",
+      "observedCount": 1,
+      "reason": "Names and observed activation do not establish a generic replay operation.",
+      "replayContractAvailable": false
+    }
+  ],
+  "generatedCapabilities": [
+    {
+      "actionOutcomeVerified": false,
+      "attemptLimit": 25,
+      "automaticMovement": true,
+      "boundedRepeat": true,
+      "causalityProven": false,
+      "classification": "generated-evidence-bounded-trial",
+      "commands": [
+        "interaction",
+        "interactionstart",
+        "interactionstop",
+        "interactions"
+      ],
+      "expectedChange": "increased",
+      "failureLimit": 3,
+      "fullGameplayMechanicImplemented": false,
+      "gameplayVerified": false,
+      "id": "prompt-interaction-trial",
+      "kind": "proximity-prompt-trial",
+      "observationBaseline": {
+        "activationCallbackEvents": 0,
+        "causalityProven": false,
+        "classification": "timing-unknown",
+        "events": 1,
+        "gameplayVerified": false,
+        "possibleSynchronousLoss": true,
+        "preActivationEvents": 0,
+        "readinessImpact": "limitations-only",
+        "runtimeVerified": false,
+        "unknownTimingEvents": 1
+      },
+      "operatorStartRequired": true,
+      "runtimeVerified": false,
+      "selectedOutcomeKey": "Data.ShopOpened",
+      "targetFeature": "shops",
+      "targetLabel": "Shop Door",
+      "targetPath": "Workspace.Shop.Door.Prompt"
+    },
+    {
+      "actionOutcomeVerified": false,
+      "attemptLimit": 25,
+      "automaticMovement": false,
+      "boundedEquip": true,
+      "boundedRepeat": true,
+      "causalityProven": false,
+      "classification": "generated-evidence-bounded-trial",
+      "commands": [
+        "interaction",
+        "interactionstart",
+        "interactionstop",
+        "interactions"
+      ],
+      "expectedChange": "increased",
+      "failureLimit": 3,
+      "fullGameplayMechanicImplemented": false,
+      "gameplayVerified": false,
+      "id": "tool-activation-trial",
+      "kind": "official-tool-activation-trial",
+      "observationBaseline": {
+        "activationCallbackEvents": 0,
+        "causalityProven": false,
+        "classification": "timing-unknown",
+        "events": 1,
+        "gameplayVerified": false,
+        "possibleSynchronousLoss": true,
+        "preActivationEvents": 0,
+        "readinessImpact": "limitations-only",
+        "runtimeVerified": false,
+        "unknownTimingEvents": 1
+      },
+      "officialActivation": true,
+      "operatorStartRequired": true,
+      "runtimeVerified": false,
+      "selectedOutcomeKey": "Data.TrainingProgress",
+      "targetFeature": "training",
+      "targetLabel": "Sword",
+      "targetPath": "LocalPlayer.Backpack.Sword"
+    },
+    {
+      "actionOutcomeVerified": false,
+      "automaticallyExecutable": true,
+      "candidateId": "c61922a1b15c979e64f8",
+      "causalityProven": false,
+      "classification": "generated-evidence-bounded-workflow-trial",
+      "executionMode": "bounded-automatic",
+      "fullGameplayMechanicImplemented": false,
+      "gameplayVerified": false,
+      "id": "linked-gameplay-workflow-trial",
+      "kind": "mixed-action-workflow-trial",
+      "manualGuiActivationRequired": false,
+      "observationBaseline": {
+        "activationCallbackSteps": 0,
+        "causalityProven": false,
+        "classification": "timing-unknown",
+        "gameplayVerified": false,
+        "possibleSynchronousLoss": true,
+        "preActivationSteps": 0,
+        "readinessImpact": "limitations-only",
+        "runtimeVerified": false,
+        "steps": 2,
+        "unknownTimingSteps": 2
+      },
+      "operatorStartRequired": true,
+      "requestMatchScore": 11,
+      "requestMatchedTerms": [
+        "prompt",
+        "shop",
+        "train"
+      ],
+      "runtimeVerified": false,
+      "stepCount": 2,
+      "stepKinds": [
+        "official-tool-activation-trial",
+        "proximity-prompt-trial"
+      ],
+      "stopOnFirstUnobservedOutcome": true,
+      "targetFeatures": [
+        "shops",
+        "training"
+      ],
+      "targetPaths": [
+        "LocalPlayer.Backpack.Sword",
+        "Workspace.Shop.Door.Prompt"
+      ],
+      "transactionId": "auto-shop-training"
+    }
+  ],
+  "guidedWorkflowFeedbackCorrelation": {
+    "available": false,
+    "claims": {
+      "actionOutcomesVerified": false,
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "runtimeVerified": false,
+      "serverAuthorityVerified": false,
+      "sourceAuthenticityVerified": false
+    },
+    "readinessImpact": "none",
+    "reason": "No digest-bound guided feedback was supplied",
+    "workflowCandidates": 1
+  },
+  "interactionObservationCoverage": {
+    "available": false,
+    "causalityProven": false,
+    "classification": "unavailable-legacy",
+    "evidenceLossPossible": null,
+    "gameplayVerified": false,
+    "limitations": [
+      "interaction baseline and delayed-window accounting are unavailable"
+    ],
+    "readinessImpact": "limitations-only",
+    "runtimeVerified": false
+  },
+  "limitations": [
+    "Interaction baseline/window coverage is unavailable for this legacy evidence",
+    "Generation readiness describes emitted code, not successful gameplay",
+    "Prompt and Tool outcomes remain temporal correlations without causal proof",
+    "Executor-provided prompt activation is checked only at runtime",
+    "Linked workflow order and state continuity do not prove cross-step gameplay causality",
+    "Generated mixed workflows stop when a selected client-visible outcome is not observed",
+    "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
+    "Guided GUI trials highlight exact controls but require normal user activation because GuiButton has no public automatic Activate method",
+    "Repeated guided feedback reports client-observed correlation only and cannot establish causality or implementation readiness",
+    "Remaining generic candidates stay unavailable without exact action contracts"
+  ],
+  "placeId": 3623096087,
+  "request": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "fullRequestImplemented": false,
+    "gameplayVerified": false,
+    "generatedSubsetAvailable": true,
+    "implementationReady": false,
+    "matchedGeneratedCapabilityIds": [
+      "prompt-interaction-trial",
+      "linked-gameplay-workflow-trial"
+    ],
+    "request": "Automatically train and open shop prompt",
+    "runtimeVerified": false,
+    "status": "generated-bounded-subset",
+    "supportedSubset": [
+      "select one exact observed prompt target",
+      "move the local character to its observed anchor",
+      "run the exact observed linked action order as one bounded trial",
+      "check each exact target and prerequisite snapshot before activation",
+      "stop on the first unavailable target, prerequisite drift, activation failure, or unobserved outcome",
+      "run an operator-started bounded repeat trial",
+      "observe one selected client-visible scalar direction",
+      "stop cleanly after request, close, three uncorroborated attempts, or 25 total attempts"
+    ]
+  },
+  "requestFeatureReadiness": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "explicitBlockers": [
+      "discovery-only:world-interaction",
+      "request-assessment:clean_stop_behavior",
+      "request-assessment:live_failure_validation",
+      "request-assessment:observed_interaction_evidence",
+      "request-assessment:permitted_action_contract"
+    ],
+    "featureEvidence": {
+      "matchSignalsBounded": true,
+      "matchedFeatures": [
+        {
+          "evidenceClassification": "discovered-no-interaction-evidence",
+          "feature": "shops",
+          "featureGuiCorrelations": 0,
+          "featureStateCorrelations": 0,
+          "gameplayPriorityScore": 22,
+          "implementationReady": false,
+          "interactionEvents": 1,
+          "matchedTerms": [
+            "shop"
+          ],
+          "observableOutcomeCandidates": 0,
+          "status": "discovered",
+          "tokenEvidenceOnly": true
+        },
+        {
+          "evidenceClassification": "discovered-no-interaction-evidence",
+          "feature": "training",
+          "featureGuiCorrelations": 0,
+          "featureStateCorrelations": 0,
+          "gameplayPriorityScore": 2,
+          "implementationReady": false,
+          "interactionEvents": 1,
+          "matchedTerms": [
+            "train"
+          ],
+          "observableOutcomeCandidates": 0,
+          "status": "discovered",
+          "tokenEvidenceOnly": true
+        }
+      ],
+      "omittedMatches": 0
+    },
+    "gameplayVerified": false,
+    "generatedEvidence": {
+      "generatedCapabilityCount": 3,
+      "generatedCapabilityIds": [
+        "prompt-interaction-trial",
+        "tool-activation-trial",
+        "linked-gameplay-workflow-trial"
+      ],
+      "matchedGeneratedCapabilityIds": [
+        "prompt-interaction-trial",
+        "linked-gameplay-workflow-trial"
+      ]
+    },
+    "implementationReady": false,
+    "nameMatchingSufficientForImplementation": false,
+    "request": "Automatically train and open shop prompt",
+    "requestedTerms": [
+      "open",
+      "prompt",
+      "shop",
+      "train"
+    ],
+    "runtimeVerified": false,
+    "schemaVersion": "113.request-feature-readiness.1",
+    "status": "bounded-generated-subset",
+    "summary": {
+      "automaticExecutionReadyWorkflows": 1,
+      "automaticExecutionRequired": true,
+      "blockers": 5,
+      "matchedFeatures": 2,
+      "matchedObservedActions": 1,
+      "matchedResources": 0,
+      "matchedSystems": 2,
+      "meaningfulGameplayFeatureMatches": 2,
+      "requestAlignedAutomaticExecutionReadyWorkflows": 1,
+      "requestAlignedExecutionReadyWorkflows": 1,
+      "requestAlignedReviewOnlyGuiTransitions": 0
+    },
+    "temporalCorrelationSufficientForImplementation": false,
+    "workflowEvidence": {
+      "automaticExecutionReadyCandidates": 1,
+      "automaticExecutionRequired": true,
+      "available": true,
+      "executionReadyCandidates": 1,
+      "planningStatus": "execution-ready-candidates",
+      "requestAlignedAutomaticExecutionReadyCandidates": 1,
+      "requestAlignedExecutionReadyCandidates": 1,
+      "requestAlignedReviewOnlyGuiTransitionCandidates": 0,
+      "requestAlignedReviewOnlyGuiTransitionPaths": [],
+      "reviewOnlyGuiTransitionCandidates": 0,
+      "selectedCandidateAutomaticallyExecutable": true,
+      "selectedCandidateId": "c61922a1b15c979e64f8",
+      "selectedCandidateRequestAligned": true,
+      "temporalCorrelationOnly": true
+    }
+  },
+  "scanId": "automatic_workflow_live_package",
+  "schemaVersion": "113.generation-readiness.1",
+  "summary": {
+    "discoveryOnlyCapabilityFamilies": 1,
+    "generatedCapabilities": 3,
+    "guidedFeedbackSessions": 0,
+    "guidedFeedbackStatusConflicts": 0,
+    "requestFeatureBlockers": 5,
+    "requestFeatureMatches": 2,
+    "requestMatchedGeneratedCapabilities": 2,
+    "unavailableRequestedBehavior": 0
+  },
+  "unavailableRequestedBehavior": [],
+  "workflowSelection": {
+    "available": true,
+    "candidates": [
+      {
+        "candidateId": "c61922a1b15c979e64f8",
+        "executionMode": "bounded-automatic",
+        "executionReady": true,
+        "matchedTerms": [
+          "prompt",
+          "shop",
+          "train"
+        ],
+        "requestScore": 11,
+        "selected": true,
+        "selectionReason": "selected-highest-ranked-execution-ready-candidate"
+      }
+    ],
+    "omittedCandidates": 0,
+    "planningDiagnostics": {
+      "causalityProven": false,
+      "executionReadyWorkflows": 1,
+      "explicitRecordingTransactions": 0,
+      "gameplayVerified": false,
+      "linkedTransactions": 1,
+      "multiEventTransactions": 1,
+      "partiallyMappedTransactions": 0,
+      "readinessImpact": "limitations-only",
+      "requestAlignedReviewOnlyLinkedCandidates": 0,
+      "reviewOnlyLinkedCandidates": 0,
+      "runtimeVerified": false,
+      "selectedReviewOnlyCandidateId": null,
+      "singletonTransactions": 0,
+      "status": "execution-ready-candidates",
+      "transactionGroups": 1,
+      "transactionsOverStepBound": 0,
+      "transactionsWithInsufficientGenerationReadySteps": 0,
+      "unlinkedEvents": 0,
+      "workflowCandidates": 1
+    },
+    "selectedCandidateId": "c61922a1b15c979e64f8",
+    "shownCandidates": 1,
+    "totalCandidates": 1
+  }
+}

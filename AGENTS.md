@@ -339,3 +339,36 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - Result included request-aligned executable readiness with selected candidate id `e0207a259f6fae8ed60a`.
   - Tracked artifact bundle committed under `potassium_artifacts/workflow_ready_live_package/` for commit-pinned Potassium loading.
 
+
+## Update — 2026-11-08 — strict automatic executable gating + manifest-assisted compatibility
+
+- `tools/assess_generation_readiness.py`
+  - Automatic-request detection now parses raw request text (not stop-word-filtered request tokens), including `automatically`.
+  - `requestFeatureReadiness.workflowEvidence` now reports automatic execution requirement/candidate counts correctly for both full and summarized workflow candidate payloads.
+  - Automatic execution-ready counting now treats `executionMode == "bounded-automatic"` as automatically executable when `automaticallyExecutable` is absent in summarized candidates.
+- `tools/lycoles_generation_service.py`
+  - `delivery.executableWorkflow` now includes strict automatic-execution diagnostics:
+    - `automaticExecutionRequired`
+    - `automaticExecutionReadyWorkflowCandidates`
+    - `requestAlignedAutomaticExecutionReadyWorkflowCandidates`
+  - Strict fail-closed behavior for automatic requests now blocks when request-aligned automatic candidates are missing, manual GUI activation is required, or automatic activation is unavailable.
+  - Manifest mode now supports `30.6.manifest-assisted-workflow.5` wrappers by resolving `sourceManifest` from sibling path, absolute path, or workspace-root fallback.
+- `tools/plan_generated_workflows.py`
+  - Planning summary now includes:
+    - `automaticExecutionReadyWorkflows`
+    - `requestAlignedAutomaticExecutionReadyWorkflows`
+- `tools/receiver_generation_pipeline.py`
+  - Summary executable logic now surfaces automatic execution requirement and automatic candidate counts.
+- New regression coverage:
+  - `tests/test_lycoles_generation_service.py`
+    - strict automatic request blocks manual-guided workflows under `require_executable`
+    - strict automatic request succeeds when request-aligned bounded-automatic workflow exists
+    - manifest-assisted wrapper compatibility path through `sourceManifest`
+  - `tests/test_receiver_generation_pipeline.py`
+    - strict automatic request block/success behavior under pipeline entrypoints
+  - `tests/test_generation_readiness.py`
+    - asserts automatic-request blocker in GUI-only combat evidence case
+- New strict automatic package artifact:
+  - `potassium_artifacts/automatic_workflow_live_package/`
+  - Includes generated utility/guided scripts, readiness/release manifests, generation result, and `PotassiumLoader.template.lua`.
+

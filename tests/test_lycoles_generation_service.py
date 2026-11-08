@@ -162,6 +162,123 @@ def make_workflow_ready_parts(directory, request="Complete observed shop flow", 
 
 
 
+def make_automatic_workflow_ready_parts(directory, request="Automatically train and open shop prompt", scan_id="workflow_auto_scan"):
+    scan = {
+        "scanId": scan_id,
+        "placeId": 3623096087,
+        "partCount": 2,
+        "version": "10.0",
+        "objects": [],
+    }
+    scan_stats = {"recorded": 3, "complete": True}
+    one = dict(
+        scan,
+        partIndex=1,
+        scanStats=scan_stats,
+        featureEvidence={"training": {}, "shops": {}},
+        featureRequest=request,
+        objects=[
+            {
+                "path": "LocalPlayer.Backpack.Sword",
+                "class": "Tool",
+                "scanOrdinal": 1,
+                "interaction": {
+                    "toolTip": "Train",
+                    "requiresHandle": True,
+                    "canBeDropped": False,
+                    "enabled": True,
+                    "manualActivationOnly": False,
+                },
+            },
+            {
+                "path": "Workspace.Shop.Door.Prompt",
+                "class": "ProximityPrompt",
+                "scanOrdinal": 2,
+                "interaction": {
+                    "actionText": "Open",
+                    "objectText": "Shop Door",
+                    "holdDuration": 0,
+                    "maxActivationDistance": 10,
+                },
+            },
+        ],
+    )
+
+    tool_step = {
+        "featureCandidate": "training",
+        "path": "LocalPlayer.Backpack.Sword",
+        "pathIdentity": [
+            {"name": "LocalPlayer", "className": "Player", "ordinal": 1},
+            {"name": "Backpack", "className": "Backpack", "ordinal": 1},
+            {"name": "Sword", "className": "Tool", "ordinal": 1},
+        ],
+        "controlType": "Tool.Activated",
+        "transactionId": "auto-shop-training",
+        "sequence": 1,
+        "controlMetadata": {
+            "tooltip": "Train",
+            "requiresHandle": True,
+            "canBeDropped": False,
+            "enabled": True,
+            "manualActivationOnly": False,
+        },
+        "stateChanges": [{
+            "key": "Data.TrainingProgress",
+            "before": 1,
+            "after": 2,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "TrainingProgress", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    prompt_step = {
+        "featureCandidate": "shops",
+        "path": "Workspace.Shop.Door.Prompt",
+        "pathIdentity": [
+            {"name": "Workspace", "className": "Workspace", "ordinal": 1},
+            {"name": "Shop", "className": "Model", "ordinal": 1},
+            {"name": "Door", "className": "Part", "ordinal": 1},
+            {"name": "Prompt", "className": "ProximityPrompt", "ordinal": 1},
+        ],
+        "controlType": "ProximityPrompt.Triggered",
+        "transactionId": "auto-shop-training",
+        "sequence": 2,
+        "controlMetadata": {
+            "actionText": "Open",
+            "objectText": "Shop Door",
+            "enabled": True,
+            "holdDuration": 0,
+            "maxActivationDistance": 10,
+            "anchorPath": "Workspace.Shop.Door",
+            "anchorPosition": {"x": 1, "y": 2, "z": 3},
+        },
+        "stateChanges": [{
+            "key": "Data.ShopOpened",
+            "before": 0,
+            "after": 1,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopOpened", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+
+    two = dict(
+        scan,
+        partIndex=2,
+        objects=[
+            {"path": "Workspace.Shop.Door", "class": "Part", "scanOrdinal": 3},
+        ],
+        interactionHistoryChunk=[tool_step, prompt_step],
+    )
+    (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
+    (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
+
+
 
 def make_live_observation_export(path, scan_id="live-observation-service-1"):
     payload = {
@@ -213,6 +330,8 @@ def make_live_observation_export(path, scan_id="live-observation-service-1"):
             }
         ],
     }
+
+
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 class LycolesGenerationServiceTests(unittest.TestCase):
@@ -231,6 +350,37 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertEqual(result["analysis"]["mode"], "manifest-only")
             self.assertIn("full_multipart_report_unavailable", result["analysis"]["explicitBlockers"])
             self.assertIsNone(result["delivery"]["generatedResultPath"])
+
+    def test_manifest_assisted_workflow_uses_source_manifest_for_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source_manifest = root / "raw-manifest.json"
+            source_manifest.write_text(FIXTURE_MANIFEST.read_text(encoding="utf-8"), encoding="utf-8")
+            assisted = root / "manifest-assisted-workflow.json"
+            assisted.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "30.6.manifest-assisted-workflow.5",
+                        "sourceManifest": source_manifest.name,
+                        "placeId": 85896571713843,
+                        "scriptGenerationReady": False,
+                        "targets": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="manifest",
+                evidence_path=assisted,
+                requested_capability="Automatically hatch eggs",
+            )
+            result = service.run_sync(request)
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(result["analysis"]["mode"], "manifest-only")
+            self.assertEqual(result["generationStatus"], "blocked")
+
             self.assertFalse(result["claims"]["runtimeVerified"])
 
     def test_parts_job_generates_display_only_result(self):
@@ -328,6 +478,57 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertIn("StopGuidedWorkflow", source)
             self.assertIn("startButton.Activated:Connect(function() task.spawn(runWorkflow) end)", source)
             self.assertIn("stopButton.Activated:Connect(function()", source)
+
+    def test_require_executable_blocks_manual_guided_subset_for_automatic_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_workflow_ready_parts(parts, request="Automatically complete observed shop flow")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically complete observed shop flow",
+                require_executable=True,
+            )
+            with self.assertRaisesRegex(ValueError, "Executable workflow required but unavailable"):
+                service.run_sync(request)
+
+    def test_automatic_workflow_parts_satisfy_require_executable_without_manual_activation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_automatic_workflow_ready_parts(parts)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically train and open shop prompt",
+                require_executable=True,
+            )
+            result = service.run_sync(request)
+            self.assertEqual(result["status"], "succeeded")
+
+            workflow = result["delivery"]["executableWorkflow"]
+            self.assertTrue(workflow["automaticExecutionRequired"])
+            self.assertTrue(workflow["requestAlignedExecutableWorkflowAvailable"])
+            self.assertGreaterEqual(workflow["automaticExecutionReadyWorkflowCandidates"], 1)
+            self.assertGreaterEqual(workflow["requestAlignedAutomaticExecutionReadyWorkflowCandidates"], 1)
+            self.assertFalse(workflow["manualGuiActivationRequired"])
+            self.assertTrue(workflow["automaticActivationSupported"])
+
+            guided_path = pathlib.Path(result["delivery"]["scriptArtifacts"]["guidedWorkflow"])
+            self.assertTrue(guided_path.is_file())
+            guided = guided_path.read_text(encoding="utf-8")
+            self.assertIn("tool:Activate()", guided)
+            self.assertIn("fireproximityprompt(prompt)", guided)
+            self.assertIn("startButton.Activated:Connect(function() task.spawn(runWorkflow) end)", guided)
+            self.assertIn("stopButton.Activated:Connect(function()", guided)
+
 
     def test_require_executable_blocks_observational_only_requested_output(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -145,6 +145,7 @@ class GenerationReadinessTests(unittest.TestCase):
         blockers=result["requestFeatureReadiness"]["explicitBlockers"]
         self.assertIn("request_aligned_input_observation_not_captured",blockers)
         self.assertIn("request_aligned_state_transition_not_observed",blockers)
+        self.assertIn("no_request_aligned_automatic_execution_ready_workflow_candidates",blockers)
 
 
 

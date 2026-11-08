@@ -27,6 +27,26 @@ FALSE_CLAIMS = {
     "actionOutcomesVerified": False,
 }
 
+_AUTOMATIC_REQUEST_TERMS = {
+    "auto",
+    "automate",
+    "automatic",
+    "automatically",
+    "autofarm",
+    "farm",
+    "loop",
+    "repeat",
+    "grind",
+    "afk",
+}
+
+
+def _request_requires_automatic_execution(request_text: Optional[str]) -> bool:
+    if not isinstance(request_text, str):
+        return False
+    tokens = set(re.findall(r"[a-z0-9]+", request_text.casefold()))
+    return bool(tokens & _AUTOMATIC_REQUEST_TERMS)
+
 
 def _load_local_module(filename: str, name: str):
     path = Path(__file__).with_name(filename)
@@ -586,10 +606,35 @@ class EvidenceProcessor:
                 return value
         return None
 
+    @staticmethod
+    def _resolve_manifest_input_path(path: Path) -> Path:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("manifest evidence must be a JSON object")
+        schema = payload.get("schemaVersion")
+        if schema == "30.6.manifest-assisted-workflow.5":
+            source = payload.get("sourceManifest")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError("manifest-assisted workflow evidence is missing sourceManifest")
+            candidates = [
+                (path.parent / source).resolve(),
+                Path(source).expanduser().resolve(),
+                (Path.cwd() / source).resolve(),
+            ]
+            candidate = next((item for item in candidates if item.is_file()), None)
+            if candidate is None:
+                raise ValueError(
+                    "manifest-assisted workflow sourceManifest is unavailable: "
+                    f"{source}"
+                )
+            return candidate
+        return path
+
     def process(self, request: GenerationRequest, output_dir: Path) -> EvidenceBundle:
         output_dir.mkdir(parents=True, exist_ok=True)
         if request.evidence_kind == "manifest":
-            readiness = self._build_release.build_manifest_readiness(request.evidence_path, output_dir)
+            manifest_path = self._resolve_manifest_input_path(request.evidence_path)
+            readiness = self._build_release.build_manifest_readiness(manifest_path, output_dir)
             return EvidenceBundle(
                 mode="manifest-only",
                 place_id=readiness.get("placeId"),
@@ -846,11 +891,24 @@ class DeliveryEngine:
 
         request_text = request_section.get("request") if isinstance(request_section.get("request"), str) else None
         request_provided = bool(request_text and request_text.strip())
+        automatic_required = bool(
+            workflow_evidence.get("automaticExecutionRequired")
+            if isinstance(workflow_evidence.get("automaticExecutionRequired"), bool)
+            else _request_requires_automatic_execution(request_text)
+        )
+
         execution_ready_candidates = int(
             workflow_evidence.get("executionReadyCandidates")
             if isinstance(workflow_evidence.get("executionReadyCandidates"), int)
             else planning.get("executionReadyWorkflows")
             if isinstance(planning.get("executionReadyWorkflows"), int)
+            else 0
+        )
+        automatic_execution_ready_candidates = int(
+            workflow_evidence.get("automaticExecutionReadyCandidates")
+            if isinstance(workflow_evidence.get("automaticExecutionReadyCandidates"), int)
+            else planning.get("automaticExecutionReadyWorkflows")
+            if isinstance(planning.get("automaticExecutionReadyWorkflows"), int)
             else 0
         )
         request_aligned_candidates = int(
@@ -860,28 +918,57 @@ class DeliveryEngine:
             if isinstance(planning.get("requestAlignedExecutionReadyWorkflows"), int)
             else 0
         )
+        request_aligned_automatic_candidates = int(
+            workflow_evidence.get("requestAlignedAutomaticExecutionReadyCandidates")
+            if isinstance(workflow_evidence.get("requestAlignedAutomaticExecutionReadyCandidates"), int)
+            else planning.get("requestAlignedAutomaticExecutionReadyWorkflows")
+            if isinstance(planning.get("requestAlignedAutomaticExecutionReadyWorkflows"), int)
+            else 0
+        )
+
         guided_generated = guided_trial.get("generated") is True
         selected_candidate_id = workflow_selection.get("selectedCandidateId")
+        manual_required = guided_trial.get("manualActivationRequired") is True
+        automatic_supported = guided_trial.get("automaticActivation") is True
+
         executable_available = execution_ready_candidates > 0 and guided_generated
-        request_aligned_executable = request_aligned_candidates > 0 and guided_generated
+        if automatic_required:
+            request_aligned_executable = (
+                request_aligned_automatic_candidates > 0
+                and guided_generated
+                and automatic_supported
+                and not manual_required
+            )
+        else:
+            request_aligned_executable = request_aligned_candidates > 0 and guided_generated
 
         blockers: list[str] = []
         if request_provided and request_aligned_candidates == 0:
             blockers.append("no request-aligned execution-ready workflow candidates")
+        if automatic_required and request_provided and request_aligned_automatic_candidates == 0:
+            blockers.append("no request-aligned automatic execution-ready workflow candidates")
+        if automatic_required and request_provided and manual_required:
+            blockers.append("selected request-aligned workflow requires manual GUI activation")
+        if automatic_required and request_provided and not automatic_supported:
+            blockers.append("automatic activation is unavailable for selected workflow")
         if execution_ready_candidates > 0 and not guided_generated:
             blockers.append("execution-ready workflow candidates exist but guided workflow script was not generated")
+
         return {
             "requestedCapabilityProvided": request_provided,
             "requestStatus": request_section.get("status"),
             "requestImplementationReady": request_section.get("implementationReady") is True,
+            "automaticExecutionRequired": automatic_required,
             "executionReadyWorkflowCandidates": execution_ready_candidates,
+            "automaticExecutionReadyWorkflowCandidates": automatic_execution_ready_candidates,
             "requestAlignedExecutionReadyWorkflowCandidates": request_aligned_candidates,
+            "requestAlignedAutomaticExecutionReadyWorkflowCandidates": request_aligned_automatic_candidates,
             "guidedWorkflowScriptGenerated": guided_generated,
             "selectedWorkflowCandidateId": selected_candidate_id,
             "executableWorkflowAvailable": executable_available,
             "requestAlignedExecutableWorkflowAvailable": request_aligned_executable,
-            "manualGuiActivationRequired": guided_trial.get("manualActivationRequired") is True,
-            "automaticActivationSupported": guided_trial.get("automaticActivation") is True,
+            "manualGuiActivationRequired": manual_required,
+            "automaticActivationSupported": automatic_supported,
             "blockers": blockers,
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -907,8 +994,11 @@ class DeliveryEngine:
                     "requestedCapabilityProvided": bool(request.requested_capability),
                     "requestStatus": None,
                     "requestImplementationReady": False,
+                    "automaticExecutionRequired": _request_requires_automatic_execution(request.requested_capability),
                     "executionReadyWorkflowCandidates": 0,
+                    "automaticExecutionReadyWorkflowCandidates": 0,
                     "requestAlignedExecutionReadyWorkflowCandidates": 0,
+                    "requestAlignedAutomaticExecutionReadyWorkflowCandidates": 0,
                     "guidedWorkflowScriptGenerated": False,
                     "selectedWorkflowCandidateId": None,
                     "executableWorkflowAvailable": False,

@@ -759,9 +759,15 @@ def plan(plan_document,actions):
             "singleStepExecutionReadyWorkflows":sum(
                 item.get("singleStepWorkflow") is True and item.get("executionReady") is True
                 for item in candidates),
+            "automaticExecutionReadyWorkflows":sum(
+                item.get("executionReady") is True and item.get("automaticallyExecutable") is True
+                for item in candidates),
             "automaticallyExecutableWorkflows":sum(
                 item["automaticallyExecutable"] for item in candidates),
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),
+            "requestAlignedAutomaticExecutionReadyWorkflows":sum(
+                item.get("executionReady") is True and item.get("automaticallyExecutable") is True
+                and item["selection"]["requestAligned"] for item in candidates),
             "reviewOnlyLinkedCandidates":sum(item.get("reviewEvidenceType")==
                 "linked-gui-transition-only" for item in candidates),
             "requestAlignedReviewOnlyLinkedCandidates":sum(item.get("reviewEvidenceType")==
