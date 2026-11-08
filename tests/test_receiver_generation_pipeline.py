@@ -235,5 +235,53 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                     MODULE.os.environ["LYCOLES_READ_KEY"] = previous
 
 
+    def test_generate_from_receiver_forwards_legacy_page_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            previous = MODULE.os.environ.get("LYCOLES_READ_KEY")
+            original_fetch = MODULE.FETCH.fetch_scan
+            original_generate = MODULE.generate_from_parts
+            captured = {}
+
+            def fake_fetch(endpoint, read_key, scan_id, output, **kwargs):
+                output_path = pathlib.Path(output)
+                output_path.mkdir(parents=True, exist_ok=True)
+                captured["kwargs"] = kwargs
+                return {
+                    "schemaVersion": "30.2.receiver-import-legacy-reports.1",
+                    "scanId": scan_id,
+                    "placeId": 3623096087,
+                    "partCount": 2,
+                    "objectCount": 2,
+                    "featureCount": 0,
+                    "output": str(output_path),
+                }
+
+            def fake_generate_from_parts(**_kwargs):
+                return {"status": "succeeded", "claims": {"runtimeVerified": False}}
+
+            try:
+                MODULE.os.environ["LYCOLES_READ_KEY"] = "read-secret"
+                MODULE.FETCH.fetch_scan = fake_fetch
+                MODULE.generate_from_parts = fake_generate_from_parts
+                result = MODULE.generate_from_receiver(
+                    receiver_endpoint="https://example.com",
+                    scan_id="scan123456",
+                    output_root=root,
+                    allow_legacy_report_index=True,
+                    max_legacy_report_pages=1234,
+                )
+                self.assertEqual(result["fetch"]["scanId"], "scan123456")
+                self.assertEqual(captured["kwargs"]["max_legacy_report_pages"], 1234)
+                self.assertTrue(captured["kwargs"]["allow_legacy_report_index"])
+            finally:
+                MODULE.FETCH.fetch_scan = original_fetch
+                MODULE.generate_from_parts = original_generate
+                if previous is None:
+                    MODULE.os.environ.pop("LYCOLES_READ_KEY", None)
+                else:
+                    MODULE.os.environ["LYCOLES_READ_KEY"] = previous
+
+
 if __name__ == "__main__":
     unittest.main()

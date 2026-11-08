@@ -408,7 +408,8 @@ def _legacy_report_part(document):
     return report, document.get("receivedAt")
 
 
-def _fetch_scan_legacy_reports(opener, origin, read_key, scan_id, output, timeout, workers):
+def _fetch_scan_legacy_reports(opener, origin, read_key, scan_id, output, timeout,
+                               workers, max_legacy_report_pages):
     cursor = None
     pages_scanned = 0
     part_count = None
@@ -419,7 +420,7 @@ def _fetch_scan_legacy_reports(opener, origin, read_key, scan_id, output, timeou
 
     root = "/reports/" + urllib.parse.quote(read_key, safe="")
 
-    while pages_scanned < MAX_LEGACY_REPORT_PAGES:
+    while pages_scanned < max_legacy_report_pages:
         records, has_more, next_cursor = _legacy_reports_page(
             opener, origin, read_key, timeout, cursor)
         pages_scanned += 1
@@ -614,7 +615,8 @@ def _fetch_scan_legacy_reports(opener, origin, read_key, scan_id, output, timeou
 
 def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
                local_manifest=None, resume=None, allow_http=False,
-               allow_legacy_v11=False, allow_legacy_report_index=False):
+               allow_legacy_v11=False, allow_legacy_report_index=False,
+               max_legacy_report_pages=MAX_LEGACY_REPORT_PAGES):
     origin = _receiver_origin(endpoint, allow_http)
     read_key = _read_key(read_key)
     scan_id = _identifier(scan_id, "receiver scan ID")
@@ -625,6 +627,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
         raise ValueError("invalid legacy receiver option")
     if type(allow_legacy_report_index) is not bool:
         raise ValueError("invalid legacy report index option")
+    max_legacy_report_pages = _positive_integer(
+        max_legacy_report_pages, "legacy report page limit", 5000)
     if allow_legacy_v11 and resume is not None:
         raise ValueError("legacy receiver retrieval does not support resume checkpoints")
     output = pathlib.Path(output)
@@ -643,7 +647,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
             if local_manifest is not None:
                 raise ValueError("legacy report-index retrieval does not support local manifest acknowledgement validation")
             return _fetch_scan_legacy_reports(
-                opener, origin, read_key, scan_id, output, timeout, workers)
+                opener, origin, read_key, scan_id, output, timeout,
+                workers, max_legacy_report_pages)
         raise
     metadata, place_id, part_count = _validate_metadata(metadata_document, scan_id)
     legacy_integrity = (_validate_legacy_integrity(
@@ -835,6 +840,9 @@ def main():
                         help="explicitly accept v11 parts without persisted digest headers after complete /integrity validation")
     parser.add_argument("--allow-legacy-report-index", action="store_true",
                         help="allow fallback import from paged legacy report records when /metadata is unavailable")
+    parser.add_argument("--max-legacy-report-pages", type=int,
+                        default=MAX_LEGACY_REPORT_PAGES,
+                        help="maximum paged legacy-report index pages to scan during fallback import")
     args = parser.parse_args()
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -845,7 +853,8 @@ def main():
                             timeout=args.timeout, workers=args.workers,
                             local_manifest=args.local_manifest, resume=args.resume,
                             allow_legacy_v11=args.allow_legacy_v11,
-                            allow_legacy_report_index=args.allow_legacy_report_index)
+                            allow_legacy_report_index=args.allow_legacy_report_index,
+                            max_legacy_report_pages=args.max_legacy_report_pages)
     except (ValueError, OSError) as exc:
         print("IMPORT BLOCKED:", exc, file=sys.stderr)
         return 2

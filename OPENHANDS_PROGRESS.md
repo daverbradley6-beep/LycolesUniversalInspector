@@ -3,7 +3,44 @@
 
 
 
+## Update — 2026-11-08 — model-usage audit + deep legacy report search controls
+
+- Completed a factual OpenHands model/profile usage audit from local conversation records and live API conversation stats (no inference from configured profiles alone).
+- Verified active usage across recent Lycoles sessions:
+  - `profile:Lycoles-Coding` → `openai/gpt-5.3-codex` (heavy implementation volume),
+  - `profile:Lycoles-Economy` and `classifier:Lycoles-Economy` → `openai/gpt-5.6-luna` (light routing/economy usage),
+  - `profile:gpt-5.6-sol` and historical default usage → `openai/gpt-5.6-sol`.
+- Verified routing/delegation capabilities from real events:
+  - `route_task_to_model` executed and switched model class successfully,
+  - `switch_llm` used repeatedly for explicit profile changes,
+  - `launch_child_conversation` used in prior Lycoles sessions for delegated investigations.
+
+Continued autonomous development after audit:
+- Added configurable deep-scan controls for legacy report-index recovery:
+  - `tools/fetch_receiver_scan.py`
+    - new API parameter: `max_legacy_report_pages`,
+    - new CLI flag: `--max-legacy-report-pages`,
+    - validation added (`invalid legacy report page limit`).
+  - `tools/receiver_generation_pipeline.py`
+    - `generate_from_receiver(...)` accepts `max_legacy_report_pages`,
+    - `from-receiver` CLI now exposes `--max-legacy-report-pages`,
+    - forwarding to fetcher verified by regression.
+- Added/updated tests:
+  - `tests/test_fetch_receiver_scan.py`: invalid page-limit validation regression.
+  - `tests/test_receiver_generation_pipeline.py`: forwarding regression for legacy page-depth argument.
+- Validation run:
+  - focused and full receiver-related suites passed (`40` tests).
+
+Live blocker re-check with deeper scan:
+- Retried missing requested baseline IDs with `--max-legacy-report-pages 800`:
+  - `DBFC72C6-749B-4F95-BBA2-433B8B61745C` → not found,
+  - `6D3741EF-9569-4F40-B38A-E4FD2AE0A063` → not found.
+- Direct receiver legacy-index scan for `30.6.live-observation-export.1` overlays tied to recovered Arsenal/Phantom baselines across first 500 pages returned no matches.
+
+
+
 ## Update — 2026-11-07 — legacy receiver report-index recovery + baseline scan resolution hardening
+
 
 - Implemented receiver compatibility path for deployments that expose only paged legacy `reports` records:
   - `tools/fetch_receiver_scan.py`

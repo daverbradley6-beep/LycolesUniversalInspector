@@ -372,6 +372,7 @@ def generate_from_receiver(
     workers: int = 4,
     observation_paths: Optional[Sequence[pathlib.Path]] = None,
     allow_legacy_report_index: bool = False,
+    max_legacy_report_pages: int = FETCH.MAX_LEGACY_REPORT_PAGES,
 ) -> dict[str, Any]:
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -388,6 +389,7 @@ def generate_from_receiver(
         local_manifest=str(local_manifest) if local_manifest else None,
         resume=str(resume_dir) if resume_dir else None,
         allow_legacy_report_index=allow_legacy_report_index,
+        max_legacy_report_pages=max_legacy_report_pages,
     )
 
     generation_result = generate_from_parts(
@@ -433,6 +435,9 @@ def main() -> int:
         help="Dynamic observation JSON file or directory to merge; repeatable")
     receiver_parser.add_argument("--allow-legacy-report-index", action="store_true",
         help="allow receiver fetch fallback from paged legacy report records")
+    receiver_parser.add_argument("--max-legacy-report-pages", type=int,
+        default=FETCH.MAX_LEGACY_REPORT_PAGES,
+        help="maximum paged legacy-report index pages to scan during fallback import")
 
     exercise_parser = subparsers.add_parser(
         "exercise-live",
@@ -482,6 +487,7 @@ def main() -> int:
                 workers=args.workers,
                 observation_paths=observation_paths,
                 allow_legacy_report_index=args.allow_legacy_report_index,
+                max_legacy_report_pages=args.max_legacy_report_pages,
             )
         else:
             result = run_live_evidence_exercise(

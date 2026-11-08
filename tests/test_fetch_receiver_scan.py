@@ -280,6 +280,20 @@ class ReceiverImportTests(unittest.TestCase):
             self.assertFalse(any(path.endswith("/integrity") for path in receiver.paths))
             self.assertNotIn("read-secret", json.dumps(manifest))
 
+    def test_legacy_report_index_rejects_invalid_page_limit(self):
+        with ReceiverServer(legacy_report_index=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "invalid legacy report page limit"):
+                FETCHER.fetch_scan(
+                    receiver.server.base_url,
+                    "read-secret",
+                    "receiverscan01",
+                    output,
+                    allow_http=True,
+                    allow_legacy_report_index=True,
+                    max_legacy_report_pages=0,
+                )
+
     def test_legacy_report_index_requires_explicit_opt_in(self):
         with ReceiverServer(legacy_report_index=True) as receiver, tempfile.TemporaryDirectory() as temp:
             output = pathlib.Path(temp) / "scan"
