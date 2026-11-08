@@ -321,6 +321,71 @@ def make_live_observation_export(path, baseline_scan_id="receiver_pipeline_scan"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+
+def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": baseline_scan_id,
+        "baselineScanId": baseline_scan_id,
+        "placeId": 3623096087,
+        "gameName": "🎃Muscle Legends",
+        "runtimeVerified": False,
+        "gameplayVerified": False,
+        "causalityProven": False,
+        "serverAuthorityVerified": False,
+        "sourceAuthenticityVerified": False,
+        "integrity": {
+            "scanComplete": True,
+            "placeId": 3623096087,
+            "scanId": "live-observation-recovery-1",
+            "baselineScanId": baseline_scan_id,
+            "parts": 2,
+            "interactionEvents": 42,
+        },
+        "sourceDiagnostics": {
+            "scanMode": "dynamic-observations",
+            "requiresFullObjectRescan": False,
+            "baselineScanId": baseline_scan_id,
+        },
+        "interactionDiagnostics": {
+            "stateDeltaEvents": 317,
+            "recentInteractions": [
+                {
+                    "controlType": "Tool.Activated",
+                    "path": "LocalPlayer.Backpack.Weight",
+                    "controlMetadata": {
+                        "enabled": True,
+                        "requiresHandle": True,
+                        "canBeDropped": False,
+                        "manualActivationOnly": False,
+                    },
+                    "stateChanges": [
+                        {"key": "LocalPlayer.Quests.Rep.progress", "before": 6, "after": 7},
+                        {"key": "Character.Humanoid.ActiveAnimationCount", "before": 4, "after": 5},
+                    ],
+                    "observationWindows": [{"seconds": 0.3}],
+                },
+                {
+                    "controlType": "Tool.Activated",
+                    "path": "LocalPlayer.Backpack.Weight",
+                    "controlMetadata": {
+                        "enabled": True,
+                        "requiresHandle": True,
+                        "canBeDropped": False,
+                        "manualActivationOnly": False,
+                    },
+                    "stateChanges": [
+                        {"key": "LocalPlayer.Quests.Rep.progress", "before": 7, "after": 8},
+                    ],
+                    "observationWindows": [{"seconds": 0.4}],
+                },
+            ],
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 class ReceiverGenerationPipelineTests(unittest.TestCase):
     def test_generate_from_parts_runs_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -602,6 +667,26 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 "request-executable-ready",
             )
             self.assertTrue(pathlib.Path(result["summary"]["generatedScriptPath"]).is_file())
+
+    def test_run_live_observation_scenario_recovers_auto_train_without_baseline_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "live-observation.json"
+            make_live_observation_tool_export(overlay, baseline_scan_id="missing-baseline")
+
+            result = MODULE.run_live_observation_scenario(
+                output_root=root / "out",
+                observation_path=overlay,
+                requested_capability="Automatically train with Weight tool",
+                extracted_root=root / "missing-extracted",
+                require_executable=True,
+            )
+            self.assertEqual(result["status"], "recovered-observation-contract")
+            summary = result["summary"]
+            self.assertEqual(summary["executableLogic"]["requestExecutableStatus"], "request-executable-ready")
+            self.assertTrue(pathlib.Path(summary["generatedScriptPath"]).is_file())
+            self.assertTrue(pathlib.Path(summary["contractPath"]).is_file())
+            self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
 
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:

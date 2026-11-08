@@ -1,0 +1,40 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "gameName": "🎃Muscle Legends",
+  "matchingToolActivationEvents": 26,
+  "observationDelaySeconds": 1.25,
+  "outcomeStateKeys": [
+    "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
+    "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress",
+    "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+    "Character.Humanoid.Health",
+    "Character.Humanoid.ActiveAnimationCount",
+    "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+    "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+    "leaderstats.Strength",
+    "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+    "Character.Humanoid.WalkSpeed",
+    "Character.Humanoid.JumpPower",
+    "Backpack.Tools.Count"
+  ],
+  "placeId": 3623096087,
+  "requestedCapability": "Automatically train with the Weight tool in Muscle Legends",
+  "scanId": "FE1C0EDA-12C4-43BC-B490-062412BD0DD1",
+  "schemaVersion": "117.observation-tool-contract.1",
+  "stateDeltaEvents": 317,
+  "toolActivationEvents": 42,
+  "toolMetadata": {
+    "canBeDropped": false,
+    "enabled": true,
+    "manualActivationOnly": false,
+    "requiresHandle": true
+  },
+  "toolName": "Weight",
+  "toolPath": "LocalPlayer.Backpack.Weight"
+}
