@@ -361,8 +361,10 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                         "manualActivationOnly": False,
                     },
                     "stateChanges": [
-                        {"key": "LocalPlayer.Quests.Rep.progress", "before": 6, "after": 7},
-                        {"key": "Character.Humanoid.ActiveAnimationCount", "before": 4, "after": 5},
+                        {"key": "LocalPlayer.leaderstats.Strength", "before": 1033, "after": 1045},
+                        {"key": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress", "before": 6, "after": 7},
+                        {"key": "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress", "before": 1.5, "after": 1.6},
+                        {"key": "Character.Humanoid.Health", "before": 95, "after": 100},
                     ],
                     "observationWindows": [{"seconds": 0.3}],
                 },
@@ -376,7 +378,8 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                         "manualActivationOnly": False,
                     },
                     "stateChanges": [
-                        {"key": "LocalPlayer.Quests.Rep.progress", "before": 7, "after": 8},
+                        {"key": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress", "before": 7, "after": 8},
+                        {"key": "Character.Humanoid.ActiveAnimationCount", "before": 4, "after": 5},
                     ],
                     "observationWindows": [{"seconds": 0.4}],
                 },
@@ -687,6 +690,25 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(pathlib.Path(summary["generatedScriptPath"]).is_file())
             self.assertTrue(pathlib.Path(summary["contractPath"]).is_file())
             self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
+
+            contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
+            outcome_model = contract["outcomeModel"]
+            self.assertEqual(outcome_model["kind"], "delayed-cumulative")
+            self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")
+            self.assertIn(
+                "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+                outcome_model["questRepetitionStatePaths"],
+            )
+            self.assertNotIn(
+                "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
+                outcome_model["questRepetitionStatePaths"],
+            )
+
+            script_text = pathlib.Path(summary["generatedScriptPath"]).read_text(encoding="utf-8")
+            self.assertIn("Strength gained per minute", script_text)
+            self.assertIn("Activation interval", script_text)
+            self.assertIn("Outcome window", script_text)
+            self.assertIn("Stall detection", script_text)
 
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -466,6 +466,23 @@ def _luau_literal(value: Any) -> str:
 
 
 
+def _classify_observed_state_key(key: str) -> dict[str, bool]:
+    lower = key.lower()
+    return {
+        "is_strength": "strength" in lower,
+        "is_leaderstats": ".leaderstats." in lower or lower.startswith("leaderstats."),
+        "is_quest": ".quests." in lower or "quest" in lower,
+        "is_repetition": "reps" in lower or "rep." in lower or "rep_" in lower,
+        "is_minutes": "minutes.progress" in lower or ".minutes" in lower,
+        "is_health": ".health" in lower,
+        "is_animation": "activeanimationcount" in lower,
+        "is_movement": any(token in lower for token in ("walkspeed", "jump", "velocity", "position")),
+        "is_progress": "progress" in lower,
+        "is_time": "time" in lower or "playtime" in lower,
+    }
+
+
+
 def _build_observation_tool_contract(payload: dict[str, Any], requested_capability: str) -> Optional[dict[str, Any]]:
     events = _interaction_events_from_payload(payload)
     tool_events = [
@@ -513,7 +530,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     metadata = selected.get("metadata") if isinstance(selected.get("metadata"), dict) else {}
 
     windows: list[float] = []
-    state_key_stats: dict[str, dict[str, float]] = {}
+    state_key_stats: dict[str, dict[str, Any]] = {}
     for event in selected_events:
         observation_windows = event.get("observationWindows")
         if isinstance(observation_windows, list):
@@ -521,8 +538,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 if not isinstance(window, dict):
                     continue
                 seconds = _numeric(window.get("seconds"))
-                if seconds is not None and 0.05 <= seconds <= 5.0:
+                if seconds is not None and 0.05 <= seconds <= 8.0:
                     windows.append(seconds)
+
         for change in event.get("stateChanges") or []:
             if not isinstance(change, dict):
                 continue
@@ -533,30 +551,137 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             after = _numeric(change.get("after"))
             if before is None or after is None:
                 continue
-            bucket = state_key_stats.setdefault(key, {"changes": 0.0, "increases": 0.0, "delta": 0.0})
-            bucket["changes"] += 1.0
-            bucket["delta"] += abs(after - before)
-            if after > before:
-                bucket["increases"] += 1.0
+            change_delta = after - before
+            absolute_delta = abs(change_delta)
+            if absolute_delta <= 0:
+                continue
+
+            classification = _classify_observed_state_key(key)
+            score = 0.0
+            if change_delta > 0:
+                score += 5.0
+            score += min(6.0, absolute_delta)
+            if classification["is_strength"]:
+                score += 60.0
+            if classification["is_leaderstats"]:
+                score += 24.0
+            if classification["is_progress"]:
+                score += 4.0
+            if classification["is_quest"] and classification["is_repetition"]:
+                score += 8.0
+            if classification["is_minutes"] or classification["is_time"]:
+                score -= 30.0
+            if classification["is_health"] or classification["is_animation"] or classification["is_movement"]:
+                score -= 36.0
+            lower_key = key.lower()
+            for token in capability_tokens:
+                if token in lower_key:
+                    score += 2.0
+
+            bucket = state_key_stats.setdefault(key, {
+                "changes": 0,
+                "increases": 0,
+                "decreases": 0,
+                "delta_abs": 0.0,
+                "delta_up": 0.0,
+                "weighted_score": 0.0,
+                "classification": classification,
+            })
+            bucket["changes"] += 1
+            bucket["delta_abs"] += absolute_delta
+            bucket["weighted_score"] += score
+            if change_delta > 0:
+                bucket["increases"] += 1
+                bucket["delta_up"] += change_delta
+            else:
+                bucket["decreases"] += 1
 
     ranked_keys = sorted(
         state_key_stats.items(),
-        key=lambda item: (-item[1]["increases"], -item[1]["changes"], -item[1]["delta"], item[0]),
+        key=lambda item: (
+            -float(item[1].get("weighted_score", 0.0)),
+            -int(item[1].get("increases", 0)),
+            -float(item[1].get("delta_up", 0.0)),
+            item[0],
+        ),
     )
-    outcome_keys = [item[0] for item in ranked_keys if item[1]["increases"] > 0][:12]
-    if len(outcome_keys) == 0:
+
+    positive_ranked = [item for item in ranked_keys if int(item[1].get("increases", 0)) > 0]
+    if len(positive_ranked) == 0:
         return None
+
+    primary_candidates = [
+        item
+        for item in positive_ranked
+        if not item[1]["classification"]["is_minutes"]
+        and not item[1]["classification"]["is_time"]
+        and not item[1]["classification"]["is_health"]
+        and not item[1]["classification"]["is_animation"]
+        and (
+            item[1]["classification"]["is_strength"]
+            or item[1]["classification"]["is_leaderstats"]
+            or any(token in item[0].lower() for token in capability_tokens)
+        )
+    ]
+    if len(primary_candidates) == 0:
+        primary_candidates = [
+            item
+            for item in positive_ranked
+            if not item[1]["classification"]["is_minutes"]
+            and not item[1]["classification"]["is_time"]
+            and not item[1]["classification"]["is_health"]
+            and not item[1]["classification"]["is_animation"]
+        ]
+    if len(primary_candidates) == 0:
+        primary_candidates = positive_ranked
+
+    primary_path = primary_candidates[0][0]
+
+    repetition_paths = [
+        key
+        for key, stats in positive_ranked
+        if stats["classification"]["is_quest"]
+        and stats["classification"]["is_repetition"]
+        and not stats["classification"]["is_minutes"]
+        and not stats["classification"]["is_time"]
+    ][:8]
+
+    noisy_paths = [
+        key
+        for key, stats in ranked_keys
+        if stats["classification"]["is_health"]
+        or stats["classification"]["is_animation"]
+        or stats["classification"]["is_movement"]
+        or stats["classification"]["is_minutes"]
+        or stats["classification"]["is_time"]
+    ][:16]
+
+    candidate_paths = [primary_path]
+    for key, stats in positive_ranked:
+        if key == primary_path:
+            continue
+        if stats["classification"]["is_health"] or stats["classification"]["is_animation"] or stats["classification"]["is_movement"]:
+            continue
+        if stats["classification"]["is_minutes"] or stats["classification"]["is_time"]:
+            continue
+        candidate_paths.append(key)
+        if len(candidate_paths) >= 12:
+            break
 
     if windows:
         sorted_windows = sorted(windows)
         delay = sorted_windows[len(sorted_windows) // 2]
     else:
-        delay = 0.35
-    delay = max(0.15, min(1.50, float(delay)))
+        delay = 0.45
+    delay = max(0.2, min(2.5, float(delay)))
+
+    activation_interval = max(0.12, min(1.5, round(delay * 0.28, 2)))
+    poll_interval = max(0.1, min(1.0, round(delay * 0.45, 2)))
+    stall_window = max(8.0, min(75.0, round(delay * 12.0 + 6.0, 2)))
 
     tool_name = selected["path"].split(".")[-1]
     return {
-        "schemaVersion": "117.observation-tool-contract.1",
+        "schemaVersion": "117.observation-tool-contract.2",
         "requestedCapability": requested_capability,
         "scanId": payload.get("scanId"),
         "placeId": payload.get("placeId"),
@@ -573,7 +698,25 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         "matchingToolActivationEvents": selected["count"],
         "stateDeltaEvents": ((payload.get("interactionDiagnostics") or {}).get("stateDeltaEvents")),
         "observationDelaySeconds": round(delay, 3),
-        "outcomeStateKeys": outcome_keys,
+        "timing": {
+            "activationIntervalSeconds": activation_interval,
+            "pollIntervalSeconds": poll_interval,
+            "delayedOutcomeWindowSeconds": round(delay, 3),
+            "stallWindowSeconds": stall_window,
+            "minActivationIntervalSeconds": 0.10,
+            "maxActivationIntervalSeconds": 2.00,
+            "minOutcomeWindowSeconds": 0.25,
+            "maxOutcomeWindowSeconds": 10.00,
+        },
+        "outcomeModel": {
+            "kind": "delayed-cumulative",
+            "primaryStatePath": primary_path,
+            "candidateStatePaths": candidate_paths,
+            "questRepetitionStatePaths": repetition_paths,
+            "ignoredNoisyStatePaths": noisy_paths,
+            "observedStateKeyCount": len(state_key_stats),
+        },
+        "outcomeStateKeys": candidate_paths,
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -586,282 +729,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
 
 
 def _render_observation_auto_train_luau(contract: dict[str, Any]) -> str:
-    template = """-- Generated by Lycoles observation-contract recovery
--- Evidence-bounded client helper. No remote fabrication or authority claims.
-local CONTRACT = __CONTRACT__
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-assert(game.PlaceId == __PLACE_ID__, "Wrong place for generated auto-train utility")
-if type(_G.LycolesMuscleAutoTrainClose) == "function" then pcall(_G.LycolesMuscleAutoTrainClose) end
-
-local connections = {}
-local alive = true
-local running = false
-local stats = {attempts = 0, activations = 0, positiveOutcomes = 0, failures = 0, lastStatus = "idle"}
-local outcomeObjects = {}
-
-local function splitPath(path)
-    local parts = {}
-    for token in string.gmatch(path, "[^%.]+") do
-        parts[#parts + 1] = token
-    end
-    return parts
-end
-
-local function resolvePath(path)
-    if type(path) ~= "string" or path == "" then return nil, "empty path" end
-    local parts = splitPath(path)
-    if #parts == 0 then return nil, "invalid path" end
-    local root = nil
-    local index = 2
-    if parts[1] == "LocalPlayer" then
-        root = player
-    elseif parts[1] == "Workspace" then
-        root = workspace
-    elseif parts[1] == "ReplicatedStorage" then
-        root = game:GetService("ReplicatedStorage")
-    else
-        root = player:FindFirstChild("PlayerGui")
-        index = 1
-    end
-    if not root then return nil, "missing root" end
-    local current = root
-    for i = index, #parts do
-        current = current:FindFirstChild(parts[i])
-        if not current then return nil, "missing segment: " .. parts[i] end
-    end
-    return current, nil
-end
-
-local function verifyToolMetadata(tool)
-    if type(CONTRACT.toolMetadata) ~= "table" then return true end
-    local checks = {
-        {"requiresHandle", CONTRACT.toolMetadata.requiresHandle},
-        {"canBeDropped", CONTRACT.toolMetadata.canBeDropped},
-        {"manualActivationOnly", CONTRACT.toolMetadata.manualActivationOnly},
-    }
-    for _, item in ipairs(checks) do
-        local name, expected = item[1], item[2]
-        if type(expected) == "boolean" then
-            local ok, actual = pcall(function() return tool[name] end)
-            if (not ok) or actual ~= expected then
-                return false
-            end
-        end
-    end
-    return true
-end
-
-local function resolveTool()
-    local exact, err = resolvePath(CONTRACT.toolPath)
-    if exact and exact:IsA("Tool") and verifyToolMetadata(exact) then
-        return exact, nil, "contract-path"
-    end
-    local candidates = {{player:FindFirstChild("Backpack"), "backpack"}, {player.Character, "character"}}
-    for _, candidate in ipairs(candidates) do
-        local parent = candidate[1]
-        if parent then
-            for _, child in ipairs(parent:GetChildren()) do
-                if child:IsA("Tool") and child.Name == CONTRACT.toolName and verifyToolMetadata(child) then
-                    return child, nil, candidate[2]
-                end
-            end
-        end
-    end
-    return nil, err or "tool unavailable", "none"
-end
-
-local function refreshOutcomeObjects()
-    outcomeObjects = {}
-    for _, path in ipairs(CONTRACT.outcomeStateKeys or {}) do
-        local obj = resolvePath(path)
-        if obj and obj:IsA("ValueBase") and type(obj.Value) == "number" then
-            outcomeObjects[#outcomeObjects + 1] = {path = path, object = obj}
-        end
-    end
-end
-
-local function snapshotValues()
-    local snap = {}
-    for _, item in ipairs(outcomeObjects) do
-        local ok, value = pcall(function() return item.object.Value end)
-        if ok and type(value) == "number" then
-            snap[item.path] = value
-        end
-    end
-    return snap
-end
-
-local function findPositiveDelta(beforeValues, afterValues)
-    for _, item in ipairs(outcomeObjects) do
-        local path = item.path
-        local before = beforeValues[path]
-        local after = afterValues[path]
-        if type(before) == "number" and type(after) == "number" and after > before then
-            return path, after - before
-        end
-    end
-    return nil, nil
-end
-
-local function runOneAttempt()
-    stats.attempts += 1
-    local tool, err, source = resolveTool()
-    if not tool then
-        stats.failures += 1
-        stats.lastStatus = "tool resolve failed: " .. tostring(err)
-        return false
-    end
-    local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if humanoid and tool.Parent ~= player.Character then
-        pcall(function() humanoid:EquipTool(tool) end)
-        task.wait(0.05)
-    end
-    local before = snapshotValues()
-    local ok, activateErr = pcall(function() tool:Activate() end)
-    if not ok then
-        stats.failures += 1
-        stats.lastStatus = "activation failed: " .. tostring(activateErr)
-        return false
-    end
-    stats.activations += 1
-    task.wait(CONTRACT.observationDelaySeconds or 0.35)
-    local after = snapshotValues()
-    local key, delta = findPositiveDelta(before, after)
-    if key then
-        stats.positiveOutcomes += 1
-        stats.lastStatus = "observed positive outcome on " .. key .. " (+" .. tostring(delta) .. ")"
-        return true
-    end
-    stats.lastStatus = "activated via " .. tostring(source) .. "; no observed positive outcome"
-    return false
-end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "LycolesMuscleAutoTrain"
-gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(460, 250)
-frame.Position = UDim2.new(0.5, -230, 0.5, -125)
-frame.BackgroundColor3 = Color3.fromRGB(26, 29, 35)
-frame.Parent = gui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, -90, 0, 34)
-title.Position = UDim2.fromOffset(12, 8)
-title.BackgroundTransparency = 1
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextSize = 17
-title.Text = "Lycoles Muscle Legends Auto Train (observation recovery)"
-local close = Instance.new("TextButton", frame)
-close.Size = UDim2.fromOffset(70, 28)
-close.Position = UDim2.new(1, -78, 0, 8)
-close.Text = "CLOSE"
-close.BackgroundColor3 = Color3.fromRGB(82, 68, 90)
-close.TextColor3 = Color3.new(1, 1, 1)
-close.TextSize = 12
-local status = Instance.new("TextLabel", frame)
-status.Size = UDim2.new(1, -24, 0, 132)
-status.Position = UDim2.fromOffset(12, 46)
-status.BackgroundColor3 = Color3.fromRGB(33, 36, 43)
-status.TextColor3 = Color3.fromRGB(228, 236, 240)
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.TextYAlignment = Enum.TextYAlignment.Top
-status.TextWrapped = true
-status.TextSize = 13
-status.Text = "Initializing"
-local start = Instance.new("TextButton", frame)
-start.Size = UDim2.fromOffset(132, 34)
-start.Position = UDim2.fromOffset(12, 190)
-start.Text = "START AUTO"
-start.BackgroundColor3 = Color3.fromRGB(49, 122, 88)
-start.TextColor3 = Color3.new(1, 1, 1)
-start.TextSize = 13
-local pulse = Instance.new("TextButton", frame)
-pulse.Size = UDim2.fromOffset(132, 34)
-pulse.Position = UDim2.fromOffset(156, 190)
-pulse.Text = "PULSE ONCE"
-pulse.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-pulse.TextColor3 = Color3.new(1, 1, 1)
-pulse.TextSize = 13
-local stop = Instance.new("TextButton", frame)
-stop.Size = UDim2.fromOffset(132, 34)
-stop.Position = UDim2.fromOffset(300, 190)
-stop.Text = "STOP"
-stop.BackgroundColor3 = Color3.fromRGB(128, 68, 68)
-stop.TextColor3 = Color3.new(1, 1, 1)
-stop.TextSize = 13
-
-local function renderStatus()
-    if not alive then return end
-    local lines = {
-        "Tool path: " .. tostring(CONTRACT.toolPath),
-        "Outcome keys configured: " .. tostring(#(CONTRACT.outcomeStateKeys or {})),
-        "Outcome keys resolved: " .. tostring(#outcomeObjects),
-        "Attempts: " .. tostring(stats.attempts) .. " | Activations: " .. tostring(stats.activations),
-        "Observed positive outcomes: " .. tostring(stats.positiveOutcomes),
-        "Failures: " .. tostring(stats.failures),
-        "Running: " .. tostring(running),
-        "Last status: " .. tostring(stats.lastStatus),
-    }
-    status.Text = table.concat(lines, "\\n")
-end
-
-local function stopLoop(reason)
-    running = false
-    stats.lastStatus = reason or stats.lastStatus
-    renderStatus()
-end
-
-local function startLoop()
-    if running then
-        stats.lastStatus = "already running"
-        renderStatus()
-        return
-    end
-    running = true
-    stats.lastStatus = "running"
-    task.spawn(function()
-        while alive and running do
-            runOneAttempt()
-            renderStatus()
-            task.wait(0.25)
-        end
-    end)
-    renderStatus()
-end
-
-local function closeAll()
-    if not alive then return end
-    alive = false
-    running = false
-    for _, c in ipairs(connections) do
-        pcall(function() c:Disconnect() end)
-    end
-    gui:Destroy()
-    _G.LycolesMuscleAutoTrainClose = nil
-    _G.LycolesMuscleAutoTrainStart = nil
-    _G.LycolesMuscleAutoTrainStop = nil
-end
-
-refreshOutcomeObjects()
-stats.lastStatus = "ready"
-renderStatus()
-connections[#connections + 1] = start.MouseButton1Click:Connect(startLoop)
-connections[#connections + 1] = pulse.MouseButton1Click:Connect(function()
-    runOneAttempt()
-    renderStatus()
-end)
-connections[#connections + 1] = stop.MouseButton1Click:Connect(function() stopLoop("stopped by operator") end)
-connections[#connections + 1] = close.MouseButton1Click:Connect(closeAll)
-_G.LycolesMuscleAutoTrainStart = startLoop
-_G.LycolesMuscleAutoTrainStop = stopLoop
-_G.LycolesMuscleAutoTrainClose = closeAll
-"""
+    template_path = pathlib.Path(__file__).with_name("observation_auto_train_template.lua")
+    template = template_path.read_text(encoding="utf-8")
     return template.replace("__CONTRACT__", _luau_literal(contract)).replace("__PLACE_ID__", str(int(contract["placeId"])))
-
 
 
 def _recover_observation_only_auto_train(
@@ -900,7 +770,9 @@ def _recover_observation_only_auto_train(
         "loaderTemplatePath": str(loader_path),
         "contractPath": str(contract_path),
         "toolPath": contract["toolPath"],
-        "outcomeStateKeyCount": len(contract["outcomeStateKeys"]),
+        "primaryOutcomePath": ((contract.get("outcomeModel") or {}).get("primaryStatePath")),
+        "questRepetitionStatePathCount": len(((contract.get("outcomeModel") or {}).get("questRepetitionStatePaths") or [])),
+        "outcomeStateKeyCount": len(contract.get("outcomeStateKeys") or []),
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,

@@ -9,25 +9,66 @@
   "gameName": "🎃Muscle Legends",
   "matchingToolActivationEvents": 26,
   "observationDelaySeconds": 1.25,
+  "outcomeModel": {
+    "candidateStatePaths": [
+      "leaderstats.Strength",
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+      "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+      "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+      "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
+      "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
+      "Backpack.Tools.Count",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
+    ],
+    "ignoredNoisyStatePaths": [
+      "Character.RootPart.VelocityMagnitude",
+      "Character.Humanoid.WalkSpeed",
+      "Character.Humanoid.JumpPower",
+      "Character.Humanoid.ActiveAnimationCount",
+      "Character.Humanoid.Health",
+      "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
+      "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress"
+    ],
+    "kind": "delayed-cumulative",
+    "observedStateKeyCount": 21,
+    "primaryStatePath": "leaderstats.Strength",
+    "questRepetitionStatePaths": [
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+    ]
+  },
   "outcomeStateKeys": [
-    "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
-    "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress",
+    "leaderstats.Strength",
     "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
-    "Character.Humanoid.Health",
-    "Character.Humanoid.ActiveAnimationCount",
     "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
     "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
-    "leaderstats.Strength",
+    "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
     "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
-    "Character.Humanoid.WalkSpeed",
-    "Character.Humanoid.JumpPower",
-    "Backpack.Tools.Count"
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
+    "Backpack.Tools.Count",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
   ],
   "placeId": 3623096087,
   "requestedCapability": "Automatically train with the Weight tool in Muscle Legends",
   "scanId": "FE1C0EDA-12C4-43BC-B490-062412BD0DD1",
-  "schemaVersion": "117.observation-tool-contract.1",
+  "schemaVersion": "117.observation-tool-contract.2",
   "stateDeltaEvents": 317,
+  "timing": {
+    "activationIntervalSeconds": 0.35,
+    "delayedOutcomeWindowSeconds": 1.25,
+    "maxActivationIntervalSeconds": 2.0,
+    "maxOutcomeWindowSeconds": 10.0,
+    "minActivationIntervalSeconds": 0.1,
+    "minOutcomeWindowSeconds": 0.25,
+    "pollIntervalSeconds": 0.56,
+    "stallWindowSeconds": 21.0
+  },
   "toolActivationEvents": 42,
   "toolMetadata": {
     "canBeDropped": false,
