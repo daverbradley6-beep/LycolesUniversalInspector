@@ -4,6 +4,35 @@
 
 
 
+
+## Update — 2026-11-08 — executable workflow delivery exposure + strict request fail-closed mode
+
+- Continued autonomous development beyond routing/inference metadata into functional generation-path integration.
+- Implemented executable-script delivery visibility in `tools/lycoles_generation_service.py`:
+  - delivery now includes `generatedScriptPath`, `generatedScriptKind`, and `scriptArtifacts` (`utility`, `guidedWorkflow`, `promptInteractions`).
+  - delivery now reports `executableWorkflow` diagnostics (request presence, execution-ready counts, selected candidate, guided script generated flag, request-aligned executable availability, blockers).
+- Added explicit non-silent status when request cannot produce executable output:
+  - pipeline status now emits `observational-only-request-unmet`.
+- Added strict fail-closed option for requested executable generation:
+  - `GenerationRequest.require_executable` support,
+  - generation-service CLI `run-job --require-executable`,
+  - HTTP payload `requireExecutable: true`,
+  - receiver pipeline support (`from-parts` and `from-receiver`) via `--require-executable`.
+  - strict mode raises actionable errors when request-aligned executable workflows are unavailable.
+- Strengthened pipeline summary reporting:
+  - `summarize_generation_result(...)` now surfaces executable status and script path/kind, preventing silent observational-only interpretation.
+- Added integration/behavioral regression coverage with workflow-ready multipart fixtures:
+  - `tests/test_lycoles_generation_service.py`
+    - verifies workflow-ready evidence produces combined utility script with guided GUI start/stop wiring and executable workflow availability,
+    - verifies strict `require_executable=True` fails observational-only requests.
+  - `tests/test_receiver_generation_pipeline.py`
+    - verifies executable-ready summary state (`request-executable-ready`) and script artifact visibility,
+    - verifies strict `require_executable=True` failure for unmet requests.
+- Validation:
+  - `python3 -m unittest tests.test_lycoles_generation_service tests.test_receiver_generation_pipeline tests.test_generated_workflow_planning tests.test_generation_readiness tests.test_action_capability_discovery` → **94 passed**.
+  - `python3 -m unittest tests.test_lycoles_generation_service_provider tests.test_fetch_receiver_scan tests.test_build_release` → **54 passed**.
+
+
 ## Update — 2026-11-08 — routing optimization + universal automatic-action inference
 
 - Completed requested routing optimization based on measured complexity, cost, and retry economics:

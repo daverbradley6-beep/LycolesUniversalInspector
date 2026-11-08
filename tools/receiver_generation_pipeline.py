@@ -118,6 +118,9 @@ def summarize_generation_result(result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(generated_path_value, str) or not generated_path_value:
         return {
             "generatedResultAvailable": False,
+            "generatedScriptPath": delivery.get("generatedScriptPath"),
+            "generatedScriptKind": delivery.get("generatedScriptKind"),
+            "scriptArtifacts": delivery.get("scriptArtifacts") if isinstance(delivery.get("scriptArtifacts"), dict) else {},
             "implementedCapabilities": [],
             "executableLogic": {},
             "observationalOnly": ["no generated result artifact"],
@@ -136,15 +139,21 @@ def summarize_generation_result(result: dict[str, Any]) -> dict[str, Any]:
         if isinstance(item, dict) and isinstance(item.get("id"), str)
     ]
     implemented = payload.get("capabilities") if isinstance(payload.get("capabilities"), list) else []
-    observational_only = []
-    if request.get("implementationReady") is not True:
-        observational_only.append("requested capability is not implementation-ready")
-    if workflow.get("requestAlignedExecutionReadyCandidates", 0) == 0:
-        observational_only.append("no request-aligned execution-ready workflow candidates")
+    executable = delivery.get("executableWorkflow") if isinstance(delivery.get("executableWorkflow"), dict) else {}
+    request_executable_ready = executable.get("requestAlignedExecutableWorkflowAvailable") is True
+    observational_only = list(executable.get("blockers")) if isinstance(executable.get("blockers"), list) else []
+    if not request_executable_ready:
+        if request.get("implementationReady") is not True and "requested capability is not implementation-ready" not in observational_only:
+            observational_only.append("requested capability is not implementation-ready")
+        if workflow.get("requestAlignedExecutionReadyCandidates", 0) == 0 and "no request-aligned execution-ready workflow candidates" not in observational_only:
+            observational_only.append("no request-aligned execution-ready workflow candidates")
     if not capability_ids:
         observational_only.append("no generated capability contracts")
     return {
         "generatedResultAvailable": True,
+        "generatedScriptPath": delivery.get("generatedScriptPath"),
+        "generatedScriptKind": delivery.get("generatedScriptKind"),
+        "scriptArtifacts": delivery.get("scriptArtifacts") if isinstance(delivery.get("scriptArtifacts"), dict) else {},
         "implementedCapabilities": [str(item) for item in implemented],
         "executableLogic": {
             "requestStatus": request.get("status"),
@@ -155,10 +164,36 @@ def summarize_generation_result(result: dict[str, Any]) -> dict[str, Any]:
             else [],
             "requestAlignedExecutionReadyWorkflows": workflow.get("requestAlignedExecutionReadyCandidates", 0),
             "reviewOnlyGuiTransitionCandidates": workflow.get("reviewOnlyGuiTransitionCandidates", 0),
+            "requestExecutableStatus": "request-executable-ready" if executable.get("requestAlignedExecutableWorkflowAvailable") is True else "request-executable-unavailable",
+            "executionReadyWorkflowCandidates": executable.get("executionReadyWorkflowCandidates", 0),
+            "guidedWorkflowScriptGenerated": executable.get("guidedWorkflowScriptGenerated") is True,
+            "selectedWorkflowCandidateId": executable.get("selectedWorkflowCandidateId"),
         },
         "observationalOnly": observational_only,
         "unsupportedBehavior": payload.get("unsupportedBehavior") if isinstance(payload.get("unsupportedBehavior"), list) else [],
     }
+
+
+
+def _enforce_executable_requirement(
+    result: dict[str, Any],
+    requested_capability: Optional[str],
+    require_executable: bool,
+) -> None:
+    if not require_executable:
+        return
+    if not isinstance(requested_capability, str) or not requested_capability.strip():
+        return
+    summary = summarize_generation_result(result)
+    executable = summary.get("executableLogic") if isinstance(summary.get("executableLogic"), dict) else {}
+    if executable.get("requestExecutableStatus") == "request-executable-ready":
+        return
+    blockers = summary.get("observationalOnly") if isinstance(summary.get("observationalOnly"), list) else []
+    blocker_text = ", ".join(str(item) for item in blockers[:4]) if blockers else "request-aligned executable workflow unavailable"
+    raise ValueError(
+        "Executable workflow required but unavailable for requested capability "
+        f"'{requested_capability}': {blocker_text}"
+    )
 
 
 
@@ -350,6 +385,7 @@ def generate_from_parts(
     output_root: pathlib.Path,
     requested_capability: Optional[str] = None,
     observation_paths: Optional[Sequence[pathlib.Path]] = None,
+    require_executable: bool = False,
 ) -> dict[str, Any]:
     service = SERVICE.LycolesGenerationService(output_root=output_root)
     request = SERVICE.GenerationRequest(
@@ -357,8 +393,11 @@ def generate_from_parts(
         evidence_path=parts_dir,
         requested_capability=requested_capability,
         observation_paths=tuple(pathlib.Path(path).resolve() for path in (observation_paths or [])),
+        require_executable=require_executable,
     )
-    return service.run_sync(request)
+    result = service.run_sync(request)
+    _enforce_executable_requirement(result, requested_capability, require_executable)
+    return result
 
 
 def generate_from_receiver(
@@ -373,6 +412,7 @@ def generate_from_receiver(
     observation_paths: Optional[Sequence[pathlib.Path]] = None,
     allow_legacy_report_index: bool = False,
     max_legacy_report_pages: int = FETCH.MAX_LEGACY_REPORT_PAGES,
+    require_executable: bool = False,
 ) -> dict[str, Any]:
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -397,6 +437,7 @@ def generate_from_receiver(
         output_root=output_root / "generation-jobs",
         requested_capability=requested_capability,
         observation_paths=observation_paths,
+        require_executable=require_executable,
     )
     return {
         "fetch": fetch_result,
@@ -421,6 +462,8 @@ def main() -> int:
     local_parser.add_argument("--requested-capability", default=None)
     local_parser.add_argument("--observation-path", action="append", default=[],
         help="Dynamic observation JSON file or directory to merge; repeatable")
+    local_parser.add_argument("--require-executable", action="store_true",
+        help="Fail if requested capability does not produce request-aligned executable workflow output")
 
     receiver_parser = subparsers.add_parser("from-receiver", help="Fetch receiver scan then generate")
     receiver_parser.add_argument("--receiver-endpoint", required=True)
@@ -438,6 +481,8 @@ def main() -> int:
     receiver_parser.add_argument("--max-legacy-report-pages", type=int,
         default=FETCH.MAX_LEGACY_REPORT_PAGES,
         help="maximum paged legacy-report index pages to scan during fallback import")
+    receiver_parser.add_argument("--require-executable", action="store_true",
+        help="Fail if requested capability does not produce request-aligned executable workflow output")
 
     exercise_parser = subparsers.add_parser(
         "exercise-live",
@@ -472,6 +517,7 @@ def main() -> int:
                 output_root=output_root,
                 requested_capability=args.requested_capability,
                 observation_paths=observation_paths,
+                require_executable=args.require_executable,
             )
         elif args.mode == "from-receiver":
             result = generate_from_receiver(
@@ -488,6 +534,7 @@ def main() -> int:
                 observation_paths=observation_paths,
                 allow_legacy_report_index=args.allow_legacy_report_index,
                 max_legacy_report_pages=args.max_legacy_report_pages,
+                require_executable=args.require_executable,
             )
         else:
             result = run_live_evidence_exercise(

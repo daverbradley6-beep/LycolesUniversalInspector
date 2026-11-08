@@ -63,6 +63,105 @@ def make_parts(directory, event=None, request=None, scan_id="service_scan_001"):
 
 
 
+def make_workflow_ready_parts(directory, request="Complete observed shop flow", scan_id="workflow_ready_scan"):
+    scan = {
+        "scanId": scan_id,
+        "placeId": 3623096087,
+        "partCount": 2,
+        "version": "10.0",
+        "objects": [],
+    }
+    scan_stats = {"recorded": 2, "complete": True}
+    shared_control = {
+        "visible": True,
+        "active": True,
+        "selectable": True,
+        "autoButtonColor": True,
+        "interactable": True,
+        "ancestorVisible": True,
+        "screenEnabled": True,
+        "withinScrollingBounds": True,
+        "effectiveVisible": True,
+    }
+    one = dict(
+        scan,
+        partIndex=1,
+        scanStats=scan_stats,
+        featureEvidence={"shops": {}},
+        featureRequest=request,
+        objects=[{
+            "path": "PlayerGui.HUD.Shop.Select",
+            "class": "TextButton",
+            "scanOrdinal": 1,
+            "guiControl": dict({"text": "Select"}, **shared_control),
+        }],
+    )
+
+    event_one = {
+        "featureCandidate": "shops",
+        "path": "PlayerGui.HUD.Shop.Select",
+        "pathIdentity": [
+            {"name": "PlayerGui", "className": "PlayerGui", "ordinal": 1},
+            {"name": "HUD", "className": "ScreenGui", "ordinal": 1},
+            {"name": "Shop", "className": "Frame", "ordinal": 1},
+            {"name": "Select", "className": "TextButton", "ordinal": 1},
+        ],
+        "controlType": "GuiButton.Activated",
+        "transactionId": "shop-flow",
+        "sequence": 1,
+        "controlMetadata": dict({"controlClass": "TextButton", "text": "Select"}, **shared_control),
+        "stateChanges": [{
+            "key": "Data.ShopStage",
+            "before": 2,
+            "after": 3,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopStage", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    event_two = {
+        "featureCandidate": "shops",
+        "path": "PlayerGui.HUD.Shop.Confirm",
+        "pathIdentity": [
+            {"name": "PlayerGui", "className": "PlayerGui", "ordinal": 1},
+            {"name": "HUD", "className": "ScreenGui", "ordinal": 1},
+            {"name": "Shop", "className": "Frame", "ordinal": 1},
+            {"name": "Confirm", "className": "TextButton", "ordinal": 1},
+        ],
+        "controlType": "GuiButton.Activated",
+        "transactionId": "shop-flow",
+        "sequence": 2,
+        "controlMetadata": dict({"controlClass": "TextButton", "text": "Confirm"}, **shared_control),
+        "stateChanges": [{
+            "key": "Data.ShopStage",
+            "before": 3,
+            "after": 4,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopStage", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+
+    two = dict(
+        scan,
+        partIndex=2,
+        objects=[{
+            "path": "PlayerGui.HUD.Shop.Confirm",
+            "class": "TextButton",
+            "scanOrdinal": 2,
+            "guiControl": dict({"text": "Confirm"}, **shared_control),
+        }],
+        interactionHistoryChunk=[event_one, event_two],
+    )
+    (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
+    (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
+
+
 
 def make_live_observation_export(path, scan_id="live-observation-service-1"):
     payload = {
@@ -150,7 +249,10 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             result = service.run_sync(request)
 
             self.assertEqual(result["status"], "succeeded")
-            self.assertIn(result["generationStatus"], ("generated", "generated-with-blockers"))
+            self.assertIn(
+                result["generationStatus"],
+                ("generated", "generated-with-blockers", "observational-only-request-unmet"),
+            )
             generated_result_path = pathlib.Path(result["delivery"]["generatedResultPath"])
             self.assertTrue(generated_result_path.is_file())
 
@@ -193,6 +295,56 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertIn("retries", usage["analysis"])
             self.assertIn("attempts", usage["generation"])
             self.assertIn("retries", usage["repair"])
+
+    def test_workflow_ready_parts_generate_executable_script_with_gui_wiring(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_workflow_ready_parts(parts)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Complete observed shop flow",
+            )
+            result = service.run_sync(request)
+            self.assertEqual(result["status"], "succeeded")
+            self.assertIn(result["generationStatus"], ("generated", "generated-with-blockers"))
+
+            delivery = result["delivery"]
+            self.assertEqual(delivery["generatedScriptKind"], "combined-utility")
+            generated_script_path = pathlib.Path(delivery["generatedScriptPath"])
+            self.assertTrue(generated_script_path.is_file())
+            workflow = delivery["executableWorkflow"]
+            self.assertTrue(workflow["guidedWorkflowScriptGenerated"])
+            self.assertGreaterEqual(workflow["executionReadyWorkflowCandidates"], 1)
+            self.assertGreaterEqual(workflow["requestAlignedExecutionReadyWorkflowCandidates"], 1)
+            self.assertTrue(workflow["requestAlignedExecutableWorkflowAvailable"])
+
+            source = generated_script_path.read_text(encoding="utf-8")
+            self.assertIn("StartGuidedWorkflow", source)
+            self.assertIn("StopGuidedWorkflow", source)
+            self.assertIn("startButton.Activated:Connect(function() task.spawn(runWorkflow) end)", source)
+            self.assertIn("stopButton.Activated:Connect(function()", source)
+
+    def test_require_executable_blocks_observational_only_requested_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically shoot and reload")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically shoot and reload",
+                require_executable=True,
+            )
+            with self.assertRaisesRegex(ValueError, "Executable workflow required but unavailable"):
+                service.run_sync(request)
 
     def test_hard_request_prioritizes_reasoning_generation_route(self):
         with tempfile.TemporaryDirectory() as tmp:

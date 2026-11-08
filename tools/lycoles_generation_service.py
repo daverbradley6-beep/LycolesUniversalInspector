@@ -113,6 +113,7 @@ class GenerationRequest:
     evidence_path: Path
     requested_capability: Optional[str] = None
     observation_paths: tuple[Path, ...] = ()
+    require_executable: bool = False
 
 
 @dataclass
@@ -151,6 +152,7 @@ class JobRecord:
                 "evidencePath": str(self.request.evidence_path),
                 "requestedCapability": self.request.requested_capability,
                 "observationPaths": [str(path) for path in self.request.observation_paths],
+                "requireExecutable": self.request.require_executable,
             },
             "result": self.result,
         }
@@ -779,6 +781,113 @@ class DeliveryEngine:
         generated = readiness.get("generatedCapabilities") or []
         return [str(item.get("kind")) for item in generated if isinstance(item, dict) and item.get("kind")][:64]
 
+    @staticmethod
+    def _script_artifacts(bundle: EvidenceBundle, code: Optional[str]) -> dict[str, Any]:
+        utility_path = bundle.output_dir / "LycolesGeneratedUtility.lua"
+        guided_path = bundle.output_dir / "LycolesGuidedWorkflow.lua"
+        prompt_path = bundle.output_dir / "LycolesPromptInteractions.lua"
+
+        if utility_path.is_file():
+            primary_path = utility_path
+            primary_kind = "combined-utility"
+        elif guided_path.is_file():
+            primary_path = guided_path
+            primary_kind = "guided-workflow"
+        elif prompt_path.is_file():
+            primary_path = prompt_path
+            primary_kind = "prompt-interaction-trial"
+        elif isinstance(code, str) and code.strip():
+            primary_path = bundle.output_dir / "LycolesGeneratedScript.lua"
+            primary_path.write_text(code, encoding="utf-8")
+            primary_kind = "generated-script"
+        else:
+            primary_path = None
+            primary_kind = None
+
+        return {
+            "generatedScriptPath": str(primary_path) if primary_path is not None else None,
+            "generatedScriptKind": primary_kind,
+            "scriptArtifacts": {
+                "utility": str(utility_path) if utility_path.is_file() else None,
+                "guidedWorkflow": str(guided_path) if guided_path.is_file() else None,
+                "promptInteractions": str(prompt_path) if prompt_path.is_file() else None,
+            },
+        }
+
+    @staticmethod
+    def _executable_workflow_status(bundle: EvidenceBundle, readiness: dict[str, Any]) -> dict[str, Any]:
+        request_section = readiness.get("request") if isinstance(readiness.get("request"), dict) else {}
+        request_feature = (
+            readiness.get("requestFeatureReadiness")
+            if isinstance(readiness.get("requestFeatureReadiness"), dict)
+            else {}
+        )
+        workflow_evidence = (
+            request_feature.get("workflowEvidence")
+            if isinstance(request_feature.get("workflowEvidence"), dict)
+            else {}
+        )
+        workflow_selection = (
+            readiness.get("workflowSelection")
+            if isinstance(readiness.get("workflowSelection"), dict)
+            else {}
+        )
+        planning = (
+            workflow_selection.get("planningDiagnostics")
+            if isinstance(workflow_selection.get("planningDiagnostics"), dict)
+            else {}
+        )
+        release_manifest = bundle.release_manifest if isinstance(bundle.release_manifest, dict) else {}
+        guided_trial = (
+            release_manifest.get("guidedWorkflowTrial")
+            if isinstance(release_manifest.get("guidedWorkflowTrial"), dict)
+            else {}
+        )
+
+        request_text = request_section.get("request") if isinstance(request_section.get("request"), str) else None
+        request_provided = bool(request_text and request_text.strip())
+        execution_ready_candidates = int(
+            workflow_evidence.get("executionReadyCandidates")
+            if isinstance(workflow_evidence.get("executionReadyCandidates"), int)
+            else planning.get("executionReadyWorkflows")
+            if isinstance(planning.get("executionReadyWorkflows"), int)
+            else 0
+        )
+        request_aligned_candidates = int(
+            workflow_evidence.get("requestAlignedExecutionReadyCandidates")
+            if isinstance(workflow_evidence.get("requestAlignedExecutionReadyCandidates"), int)
+            else planning.get("requestAlignedExecutionReadyWorkflows")
+            if isinstance(planning.get("requestAlignedExecutionReadyWorkflows"), int)
+            else 0
+        )
+        guided_generated = guided_trial.get("generated") is True
+        selected_candidate_id = workflow_selection.get("selectedCandidateId")
+        executable_available = execution_ready_candidates > 0 and guided_generated
+        request_aligned_executable = request_aligned_candidates > 0 and guided_generated
+
+        blockers: list[str] = []
+        if request_provided and request_aligned_candidates == 0:
+            blockers.append("no request-aligned execution-ready workflow candidates")
+        if execution_ready_candidates > 0 and not guided_generated:
+            blockers.append("execution-ready workflow candidates exist but guided workflow script was not generated")
+        return {
+            "requestedCapabilityProvided": request_provided,
+            "requestStatus": request_section.get("status"),
+            "requestImplementationReady": request_section.get("implementationReady") is True,
+            "executionReadyWorkflowCandidates": execution_ready_candidates,
+            "requestAlignedExecutionReadyWorkflowCandidates": request_aligned_candidates,
+            "guidedWorkflowScriptGenerated": guided_generated,
+            "selectedWorkflowCandidateId": selected_candidate_id,
+            "executableWorkflowAvailable": executable_available,
+            "requestAlignedExecutableWorkflowAvailable": request_aligned_executable,
+            "manualGuiActivationRequired": guided_trial.get("manualActivationRequired") is True,
+            "automaticActivationSupported": guided_trial.get("automaticActivation") is True,
+            "blockers": blockers,
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+            "causalityProven": False,
+        }
+
     def deliver(
         self,
         bundle: EvidenceBundle,
@@ -788,7 +897,31 @@ class DeliveryEngine:
     ) -> dict[str, Any]:
         result_path = bundle.output_dir / "generated-result.json"
         if code is None or not validation.get("valid"):
-            payload = {"generatedResultPath": None, "generatedResultSchema": None, "claims": dict(FALSE_CLAIMS)}
+            payload = {
+                "generatedResultPath": None,
+                "generatedResultSchema": None,
+                "generatedScriptPath": None,
+                "generatedScriptKind": None,
+                "scriptArtifacts": {"utility": None, "guidedWorkflow": None, "promptInteractions": None},
+                "executableWorkflow": {
+                    "requestedCapabilityProvided": bool(request.requested_capability),
+                    "requestStatus": None,
+                    "requestImplementationReady": False,
+                    "executionReadyWorkflowCandidates": 0,
+                    "requestAlignedExecutionReadyWorkflowCandidates": 0,
+                    "guidedWorkflowScriptGenerated": False,
+                    "selectedWorkflowCandidateId": None,
+                    "executableWorkflowAvailable": False,
+                    "requestAlignedExecutableWorkflowAvailable": False,
+                    "manualGuiActivationRequired": False,
+                    "automaticActivationSupported": False,
+                    "blockers": ["generated script unavailable or failed validation"],
+                    "runtimeVerified": False,
+                    "gameplayVerified": False,
+                    "causalityProven": False,
+                },
+                "claims": dict(FALSE_CLAIMS),
+            }
             result_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             return payload
 
@@ -813,9 +946,15 @@ class DeliveryEngine:
             generation_readiness=readiness,
         )
         result_path.write_text(json.dumps(generated_result, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+        script_artifacts = self._script_artifacts(bundle, code)
+        executable_workflow = self._executable_workflow_status(bundle, readiness)
         return {
             "generatedResultPath": str(result_path),
             "generatedResultSchema": generated_result.get("schemaVersion"),
+            "generatedScriptPath": script_artifacts["generatedScriptPath"],
+            "generatedScriptKind": script_artifacts["generatedScriptKind"],
+            "scriptArtifacts": script_artifacts["scriptArtifacts"],
+            "executableWorkflow": executable_workflow,
             "claims": {
                 "packageAuthenticityVerified": generated_result.get("packageAuthenticityVerified"),
                 "runtimeVerified": generated_result.get("runtimeVerified"),
@@ -876,7 +1015,25 @@ class LycolesGenerationService:
         delivery = self.delivery.deliver(bundle, request, code, validation)
 
         blockers = analysis.get("explicitBlockers") or []
-        generation_status = "blocked" if code is None else ("generated-with-blockers" if blockers else "generated")
+        executable_workflow = delivery.get("executableWorkflow") if isinstance(delivery.get("executableWorkflow"), dict) else {}
+        request_provided = executable_workflow.get("requestedCapabilityProvided") is True
+        request_executable_available = executable_workflow.get("requestAlignedExecutableWorkflowAvailable") is True
+
+        if code is None:
+            generation_status = "blocked"
+        elif request_provided and not request_executable_available:
+            generation_status = "observational-only-request-unmet"
+        elif blockers:
+            generation_status = "generated-with-blockers"
+        else:
+            generation_status = "generated"
+
+        if request.require_executable and request_provided and not request_executable_available:
+            blocker_text = ", ".join(str(item) for item in executable_workflow.get("blockers", [])[:4])
+            if not blocker_text:
+                blocker_text = "no request-aligned executable workflow was generated"
+            raise ValueError(f"Executable workflow required but unavailable: {blocker_text}")
+
         ai_inference_performed = (
             generation_source == "ai-generated-script"
             or usage.analysis_attempts > 0
@@ -1008,11 +1165,15 @@ class LycolesGenerationService:
                         raw_observations = payload.get("observationPaths") or []
                         if not isinstance(raw_observations, list) or any(not isinstance(item, str) for item in raw_observations):
                             raise ValueError("observationPaths must be a list of strings")
+                        require_executable = payload.get("requireExecutable", False)
+                        if not isinstance(require_executable, bool):
+                            raise ValueError("requireExecutable must be a boolean")
                         request = GenerationRequest(
                             evidence_kind=str(payload.get("evidenceKind")),
                             evidence_path=Path(str(payload.get("evidencePath"))).expanduser().resolve(),
                             requested_capability=payload.get("requestedCapability"),
                             observation_paths=tuple(Path(item).expanduser().resolve() for item in raw_observations),
+                            require_executable=require_executable,
                         )
                         job_id = service.submit(request)
                         return self._json({"jobId": job_id, "status": "queued", "statusUrl": f"/v1/generation/jobs/{job_id}"}, 202)
@@ -1030,6 +1191,7 @@ def _request_from_args(args: argparse.Namespace) -> GenerationRequest:
         evidence_path=Path(args.evidence_path).expanduser().resolve(),
         requested_capability=args.requested_capability,
         observation_paths=tuple(Path(item).expanduser().resolve() for item in raw_paths),
+        require_executable=bool(getattr(args, "require_executable", False)),
     )
 
 
@@ -1058,6 +1220,8 @@ def main() -> int:
     run_parser.add_argument("--requested-capability", default=None)
     run_parser.add_argument("--observation-path", action="append", default=[],
                             help="Additional observation overlay path (dynamic JSON file or compiled observation directory); repeatable")
+    run_parser.add_argument("--require-executable", action="store_true",
+                            help="Fail when requested capability does not produce request-aligned executable workflow output")
     run_parser.add_argument("--output-root", default="build/generation-jobs")
 
     serve_parser = subparsers.add_parser("serve", help="Run HTTP job service")

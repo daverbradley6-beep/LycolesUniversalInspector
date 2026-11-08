@@ -61,6 +61,102 @@ def make_parts(directory, event=None, request=None, scan_id="receiver_pipeline_s
 
 
 
+
+
+def make_workflow_ready_parts(directory, request="Complete observed shop flow", scan_id="receiver_pipeline_scan"):
+    scan = {
+        "scanId": scan_id,
+        "placeId": 3623096087,
+        "partCount": 2,
+        "version": "10.0",
+        "objects": [],
+    }
+    shared_control = {
+        "visible": True,
+        "active": True,
+        "selectable": True,
+        "autoButtonColor": True,
+        "interactable": True,
+        "ancestorVisible": True,
+        "screenEnabled": True,
+        "withinScrollingBounds": True,
+        "effectiveVisible": True,
+    }
+    one = dict(
+        scan,
+        partIndex=1,
+        scanStats={"recorded": 2, "complete": True},
+        featureEvidence={"shops": {}},
+        featureRequest=request,
+        objects=[{
+            "path": "PlayerGui.HUD.Shop.Select",
+            "class": "TextButton",
+            "scanOrdinal": 1,
+            "guiControl": dict({"text": "Select"}, **shared_control),
+        }],
+    )
+    event_one = {
+        "featureCandidate": "shops",
+        "path": "PlayerGui.HUD.Shop.Select",
+        "pathIdentity": [
+            {"name": "PlayerGui", "className": "PlayerGui", "ordinal": 1},
+            {"name": "HUD", "className": "ScreenGui", "ordinal": 1},
+            {"name": "Shop", "className": "Frame", "ordinal": 1},
+            {"name": "Select", "className": "TextButton", "ordinal": 1},
+        ],
+        "controlType": "GuiButton.Activated",
+        "transactionId": "shop-flow",
+        "sequence": 1,
+        "controlMetadata": dict({"controlClass": "TextButton", "text": "Select"}, **shared_control),
+        "stateChanges": [{
+            "key": "Data.ShopStage",
+            "before": 2,
+            "after": 3,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopStage", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    event_two = {
+        "featureCandidate": "shops",
+        "path": "PlayerGui.HUD.Shop.Confirm",
+        "pathIdentity": [
+            {"name": "PlayerGui", "className": "PlayerGui", "ordinal": 1},
+            {"name": "HUD", "className": "ScreenGui", "ordinal": 1},
+            {"name": "Shop", "className": "Frame", "ordinal": 1},
+            {"name": "Confirm", "className": "TextButton", "ordinal": 1},
+        ],
+        "controlType": "GuiButton.Activated",
+        "transactionId": "shop-flow",
+        "sequence": 2,
+        "controlMetadata": dict({"controlClass": "TextButton", "text": "Confirm"}, **shared_control),
+        "stateChanges": [{
+            "key": "Data.ShopStage",
+            "before": 3,
+            "after": 4,
+            "stateIdentityStatus": "component-resolved",
+            "stateIdentity": [
+                {"name": "Data", "className": "Folder", "ordinal": 1},
+                {"name": "ShopStage", "className": "IntValue", "ordinal": 1},
+            ],
+        }],
+    }
+    two = dict(
+        scan,
+        partIndex=2,
+        objects=[{
+            "path": "PlayerGui.HUD.Shop.Confirm",
+            "class": "TextButton",
+            "scanOrdinal": 2,
+            "guiControl": dict({"text": "Confirm"}, **shared_control),
+        }],
+        interactionHistoryChunk=[event_one, event_two],
+    )
+    (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
+    (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
 def make_live_observation_export(path, baseline_scan_id="receiver_pipeline_scan"):
     payload = {
         "schemaVersion": "30.6.live-observation-export.1",
@@ -127,7 +223,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 requested_capability="Automatically hatch the selected egg",
             )
             self.assertEqual(result["status"], "succeeded")
-            self.assertIn(result["generationStatus"], ("generated", "generated-with-blockers"))
+            self.assertIn(
+                result["generationStatus"],
+                ("generated", "generated-with-blockers", "observational-only-request-unmet"),
+            )
             generated_result = pathlib.Path(result["delivery"]["generatedResultPath"])
             self.assertTrue(generated_result.is_file())
 
@@ -196,6 +295,42 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             resolved = MODULE._resolve_parts_dir_for_scan_id(
                 extracted, "DBFC72C6-749B-4F95-BBA2-433B8B61745C")
             self.assertEqual(resolved, scan_dir.resolve())
+
+
+    def test_summarize_generation_result_marks_request_executable_ready_when_workflow_generated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_workflow_ready_parts(parts)
+
+            result = MODULE.generate_from_parts(
+                parts_dir=parts,
+                output_root=root / "output",
+                requested_capability="Complete observed shop flow",
+            )
+            summary = MODULE.summarize_generation_result(result)
+            self.assertTrue(summary["generatedResultAvailable"])
+            self.assertEqual(summary["executableLogic"]["requestExecutableStatus"], "request-executable-ready")
+            self.assertGreaterEqual(summary["executableLogic"]["executionReadyWorkflowCandidates"], 1)
+            self.assertTrue(pathlib.Path(summary["generatedScriptPath"]).is_file())
+            self.assertEqual(summary["generatedScriptKind"], "combined-utility")
+            self.assertEqual(summary["observationalOnly"], [])
+
+    def test_generate_from_parts_require_executable_raises_when_request_unmet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically shoot and reload")
+
+            with self.assertRaisesRegex(ValueError, "Executable workflow required but unavailable"):
+                MODULE.generate_from_parts(
+                    parts_dir=parts,
+                    output_root=root / "output",
+                    requested_capability="Automatically shoot and reload",
+                    require_executable=True,
+                )
 
     def test_exercise_live_reports_requested_baseline_when_parts_missing(self):
         with tempfile.TemporaryDirectory() as tmp:

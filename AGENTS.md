@@ -297,3 +297,20 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `tools/plan_generated_workflows.py` propagates candidate-level `automaticActionSignals` and summary count `workflowsWithAutomaticActionCandidates`.
   - `tools/assess_generation_readiness.py` consumes automatic-action inferences when matching request/action evidence.
 - Synthetic fixtures continue to validate implementation logic only; they do not establish live gameplay verification.
+
+## Update — 2026-11-08 — executable workflow delivery visibility and strict request gating
+
+- `tools/lycoles_generation_service.py` delivery now returns explicit script artifacts:
+  - `generatedScriptPath`, `generatedScriptKind`, and `scriptArtifacts` (`utility`, `guidedWorkflow`, `promptInteractions`).
+- Delivery now exposes `executableWorkflow` diagnostics derived from readiness + release manifest, including:
+  - request-provided flag,
+  - execution-ready/request-aligned workflow counts,
+  - guided workflow script generation status,
+  - selected workflow candidate id,
+  - request-aligned executable availability and blockers.
+- Generation status now explicitly reports `observational-only-request-unmet` when a request exists but request-aligned executable workflow output is unavailable.
+- Strict fail-closed mode added:
+  - `GenerationRequest.require_executable` and CLI `--require-executable` (`run-job`) block jobs that cannot produce request-aligned executable workflow output.
+  - HTTP API accepts `requireExecutable: boolean` for queued jobs.
+- `tools/receiver_generation_pipeline.py` supports strict request gating (`--require-executable`) in both `from-parts` and `from-receiver` modes and emits actionable failure reasons.
+- `summarize_generation_result(...)` now reports executable status plus delivered script path/kind so observational-only outputs are explicit, not silent.
