@@ -321,12 +321,16 @@ class ReleaseBuilderTests(unittest.TestCase):
             second["interactionHistoryChunk"]=unlinked
             (parts/"2.json").write_text(json.dumps(second))
             manifest=builder.build(parts,base/"out")
-            self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
-            self.assertFalse((base/"out"/"LycolesGuidedWorkflow.lua").exists())
+            self.assertTrue(manifest["guidedWorkflowTrial"]["generated"])
+            self.assertTrue((base/"out"/"LycolesGuidedWorkflow.lua").exists())
+            self.assertEqual(
+                manifest["generatedWorkflowPlan"]["summary"]["singleStepExecutionReadyWorkflows"],
+                1,
+            )
             self.assertFalse((base/"out"/"guided-workflow-evaluation.json").exists())
             self.assertFalse((base/"out"/"guided-workflow-feedback-aggregate.json").exists())
             with zipfile.ZipFile(next((base/"out").glob("*.zip"))) as archive:
-                self.assertNotIn("LycolesGuidedWorkflow.lua",archive.namelist())
+                self.assertIn("LycolesGuidedWorkflow.lua",archive.namelist())
                 self.assertNotIn("guided-workflow-evaluation.json",archive.namelist())
                 self.assertNotIn("guided-workflow-feedback-aggregate.json",archive.namelist())
 

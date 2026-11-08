@@ -610,6 +610,38 @@ def plan(plan_document,actions):
                 review_only_mapped.append((transaction_order,event,review_target))
         if len(events)>1 and len(mapped)<2:insufficient_contracts+=1
         if len(mapped)<2:
+            if len(events)==1 and len(mapped)==1:
+                transaction_order,event,target_data=mapped[0]
+                step=_step(event,1,transaction_order,*target_data)
+                blockers=[
+                    "Single-step workflow captures one bounded action attempt only",
+                    "Observed outcome direction does not prove causality or gameplay success",
+                ]
+                if step["manualActivationRequired"]:
+                    blockers.append("GUI step requires normal user activation because GuiButton has no public activation method")
+                if step["kind"]=="proximity-prompt-trial":
+                    blockers.append("Prompt step requires fireproximityprompt availability at runtime")
+                execution_mode=("mixed-guided" if step["manualActivationRequired"]
+                    else "bounded-automatic")
+                candidates.append({"id":hashlib.sha256((transaction+"\0singleton\0"
+                        +step["targetPath"]).encode()).hexdigest()[:20],
+                    "transactionId":transaction,
+                    "linkageSource":"explicit-user-armed-recording" if explicit_recording
+                        else "observed-shared-transaction",
+                    "steps":[step],"stepCount":1,"unmappedLinkedEvents":0,
+                    "exactOrderObserved":True,"allStepsGenerationReady":True,
+                    "stateContinuityLinks":[],"operatorStartRequired":True,
+                    "manualGuiActivationRequired":step["manualActivationRequired"],
+                    "selection":_selection([step],request),
+                    "inputCadenceSignals":_candidate_cadence([event],cadence_index),
+                    "automaticActionSignals":_candidate_automatic_action_signals(
+                        [event],automatic_index),
+                    "guidedTrialGenerationReady":True,"executionMode":execution_mode,
+                    "automaticallyExecutable":not step["manualActivationRequired"],
+                    "executionReady":True,"singleStepWorkflow":True,
+                    "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
+                    "blockers":blockers})
+                continue
             if len(events)>1 and len(review_only_mapped)>=2:
                 review_steps=[{"sequence":index+1,"transactionOrder":transaction_order,
                     "observedSequence":event["sequence"],"targetPath":target["path"],
@@ -724,6 +756,9 @@ def plan(plan_document,actions):
             "generationReadySteps":sum(item["stepCount"] for item in candidates),
             "unlinkedEvents":unlinked,"executionReadyWorkflows":sum(
                 item["executionReady"] for item in candidates),
+            "singleStepExecutionReadyWorkflows":sum(
+                item.get("singleStepWorkflow") is True and item.get("executionReady") is True
+                for item in candidates),
             "automaticallyExecutableWorkflows":sum(
                 item["automaticallyExecutable"] for item in candidates),
             "requestAlignedWorkflows":sum(item["selection"]["requestAligned"] for item in candidates),

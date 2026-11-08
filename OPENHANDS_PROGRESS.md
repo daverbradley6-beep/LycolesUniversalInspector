@@ -5,6 +5,38 @@
 
 
 
+## Update — 2026-11-08 — executable singleton workflow expansion + strict package generation checkpoint
+
+- Expanded executable workflow generation beyond multi-step-only linkage:
+  - `tools/plan_generated_workflows.py` now emits bounded singleton execution-ready candidates for exact generation-ready single-event transactions.
+  - Added summary metric `singleStepExecutionReadyWorkflows`.
+- Hardened generated guided workflow runtime semantics (`tools/generate_guided_workflow.py`):
+  - preflight run gating (`preflightReady`),
+  - bounded non-GUI activation retries (`stepActivationRetryLimit=2`),
+  - prompt teleport restore cleanup (`restorePromptPosition`) on finish/close/failure paths.
+- Updated schema contracts to support singleton mixed-action workflow capabilities while preserving fail-closed bounds:
+  - guided workflow validator now accepts `1..64` steps,
+  - generated-result workflow capability validator now accepts `1..64`,
+  - generation-readiness display parser now accepts `1..128`.
+- Performed strict end-to-end executable generation run:
+  - command: `python3 tools/lycoles_generation_service.py run-job --evidence-kind parts_dir --evidence-path build/workflow_ready_parts_fixture --requested-capability "Complete observed shop flow" --require-executable --output-root build/executable_generation_job`
+  - status: `succeeded`
+  - request status: `generated-bounded-subset`
+  - generated capability kinds: `guided-gui-activation-trial`, `mixed-action-workflow-trial`
+  - selected execution-ready candidate id: `e0207a259f6fae8ed60a`
+  - request-aligned execution-ready workflow candidates: `1`
+  - generated script artifact path (job output): `build/executable_generation_job/job-911cd320c09441d4/LycolesGeneratedUtility.lua`
+- Published tracked Potassium-ready artifact package (for commit-pinned loading) under:
+  - `potassium_artifacts/workflow_ready_live_package/`
+  - includes `LycolesGeneratedUtility.lua`, `LycolesGuidedWorkflow.lua`, `generation-readiness.json`, `release-manifest.json`, `generation-job-result.json`.
+
+Validation results:
+- `python3 -m unittest tests.test_generated_workflow_planning tests.test_generate_guided_workflow tests.test_generation_readiness tests.test_generated_result tests.test_lycoles_generation_service tests.test_receiver_generation_pipeline` → **91 passed**.
+- `python3 -m unittest tests.test_generate_script tests.test_inspector_ui tests.test_lycoles_generation_service_provider tests.test_fetch_receiver_scan tests.test_build_release` → **97 passed**.
+- `python3 -m unittest tests.test_controlled_guided_workflow tests.test_compile_workflows` → **10 passed**.
+- `build/luau-0.744/luau-compile` succeeded for tracked generated artifacts.
+
+
 ## Update — 2026-11-08 — executable workflow delivery exposure + strict request fail-closed mode
 
 - Continued autonomous development beyond routing/inference metadata into functional generation-path integration.

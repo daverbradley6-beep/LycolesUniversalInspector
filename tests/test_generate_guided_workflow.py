@@ -147,6 +147,21 @@ class GuidedWorkflowGeneratorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"step"):
             generator.render(value)
 
+    def test_generates_single_step_execution_ready_workflow_with_recovery_guards(self):
+        value=mixed_document(automatic=True)
+        candidate=value["workflowCandidates"][0]
+        candidate["steps"]=[tool_step(1)]
+        candidate["stepCount"]=1
+        source=generator.render(value)
+        self.assertIn('local stepActivationRetryLimit=2',source)
+        self.assertIn('local function preflightReady()',source)
+        self.assertIn('local function restorePromptPosition()',source)
+        self.assertIn('for attempt=1,activationAttempts do',source)
+        self.assertIn('activation retry',source)
+        self.assertIn('or not isinstance(steps,list) or not 1<=len(steps)<=64',
+            pathlib.Path(ROOT/"tools"/"generate_guided_workflow.py").read_text(encoding="utf-8"))
+        self.assertIn('steps={',source)
+
 
 
 

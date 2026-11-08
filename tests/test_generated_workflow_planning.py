@@ -202,8 +202,11 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         first.update(transactionId="event-one",sessionId="session",sessionElapsedSeconds=20.0)
         second.update(transactionId="event-two",sessionId="session",sessionElapsedSeconds=23.125)
         result=self.analyze(value);adjacency=result["temporalAdjacency"]
-        self.assertEqual(result["summary"]["planningStatus"],"singleton-transactions-only")
-        self.assertEqual(result["summary"]["workflowCandidates"],0)
+        self.assertEqual(result["summary"]["planningStatus"],"execution-ready-candidates")
+        self.assertEqual(result["summary"]["workflowCandidates"],2)
+        self.assertEqual(result["summary"]["singleStepExecutionReadyWorkflows"],2)
+        self.assertTrue(all(item["stepCount"]==1 and item["executionReady"]
+            for item in result["workflowCandidates"]))
         self.assertEqual(adjacency["unlinkedAdjacentPairs"],1)
         self.assertEqual(adjacency["candidates"][0]["gapSeconds"],3.125)
         self.assertFalse(adjacency["usedForWorkflowLinkage"])
@@ -227,8 +230,9 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
                 "explicitlyLinked":False,"temporalCorrelationOnly":True,
                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False})
         result=self.analyze(value);followups=result["guiRevealFollowups"]
-        self.assertEqual(result["summary"]["planningStatus"],"singleton-transactions-only")
-        self.assertEqual(result["summary"]["workflowCandidates"],0)
+        self.assertEqual(result["summary"]["planningStatus"],"execution-ready-candidates")
+        self.assertEqual(result["summary"]["workflowCandidates"],2)
+        self.assertEqual(result["summary"]["singleStepExecutionReadyWorkflows"],2)
         self.assertEqual(result["summary"]["guiRevealFollowupCandidates"],1)
         self.assertEqual(followups["candidateCount"],1)
         self.assertEqual(followups["candidates"][0]["targetSequence"],2)
@@ -356,12 +360,31 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         value=plan();events=value["observedInteractionHistory"]
         events[0]["transactionId"]="event-1";events[1]["transactionId"]="event-2"
         result=self.analyze(value);summary=result["summary"]
-        self.assertEqual(result["workflowCandidates"],[])
+        self.assertEqual(len(result["workflowCandidates"]),2)
+        self.assertTrue(all(item["stepCount"]==1 for item in result["workflowCandidates"]))
         self.assertEqual(summary["transactionGroups"],2)
         self.assertEqual(summary["singletonTransactions"],2)
         self.assertEqual(summary["multiEventTransactions"],0)
         self.assertEqual(summary["linkedTransactions"],0)
-        self.assertEqual(summary["planningStatus"],"singleton-transactions-only")
+        self.assertEqual(summary["singleStepExecutionReadyWorkflows"],2)
+        self.assertEqual(summary["planningStatus"],"execution-ready-candidates")
+
+
+    def test_singleton_tool_transaction_forms_execution_ready_automatic_candidate(self):
+        value=plan();value["observedInteractionHistory"]= [tool_event(1,0,1,"single-tool")]
+        result=self.analyze(value);summary=result["summary"]
+        self.assertEqual(summary["planningStatus"],"execution-ready-candidates")
+        self.assertEqual(summary["workflowCandidates"],1)
+        self.assertEqual(summary["singleStepExecutionReadyWorkflows"],1)
+        candidate=result["workflowCandidates"][0]
+        self.assertEqual(candidate["stepCount"],1)
+        self.assertTrue(candidate["executionReady"])
+        self.assertTrue(candidate["guidedTrialGenerationReady"])
+        self.assertTrue(candidate["automaticallyExecutable"])
+        self.assertEqual(candidate["executionMode"],"bounded-automatic")
+        self.assertIn("Single-step workflow captures one bounded action attempt only",
+            candidate["blockers"])
+        self.assertEqual(len(generator.validate(result)),1)
 
     def test_duplicate_sequence_and_forged_claim_fail_closed(self):
         value=plan();value["observedInteractionHistory"][1]["sequence"]=1

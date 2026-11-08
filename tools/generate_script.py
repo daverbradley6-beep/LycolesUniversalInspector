@@ -284,7 +284,7 @@ def generation_readiness_lines(plan,readiness):
             if (not isinstance(label,str) or not 1<=len(label)<=120
                     or mode not in ("mixed-guided","bounded-automatic")
                     or not isinstance(capability.get("stepCount"),int)
-                    or not 2<=capability["stepCount"]<=128
+                    or not 1<=capability["stepCount"]<=128
                     or not isinstance(matched,list) or len(matched)>128
                     or any(not isinstance(term,str) or not 1<=len(term)<=80 or not all(
                         "a"<=character<="z" or "0"<=character<="9" for character in term)

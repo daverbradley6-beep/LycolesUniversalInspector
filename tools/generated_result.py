@@ -394,7 +394,7 @@ def _validate_generation_readiness(place_id,scan_id,requested_capability,readine
                     or not _bounded_text(item.get("transactionId"),200)
                     or item.get("executionMode") not in ("mixed-guided","bounded-automatic")
                     or not isinstance(item.get("stepCount"),int)
-                    or not 2<=item["stepCount"]<=64
+                    or not 1<=item["stepCount"]<=64
                     or item.get("observationBaseline") is not None and
                         item["observationBaseline"]["steps"]!=item["stepCount"]
                     or not isinstance(paths,list) or len(paths)!=item["stepCount"]

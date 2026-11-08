@@ -211,7 +211,7 @@ def validate(document):
                     (linkage=="explicit-user-armed-recording")):
             raise ValueError("Malformed guided workflow linkage source")
         if (not _text(item.get("id"),80) or not _text(transaction,128)
-                or not isinstance(steps,list) or not 2<=len(steps)<=64
+                or not isinstance(steps,list) or not 1<=len(steps)<=64
                 or item.get("stepCount")!=len(steps) or item.get("unmappedLinkedEvents")!=0
                 or item.get("exactOrderObserved") is not True
                 or item.get("allStepsGenerationReady") is not True
@@ -358,10 +358,29 @@ local activeStroke=nil
 local status=nil
 local activationTimeoutSeconds=15
 local outcomeTimeoutSeconds=5
+local stepActivationRetryLimit=2
+local recoveryDelaySeconds=.2
+local promptReturnCFrame=nil
 
 local function clearActive()
   if activeConnection then activeConnection:Disconnect(); activeConnection=nil end
   if activeStroke then activeStroke:Destroy(); activeStroke=nil end
+end
+local function restorePromptPosition()
+  local target=promptReturnCFrame
+  promptReturnCFrame=nil
+  if not target then return end
+  local character=player.Character
+  local root=character and character:FindFirstChild("HumanoidRootPart")
+  if root then pcall(function() root.CFrame=target end) end
+end
+local function preflightReady()
+  local playerGui=player and player:FindFirstChildOfClass("PlayerGui")
+  if not playerGui then return false,"PlayerGui unavailable" end
+  if type(steps)~="table" or #steps<1 then
+    return false,"No execution-ready workflow steps are available"
+  end
+  return true,nil
 end
 local function resolveFrom(root,identity,startIndex)
   if not root then return nil end
@@ -472,6 +491,7 @@ local function teleportToPrompt(prompt)
   if not root then return false,"Character root unavailable" end
   local anchor=promptAnchor(prompt)
   if not anchor then return false,"Prompt has no nearby BasePart" end
+  promptReturnCFrame=root.CFrame
   root.CFrame=anchor.CFrame*CFrame.new(0,3,math.max(2,prompt.MaxActivationDistance*.4))
   task.wait(.25)
   return true,nil
@@ -534,7 +554,12 @@ local function activateStep(step,index,total)
     local moved,message=teleportToPrompt(prompt)
     if not moved then return false,"activation-timeout",message end
     local activated=pcall(function() fireproximityprompt(prompt) end)
-    if not activated then return false,"activation-timeout","Prompt activation failed" end
+    if not activated then
+      restorePromptPosition()
+      return false,"activation-timeout","Prompt activation failed"
+    end
+    task.wait(.05)
+    restorePromptPosition()
     return true,nil,nil
   end
 end
@@ -574,10 +599,15 @@ feedbackButton.Activated:Connect(function()
   else status.Text="Feedback JSON encoding failed; no data was sent." end
 end)
 local function finish(message)
-  running=false;clearActive();status.Text=message
+  running=false;clearActive();restorePromptPosition();status.Text=message
 end
 local function runWorkflow()
   if running then return end
+  local ready,reason=preflightReady()
+  if not ready then
+    finish("Stopped: "..reason)
+    return
+  end
   if runAttempts>=maxRunAttempts then
     finish("Stopped: bounded retry limit reached for this session.");return
   end
@@ -615,15 +645,27 @@ local function runWorkflow()
             or "Selected state no longer matches the previous observed outcome")
         finish("Stopped: state prerequisite drifted at step "..index);return
       end
-      local activated,failureStatus,failureMessage=activateStep(step,index,#steps)
-      if not running or runId~=thisRun then return end
+      local activated,failureStatus,failureMessage=false,nil,nil
+      local activationAttempts=(step.kind=="guided-gui-activation-trial") and 1 or stepActivationRetryLimit
+      for attempt=1,activationAttempts do
+        activated,failureStatus,failureMessage=activateStep(step,index,#steps)
+        if not running or runId~=thisRun then return end
+        if activated then break end
+        local retryable=failureStatus=="activation-timeout"
+        if not retryable or attempt>=activationAttempts then break end
+        status.Text="Step "..index..": activation retry "..(attempt+1).."/"..activationAttempts
+        task.wait(recoveryDelaySeconds)
+      end
       if not activated then
         local sampled=failureStatus=="activation-timeout"
         recordFeedback(thisRun,index,step,sampled and before or nil,sampled and before or nil,
           false,false,failureStatus,failureMessage)
         if failureStatus=="metadata-drift" then
           finish("Stopped: control prerequisites drifted at step "..index)
-        else finish("Stopped at step "..index..": "..failureMessage) end
+        else
+          local suffix=activationAttempts>1 and " after bounded retries" or ""
+          finish("Stopped at step "..index..": "..tostring(failureMessage or "activation failed")..suffix)
+        end
         return
       end
       status.Text="Sequence "..runAttempts..", step "..index
@@ -662,7 +704,7 @@ repeatButton.Activated:Connect(function()
     or "Single-sequence mode armed; exact observed entry state remains required."
 end)
 stopButton.Activated:Connect(function() runId=runId+1;finish("Stopped by user; no verification claim.") end)
-closeButton.Activated:Connect(function() runId=runId+1;running=false;clearActive();gui:Destroy() end)
+closeButton.Activated:Connect(function() runId=runId+1;running=false;clearActive();restorePromptPosition();gui:Destroy() end)
 '''
     validate_source(source,document["placeId"])
     return source

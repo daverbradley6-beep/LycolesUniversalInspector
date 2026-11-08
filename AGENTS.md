@@ -317,3 +317,25 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - `tools/receiver_generation_pipeline.py exercise-live` now distinguishes scenario outcomes:
   - `succeeded` only when `summary.executableLogic.requestExecutableStatus == "request-executable-ready"`.
   - `observational-only-request-unmet` when a requested capability remains non-executable from available evidence.
+
+## Update — 2026-11-08 — singleton executable workflows + guided runtime recovery hardening
+
+- `tools/plan_generated_workflows.py` now emits **bounded singleton execution-ready workflow candidates** when a transaction has exactly one exact generation-ready mapped event.
+  - New candidate traits: `stepCount=1`, `guidedTrialGenerationReady=true`, `executionReady=true`, `singleStepWorkflow=true`.
+  - Execution mode remains contract-safe:
+    - `mixed-guided` for GUI-manual singleton steps,
+    - `bounded-automatic` for Tool/Prompt singleton steps.
+  - Summary now includes `singleStepExecutionReadyWorkflows`.
+- `tools/generate_guided_workflow.py` runtime template hardening:
+  - Added preflight checks (`preflightReady`) before run start.
+  - Added bounded activation retries for non-GUI steps (`stepActivationRetryLimit=2`, retry-on-timeout only).
+  - Added prompt teleport cleanup (`restorePromptPosition`) on finish/close and prompt activation failure/success paths.
+- Schema/contract alignment for singleton mixed workflows:
+  - `generate_guided_workflow.validate(...)` now accepts `1..64` steps.
+  - `generated_result.py` mixed-workflow capability validation now accepts `1..64` steps.
+  - `generate_script.py` generation-readiness display validation now accepts `1..128` steps.
+- Offline executable package checkpoint (strict mode):
+  - `python3 tools/lycoles_generation_service.py run-job --evidence-kind parts_dir --evidence-path build/workflow_ready_parts_fixture --requested-capability "Complete observed shop flow" --require-executable --output-root build/executable_generation_job`
+  - Result included request-aligned executable readiness with selected candidate id `e0207a259f6fae8ed60a`.
+  - Tracked artifact bundle committed under `potassium_artifacts/workflow_ready_live_package/` for commit-pinned Potassium loading.
+
