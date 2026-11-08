@@ -39,9 +39,10 @@ def _load_local_module(filename: str, name: str):
 
 @dataclass(frozen=True)
 class ModelRouteConfig:
-    analysis_model: str = "gpt-4.1-mini"
-    generation_model: str = "gpt-4.1"
-    repair_model: str = "gpt-4.1-mini"
+    analysis_model: str = "openai/gpt-5.6-luna"
+    generation_model: str = "openai/gpt-5.3-codex"
+    repair_model: str = "openai/gpt-5.3-codex"
+    reasoning_model: str = "openai/gpt-5.6-sol"
 
 
 @dataclass(frozen=True)
@@ -66,15 +67,43 @@ class UsageLedger:
     analysis_cost_gbp: float = 0.0
     generation_cost_gbp: float = 0.0
     repair_cost_gbp: float = 0.0
+    analysis_attempts: int = 0
+    generation_attempts: int = 0
+    repair_attempts: int = 0
+    analysis_retries: int = 0
+    generation_retries: int = 0
+    repair_retries: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         total_tokens = self.analysis_tokens + self.generation_tokens + self.repair_tokens
         total_cost = self.analysis_cost_gbp + self.generation_cost_gbp + self.repair_cost_gbp
+        total_attempts = self.analysis_attempts + self.generation_attempts + self.repair_attempts
+        total_retries = self.analysis_retries + self.generation_retries + self.repair_retries
         return {
-            "analysis": {"tokens": self.analysis_tokens, "costGbp": round(self.analysis_cost_gbp, 8)},
-            "generation": {"tokens": self.generation_tokens, "costGbp": round(self.generation_cost_gbp, 8)},
-            "repair": {"tokens": self.repair_tokens, "costGbp": round(self.repair_cost_gbp, 8)},
-            "total": {"tokens": total_tokens, "costGbp": round(total_cost, 8)},
+            "analysis": {
+                "tokens": self.analysis_tokens,
+                "costGbp": round(self.analysis_cost_gbp, 8),
+                "attempts": self.analysis_attempts,
+                "retries": self.analysis_retries,
+            },
+            "generation": {
+                "tokens": self.generation_tokens,
+                "costGbp": round(self.generation_cost_gbp, 8),
+                "attempts": self.generation_attempts,
+                "retries": self.generation_retries,
+            },
+            "repair": {
+                "tokens": self.repair_tokens,
+                "costGbp": round(self.repair_cost_gbp, 8),
+                "attempts": self.repair_attempts,
+                "retries": self.repair_retries,
+            },
+            "total": {
+                "tokens": total_tokens,
+                "costGbp": round(total_cost, 8),
+                "attempts": total_attempts,
+                "retries": total_retries,
+            },
         }
 
 
@@ -174,6 +203,162 @@ def _extract_first_json_object(text: str) -> Optional[dict[str, Any]]:
     return None
 
 
+@dataclass(frozen=True)
+class RoutePlan:
+    complexity: str
+    analysis_models: tuple[str, ...]
+    generation_models: tuple[str, ...]
+    repair_models: tuple[str, ...]
+    expected_cost_scores: dict[str, float]
+
+
+_HARD_REASONING_TERMS = {
+    "combat", "shoot", "reload", "weapon", "aim", "projectile", "recoil",
+    "tracking", "automation", "autofarm", "workflow", "integration", "inference",
+}
+
+
+def _bounded_ratio(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    if not 0.0 <= value <= 1.0:
+        return default
+    return value
+
+
+def _route_complexity(bundle: EvidenceBundle) -> str:
+    if bundle.mode == "manifest-only" or not isinstance(bundle.generation_readiness, dict):
+        return "low"
+    readiness = bundle.generation_readiness
+    request = readiness.get("request") if isinstance(readiness.get("request"), dict) else {}
+    request_text = request.get("request") if isinstance(request.get("request"), str) else ""
+
+    score = 0
+    tokens = set(re.findall(r"[a-z0-9]+", request_text.lower()))
+    score += sum(term in tokens for term in _HARD_REASONING_TERMS)
+
+    workflow_selection = readiness.get("workflowSelection")
+    diagnostics = (workflow_selection.get("planningDiagnostics")
+                   if isinstance(workflow_selection, dict) else None)
+    if isinstance(diagnostics, dict):
+        if int(diagnostics.get("executionReadyWorkflows") or 0) >= 2:
+            score += 1
+        if int(diagnostics.get("generationReadySteps") or 0) >= 6:
+            score += 1
+        if int(diagnostics.get("workflowCandidates") or 0) >= 4:
+            score += 1
+
+    blockers = (readiness.get("requestFeatureReadiness", {}).get("explicitBlockers")
+                if isinstance(readiness.get("requestFeatureReadiness"), dict) else [])
+    if isinstance(blockers, list) and len(blockers) >= 12:
+        score += 1
+
+    if score >= 4:
+        return "hard"
+    if score >= 2:
+        return "standard"
+    return "low"
+
+
+def _effective_model_scores() -> dict[str, float]:
+    multipliers = {
+        "economy": _env_float("LYCOLES_ROUTE_COST_MULTIPLIER_ECONOMY", 1.0),
+        "coding": _env_float("LYCOLES_ROUTE_COST_MULTIPLIER_CODING", 2.4),
+        "reasoning": _env_float("LYCOLES_ROUTE_COST_MULTIPLIER_REASONING", 4.8),
+    }
+    retry_rates = {
+        "economy": _bounded_ratio("LYCOLES_ROUTE_RETRY_RATE_ECONOMY", 0.03),
+        "coding": _bounded_ratio("LYCOLES_ROUTE_RETRY_RATE_CODING", 0.015),
+        "reasoning": _bounded_ratio("LYCOLES_ROUTE_RETRY_RATE_REASONING", 0.01),
+    }
+    failure_rates = {
+        "economy": _bounded_ratio("LYCOLES_ROUTE_FAILURE_RATE_ECONOMY", 0.004),
+        "coding": _bounded_ratio("LYCOLES_ROUTE_FAILURE_RATE_CODING", 0.002),
+        "reasoning": _bounded_ratio("LYCOLES_ROUTE_FAILURE_RATE_REASONING", 0.0015),
+    }
+    return {
+        role: multipliers[role] * (1.0 + retry_rates[role] * 1.5 + failure_rates[role] * 6.0)
+        for role in ("economy", "coding", "reasoning")
+    }
+
+
+def _ordered_roles(base_roles: tuple[str, ...], scores: dict[str, float]) -> tuple[str, ...]:
+    unique = []
+    seen = set()
+    for role in base_roles:
+        if role not in seen:
+            seen.add(role)
+            unique.append(role)
+    unique.sort(key=lambda role: (scores.get(role, float("inf")), base_roles.index(role)))
+    return tuple(unique)
+
+
+def _build_route_plan(bundle: EvidenceBundle, routes: ModelRouteConfig) -> RoutePlan:
+    complexity = _route_complexity(bundle)
+    scores = _effective_model_scores()
+    role_to_model = {
+        "economy": routes.analysis_model,
+        "coding": routes.generation_model,
+        "reasoning": routes.reasoning_model,
+    }
+
+    if complexity == "hard":
+        analysis_roles = ("coding", "reasoning", "economy")
+        generation_roles = ("reasoning", "coding", "economy")
+        repair_roles = ("reasoning", "coding", "economy")
+        analysis_models = tuple(role_to_model[role] for role in analysis_roles)
+        generation_models = tuple(role_to_model[role] for role in generation_roles)
+        repair_models = tuple(role_to_model[role] for role in repair_roles)
+    else:
+        analysis_roles = ("economy", "coding") if complexity == "low" else ("economy", "coding", "reasoning")
+        generation_roles = ("coding", "economy", "reasoning") if complexity == "low" else (
+            "coding", "reasoning", "economy")
+        repair_roles = generation_roles
+        analysis_models = tuple(role_to_model[role] for role in _ordered_roles(analysis_roles, scores))
+        generation_models = tuple(role_to_model[role] for role in _ordered_roles(generation_roles, scores))
+        repair_models = tuple(role_to_model[role] for role in _ordered_roles(repair_roles, scores))
+
+    return RoutePlan(
+        complexity=complexity,
+        analysis_models=analysis_models,
+        generation_models=generation_models,
+        repair_models=repair_models,
+        expected_cost_scores={
+            role_to_model[role]: round(scores[role], 6)
+            for role in ("economy", "coding", "reasoning")
+        },
+    )
+
+
+
+def _apply_stage_usage(usage: UsageLedger, stage: str, metrics: dict[str, Any]) -> None:
+    tokens = int(metrics.get("tokens", 0))
+    cost = float(metrics.get("costGbp", 0.0))
+    attempts = int(metrics.get("attempts", 0))
+    retries = int(metrics.get("retriesUsed", 0))
+    if stage == "analysis":
+        usage.analysis_tokens += tokens
+        usage.analysis_cost_gbp += cost
+        usage.analysis_attempts += max(0, attempts)
+        usage.analysis_retries += max(0, retries)
+    elif stage == "generation":
+        usage.generation_tokens += tokens
+        usage.generation_cost_gbp += cost
+        usage.generation_attempts += max(0, attempts)
+        usage.generation_retries += max(0, retries)
+    elif stage == "repair":
+        usage.repair_tokens += tokens
+        usage.repair_cost_gbp += cost
+        usage.repair_attempts += max(0, attempts)
+        usage.repair_retries += max(0, retries)
+
+
+
 def _strip_lua_fences(text: str) -> str:
     cleaned = text.strip()
     if not cleaned.startswith("```"):
@@ -244,7 +429,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     def info(self) -> ProviderInfo:
         return self._info
 
-    def _usage(self, payload: dict[str, Any], stage: str) -> dict[str, Any]:
+    def _usage(self, payload: dict[str, Any], stage: str, meta: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
         tokens = int(usage.get("total_tokens") or 0)
         if stage == "analysis":
@@ -253,9 +438,16 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             rate = self._cost_config.generation_cost_gbp_per_1k_tokens
         else:
             rate = self._cost_config.repair_cost_gbp_per_1k_tokens
-        return {"tokens": tokens, "costGbp": (tokens / 1000.0) * rate}
+        metadata = meta if isinstance(meta, dict) else {}
+        return {
+            "tokens": tokens,
+            "costGbp": (tokens / 1000.0) * rate,
+            "attempts": int(metadata.get("attempts") or 1),
+            "retriesUsed": int(metadata.get("retriesUsed") or 0),
+            "transientFailures": int(metadata.get("transientFailures") or 0),
+        }
 
-    def _call_responses_api(self, model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+    def _call_responses_api(self, model: str, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], dict[str, Any]]:
         endpoint = f"{self._base_url}/responses"
         payload = {
             "model": model,
@@ -271,20 +463,29 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         }
         transient = {408, 425, 429, 500, 502, 503, 504}
         last_error: Optional[str] = None
+        transient_failures = 0
         for attempt in range(self._retries + 1):
             request = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
             try:
                 with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    payload = json.loads(response.read().decode("utf-8"))
+                    return payload, {
+                        "attempts": attempt + 1,
+                        "retriesUsed": attempt,
+                        "transientFailures": transient_failures,
+                    }
             except urllib.error.HTTPError as exc:
                 status = exc.code
                 text = exc.read().decode("utf-8", errors="replace")
                 exc.close()
                 last_error = f"HTTP {status}: {text[:400]}"
+                if status in transient:
+                    transient_failures += 1
                 if status not in transient or attempt == self._retries:
                     raise ValueError(f"Provider request failed: {last_error}") from None
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last_error = str(exc)
+                transient_failures += 1
                 if attempt == self._retries:
                     raise ValueError(f"Provider request failed: {last_error}") from None
             time.sleep(0.4 * (2 ** attempt))
@@ -300,10 +501,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "candidateFeatures (array of short strings), risks (array), and notes (array).\n"
             f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}"
         )
-        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        payload, meta = self._call_responses_api(model, system_prompt, user_prompt)
         text = _response_output_text(payload)
         parsed = _extract_first_json_object(text)
-        return (parsed if isinstance(parsed, dict) else None), self._usage(payload, "analysis")
+        return (parsed if isinstance(parsed, dict) else None), self._usage(payload, "analysis", meta)
 
     def generate(self, bundle: EvidenceBundle, analysis: dict[str, Any], model: str) -> tuple[Optional[str], dict[str, Any]]:
         system_prompt = (
@@ -316,9 +517,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}\n"
             f"Analysis:\n{json.dumps(analysis, ensure_ascii=False)}"
         )
-        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        payload, meta = self._call_responses_api(model, system_prompt, user_prompt)
         text = _strip_lua_fences(_response_output_text(payload))
-        return (text or None), self._usage(payload, "generation")
+        return (text or None), self._usage(payload, "generation", meta)
 
     def repair(self, code: str, analysis: dict[str, Any], model: str) -> tuple[str, dict[str, Any]]:
         system_prompt = (
@@ -330,9 +531,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             f"Analysis context: {json.dumps(analysis, ensure_ascii=False)}\n"
             f"Code:\n{code}"
         )
-        payload = self._call_responses_api(model, system_prompt, user_prompt)
+        payload, meta = self._call_responses_api(model, system_prompt, user_prompt)
         text = _strip_lua_fences(_response_output_text(payload))
-        return (text or code), self._usage(payload, "repair")
+        return (text or code), self._usage(payload, "repair", meta)
 
 
 def _provider_from_environment() -> tuple[BaseLLMProvider, ProviderInfo]:
@@ -435,7 +636,7 @@ class FeatureAnalysisEngine:
         self._llm_provider = llm_provider
         self._routes = model_routes
 
-    def analyze(self, bundle: EvidenceBundle, usage: UsageLedger) -> dict[str, Any]:
+    def analyze(self, bundle: EvidenceBundle, usage: UsageLedger, route_plan: RoutePlan) -> dict[str, Any]:
         if bundle.generation_readiness is not None:
             readiness = bundle.generation_readiness
             request = readiness.get("request", {})
@@ -464,11 +665,22 @@ class FeatureAnalysisEngine:
         else:
             raise ValueError("No analysis source available")
 
-        ai_analysis, llm_usage = self._llm_provider.analyze(bundle, self._routes.analysis_model)
-        usage.analysis_tokens += int(llm_usage.get("tokens", 0))
-        usage.analysis_cost_gbp += float(llm_usage.get("costGbp", 0.0))
-        if isinstance(ai_analysis, dict):
-            summary["aiAnalysis"] = ai_analysis
+        errors = []
+        selected_model = None
+        for model in route_plan.analysis_models:
+            try:
+                ai_analysis, llm_usage = self._llm_provider.analyze(bundle, model)
+                _apply_stage_usage(usage, "analysis", llm_usage)
+                selected_model = model
+                if isinstance(ai_analysis, dict):
+                    summary["aiAnalysis"] = ai_analysis
+                break
+            except ValueError as exc:
+                errors.append(f"{model}: {exc}")
+        if selected_model is None and errors:
+            summary["aiAnalysisError"] = errors[-1]
+        summary["analysisModelUsed"] = selected_model
+        summary["analysisFallbackErrors"] = errors[:3]
         return summary
 
 
@@ -484,18 +696,29 @@ class ScriptGenerationEngine:
         self._routes = model_routes
         self._prefer_ai_generation = prefer_ai_generation
 
-    def generate(self, bundle: EvidenceBundle, analysis: dict[str, Any], usage: UsageLedger) -> tuple[Optional[str], str]:
+    def generate(
+        self,
+        bundle: EvidenceBundle,
+        analysis: dict[str, Any],
+        usage: UsageLedger,
+        route_plan: RoutePlan,
+    ) -> tuple[Optional[str], str, Optional[str], list[str]]:
         if bundle.generated_script and not self._prefer_ai_generation:
-            return bundle.generated_script, "deterministic-release-script"
+            return bundle.generated_script, "deterministic-release-script", None, []
 
-        llm_script, llm_usage = self._llm_provider.generate(bundle, analysis, self._routes.generation_model)
-        usage.generation_tokens += int(llm_usage.get("tokens", 0))
-        usage.generation_cost_gbp += float(llm_usage.get("costGbp", 0.0))
-        if llm_script:
-            return llm_script, "ai-generated-script"
+        errors = []
+        for model in route_plan.generation_models:
+            try:
+                llm_script, llm_usage = self._llm_provider.generate(bundle, analysis, model)
+                _apply_stage_usage(usage, "generation", llm_usage)
+                if llm_script:
+                    return llm_script, "ai-generated-script", model, errors[:3]
+            except ValueError as exc:
+                errors.append(f"{model}: {exc}")
+
         if bundle.generated_script:
-            return bundle.generated_script, "deterministic-release-script"
-        return None, "no-script-generated"
+            return bundle.generated_script, "deterministic-release-script", None, errors[:3]
+        return None, "no-script-generated", None, errors[:3]
 
 
 class ValidationRepairEngine:
@@ -519,19 +742,29 @@ class ValidationRepairEngine:
         place_id: Optional[int],
         analysis: dict[str, Any],
         usage: UsageLedger,
-    ) -> tuple[Optional[str], dict[str, Any]]:
+        route_plan: RoutePlan,
+    ) -> tuple[Optional[str], dict[str, Any], Optional[str], list[str]]:
         if code is None:
-            return None, {"valid": False, "reason": "no script available", "placeGuard": False}
+            return None, {"valid": False, "reason": "no script available", "placeGuard": False}, None, []
         if not isinstance(place_id, int) or place_id <= 0:
-            return None, {"valid": False, "reason": "invalid place id", "placeGuard": False}
+            return None, {"valid": False, "reason": "invalid place id", "placeGuard": False}, None, []
         validation = self._basic_validation(code, place_id)
         if validation["valid"]:
-            return code, validation
-        repaired, llm_usage = self._llm_provider.repair(code, analysis, self._routes.repair_model)
-        usage.repair_tokens += int(llm_usage.get("tokens", 0))
-        usage.repair_cost_gbp += float(llm_usage.get("costGbp", 0.0))
-        repaired_validation = self._basic_validation(repaired, place_id)
-        return (repaired if repaired_validation["valid"] else None), repaired_validation
+            return code, validation, None, []
+
+        errors = []
+        for model in route_plan.repair_models:
+            try:
+                repaired, llm_usage = self._llm_provider.repair(code, analysis, model)
+                _apply_stage_usage(usage, "repair", llm_usage)
+                repaired_validation = self._basic_validation(repaired, place_id)
+                if repaired_validation["valid"]:
+                    return repaired, repaired_validation, model, errors[:3]
+                errors.append(f"{model}: repaired output failed validation ({repaired_validation.get('reason')})")
+            except ValueError as exc:
+                errors.append(f"{model}: {exc}")
+
+        return None, validation, None, errors[:3]
 
 
 class DeliveryEngine:
@@ -634,13 +867,22 @@ class LycolesGenerationService:
         usage = UsageLedger()
         output_dir = self._output_dir_for(job_id)
         bundle = self.evidence_processor.process(request, output_dir)
-        analysis = self.feature_analysis.analyze(bundle, usage)
-        code, generation_source = self.script_generation.generate(bundle, analysis, usage)
-        code, validation = self.validation_repair.validate_and_repair(code, bundle.place_id, analysis, usage)
+        route_plan = _build_route_plan(bundle, self.model_routes)
+        analysis = self.feature_analysis.analyze(bundle, usage, route_plan)
+        code, generation_source, generation_model_used, generation_errors = self.script_generation.generate(
+            bundle, analysis, usage, route_plan)
+        code, validation, repair_model_used, repair_errors = self.validation_repair.validate_and_repair(
+            code, bundle.place_id, analysis, usage, route_plan)
         delivery = self.delivery.deliver(bundle, request, code, validation)
 
         blockers = analysis.get("explicitBlockers") or []
         generation_status = "blocked" if code is None else ("generated-with-blockers" if blockers else "generated")
+        ai_inference_performed = (
+            generation_source == "ai-generated-script"
+            or usage.analysis_attempts > 0
+            or usage.generation_attempts > 0
+            or usage.repair_attempts > 0
+        )
         result = {
             "jobId": job_id,
             "status": "succeeded",
@@ -653,7 +895,19 @@ class LycolesGenerationService:
                 "analysisModel": self.model_routes.analysis_model,
                 "generationModel": self.model_routes.generation_model,
                 "repairModel": self.model_routes.repair_model,
-                "aiInferencePerformed": generation_source == "ai-generated-script" or usage.analysis_tokens > 0 or usage.repair_tokens > 0,
+                "reasoningModel": self.model_routes.reasoning_model,
+                "complexityClass": route_plan.complexity,
+                "analysisModelOrder": list(route_plan.analysis_models),
+                "generationModelOrder": list(route_plan.generation_models),
+                "repairModelOrder": list(route_plan.repair_models),
+                "analysisModelUsed": analysis.get("analysisModelUsed"),
+                "generationModelUsed": generation_model_used,
+                "repairModelUsed": repair_model_used,
+                "expectedCostScores": route_plan.expected_cost_scores,
+                "analysisFallbackErrors": analysis.get("analysisFallbackErrors") or [],
+                "generationFallbackErrors": generation_errors,
+                "repairFallbackErrors": repair_errors,
+                "aiInferencePerformed": ai_inference_performed,
             },
             "evidence": {
                 "mode": bundle.mode,
@@ -780,10 +1034,17 @@ def _request_from_args(args: argparse.Namespace) -> GenerationRequest:
 
 
 def _model_routes_from_environment() -> ModelRouteConfig:
+    analysis_model = (os.environ.get("LYCOLES_ANALYSIS_MODEL") or ModelRouteConfig.analysis_model).strip()
+    generation_model = (os.environ.get("LYCOLES_GENERATION_MODEL") or ModelRouteConfig.generation_model).strip()
+    repair_model = (os.environ.get("LYCOLES_REPAIR_MODEL") or ModelRouteConfig.repair_model).strip()
+    reasoning_model = (os.environ.get("LYCOLES_REASONING_MODEL")
+                       or os.environ.get("LYCOLES_SOL_MODEL")
+                       or ModelRouteConfig.reasoning_model).strip()
     return ModelRouteConfig(
-        analysis_model=(os.environ.get("LYCOLES_ANALYSIS_MODEL") or ModelRouteConfig.analysis_model).strip(),
-        generation_model=(os.environ.get("LYCOLES_GENERATION_MODEL") or ModelRouteConfig.generation_model).strip(),
-        repair_model=(os.environ.get("LYCOLES_REPAIR_MODEL") or ModelRouteConfig.repair_model).strip(),
+        analysis_model=analysis_model,
+        generation_model=generation_model,
+        repair_model=repair_model,
+        reasoning_model=reasoning_model,
     )
 
 

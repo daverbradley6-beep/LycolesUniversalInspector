@@ -360,6 +360,33 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         fire_event=next(item for item in observed if item.get("inferredActionKind")=="fire")
         self.assertFalse(fire_event["causalityProven"])
 
+    def test_automatic_action_inference_detects_sustained_input_state_patterns(self):
+        plan=self.real_plan()
+        before=10
+        for sequence in range(220,228):
+            after=before+1
+            plan["observedInteractionHistory"].append({
+                "path":"UserInput.MouseButton1",
+                "controlType":"Input.MouseButton1",
+                "sequence":sequence,
+                "inferredAction":{"kind":"fire","source":"input-observed"},
+                "stateChanges":[{"key":"leaderstats.Hits","before":before,"after":after}],
+            })
+            before=after
+        result=discovery.analyze(plan)
+        generic=result["genericCapabilities"]
+        inferences=generic["automaticActionInferences"]
+        fire=next(item for item in inferences if item["actionKind"]=="fire")
+        self.assertTrue(fire["automaticActionCandidate"])
+        self.assertEqual(fire["inferredMode"],"automatic-sustained-input-candidate")
+        self.assertEqual(fire["cadence"],"sustained")
+        self.assertIn("leaderstats.Hits",fire["stateSignalKeys"])
+        summary=generic["automaticActionSummary"]
+        self.assertGreaterEqual(summary["automaticCandidateCount"],1)
+        self.assertGreaterEqual(summary["sustainedAutomaticCandidateCount"],1)
+        self.assertFalse(fire["causalityProven"])
+        self.assertFalse(fire["runtimeVerified"])
+
     def test_malformed_generic_observation_windows_fail_closed(self):
         plan=self.real_plan();plan["observedInteractionHistory"][0]["observationWindows"]="invalid"
         with self.assertRaisesRegex(ValueError,"Malformed observation windows"):

@@ -284,3 +284,16 @@ Do not stop merely because one implementation commit is complete; finish its tes
 
 - Potassium compile headroom fix (`v30.6.38`): demoted six late UI declarations from local bindings to reduce top-level register pressure near the observation-control block where Potassium previously failed (`observationToggle` allocation). Local Luau text-compile register scan now peaks at `R154`.
 
+
+## Update — 2026-11-08 — routing policy + universal automatic-action inference
+
+- External evidence blocker recorded: after deep receiver legacy-index search, baseline scan IDs `DBFC72C6-749B-4F95-BBA2-433B8B61745C` and `6D3741EF-9569-4F40-B38A-E4FD2AE0A063` remain unavailable. Treat as external blocker and stop pagination-depth expansion unless new evidence sources appear.
+- Generation service routing (`tools/lycoles_generation_service.py`) now uses complexity-aware, retry/cost-adjusted model order:
+  - low-risk: economy-first analysis, coding-first generation/repair,
+  - hard requests: reasoning-priority generation/repair and coding/reasoning analysis fallback,
+  - per-stage attempt/retry telemetry is captured in `usage` and provider routing metadata.
+- Universal input-to-state/action inference upgraded:
+  - `tools/discover_action_capabilities.py` now emits `automaticActionInferences` and `automaticActionSummary` from sustained/burst cadence + outcome-density/state-signal evidence.
+  - `tools/plan_generated_workflows.py` propagates candidate-level `automaticActionSignals` and summary count `workflowsWithAutomaticActionCandidates`.
+  - `tools/assess_generation_readiness.py` consumes automatic-action inferences when matching request/action evidence.
+- Synthetic fixtures continue to validate implementation logic only; they do not establish live gameplay verification.

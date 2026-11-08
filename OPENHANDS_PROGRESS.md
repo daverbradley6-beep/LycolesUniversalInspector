@@ -3,6 +3,39 @@
 
 
 
+
+## Update — 2026-11-08 — routing optimization + universal automatic-action inference
+
+- Completed requested routing optimization based on measured complexity, cost, and retry economics:
+  - Updated live OpenHands meta-profile router configuration (`Lycoles-Router`) with explicit class list and stricter escalation policy:
+    - `Lycoles-Economy` for low-risk routine tasks,
+    - `Lycoles-Coding` for implementation/integration/testing,
+    - `gpt-5.6-sol` only for hard architectural reasoning or failed lower-tier attempts.
+  - Enabled active meta-profile selection and classify/switch behavior in local OpenHands settings.
+- Implemented production-service routing upgrades in `tools/lycoles_generation_service.py`:
+  - defaults now aligned to Lycoles profile models (`luna`/`codex`/`sol`),
+  - complexity classifier + retry/failure-adjusted effective-cost ordering,
+  - hard-request escalation path that prioritizes reasoning model for generation/repair,
+  - per-stage fallback chains and bounded fallback-error reporting,
+  - usage ledger now records token/cost plus attempt/retry telemetry per stage.
+- Implemented universal sustained-input + automatic-action inference:
+  - `tools/discover_action_capabilities.py` now emits `automaticActionInferences` and `automaticActionSummary` based on input cadence + temporal outcome density + resolvable state signals.
+  - `tools/plan_generated_workflows.py` now propagates `automaticActionSignals` into workflow candidates and tracks `workflowsWithAutomaticActionCandidates` in planning summary.
+  - `tools/assess_generation_readiness.py` now incorporates automatic-action inference signal keys into request-action alignment.
+- External blocker formally recorded and pagination expansion halted:
+  - Missing baseline scan IDs remain unavailable despite deep search:
+    - `DBFC72C6-749B-4F95-BBA2-433B8B61745C`
+    - `6D3741EF-9569-4F40-B38A-E4FD2AE0A063`
+  - Further receiver-page expansion is paused pending new evidence sources.
+- Regression coverage added:
+  - `tests/test_action_capability_discovery.py`: sustained automatic-action inference detection.
+  - `tests/test_generated_workflow_planning.py`: automatic-action signal propagation into workflow candidates.
+  - `tests/test_lycoles_generation_service.py`: complexity-aware routing metadata + hard-request reasoning-priority route checks.
+- Validation results:
+  - `python3 -m unittest tests.test_action_capability_discovery tests.test_generated_workflow_planning tests.test_generation_readiness tests.test_lycoles_generation_service tests.test_lycoles_generation_service_provider` → **85 passed**.
+  - `python3 -m unittest tests.test_fetch_receiver_scan tests.test_receiver_generation_pipeline` → **40 passed**.
+
+
 ## Update — 2026-11-08 — model-usage audit + deep legacy report search controls
 
 - Completed a factual OpenHands model/profile usage audit from local conversation records and live API conversation stats (no inference from configured profiles alone).

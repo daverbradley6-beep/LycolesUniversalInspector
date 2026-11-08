@@ -145,6 +145,24 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         self.assertEqual(result["summary"]["workflowsWithBurstCadenceSignals"],1)
         self.assertEqual(result["summary"]["workflowsWithSustainedCadenceSignals"],0)
 
+
+    def test_workflow_automatic_action_signals_propagate_from_discovery(self):
+        value=plan()
+        value["observedInteractionHistory"].append(event("Finalize",3,4,5))
+        for item in value["observedInteractionHistory"]:
+            item["inferredAction"]={"kind":"fire","source":"input-observed"}
+        result=self.analyze(value)
+        candidate=result["workflowCandidates"][0]
+        automatic=candidate["automaticActionSignals"]
+        self.assertTrue(automatic["containsAutomaticCandidate"])
+        self.assertGreaterEqual(automatic["automaticCandidateCount"],1)
+        self.assertIn("fire",automatic["actionKinds"])
+        matched=automatic["matchedInferences"]
+        self.assertGreaterEqual(len(matched),1)
+        self.assertEqual(matched[0]["actionKind"],"fire")
+        self.assertTrue(matched[0]["automaticActionCandidate"])
+        self.assertEqual(result["summary"]["workflowsWithAutomaticActionCandidates"],1)
+
     def test_explicit_user_recording_establishes_order_without_causality(self):
         value=plan();transaction="user-recorded-12345678"
         for order,item in enumerate(value["observedInteractionHistory"],1):

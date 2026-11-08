@@ -168,6 +168,50 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertNotEqual(readiness["request"]["status"], "no-capability-requested")
             self.assertGreater(len(readiness["requestFeatureReadiness"]["requestedTerms"]), 0)
 
+    def test_parts_job_exposes_complexity_aware_model_routing_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically hatch the selected egg")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically hatch the selected egg",
+            )
+            result = service.run_sync(request)
+            provider = result["provider"]
+            self.assertIn(provider["complexityClass"], ("low", "standard", "hard"))
+            self.assertIsInstance(provider["analysisModelOrder"], list)
+            self.assertIsInstance(provider["generationModelOrder"], list)
+            self.assertIsInstance(provider["repairModelOrder"], list)
+            self.assertIn("expectedCostScores", provider)
+            usage = result["usage"]
+            self.assertIn("attempts", usage["analysis"])
+            self.assertIn("retries", usage["analysis"])
+            self.assertIn("attempts", usage["generation"])
+            self.assertIn("retries", usage["repair"])
+
+    def test_hard_request_prioritizes_reasoning_generation_route(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automate combat recoil weapon tracking")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automate combat recoil weapon tracking",
+            )
+            result = service.run_sync(request)
+            provider = result["provider"]
+            self.assertEqual(provider["complexityClass"], "hard")
+            self.assertEqual(provider["generationModelOrder"][0], provider["reasoningModel"])
+
     def test_parts_job_accepts_live_observation_overlay_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

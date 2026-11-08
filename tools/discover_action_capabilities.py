@@ -231,6 +231,117 @@ def _input_cadence_patterns(history):
     return patterns,summary
 
 
+def _automatic_action_inferences(observed_actions,cadence_patterns):
+    cadence_index={}
+    for pattern in cadence_patterns:
+        if not isinstance(pattern,dict):
+            continue
+        kind=pattern.get("actionKind")
+        if isinstance(kind,str) and SAFE_ACTION_KIND.fullmatch(kind):
+            cadence_index[kind]=pattern
+
+    grouped={}
+    for item in observed_actions:
+        if not isinstance(item,dict):
+            continue
+        action_kind=item.get("inferredActionKind")
+        if not isinstance(action_kind,str) or not SAFE_ACTION_KIND.fullmatch(action_kind):
+            continue
+        entry=grouped.setdefault(action_kind,{
+            "events":0,
+            "observableEvents":0,
+            "paths":set(),
+            "stateSignalKeys":set(),
+            "stateDirectionCounts":{"increased":0,"decreased":0,"changed":0},
+        })
+        entry["events"]+=1
+        path=item.get("path")
+        if isinstance(path,str) and SAFE_PATH.fullmatch(path):
+            entry["paths"].add(path)
+        if item.get("observableOutcomeCandidate") is True:
+            entry["observableEvents"]+=1
+
+        for signal in item.get("stateOutcomeSignals") or []:
+            if not isinstance(signal,dict):
+                continue
+            key=signal.get("key")
+            if isinstance(key,str) and SAFE_PATH.fullmatch(key):
+                entry["stateSignalKeys"].add(key)
+            direction=signal.get("change")
+            if direction in entry["stateDirectionCounts"]:
+                entry["stateDirectionCounts"][direction]+=1
+
+    cadence_rank={"single":0,"burst":1,"sustained":2}
+    inferences=[]
+    for action_kind,entry in grouped.items():
+        pattern=cadence_index.get(action_kind,{})
+        cadence=pattern.get("cadence") if isinstance(pattern.get("cadence"),str) else "single"
+        if cadence not in cadence_rank:
+            cadence="single"
+        events=entry["events"]
+        observable=entry["observableEvents"]
+        state_keys=sorted(entry["stateSignalKeys"])
+        outcome_density=observable/events if events else 0.0
+        automatic_candidate=(cadence in ("burst","sustained") and observable>=2
+            and len(state_keys)>0 and outcome_density>=0.5)
+        if automatic_candidate and cadence=="sustained":
+            mode="automatic-sustained-input-candidate"
+        elif automatic_candidate:
+            mode="automatic-burst-input-candidate"
+        else:
+            mode="manual-or-unknown"
+        blockers=[]
+        if cadence=="single":
+            blockers.append("input cadence is single-event only")
+        if observable<2:
+            blockers.append("fewer than two temporally correlated outcome observations")
+        if not state_keys:
+            blockers.append("no resolvable scalar state outcome keys observed")
+        if outcome_density<0.5:
+            blockers.append("outcome density below bounded automatic-action threshold")
+        blockers.extend([
+            "temporal correlation does not prove causality",
+            "runtime and gameplay behavior remain unverified",
+        ])
+        inferences.append({
+            "actionKind":action_kind,
+            "cadence":cadence,
+            "eventCount":events,
+            "observableEventCount":observable,
+            "outcomeEventDensity":round(outcome_density,3),
+            "uniquePathCount":len(entry["paths"]),
+            "stateSignalKeys":state_keys[:64],
+            "stateSignalKeysTruncated":len(state_keys)>64,
+            "stateDirectionCounts":entry["stateDirectionCounts"],
+            "inferredMode":mode,
+            "automaticActionCandidate":automatic_candidate,
+            "temporalCorrelationOnly":True,
+            "causalityProven":False,
+            "runtimeVerified":False,
+            "gameplayVerified":False,
+            "blockers":[] if automatic_candidate else blockers,
+        })
+
+    inferences.sort(key=lambda item:(
+        not item["automaticActionCandidate"],
+        -cadence_rank[item["cadence"]],
+        -item["observableEventCount"],
+        item["actionKind"],
+    ))
+    summary={
+        "inferenceCount":len(inferences),
+        "automaticCandidateCount":sum(item["automaticActionCandidate"] for item in inferences),
+        "sustainedAutomaticCandidateCount":sum(
+            item["automaticActionCandidate"] and item["cadence"]=="sustained" for item in inferences),
+        "burstAutomaticCandidateCount":sum(
+            item["automaticActionCandidate"] and item["cadence"]=="burst" for item in inferences),
+        "note":("Automatic-action inferences are bounded temporal correlations between repeated inputs "
+            "and client-visible outcomes; they do not establish causality or verified gameplay execution."),
+    }
+    return inferences,summary
+
+
+
 
 def _rank_outcomes(signals,request,context):
     request_tokens=_tokens(request or "");context_tokens=_tokens(context)
@@ -853,12 +964,16 @@ def analyze(plan):
         json.dumps(item["guiSignals"],sort_keys=True,ensure_ascii=False)))
     candidate_count=len(relationships)
     cadence_patterns,cadence_summary=_input_cadence_patterns(history)
+    automatic_action_inferences,automatic_action_summary=_automatic_action_inferences(
+        observed_actions,cadence_patterns)
     generic={"families":families,"stateSignalKeys":state_signal_keys[:500],
         "stateSignalKeysTruncated":len(state_signal_keys)>500,"combatCandidates":combat_candidates,
         "temporalActionOutcomeCandidates":relationships[:500],
         "temporalActionOutcomeCandidatesTruncated":candidate_count>500,
         "inputCadencePatterns":cadence_patterns,
         "inputCadenceSummary":cadence_summary,
+        "automaticActionInferences":automatic_action_inferences,
+        "automaticActionSummary":automatic_action_summary,
         "generationReadiness":{"temporalCandidateCount":candidate_count,
             "replayContractCount":0,"generationReadyCount":0,
             "blockers":["temporal correlation does not establish causality",

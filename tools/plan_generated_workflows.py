@@ -156,6 +156,61 @@ def _candidate_cadence(events,cadence_index):
 
 
 
+def _automatic_action_index(actions):
+    generic=actions.get("genericCapabilities")
+    if not isinstance(generic,dict):
+        return {}
+    inferences=generic.get("automaticActionInferences")
+    if inferences is None:
+        return {}
+    if not isinstance(inferences,list) or len(inferences)>2048:
+        raise ValueError("Malformed automatic action inferences")
+    values={}
+    for item in inferences:
+        if not isinstance(item,dict):
+            raise ValueError("Malformed automatic action inferences")
+        kind=item.get("actionKind")
+        if (not isinstance(kind,str) or not SAFE_ACTION_KIND.fullmatch(kind)
+                or type(item.get("automaticActionCandidate")) is not bool):
+            raise ValueError("Malformed automatic action inferences")
+        values[kind]={
+            "actionKind":kind,
+            "automaticActionCandidate":item["automaticActionCandidate"],
+            "inferredMode":item.get("inferredMode"),
+            "observableEventCount":item.get("observableEventCount"),
+            "stateSignalKeys":item.get("stateSignalKeys") if isinstance(
+                item.get("stateSignalKeys"),list) else [],
+        }
+    return values
+
+
+def _candidate_automatic_action_signals(events,automatic_index):
+    kinds=sorted({_event_action_kind(event) for event in events if isinstance(event,dict)})
+    matched=[]
+    for kind in kinds:
+        value=automatic_index.get(kind)
+        if value is not None:
+            matched.append(copy.deepcopy(value))
+    matched.sort(key=lambda item:(
+        not item.get("automaticActionCandidate",False),
+        -int(item.get("observableEventCount") or 0),
+        item["actionKind"],
+    ))
+    return {
+        "actionKinds":kinds,
+        "matchedInferences":matched,
+        "automaticCandidateCount":sum(
+            item.get("automaticActionCandidate") is True for item in matched),
+        "containsAutomaticCandidate":any(
+            item.get("automaticActionCandidate") is True for item in matched),
+        "temporalCorrelationOnly":True,
+        "causalityProven":False,
+        "runtimeVerified":False,
+        "gameplayVerified":False,
+    }
+
+
+
 def _identity(value):
     if not isinstance(value,list) or not 1<=len(value)<=21:return None
     result=[]
@@ -521,6 +576,7 @@ def plan(plan_document,actions):
         raise ValueError("Invalid interaction history")
     targets=_targets(actions);review_only_targets=_review_only_gui_targets(actions)
     cadence_index=_cadence_index(actions)
+    automatic_index=_automatic_action_index(actions)
     groups={};unlinked=0
     for event in history:
         if not isinstance(event,dict):raise ValueError("Malformed interaction event")
@@ -591,6 +647,8 @@ def plan(plan_document,actions):
                     "selection":_selection(review_steps,request),
                     "inputCadenceSignals":_candidate_cadence(
                         [event for _,event,_ in review_only_mapped],cadence_index),
+                    "automaticActionSignals":_candidate_automatic_action_signals(
+                        [event for _,event,_ in review_only_mapped],automatic_index),
                     "guidedTrialGenerationReady":False,"executionMode":"review-only",
                     "automaticallyExecutable":False,"executionReady":False,
                     "reviewEvidenceType":"linked-gui-transition-only",
@@ -632,6 +690,8 @@ def plan(plan_document,actions):
             "manualGuiActivationRequired":manual_gui,"selection":_selection(steps,request),
             "inputCadenceSignals":_candidate_cadence(
                 [event for _,event,_ in mapped],cadence_index),
+            "automaticActionSignals":_candidate_automatic_action_signals(
+                [event for _,event,_ in mapped],automatic_index),
             "guidedTrialGenerationReady":guided_ready,"executionMode":execution_mode,
             "automaticallyExecutable":automatic,"executionReady":guided_ready,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False,
@@ -677,6 +737,9 @@ def plan(plan_document,actions):
                 for item in candidates),
             "workflowsWithSustainedCadenceSignals":sum(
                 item.get("inputCadenceSignals",{}).get("strongestCadence")=="sustained"
+                for item in candidates),
+            "workflowsWithAutomaticActionCandidates":sum(
+                item.get("automaticActionSignals",{}).get("containsAutomaticCandidate") is True
                 for item in candidates),
             "guiRevealFollowupCandidates":gui_reveal_followups["candidateCount"],
             "selectedExecutionCandidateId":selected["id"] if selected else None,

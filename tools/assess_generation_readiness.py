@@ -563,6 +563,9 @@ def _request_action_alignment(plan,actions,request_token_set):
     cadence=generic.get("inputCadencePatterns",[])
     if not isinstance(cadence,list) or len(cadence)>4_096:
         raise ValueError("action capabilities have malformed cadence patterns")
+    automatic_inferences=generic.get("automaticActionInferences",[])
+    if not isinstance(automatic_inferences,list) or len(automatic_inferences)>4_096:
+        raise ValueError("action capabilities have malformed automatic action inferences")
 
     matches=set()
 
@@ -601,6 +604,17 @@ def _request_action_alignment(plan,actions,request_token_set):
         if not isinstance(item,dict):
             raise ValueError("action capabilities have malformed cadence patterns")
         consider(item.get("actionKind"))
+
+    for item in automatic_inferences:
+        if not isinstance(item,dict):
+            raise ValueError("action capabilities have malformed automatic action inferences")
+        consider(item.get("actionKind"))
+        keys=item.get("stateSignalKeys")
+        if keys is not None:
+            if not isinstance(keys,list) or len(keys)>1024:
+                raise ValueError("action capabilities have malformed automatic action inferences")
+            for key in keys:
+                consider(key)
 
     return sorted(matches)[:32]
 
