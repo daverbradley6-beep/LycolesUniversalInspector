@@ -276,6 +276,15 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('property=="Value" and label=="LocalPlayer"',SRC)
         self.assertIn("for _,candidate in ipairs(stateSnapshotCandidates) do",SRC)
         self.assertIn('local primary=top.Name=="Data" or top.Name=="leaderstats"',SRC)
+
+    def test_stat_discovery_exports_bounded_progression_candidates(self):
+        self.assertIn('statDiscovery = {',SRC)
+        self.assertIn('notes = "client-visible progression-stat candidates only"',SRC)
+        self.assertIn('report.scanStats.statDiscovery',SRC)
+        self.assertIn('recordStatDiscoveryCandidate(entry, obj, path)',SRC)
+        self.assertIn('temporalCorrelationOnly = true',SRC)
+        self.assertIn('causalityProven = false',SRC)
+
     def test_copy_json_exports_live_observations_not_stale_manifest_snapshot(self):
         self.assertIn('WORKFLOW_HELPERS.buildLiveObservationExport = function()',SRC)
         self.assertIn('WORKFLOW_HELPERS.flushInputObservationQueueForExport = function()',SRC)
