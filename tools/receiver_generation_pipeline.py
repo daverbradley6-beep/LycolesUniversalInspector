@@ -390,6 +390,98 @@ def run_live_evidence_exercise(
     return run_report
 
 
+def _read_json_document(path: pathlib.Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("observation payload must be a JSON object")
+    return payload
+
+
+def _observation_baseline_scan_id(payload: dict[str, Any]) -> Optional[str]:
+    diagnostics = payload.get("sourceDiagnostics") if isinstance(payload.get("sourceDiagnostics"), dict) else {}
+    integrity = payload.get("integrity") if isinstance(payload.get("integrity"), dict) else {}
+    for candidate in (
+        payload.get("baselineScanId"),
+        integrity.get("baselineScanId"),
+        diagnostics.get("baselineScanId"),
+    ):
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
+
+
+def run_live_observation_scenario(
+    output_root: pathlib.Path,
+    observation_path: pathlib.Path,
+    requested_capability: str,
+    extracted_root: pathlib.Path,
+    baseline_scan_id: Optional[str] = None,
+    scenario_name: str = "live-observation",
+    require_executable: bool = False,
+) -> dict[str, Any]:
+    observation = pathlib.Path(observation_path).resolve()
+    if not observation.is_file():
+        raise ValueError(f"observation file not found: {observation}")
+    payload = _read_json_document(observation)
+    inferred_baseline = _observation_baseline_scan_id(payload)
+    selected_baseline = baseline_scan_id or inferred_baseline
+    if not isinstance(selected_baseline, str) or not selected_baseline:
+        raise ValueError("observation baselineScanId is required")
+
+    overlays, overlay_metadata = discover_observation_overlays(selected_baseline, [observation])
+    report: dict[str, Any] = {
+        "schemaVersion": "live-observation-exercise.1",
+        "scenario": scenario_name,
+        "requestedCapability": requested_capability,
+        "observationPath": str(observation),
+        "baselineScanId": selected_baseline,
+        "inferredBaselineScanId": inferred_baseline,
+        "overlayCount": len(overlays),
+        "overlayMetadata": overlay_metadata,
+        "claims": {
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+            "causalityProven": False,
+            "serverAuthorityVerified": False,
+            "sourceAuthenticityVerified": False,
+        },
+    }
+
+    if len(overlays) == 0:
+        report["status"] = "blocked"
+        report["reason"] = "observation export rejected by dynamic-observation validation"
+        return report
+
+    parts_dir = _resolve_parts_dir_for_scan_id(extracted_root, selected_baseline)
+    if not isinstance(parts_dir, pathlib.Path) or not parts_dir.is_dir():
+        report["status"] = "blocked"
+        report["reason"] = "baseline parts evidence unavailable"
+        report["extractedRoot"] = str(extracted_root)
+        return report
+
+    scenario_output_root = output_root / scenario_name
+    generation = generate_from_parts(
+        parts_dir=parts_dir,
+        output_root=scenario_output_root,
+        requested_capability=requested_capability,
+        observation_paths=overlays,
+        require_executable=require_executable,
+    )
+    summary = summarize_generation_result(generation)
+    executable = summary.get("executableLogic") if isinstance(summary.get("executableLogic"), dict) else {}
+    report.update({
+        "status": (
+            "succeeded"
+            if executable.get("requestExecutableStatus") == "request-executable-ready"
+            else "observational-only-request-unmet"
+        ),
+        "partsDir": str(parts_dir),
+        "result": generation,
+        "summary": summary,
+    })
+    return report
+
+
 def generate_from_parts(
     parts_dir: pathlib.Path,
     output_root: pathlib.Path,
@@ -516,6 +608,22 @@ def main() -> int:
     exercise_parser.add_argument("--observation-path", action="append", default=[],
         help="Dynamic observation JSON file or directory to discover and merge; repeatable")
 
+    observation_parser = subparsers.add_parser(
+        "exercise-observation",
+        help="Run one dynamic-observation export against local extracted baseline parts",
+    )
+    observation_parser.add_argument("--observation", required=True,
+        help="Path to one dynamic-observations JSON export")
+    observation_parser.add_argument("--requested-capability", required=True)
+    observation_parser.add_argument("--output-root", default="build/live-observation-exercise")
+    observation_parser.add_argument("--extracted-root", default="build/live_scans/extracted",
+        help="Root directory containing extracted multipart scan folders")
+    observation_parser.add_argument("--baseline-scan-id", default=None,
+        help="Optional baseline scan override; otherwise inferred from observation export")
+    observation_parser.add_argument("--scenario-name", default="live-observation")
+    observation_parser.add_argument("--require-executable", action="store_true",
+        help="Fail if requested capability does not produce request-aligned executable workflow output")
+
     args = parser.parse_args()
     try:
         output_root = pathlib.Path(args.output_root).resolve()
@@ -546,7 +654,7 @@ def main() -> int:
                 max_legacy_report_pages=args.max_legacy_report_pages,
                 require_executable=args.require_executable,
             )
-        else:
+        elif args.mode == "exercise-live":
             result = run_live_evidence_exercise(
                 output_root=output_root,
                 requested_capability_arsenal=args.requested_capability_arsenal,
@@ -555,6 +663,16 @@ def main() -> int:
                 extracted_root=pathlib.Path(args.extracted_root).resolve(),
                 arsenal_baseline_scan_id=args.arsenal_baseline_scan_id,
                 phantom_baseline_scan_id=args.phantom_baseline_scan_id,
+            )
+        else:
+            result = run_live_observation_scenario(
+                output_root=output_root,
+                observation_path=pathlib.Path(args.observation).resolve(),
+                requested_capability=args.requested_capability,
+                extracted_root=pathlib.Path(args.extracted_root).resolve(),
+                baseline_scan_id=args.baseline_scan_id,
+                scenario_name=args.scenario_name,
+                require_executable=args.require_executable,
             )
         print(json.dumps(result, sort_keys=True))
         return 0

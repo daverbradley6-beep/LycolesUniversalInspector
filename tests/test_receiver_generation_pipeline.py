@@ -554,6 +554,55 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             )
             self.assertTrue(pathlib.Path(scenarios["arsenal"]["summary"]["generatedScriptPath"]).is_file())
 
+
+    def test_run_live_observation_scenario_blocks_when_baseline_parts_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "live-observation.json"
+            make_live_observation_export(overlay, baseline_scan_id="missing-baseline")
+
+            result = MODULE.run_live_observation_scenario(
+                output_root=root / "out",
+                observation_path=overlay,
+                requested_capability="Automatically train and open shop prompt",
+                extracted_root=root / "missing-extracted",
+            )
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["reason"], "baseline parts evidence unavailable")
+            self.assertEqual(result["baselineScanId"], "missing-baseline")
+            self.assertEqual(result["overlayCount"], 1)
+
+    def test_run_live_observation_scenario_succeeds_for_matching_automatic_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            extracted = root / "extracted"
+            baseline = extracted / "muscle_case"
+            baseline.mkdir(parents=True)
+            make_automatic_workflow_ready_parts(
+                baseline,
+                request="Automatically train and open shop prompt",
+                scan_id="baseline-auto-123",
+            )
+            (baseline / "1.json").replace(baseline / "part-1.json")
+            (baseline / "2.json").replace(baseline / "part-2.json")
+
+            overlay = root / "live-observation.json"
+            make_live_observation_export(overlay, baseline_scan_id="baseline-auto-123")
+
+            result = MODULE.run_live_observation_scenario(
+                output_root=root / "out",
+                observation_path=overlay,
+                requested_capability="Automatically train and open shop prompt",
+                extracted_root=extracted,
+                require_executable=True,
+            )
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(
+                result["summary"]["executableLogic"]["requestExecutableStatus"],
+                "request-executable-ready",
+            )
+            self.assertTrue(pathlib.Path(result["summary"]["generatedScriptPath"]).is_file())
+
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
