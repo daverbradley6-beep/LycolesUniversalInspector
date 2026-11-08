@@ -161,35 +161,95 @@ def summarize_generation_result(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _resolve_parts_dir_for_scan_id(extracted_root: pathlib.Path, scan_id: str) -> Optional[pathlib.Path]:
+    if not isinstance(scan_id, str) or not scan_id:
+        return None
+    if not extracted_root.is_dir():
+        return None
+    for candidate in extracted_root.iterdir():
+        if not candidate.is_dir():
+            continue
+        manifests = sorted(candidate.glob("*_manifest.json")) + [candidate / "receiver-manifest.json"]
+        for manifest_path in manifests:
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if manifest.get("scanId") == scan_id:
+                return candidate.resolve()
+        part_candidates = sorted(candidate.glob("part-*.json"))
+        if part_candidates:
+            try:
+                part = json.loads(part_candidates[0].read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(part, dict) and part.get("scanId") == scan_id:
+                return candidate.resolve()
+    return None
+
+
+def _resolve_parts_dir_for_game_name(extracted_root: pathlib.Path, game_term: str) -> Optional[pathlib.Path]:
+    if not isinstance(game_term, str) or not game_term:
+        return None
+    if not extracted_root.is_dir():
+        return None
+    needle = game_term.lower()
+    for candidate in extracted_root.iterdir():
+        if not candidate.is_dir():
+            continue
+        manifests = sorted(candidate.glob("*_manifest.json")) + [candidate / "receiver-manifest.json"]
+        for manifest_path in manifests:
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            game_name = manifest.get("gameName")
+            if isinstance(game_name, str) and needle in game_name.lower():
+                return candidate.resolve()
+        part_candidates = sorted(candidate.glob("part-*.json"))
+        if part_candidates:
+            try:
+                part = json.loads(part_candidates[0].read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            game_name = part.get("gameName") if isinstance(part, dict) else None
+            if isinstance(game_name, str) and needle in game_name.lower():
+                return candidate.resolve()
+    return None
+
+
 def run_live_evidence_exercise(
     output_root: pathlib.Path,
     requested_capability_arsenal: str,
     requested_capability_phantom: str,
     observation_paths: Sequence[pathlib.Path],
+    extracted_root: pathlib.Path,
+    arsenal_baseline_scan_id: str,
+    phantom_baseline_scan_id: str,
 ) -> dict[str, Any]:
     scenarios: list[dict[str, Any]] = []
 
-    arsenal_parts = pathlib.Path("build/live_scans/extracted/arsenal_7965AF57").resolve()
+    arsenal_parts = _resolve_parts_dir_for_scan_id(extracted_root, arsenal_baseline_scan_id)
     scenarios.append({
         "name": "arsenal",
         "partsDir": arsenal_parts,
         "requestedCapability": requested_capability_arsenal,
+        "requestedBaselineScanId": arsenal_baseline_scan_id,
     })
 
-    phantom_parts = None
-    for manifest_path in pathlib.Path("build/live_scans/extracted").glob("*/*_manifest.json"):
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        game_name = manifest.get("gameName")
-        if isinstance(game_name, str) and "phantom" in game_name.lower():
-            phantom_parts = manifest_path.parent.resolve()
-            break
+    phantom_parts = _resolve_parts_dir_for_scan_id(extracted_root, phantom_baseline_scan_id)
+    if phantom_parts is None:
+        phantom_parts = _resolve_parts_dir_for_game_name(extracted_root, "phantom")
     scenarios.append({
         "name": "phantom-forces",
         "partsDir": phantom_parts,
         "requestedCapability": requested_capability_phantom,
+        "requestedBaselineScanId": phantom_baseline_scan_id,
     })
 
     output_root.mkdir(parents=True, exist_ok=True)
@@ -212,21 +272,45 @@ def run_live_evidence_exercise(
                 "name": scenario["name"],
                 "status": "blocked",
                 "reason": "baseline parts evidence unavailable",
+                "requestedBaselineScanId": scenario.get("requestedBaselineScanId"),
+                "extractedRoot": str(extracted_root),
             })
             continue
 
+        baseline_scan_id: Optional[str] = None
         manifest_paths = sorted(parts_dir.glob("*_manifest.json"))
-        if not manifest_paths:
-            run_report["scenarios"].append({
-                "name": scenario["name"],
-                "status": "blocked",
-                "reason": "baseline manifest unavailable",
-            })
-            continue
-
-        manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
-        baseline_scan_id = manifest.get("scanId")
-        if not isinstance(baseline_scan_id, str) or not baseline_scan_id:
+        if manifest_paths:
+            try:
+                manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                manifest = None
+            if isinstance(manifest, dict):
+                candidate = manifest.get("scanId")
+                if isinstance(candidate, str) and candidate:
+                    baseline_scan_id = candidate
+        if baseline_scan_id is None:
+            receiver_manifest = parts_dir / "receiver-manifest.json"
+            if receiver_manifest.is_file():
+                try:
+                    receiver_document = json.loads(receiver_manifest.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    receiver_document = None
+                if isinstance(receiver_document, dict):
+                    candidate = receiver_document.get("scanId")
+                    if isinstance(candidate, str) and candidate:
+                        baseline_scan_id = candidate
+        if baseline_scan_id is None:
+            part_candidates = sorted(parts_dir.glob("part-*.json"))
+            if part_candidates:
+                try:
+                    first_part = json.loads(part_candidates[0].read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    first_part = None
+                if isinstance(first_part, dict):
+                    candidate = first_part.get("scanId")
+                    if isinstance(candidate, str) and candidate:
+                        baseline_scan_id = candidate
+        if baseline_scan_id is None:
             run_report["scenarios"].append({
                 "name": scenario["name"],
                 "status": "blocked",
@@ -245,7 +329,9 @@ def run_live_evidence_exercise(
         run_report["scenarios"].append({
             "name": scenario["name"],
             "status": "succeeded",
+            "requestedBaselineScanId": scenario.get("requestedBaselineScanId"),
             "baselineScanId": baseline_scan_id,
+            "partsDir": str(parts_dir),
             "requestedCapability": scenario["requestedCapability"],
             "overlayCount": len(selected_overlays),
             "overlayMetadata": overlay_metadata,
@@ -285,6 +371,7 @@ def generate_from_receiver(
     timeout: float = 30.0,
     workers: int = 4,
     observation_paths: Optional[Sequence[pathlib.Path]] = None,
+    allow_legacy_report_index: bool = False,
 ) -> dict[str, Any]:
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -300,6 +387,7 @@ def generate_from_receiver(
         workers=workers,
         local_manifest=str(local_manifest) if local_manifest else None,
         resume=str(resume_dir) if resume_dir else None,
+        allow_legacy_report_index=allow_legacy_report_index,
     )
 
     generation_result = generate_from_parts(
@@ -343,12 +431,20 @@ def main() -> int:
     receiver_parser.add_argument("--workers", type=int, default=4)
     receiver_parser.add_argument("--observation-path", action="append", default=[],
         help="Dynamic observation JSON file or directory to merge; repeatable")
+    receiver_parser.add_argument("--allow-legacy-report-index", action="store_true",
+        help="allow receiver fetch fallback from paged legacy report records")
 
     exercise_parser = subparsers.add_parser(
         "exercise-live",
         help="Run Arsenal/Phantom live-evidence generation exercise from local extracted scans",
     )
     exercise_parser.add_argument("--output-root", default="build/live-evidence-exercise")
+    exercise_parser.add_argument("--extracted-root", default="build/live_scans/extracted",
+        help="Root directory containing extracted multipart scan folders")
+    exercise_parser.add_argument("--arsenal-baseline-scan-id",
+        default="DBFC72C6-749B-4F95-BBA2-433B8B61745C")
+    exercise_parser.add_argument("--phantom-baseline-scan-id",
+        default="6D3741EF-9569-4F40-B38A-E4FD2AE0A063")
     exercise_parser.add_argument(
         "--requested-capability-arsenal",
         default="Automatically shoot, reload, and switch weapons in Arsenal",
@@ -385,6 +481,7 @@ def main() -> int:
                 timeout=args.timeout,
                 workers=args.workers,
                 observation_paths=observation_paths,
+                allow_legacy_report_index=args.allow_legacy_report_index,
             )
         else:
             result = run_live_evidence_exercise(
@@ -392,6 +489,9 @@ def main() -> int:
                 requested_capability_arsenal=args.requested_capability_arsenal,
                 requested_capability_phantom=args.requested_capability_phantom,
                 observation_paths=observation_paths,
+                extracted_root=pathlib.Path(args.extracted_root).resolve(),
+                arsenal_baseline_scan_id=args.arsenal_baseline_scan_id,
+                phantom_baseline_scan_id=args.phantom_baseline_scan_id,
             )
         print(json.dumps(result, sort_keys=True))
         return 0

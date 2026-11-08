@@ -480,6 +480,16 @@ _LEGACY_RECEIVER_PROVENANCE_FIELDS={
     "receiverIntegrityVerified","receiverResponseAuthenticityVerified",
     "localPayloadEquivalent","note",
 }
+_LEGACY_REPORT_RECEIVER_PROVENANCE_FIELDS={
+    "schemaVersion","scanId","placeId","partCount","expectedParts","objectCount",
+    "metadata","receiverIntegrity","retrievedPartContentDigests",
+    "resumableRetrievalEnabled","resumedPartCount","downloadedPartCount",
+    "resumeCheckpointAuthenticated","receiverStoredPayloadDigestsRevalidatedThisRun",
+    "receiverStoredPayloadDigestsVerified","receiverAcknowledgementDigestEquivalent",
+    "receiverIntegrityVerified","receiverResponseAuthenticityVerified",
+    "localPayloadEquivalent","receiverReportedIntegrityUnavailable",
+    "legacyReportPagesScanned","legacyReportRecordsMatched","note",
+}
 
 _RECEIVER_MARKERS={
     "receiverIntegrity","receiverPartContentDigests",
@@ -671,6 +681,77 @@ def _legacy_receiver_source_provenance(manifest,scan_id,place_id,part_count,
     return result
 
 
+def _legacy_report_receiver_source_provenance(manifest,scan_id,place_id,part_count,
+                                              object_count,actual_digests):
+    if set(manifest)!=_LEGACY_REPORT_RECEIVER_PROVENANCE_FIELDS:
+        fail("Invalid legacy report receiver provenance schema")
+    if (manifest.get("schemaVersion")!="30.2.receiver-import-legacy-reports.1"
+            or manifest.get("scanId")!=scan_id or manifest.get("placeId")!=place_id
+            or manifest.get("partCount")!=part_count
+            or manifest.get("expectedParts")!=part_count
+            or manifest.get("objectCount")!=object_count):
+        fail("Invalid legacy report receiver provenance identity")
+    metadata=manifest.get("metadata")
+    if (not isinstance(metadata,dict) or metadata.get("scanId")!=scan_id
+            or metadata.get("placeId")!=place_id or metadata.get("partCount")!=part_count):
+        fail("Invalid legacy report receiver provenance metadata")
+    integrity=manifest.get("receiverIntegrity")
+    if (not isinstance(integrity,dict) or integrity.get("scanId")!=scan_id
+            or integrity.get("placeId")!=place_id
+            or integrity.get("partCount")!=part_count
+            or integrity.get("receivedParts")!=part_count
+            or integrity.get("missingParts")!=[]
+            or integrity.get("indexedObjects")!=object_count
+            or integrity.get("uniqueObjectKeys")!=object_count
+            or integrity.get("duplicateObjectKeys")!=0
+            or integrity.get("identityErrors")!=[]
+            or integrity.get("expectedObjects")!=object_count
+            or integrity.get("complete") is not True
+            or integrity.get("integrityStatus")!="verified-after-retrieval"):
+        fail("Invalid legacy report receiver provenance integrity")
+    entries=manifest.get("retrievedPartContentDigests")
+    if not isinstance(entries,list) or len(entries)!=part_count:
+        fail("Invalid legacy report receiver provenance digests")
+    digests={}
+    for entry in entries:
+        if not isinstance(entry,dict) or set(entry)!={"partIndex","sha256"}:
+            fail("Invalid legacy report receiver provenance digest")
+        index=entry.get("partIndex");digest=entry.get("sha256")
+        if (type(index) is not int or not 1<=index<=part_count or index in digests
+                or not isinstance(digest,str) or len(digest)!=64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or actual_digests.get(index)!=digest):
+            fail("Invalid legacy report receiver provenance digest")
+        digests[index]=digest
+    pages=manifest.get("legacyReportPagesScanned")
+    records=manifest.get("legacyReportRecordsMatched")
+    acknowledgement=manifest.get("receiverAcknowledgementDigestEquivalent")
+    if (manifest.get("resumableRetrievalEnabled") is not False
+            or manifest.get("resumedPartCount")!=0
+            or manifest.get("downloadedPartCount")!=part_count
+            or manifest.get("resumeCheckpointAuthenticated") is not False
+            or manifest.get("receiverStoredPayloadDigestsRevalidatedThisRun") is not False
+            or manifest.get("receiverStoredPayloadDigestsVerified") is not False
+            or type(acknowledgement) is not bool
+            or manifest.get("receiverIntegrityVerified") is not True
+            or manifest.get("receiverResponseAuthenticityVerified") is not False
+            or manifest.get("localPayloadEquivalent") is not False
+            or manifest.get("receiverReportedIntegrityUnavailable") is not True
+            or type(pages) is not int or pages<=0
+            or type(records) is not int or records<=0
+            or not isinstance(manifest.get("note"),str)):
+        fail("Invalid legacy report receiver provenance claims")
+    result=_base_source_provenance(scan_id,place_id,part_count)
+    result.update({
+        "inputMode":"receiver-import-legacy-reports",
+        "partContentDigests":[{"partIndex":index,"sha256":digests[index]}
+                              for index in range(1,part_count+1)],
+        "receiverAcknowledgementDigestEquivalent":acknowledgement,
+        "receiverIntegrityVerified":True,
+        "downloadedPartCount":part_count,
+    })
+    return result
+
 
 def compile_scan(directory):
     files=sorted(pathlib.Path(directory).glob("*.json"))
@@ -804,6 +885,9 @@ def compile_scan(directory):
         receiver_manifest=receiver_manifests[0]
         if receiver_manifest.get("schemaVersion")=="30.2.receiver-import-legacy.1":
             source_provenance=_legacy_receiver_source_provenance(
+                receiver_manifest,scan_id,place_id,count,len(objects),actual_part_digests)
+        elif receiver_manifest.get("schemaVersion")=="30.2.receiver-import-legacy-reports.1":
+            source_provenance=_legacy_report_receiver_source_provenance(
                 receiver_manifest,scan_id,place_id,count,len(objects),actual_part_digests)
         else:
             source_provenance=_receiver_source_provenance(

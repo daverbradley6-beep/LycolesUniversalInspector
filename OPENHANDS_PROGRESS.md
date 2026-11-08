@@ -3,6 +3,56 @@
 
 
 
+## Update — 2026-11-07 — legacy receiver report-index recovery + baseline scan resolution hardening
+
+- Implemented receiver compatibility path for deployments that expose only paged legacy `reports` records:
+  - `tools/fetch_receiver_scan.py`
+    - Added opt-in `--allow-legacy-report-index` fallback when `/metadata` returns 404.
+    - Added paged record retrieval + wrapped `{"report": ...}` parsing and strict scan/part identity validation.
+    - Added deterministic reconstruction manifest mode `30.2.receiver-import-legacy-reports.1`.
+    - Added normalization for legacy payload drift:
+      - synthesize missing `scanOrdinal` values deterministically per part/object,
+      - collapse byte-identical duplicate identities,
+      - synthesize missing `scanStats.complete` from recorded/eligible/omitted counters.
+- Extended provenance acceptance chain for this mode:
+  - `tools/compile_scan.py` accepts/validates `30.2.receiver-import-legacy-reports.1` and emits `inputMode: receiver-import-legacy-reports`.
+  - `tools/generate_script.py` accepts `receiver-import-legacy-reports` and renders accurate provenance text (`legacy report-index receiver import`).
+- Extended pipeline interfaces:
+  - `tools/receiver_generation_pipeline.py`
+    - `from-receiver` supports `--allow-legacy-report-index` pass-through.
+    - `exercise-live` now supports configurable `--extracted-root`, `--arsenal-baseline-scan-id`, `--phantom-baseline-scan-id`.
+    - Baseline resolution now supports `*_manifest.json`, `receiver-manifest.json`, or `part-*.json` fallback.
+    - Scenario reports now include requested baseline IDs and resolved parts directories.
+
+Receiver evidence recovery outcomes:
+- Requested baseline IDs still unavailable in receiver storage:
+  - `DBFC72C6-749B-4F95-BBA2-433B8B61745C` (Arsenal)
+  - `6D3741EF-9569-4F40-B38A-E4FD2AE0A063` (Phantom)
+- Recoverable place-matching scans imported successfully via legacy fallback:
+  - Arsenal: `CEF96B95-27DB-4348-9F3E-7182DDB42BE8`
+  - Phantom: `F4C38F6A-8CAE-4BED-8037-9A9B87ECA207`
+- `exercise-live` rerun on recovered scans succeeded and produced bundles, but evidence remains observation-deficient for combat generation:
+  - overlay count: `0` (no `30.6.live-observation-export.1` artifacts available locally),
+  - interaction history: `0` for available receiver scans,
+  - generated combat capability IDs: `0`,
+  - request-aligned execution-ready workflows: `0`.
+
+Regression coverage added/updated:
+- `tests/test_fetch_receiver_scan.py`
+  - added legacy report-index opt-in tests,
+  - test server now simulates report-index-only receiver route behavior.
+- `tests/test_receiver_generation_pipeline.py`
+  - added baseline scan-ID resolver and blocked-scenario diagnostics coverage.
+
+Validation:
+- Full Python suite: **1620 passed**, **17 skipped**.
+- Node/Luau suite: passed (`npm test`).
+
+Primary blocker remains unchanged:
+- No receiver-accessible Arsenal/Phantom scans currently include interaction-observation evidence needed for request-aligned combat workflow generation.
+- Need fresh live observation export(s) (schema `30.6.live-observation-export.1`) linked to baseline scan IDs to move overlay/capability/workflow counts above zero.
+
+
 ## Update — 2026-11-07 — live evidence exercise orchestration (Arsenal + Phantom)
 
 - Extended `tools/receiver_generation_pipeline.py` with end-to-end live-evidence exercise support:

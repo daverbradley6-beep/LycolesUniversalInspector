@@ -49,9 +49,11 @@ def _validate_source_provenance(provenance):
     if not isinstance(provenance,dict):
         raise ValueError("Malformed source provenance")
     mode=provenance.get("inputMode")
-    receiver=mode in ("receiver-import","receiver-import-legacy-v11")
+    receiver=mode in ("receiver-import","receiver-import-legacy-v11",
+                      "receiver-import-legacy-reports")
     digest_receiver=mode=="receiver-import"
-    if mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11"):
+    if mode not in ("local-multipart","receiver-import","receiver-import-legacy-v11",
+                    "receiver-import-legacy-reports"):
         raise ValueError("Unsupported source provenance mode")
     false_claims=("resumeCheckpointAuthenticated","receiverResponseAuthenticityVerified",
                   "localPayloadEquivalent","sourceAuthenticityVerified","causalityProven",
@@ -109,6 +111,7 @@ def source_provenance_lines(plan):
             _validate_source_provenance(provenance))
         mode=provenance["inputMode"]
         baseline=("legacy v11 receiver import" if mode=="receiver-import-legacy-v11"
+                  else "legacy report-index receiver import" if mode=="receiver-import-legacy-reports"
                   else "receiver import" if receiver else "local multipart")
         if receiver:
             local_digest_line="not applicable"
@@ -126,6 +129,7 @@ def source_provenance_lines(plan):
                 "verified" if acknowledgement_equivalent else "not established"),
             "Receiver digests rechecked this run: "+(
                 "yes" if revalidated else "unavailable on legacy v11" if mode=="receiver-import-legacy-v11"
+                else "unavailable on legacy report-index import" if mode=="receiver-import-legacy-reports"
                 else "no (cached checkpoint used)" if receiver else "not applicable"),
             "Resume checkpoint authentication: unavailable",
             "Response authenticity: unverified",

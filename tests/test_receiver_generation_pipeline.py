@@ -180,6 +180,43 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("requested capability is not implementation-ready", summary["observationalOnly"])
             self.assertIn("no request-aligned execution-ready workflow candidates", summary["observationalOnly"])
 
+    def test_resolve_parts_dir_for_scan_id_prefers_exact_manifest_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            extracted = root / "extracted"
+            scan_dir = extracted / "arsenal_case"
+            scan_dir.mkdir(parents=True)
+            manifest = {
+                "scanId": "DBFC72C6-749B-4F95-BBA2-433B8B61745C",
+                "placeId": 286090429,
+                "partCount": 2,
+                "gameName": "Arsenal",
+            }
+            (scan_dir / "sample_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            resolved = MODULE._resolve_parts_dir_for_scan_id(
+                extracted, "DBFC72C6-749B-4F95-BBA2-433B8B61745C")
+            self.assertEqual(resolved, scan_dir.resolve())
+
+    def test_exercise_live_reports_requested_baseline_when_parts_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            result = MODULE.run_live_evidence_exercise(
+                output_root=root / "out",
+                requested_capability_arsenal="Automatically shoot and reload in Arsenal",
+                requested_capability_phantom="Automatically shoot and reload in Phantom Forces",
+                observation_paths=[],
+                extracted_root=root / "missing-extracted",
+                arsenal_baseline_scan_id="DBFC72C6-749B-4F95-BBA2-433B8B61745C",
+                phantom_baseline_scan_id="6D3741EF-9569-4F40-B38A-E4FD2AE0A063",
+            )
+            scenarios = {item["name"]: item for item in result["scenarios"]}
+            self.assertEqual(scenarios["arsenal"]["status"], "blocked")
+            self.assertEqual(scenarios["arsenal"]["requestedBaselineScanId"],
+                             "DBFC72C6-749B-4F95-BBA2-433B8B61745C")
+            self.assertEqual(scenarios["phantom-forces"]["status"], "blocked")
+            self.assertEqual(scenarios["phantom-forces"]["requestedBaselineScanId"],
+                             "6D3741EF-9569-4F40-B38A-E4FD2AE0A063")
+
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

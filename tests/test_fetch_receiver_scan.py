@@ -33,7 +33,7 @@ class ReceiverServer:
                  object_count_mismatch=False, malformed_length=False, transient=False,
                  duplicate_object=False, digest_mismatch=False, missing_digest=False,
                  legacy_integrity_complete=True, fail_part=None,
-                 legacy_collection=False):
+                 legacy_collection=False, legacy_report_index=False):
         base = {
             "scanId": "receiverscan01",
             "placeId": 3623096087,
@@ -74,6 +74,7 @@ class ReceiverServer:
         self.missing_digest = missing_digest
         self.legacy_integrity_complete = legacy_integrity_complete
         self.legacy_collection = legacy_collection
+        self.legacy_report_index = legacy_report_index
         self.transient = transient
         self.fail_part = fail_part
         self.transient_failures = 0
@@ -104,12 +105,19 @@ class ReceiverServer:
                     return
                 prefix = "/reports/read-secret/receiverscan01/"
                 if self.path == "/reports/read-secret":
-                    payload = ({"reports": ["receiverscan01"], "hasMore": False}
-                               if owner.legacy_collection else
-                               {"scans": ["receiverscan01"], "hasMore": False})
-                elif self.path == prefix + "metadata":
+                    if owner.legacy_report_index:
+                        payload = {"reports": ["legacy-record-1", "legacy-record-2"],
+                                   "hasMore": False, "nextCursor": None}
+                    else:
+                        payload = ({"reports": ["receiverscan01"], "hasMore": False}
+                                   if owner.legacy_collection else
+                                   {"scans": ["receiverscan01"], "hasMore": False})
+                elif owner.legacy_report_index and self.path.startswith("/reports/read-secret/legacy-record-"):
+                    index = int(self.path.rsplit("-", 1)[1])
+                    payload = {"receivedAt": owner.metadata["receivedAt"], "report": owner.parts[index]}
+                elif (not owner.legacy_report_index) and self.path == prefix + "metadata":
                     payload = {"metadata": owner.metadata}
-                elif self.path == prefix + "integrity":
+                elif (not owner.legacy_report_index) and self.path == prefix + "integrity":
                     object_count = sum(len(part["objects"]) for part in owner.parts.values())
                     payload = {
                         "scanId": "receiverscan01", "placeId": 3623096087,
@@ -123,7 +131,7 @@ class ReceiverServer:
                         "integrityStatus": ("verified" if owner.legacy_integrity_complete
                                             else "incomplete"),
                     }
-                elif self.path.startswith(prefix + "part-"):
+                elif (not owner.legacy_report_index) and self.path.startswith(prefix + "part-"):
                     index = int(self.path.rsplit("-", 1)[1])
                     if owner.incomplete and index == 2:
                         self.send_response(404)
@@ -271,6 +279,29 @@ class ReceiverImportTests(unittest.TestCase):
                                  entry["sha256"])
             self.assertFalse(any(path.endswith("/integrity") for path in receiver.paths))
             self.assertNotIn("read-secret", json.dumps(manifest))
+
+    def test_legacy_report_index_requires_explicit_opt_in(self):
+        with ReceiverServer(legacy_report_index=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            with self.assertRaisesRegex(ValueError, "unexpected HTTP status 404"):
+                FETCHER.fetch_scan(receiver.server.base_url, "read-secret",
+                                   "receiverscan01", output, allow_http=True)
+
+    def test_legacy_report_index_imports_with_explicit_opt_in(self):
+        with ReceiverServer(legacy_report_index=True) as receiver, tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "scan"
+            result = FETCHER.fetch_scan(
+                receiver.server.base_url, "read-secret", "receiverscan01", output,
+                allow_http=True, allow_legacy_report_index=True)
+            self.assertEqual(result["schemaVersion"], "30.2.receiver-import-legacy-reports.1")
+            self.assertEqual(result["partCount"], 2)
+            self.assertEqual(result["downloadedPartCount"], 2)
+            manifest = json.loads((output / "receiver-manifest.json").read_text())
+            self.assertTrue(manifest["receiverReportedIntegrityUnavailable"])
+            self.assertGreaterEqual(manifest["legacyReportPagesScanned"], 1)
+            plan = COMPILER.compile_scan(output)
+            self.assertEqual(plan["sourceProvenance"]["inputMode"],
+                             "receiver-import-legacy-reports")
 
     def test_forged_receiver_authenticity_claim_blocks_compilation(self):
         with ReceiverServer() as receiver, tempfile.TemporaryDirectory() as temp:

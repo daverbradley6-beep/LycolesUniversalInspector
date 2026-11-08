@@ -25,6 +25,7 @@ MAX_JSON_BYTES = 3_000_000
 MAX_OBJECTS = 2_000_000
 MAX_PARTS = 2_000
 MAX_WORKERS = 8
+MAX_LEGACY_REPORT_PAGES = 500
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -371,9 +372,249 @@ def _resume_directory(path, output):
     return directory
 
 
+def _legacy_reports_page(opener, origin, read_key, timeout, cursor=None):
+    root = "/reports/" + urllib.parse.quote(read_key, safe="")
+    url = origin + root
+    if cursor is not None:
+        if not isinstance(cursor, str) or not cursor:
+            raise ValueError("invalid legacy report cursor")
+        url += "?" + urllib.parse.urlencode({"cursor": cursor})
+    document = _read_json(opener, url, timeout)
+    if not isinstance(document, dict):
+        raise ValueError("legacy report collection response is invalid")
+    records = document.get("reports")
+    has_more = document.get("hasMore")
+    next_cursor = document.get("nextCursor")
+    if (not isinstance(records, list)
+            or any(not isinstance(item, str) for item in records)
+            or type(has_more) is not bool):
+        raise ValueError("legacy report collection response is invalid")
+    if has_more and (not isinstance(next_cursor, str) or not next_cursor):
+        raise ValueError("legacy report collection response is invalid")
+    return records, has_more, next_cursor
+
+
+def _legacy_report_part(document):
+    if not isinstance(document, dict):
+        raise ValueError("legacy report payload is invalid")
+    report = document.get("report")
+    if isinstance(report, str):
+        try:
+            report = json.loads(report)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("legacy report payload is invalid") from None
+    if not isinstance(report, dict):
+        raise ValueError("legacy report payload is invalid")
+    return report, document.get("receivedAt")
+
+
+def _fetch_scan_legacy_reports(opener, origin, read_key, scan_id, output, timeout, workers):
+    cursor = None
+    pages_scanned = 0
+    part_count = None
+    place_id = None
+    metadata = None
+    matched_records = 0
+    matched_parts = {}
+
+    root = "/reports/" + urllib.parse.quote(read_key, safe="")
+
+    while pages_scanned < MAX_LEGACY_REPORT_PAGES:
+        records, has_more, next_cursor = _legacy_reports_page(
+            opener, origin, read_key, timeout, cursor)
+        pages_scanned += 1
+
+        def retrieve(record_id):
+            document = _read_json(opener, origin + root + "/" + record_id, timeout)
+            report, received_at = _legacy_report_part(document)
+            return record_id, report, received_at
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(retrieve, record_id) for record_id in records]
+            for future in concurrent.futures.as_completed(futures):
+                record_id, part, received_at = future.result()
+                if part.get("scanId") != scan_id:
+                    continue
+                matched_records += 1
+                current_place = _positive_integer(part.get("placeId"), "receiver place ID")
+                current_parts = _positive_integer(part.get("partCount"), "receiver part count",
+                                                  MAX_PARTS)
+                if part_count is None:
+                    part_count = current_parts
+                    place_id = current_place
+                    metadata = {
+                        "scanId": scan_id,
+                        "placeId": place_id,
+                        "partCount": part_count,
+                        "version": part.get("version"),
+                        "gameName": part.get("gameName"),
+                    }
+                    if isinstance(received_at, str):
+                        metadata["receivedAt"] = received_at
+                elif part_count != current_parts or place_id != current_place:
+                    raise ValueError("legacy reports contain conflicting scan metadata")
+
+                index = _positive_integer(part.get("partIndex"), "receiver part index", part_count)
+                _validate_part(part, scan_id, place_id, part_count, index)
+                raw = json.dumps(part, sort_keys=True, separators=(",", ":"),
+                                 ensure_ascii=False).encode("utf-8")
+                digest = hashlib.sha256(raw).hexdigest()
+                previous = matched_parts.get(index)
+                if previous is not None and previous["sha256"] != digest:
+                    raise ValueError("legacy reports contain conflicting duplicate part content")
+                if previous is None:
+                    matched_parts[index] = {
+                        "recordId": record_id,
+                        "sha256": digest,
+                        "raw": raw,
+                        "part": part,
+                    }
+
+        if part_count is not None and len(matched_parts) == part_count:
+            break
+        if not has_more:
+            break
+        cursor = next_cursor
+
+    if part_count is None:
+        raise ValueError("requested scan not found in legacy report collection")
+    missing = [index for index in range(1, part_count + 1) if index not in matched_parts]
+    if missing:
+        raise ValueError("legacy report collection is missing required parts")
+
+    with tempfile.TemporaryDirectory(prefix=".lycoles-receiver-", dir=output.parent) as temp:
+        staging = pathlib.Path(temp)
+        total_objects = 0
+        object_keys = set()
+        object_identities = {}
+        collapsed_duplicate_objects = 0
+        synthesized_scan_ordinals = 0
+        part_digests = {}
+
+        for index in range(1, part_count + 1):
+            entry = matched_parts[index]
+            part = entry["part"]
+            objects = _validate_part(part, scan_id, place_id, part_count, index)
+            filtered_objects = []
+            for object_index, original_item in enumerate(objects, start=1):
+                item = original_item
+                if original_item.get("scanOrdinal") in (None, ""):
+                    item = dict(original_item)
+                    item["scanOrdinal"] = f"legacy-{index}-{object_index}"
+                    synthesized_scan_ordinals += 1
+                key = _object_key(item)
+                snapshot = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                previous = object_identities.get(key)
+                if previous is None:
+                    object_identities[key] = snapshot
+                    object_keys.add(key)
+                    filtered_objects.append(item)
+                    continue
+                if previous == snapshot:
+                    collapsed_duplicate_objects += 1
+                    continue
+                raise ValueError("duplicate receiver object identity")
+            total_objects += len(filtered_objects)
+            if total_objects > MAX_OBJECTS:
+                raise ValueError("receiver object count exceeds safety limit")
+            sanitized_part = dict(part)
+            sanitized_part["objects"] = filtered_objects
+            scan_stats = part.get("scanStats")
+            if isinstance(scan_stats, dict) and "complete" not in scan_stats:
+                synthesized_stats = dict(scan_stats)
+                recorded = synthesized_stats.get("recorded")
+                eligible = synthesized_stats.get("eligible")
+                omitted = synthesized_stats.get("omitted")
+                synthesized_stats["complete"] = (
+                    type(recorded) is int and type(eligible) is int
+                    and type(omitted) is int and omitted == 0 and recorded == eligible
+                )
+                sanitized_part["scanStats"] = synthesized_stats
+            raw = json.dumps(sanitized_part, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False).encode("utf-8")
+            digest = hashlib.sha256(raw).hexdigest()
+            part_digests[index] = digest
+            (staging / f"part-{index:04d}.json").write_bytes(raw)
+
+        receiver_part_digests = [
+            {"partIndex": index, "sha256": part_digests[index]}
+            for index in range(1, part_count + 1)
+        ]
+        integrity = {
+            "scanId": scan_id,
+            "placeId": place_id,
+            "partCount": part_count,
+            "receivedParts": part_count,
+            "missingParts": [],
+            "indexedObjects": total_objects,
+            "uniqueObjectKeys": len(object_keys),
+            "duplicateObjectKeys": 0,
+            "identityErrors": [],
+            "expectedObjects": total_objects,
+            "complete": True,
+            "integrityStatus": "verified-after-retrieval",
+            "verificationMethod": "legacy report retrieval plus local multipart compilation",
+        }
+        import_manifest = {
+            "schemaVersion": "30.2.receiver-import-legacy-reports.1",
+            "scanId": scan_id,
+            "placeId": place_id,
+            "partCount": part_count,
+            "expectedParts": part_count,
+            "objectCount": total_objects,
+            "metadata": metadata,
+            "receiverIntegrity": integrity,
+            "retrievedPartContentDigests": receiver_part_digests,
+            "resumableRetrievalEnabled": False,
+            "resumedPartCount": 0,
+            "downloadedPartCount": part_count,
+            "resumeCheckpointAuthenticated": False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun": False,
+            "receiverStoredPayloadDigestsVerified": False,
+            "receiverAcknowledgementDigestEquivalent": False,
+            "receiverIntegrityVerified": True,
+            "receiverResponseAuthenticityVerified": False,
+            "localPayloadEquivalent": False,
+            "receiverReportedIntegrityUnavailable": True,
+            "legacyReportPagesScanned": pages_scanned,
+            "legacyReportRecordsMatched": matched_records,
+            "note": ("Legacy report-index import reconstructed multipart scan from wrapped records; "
+                     "receiver-stored per-part payload digests and dedicated integrity endpoint were unavailable; "
+                     f"collapsed identical duplicate object identities: {collapsed_duplicate_objects}; "
+                     f"synthesized missing scan ordinals: {synthesized_scan_ordinals}"),
+        }
+        _write_json(staging / "receiver-manifest.json", import_manifest)
+        plan = _compile_scan(staging)
+        if output.exists() or output.is_symlink():
+            raise ValueError("output path was created during import")
+        staging.replace(output)
+
+    return {
+        "schemaVersion": import_manifest["schemaVersion"],
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": part_count,
+        "objectCount": total_objects,
+        "featureCount": plan["featureCount"],
+        "resumableRetrievalEnabled": False,
+        "resumedPartCount": 0,
+        "downloadedPartCount": part_count,
+        "resumeCheckpointAuthenticated": False,
+        "receiverStoredPayloadDigestsRevalidatedThisRun": False,
+        "receiverStoredPayloadDigestsVerified": False,
+        "receiverAcknowledgementDigestEquivalent": False,
+        "receiverIntegrityVerified": True,
+        "receiverResponseAuthenticityVerified": False,
+        "localPayloadEquivalent": False,
+        "output": str(output),
+        "legacyReportPagesScanned": pages_scanned,
+        "legacyReportRecordsMatched": matched_records,
+    }
+
+
 def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
                local_manifest=None, resume=None, allow_http=False,
-               allow_legacy_v11=False):
+               allow_legacy_v11=False, allow_legacy_report_index=False):
     origin = _receiver_origin(endpoint, allow_http)
     read_key = _read_key(read_key)
     scan_id = _identifier(scan_id, "receiver scan ID")
@@ -382,6 +623,8 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
     workers = _positive_integer(workers, "worker count", MAX_WORKERS)
     if type(allow_legacy_v11) is not bool:
         raise ValueError("invalid legacy receiver option")
+    if type(allow_legacy_report_index) is not bool:
+        raise ValueError("invalid legacy report index option")
     if allow_legacy_v11 and resume is not None:
         raise ValueError("legacy receiver retrieval does not support resume checkpoints")
     output = pathlib.Path(output)
@@ -390,7 +633,18 @@ def fetch_scan(endpoint, read_key, scan_id, output, *, timeout=30, workers=4,
     output.parent.mkdir(parents=True, exist_ok=True)
     opener = urllib.request.build_opener(_NoRedirect)
     root = "/reports/" + urllib.parse.quote(read_key, safe="") + "/" + scan_id
-    metadata_document = _read_json(opener, origin + root + "/metadata", timeout)
+    try:
+        metadata_document = _read_json(opener, origin + root + "/metadata", timeout)
+    except ValueError as exc:
+        if (allow_legacy_report_index and str(exc) == "unexpected HTTP status 404"
+                and not allow_legacy_v11):
+            if resume is not None:
+                raise ValueError("legacy report-index retrieval does not support resume checkpoints")
+            if local_manifest is not None:
+                raise ValueError("legacy report-index retrieval does not support local manifest acknowledgement validation")
+            return _fetch_scan_legacy_reports(
+                opener, origin, read_key, scan_id, output, timeout, workers)
+        raise
     metadata, place_id, part_count = _validate_metadata(metadata_document, scan_id)
     legacy_integrity = (_validate_legacy_integrity(
         _read_json(opener, origin + root + "/integrity", timeout),
@@ -579,6 +833,8 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--allow-legacy-v11", action="store_true",
                         help="explicitly accept v11 parts without persisted digest headers after complete /integrity validation")
+    parser.add_argument("--allow-legacy-report-index", action="store_true",
+                        help="allow fallback import from paged legacy report records when /metadata is unavailable")
     args = parser.parse_args()
     read_key = os.environ.get("LYCOLES_READ_KEY")
     if not read_key:
@@ -588,7 +844,8 @@ def main():
         result = fetch_scan(args.endpoint, read_key, args.scan_id, args.output,
                             timeout=args.timeout, workers=args.workers,
                             local_manifest=args.local_manifest, resume=args.resume,
-                            allow_legacy_v11=args.allow_legacy_v11)
+                            allow_legacy_v11=args.allow_legacy_v11,
+                            allow_legacy_report_index=args.allow_legacy_report_index)
     except (ValueError, OSError) as exc:
         print("IMPORT BLOCKED:", exc, file=sys.stderr)
         return 2
