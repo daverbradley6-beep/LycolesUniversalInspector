@@ -789,15 +789,80 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             strength_paths.append(path)
     if len(strength_paths) == 0:
         strength_paths = [primary_path]
+    if len(strength_paths) > 1:
+        strength_paths = [strength_paths[0]]
+
+    reward_state_paths = sorted({
+        path
+        for path in (reward_indicator_paths + [item for item in payload_paths if isinstance(item, str)])
+        if any(token in path.lower() for token in ("reward", "gift", ".claimed", ".timer", ".readytext", "claim.notification"))
+    })
+
+    inventory_gui_paths = [
+        path
+        for path in collect_gui_paths()
+        if "itemsnewmenu" in path.lower() and is_actionable_gui_path(path)
+    ]
+
+    alternate_tool_paths = [
+        item["path"]
+        for item in ranked
+        if item["path"] != selected["path"]
+    ][:6]
 
     feature_contracts: list[dict[str, Any]] = []
     unsupported_features: list[dict[str, Any]] = []
+    deduplicated_features: list[dict[str, Any]] = []
+    feature_dependencies: dict[str, list[str]] = {}
 
-    feature_contracts.append({
+    seen_action_signatures: dict[str, str] = {}
+
+    def action_signature(action: dict[str, Any]) -> str:
+        kind = str(action.get("kind") or "")
+        parts: list[str] = [kind]
+        for key in ("toolPath", "toolName", "trainToolPath", "trainToolName"):
+            value = action.get(key)
+            if isinstance(value, str):
+                parts.append(f"{key}:{value}")
+        if isinstance(action.get("paths"), list):
+            parts.append("paths:" + "|".join(sorted(str(item) for item in action.get("paths") if isinstance(item, str))))
+        if isinstance(action.get("toolPaths"), list):
+            parts.append("toolPaths:" + "|".join(sorted(str(item) for item in action.get("toolPaths") if isinstance(item, str))))
+        if isinstance(action.get("steps"), list):
+            normalized_steps = []
+            for step in action.get("steps"):
+                if isinstance(step, dict):
+                    normalized_steps.append(f"{step.get('kind')}:{step.get('path')}")
+            parts.append("steps:" + "|".join(sorted(normalized_steps)))
+        return "||".join(parts)
+
+    def add_feature(feature: dict[str, Any]) -> None:
+        action = feature.get("action") if isinstance(feature.get("action"), dict) else {}
+        signature = action_signature(action)
+        duplicate_of = seen_action_signatures.get(signature)
+        if duplicate_of:
+            deduplicated_features.append({
+                "id": feature.get("id"),
+                "duplicateOf": duplicate_of,
+                "actionSignature": signature,
+            })
+            unsupported_features.append({
+                "id": feature.get("id"),
+                "title": feature.get("title"),
+                "category": feature.get("category"),
+                "reason": f"Deduplicated with {duplicate_of}",
+                "evidence": {"actionSignature": signature},
+            })
+            return
+        seen_action_signatures[signature] = str(feature.get("id") or "unknown")
+        feature_contracts.append(feature)
+
+    add_feature({
         "id": "auto_train",
         "title": "Auto Train",
         "category": "auto-train",
         "supported": True,
+        "actionable": True,
         "destructive": False,
         "includeInStartAll": True,
         "defaultEnabled": True,
@@ -805,6 +870,8 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "kind": "tool_activate",
             "toolPath": selected["path"],
             "toolName": tool_name,
+            "requiresEquippedTool": True,
+            "implicitActions": ["ensure_tool_equipped"],
             "intervalSeconds": activation_interval,
         },
         "monitor": {
@@ -825,51 +892,41 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         },
     })
 
-    equip_event_count = len(control_paths_by_type.get("Tool.Equipped", []))
-    if selected["count"] >= 1 and equip_event_count >= 1:
-        feature_contracts.append({
-            "id": "auto_equip",
-            "title": "Auto Equip",
-            "category": "auto-equip",
+    if len(alternate_tool_paths) > 0:
+        add_feature({
+            "id": "alternate_tool_training",
+            "title": "Alternate Tool Training",
+            "category": "training-variant",
             "supported": True,
+            "actionable": True,
             "destructive": False,
-            "includeInStartAll": True,
+            "includeInStartAll": False,
             "defaultEnabled": False,
             "action": {
-                "kind": "ensure_tool_equipped",
-                "toolPath": selected["path"],
-                "toolName": tool_name,
-                "intervalSeconds": max(0.4, round(activation_interval * 2.0, 2)),
+                "kind": "cycle_tool_activate",
+                "toolPaths": alternate_tool_paths,
+                "intervalSeconds": max(0.5, round(activation_interval * 1.8, 2)),
             },
             "monitor": {
-                "kind": "toggle-state",
-                "candidateStatePaths": [selected["path"] + ".Equipped", selected["path"] + ".Unequipped"],
+                "kind": "multi-state",
+                "candidateStatePaths": [
+                    path for path in candidate_paths
+                    if path != primary_path and ("reps.progress" in path.lower() or "agility" in path.lower())
+                ],
             },
             "evidence": {
-                "featureCandidate": "inventory",
-                "toolEquippedEvents": equip_event_count,
-                "toolUnequippedEvents": len(control_paths_by_type.get("Tool.Unequipped", [])),
-                "readiness": inventory_feature.get("readiness") or inventory_readiness.get("readiness"),
-            },
-        })
-    else:
-        unsupported_features.append({
-            "id": "auto_equip",
-            "title": "Auto Equip",
-            "category": "auto-equip",
-            "reason": "Tool equip/unequip interaction evidence is insufficient",
-            "evidence": {
-                "toolEquippedEvents": equip_event_count,
-                "toolPath": selected["path"],
+                "featureCandidate": "training",
+                "alternateToolPathCount": len(alternate_tool_paths),
             },
         })
 
     if len(reward_paths) > 0:
-        feature_contracts.append({
+        add_feature({
             "id": "auto_rewards",
             "title": "Auto Rewards",
             "category": "auto-rewards",
             "supported": True,
+            "actionable": True,
             "destructive": False,
             "includeInStartAll": True,
             "defaultEnabled": False,
@@ -881,9 +938,15 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "eligibilityIndicatorPaths": reward_indicator_paths,
                 "intervalSeconds": max(0.75, round(delay * 1.6, 2)),
             },
+            "outcomeContract": {
+                "kind": "reward-state-change",
+                "verificationWindowSeconds": max(2.0, round(delay * 3.5, 2)),
+                "statePaths": reward_state_paths,
+                "strictlyRequireObservedDelta": True,
+            },
             "monitor": {
                 "kind": "multi-state",
-                "candidateStatePaths": [path for path in candidate_paths if "reward" in path.lower() or "gift" in path.lower() or ".claimed" in path.lower()],
+                "candidateStatePaths": reward_state_paths,
             },
             "evidence": {
                 "featureCandidate": "rewards",
@@ -909,16 +972,18 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         })
 
     if len(rebirth_open_paths) > 0 and len(rebirth_confirm_paths) > 0:
-        feature_contracts.append({
+        add_feature({
             "id": "auto_rebirth",
             "title": "Auto Rebirth",
             "category": "auto-rebirth",
             "supported": True,
+            "actionable": True,
             "destructive": True,
             "includeInStartAll": False,
             "defaultEnabled": False,
             "action": {
                 "kind": "gui_sequence",
+                "requiresExplicitConfirmation": True,
                 "steps": [
                     {"kind": "gui_activate", "path": rebirth_open_paths[0]},
                     {"kind": "gui_activate", "path": rebirth_confirm_paths[0]},
@@ -949,14 +1014,42 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
         })
 
-    if len(repetition_paths) > 0:
-        feature_contracts.append({
+    if len(inventory_gui_paths) >= 2:
+        add_feature({
+            "id": "inventory_management",
+            "title": "Inventory Actions",
+            "category": "inventory",
+            "supported": True,
+            "actionable": True,
+            "destructive": False,
+            "includeInStartAll": False,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "gui_activate_many",
+                "paths": inventory_gui_paths,
+                "intervalSeconds": max(1.0, round(delay * 2.0, 2)),
+            },
+            "monitor": {
+                "kind": "multi-state",
+                "candidateStatePaths": [
+                    path for path in candidate_paths
+                    if "backpack.tools.count" in path.lower() or "inventory" in path.lower()
+                ],
+            },
+            "evidence": {
+                "inventoryGuiPathCount": len(inventory_gui_paths),
+            },
+        })
+
+    if len(repetition_paths) > 0 and len(quest_gui_paths) > 0:
+        add_feature({
             "id": "quest_automation",
             "title": "Quest Automation",
             "category": "quest",
             "supported": True,
+            "actionable": True,
             "destructive": False,
-            "includeInStartAll": True,
+            "includeInStartAll": False,
             "defaultEnabled": False,
             "action": {
                 "kind": "quest_train_workflow",
@@ -972,15 +1065,41 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
                 "repetitionStatePathCount": len(repetition_paths),
-                "workflowBasis": "quest repetition paths plus train-tool contract",
+                "workflowBasis": "quest repetition paths plus quest interface actions",
+            },
+        })
+        feature_dependencies["quest_automation"] = ["auto_train"]
+    elif len(repetition_paths) > 0:
+        add_feature({
+            "id": "quest_monitor",
+            "title": "Quest Monitor",
+            "category": "quest-monitor",
+            "supported": True,
+            "actionable": False,
+            "destructive": False,
+            "includeInStartAll": False,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "observe_only",
+                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
+            },
+            "monitor": {
+                "kind": "quest-repetition",
+                "candidateStatePaths": repetition_paths,
+            },
+            "evidence": {
+                "guiQuestPathCount": len(quest_gui_paths),
+                "repetitionStatePathCount": len(repetition_paths),
+                "workflowBasis": "no additional quest actions observed",
             },
         })
     elif len(quest_gui_paths) > 0:
-        feature_contracts.append({
-            "id": "quest_automation",
-            "title": "Quest Automation",
-            "category": "quest",
+        add_feature({
+            "id": "quest_interface",
+            "title": "Quest Interface",
+            "category": "quest-interface",
             "supported": True,
+            "actionable": True,
             "destructive": False,
             "includeInStartAll": False,
             "defaultEnabled": False,
@@ -1018,7 +1137,6 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "observedInteractActionKinds": sum(1 for event in events if event.get("actionKind") == "interact"),
             },
         })
-
     version_file = pathlib.Path(__file__).resolve().parent.parent / "version.txt"
     try:
         project_version = version_file.read_text(encoding="utf-8").strip() or "unknown"
@@ -1028,7 +1146,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     generated_feature_ids = [item["id"] for item in feature_contracts]
 
     return {
-        "schemaVersion": "117.observation-tool-contract.3",
+        "schemaVersion": "117.observation-tool-contract.4",
         "requestedCapability": requested_capability,
         "scanId": payload.get("scanId"),
         "placeId": payload.get("placeId"),
@@ -1066,14 +1184,21 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         "outcomeStateKeys": candidate_paths,
         "featureContracts": feature_contracts,
         "unsupportedFeatures": unsupported_features,
+        "featureDependencies": feature_dependencies,
+        "deduplicatedFeatures": deduplicated_features,
         "generatedFeatureIds": generated_feature_ids,
         "interactionSummary": {
             "totalObservedEvents": len(events),
             "controlTypesObserved": sorted(control_paths_by_type.keys()),
             "featureCandidatesObserved": sorted({event.get("featureCandidate") for event in events if isinstance(event.get("featureCandidate"), str)}),
+            "rewardActionPathCount": len(reward_activation_paths),
+            "rewardGuardedPathCount": len(reward_guarded_paths),
+            "rewardStatePathCount": len(reward_state_paths),
+            "questGuiPathCount": len(quest_gui_paths),
+            "questRepetitionPathCount": len(repetition_paths),
         },
         "generatorMetadata": {
-            "generatorVersion": "receiver_generation_pipeline.observation-contract.3",
+            "generatorVersion": "receiver_generation_pipeline.observation-contract.4",
             "projectVersion": project_version,
             "inspectorSchemaVersion": payload.get("schemaVersion"),
         },
@@ -1124,9 +1249,15 @@ def _recover_observation_only_auto_train(
 
     supported_features = [item for item in (contract.get("featureContracts") or []) if item.get("supported") is not False]
     unsupported_features = list(contract.get("unsupportedFeatures") or [])
+    executable_features = [
+        item
+        for item in supported_features
+        if item.get("actionable", True) and ((item.get("action") or {}).get("kind") != "observe_only")
+    ]
+    monitor_features = [item for item in supported_features if item not in executable_features]
 
     summary = {
-        "schemaVersion": "117.observation-recovery-summary.2",
+        "schemaVersion": "117.observation-recovery-summary.3",
         "status": "generated-observation-contract",
         "generatedScriptPath": str(script_path),
         "generatedScriptKind": "observation-multi-feature-batch",
@@ -1136,7 +1267,8 @@ def _recover_observation_only_auto_train(
         "primaryOutcomePath": ((contract.get("outcomeModel") or {}).get("primaryStatePath")),
         "questRepetitionStatePathCount": len(((contract.get("outcomeModel") or {}).get("questRepetitionStatePaths") or [])),
         "outcomeStateKeyCount": len(contract.get("outcomeStateKeys") or []),
-        "implementedFeatures": [item.get("id") for item in supported_features],
+        "implementedFeatures": [item.get("id") for item in executable_features],
+        "monitoredFeatures": [item.get("id") for item in monitor_features],
         "excludedFeatures": [item.get("id") for item in unsupported_features],
         "unsupportedFeatures": unsupported_features,
         "claims": {
@@ -1149,8 +1281,8 @@ def _recover_observation_only_auto_train(
         "executableLogic": {
             "requestExecutableStatus": "request-executable-ready",
             "automaticExecutionRequired": True,
-            "automaticExecutionReadyWorkflowCandidates": len(supported_features),
-            "requestAlignedAutomaticExecutionReadyWorkflows": len(supported_features),
+            "automaticExecutionReadyWorkflowCandidates": len(executable_features),
+            "requestAlignedAutomaticExecutionReadyWorkflows": len(executable_features),
             "selectedWorkflowCandidateId": "observation-recovery-multi-feature-contract",
             "requestImplementationReady": False,
             "requestStatus": "generated-bounded-subset",

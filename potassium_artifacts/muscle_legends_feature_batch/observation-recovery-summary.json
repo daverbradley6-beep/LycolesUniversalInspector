@@ -23,16 +23,19 @@
   "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/LycolesGeneratedFeatureBatch.lua",
   "implementedFeatures": [
     "auto_train",
-    "auto_equip",
+    "alternate_tool_training",
     "auto_rewards",
     "auto_rebirth",
-    "quest_automation"
+    "inventory_management"
   ],
   "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/PotassiumLoaderTemplate.lua",
+  "monitoredFeatures": [
+    "quest_monitor"
+  ],
   "outcomeStateKeyCount": 12,
   "primaryOutcomePath": "leaderstats.Strength",
   "questRepetitionStatePathCount": 1,
-  "schemaVersion": "117.observation-recovery-summary.2",
+  "schemaVersion": "117.observation-recovery-summary.3",
   "status": "generated-observation-contract",
   "toolPath": "LocalPlayer.Backpack.Weight",
   "unsupportedFeatures": [

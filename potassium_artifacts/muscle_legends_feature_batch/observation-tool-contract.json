@@ -6,14 +6,20 @@
     "serverAuthorityVerified": false,
     "sourceAuthenticityVerified": false
   },
+  "deduplicatedFeatures": [],
   "featureContracts": [
     {
       "action": {
+        "implicitActions": [
+          "ensure_tool_equipped"
+        ],
         "intervalSeconds": 0.35,
         "kind": "tool_activate",
+        "requiresEquippedTool": true,
         "toolName": "Weight",
         "toolPath": "LocalPlayer.Backpack.Weight"
       },
+      "actionable": true,
       "category": "auto-train",
       "defaultEnabled": true,
       "destructive": false,
@@ -28,11 +34,7 @@
       "includeInStartAll": true,
       "monitor": {
         "candidateStatePaths": [
-          "leaderstats.Strength",
-          "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
-          "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
-          "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength"
+          "leaderstats.Strength"
         ],
         "ignoredNoisyStatePaths": [
           "Character.RootPart.VelocityMagnitude",
@@ -56,31 +58,34 @@
     },
     {
       "action": {
-        "intervalSeconds": 0.7,
-        "kind": "ensure_tool_equipped",
-        "toolName": "Weight",
-        "toolPath": "LocalPlayer.Backpack.Weight"
+        "intervalSeconds": 0.63,
+        "kind": "cycle_tool_activate",
+        "toolPaths": [
+          "LocalPlayer.Backpack.Handstands",
+          "Character.Energy Shake",
+          "Character.TOUGH Bar",
+          "LocalPlayer.Backpack.Punch"
+        ]
       },
-      "category": "auto-equip",
+      "actionable": true,
+      "category": "training-variant",
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
-        "featureCandidate": "inventory",
-        "readiness": "observable-outcome-candidate-needs-causal-validation",
-        "toolEquippedEvents": 5,
-        "toolUnequippedEvents": 5
+        "alternateToolPathCount": 4,
+        "featureCandidate": "training"
       },
-      "id": "auto_equip",
-      "includeInStartAll": true,
+      "id": "alternate_tool_training",
+      "includeInStartAll": false,
       "monitor": {
         "candidateStatePaths": [
-          "LocalPlayer.Backpack.Weight.Equipped",
-          "LocalPlayer.Backpack.Weight.Unequipped"
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
         ],
-        "kind": "toggle-state"
+        "kind": "multi-state"
       },
       "supported": true,
-      "title": "Auto Equip"
+      "title": "Alternate Tool Training"
     },
     {
       "action": {
@@ -111,6 +116,7 @@
           "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Top"
         ]
       },
+      "actionable": true,
       "category": "auto-rewards",
       "defaultEnabled": false,
       "destructive": false,
@@ -126,8 +132,42 @@
       "id": "auto_rewards",
       "includeInStartAll": true,
       "monitor": {
-        "candidateStatePaths": [],
+        "candidateStatePaths": [
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Timer",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift8.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.TopElements.ExitButton",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.Elements.ExitButton",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.GiftTitle",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.ReadyText",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Timer",
+          "PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim.Notification"
+        ],
         "kind": "multi-state"
+      },
+      "outcomeContract": {
+        "kind": "reward-state-change",
+        "statePaths": [
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Timer",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift8.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.TopElements.ExitButton",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.Elements.ExitButton",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.GiftTitle",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.ReadyText",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Timer",
+          "PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim.Notification"
+        ],
+        "strictlyRequireObservedDelta": true,
+        "verificationWindowSeconds": 4.38
       },
       "supported": true,
       "title": "Auto Rewards"
@@ -136,6 +176,7 @@
       "action": {
         "intervalSeconds": 3.75,
         "kind": "gui_sequence",
+        "requiresExplicitConfirmation": true,
         "steps": [
           {
             "kind": "gui_activate",
@@ -147,6 +188,7 @@
           }
         ]
       },
+      "actionable": true,
       "category": "auto-rebirth",
       "defaultEnabled": false,
       "destructive": true,
@@ -167,22 +209,50 @@
     },
     {
       "action": {
-        "intervalSeconds": 2.25,
-        "kind": "quest_train_workflow",
-        "questOpenPaths": [],
-        "trainToolName": "Weight",
-        "trainToolPath": "LocalPlayer.Backpack.Weight"
+        "intervalSeconds": 2.5,
+        "kind": "gui_activate_many",
+        "paths": [
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.LeftSlots.BoostsButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.Content.ItemsBG.ItemsContainer.ScrollingFrame.Slot1",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.ActionBar.QuantityList.Quantity5Button",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.ActionBar.QuantityList.Quantity10Button",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.ActionBar.QuantityList.Quantity1Button"
+        ]
       },
-      "category": "quest",
+      "actionable": true,
+      "category": "inventory",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "inventoryGuiPathCount": 5
+      },
+      "id": "inventory_management",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [
+          "Backpack.Tools.Count"
+        ],
+        "kind": "multi-state"
+      },
+      "supported": true,
+      "title": "Inventory Actions"
+    },
+    {
+      "action": {
+        "intervalSeconds": 2.75,
+        "kind": "observe_only"
+      },
+      "actionable": false,
+      "category": "quest-monitor",
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
         "guiQuestPathCount": 0,
         "repetitionStatePathCount": 1,
-        "workflowBasis": "quest repetition paths plus train-tool contract"
+        "workflowBasis": "no additional quest actions observed"
       },
-      "id": "quest_automation",
-      "includeInStartAll": true,
+      "id": "quest_monitor",
+      "includeInStartAll": false,
       "monitor": {
         "candidateStatePaths": [
           "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
@@ -190,21 +260,23 @@
         "kind": "quest-repetition"
       },
       "supported": true,
-      "title": "Quest Automation"
+      "title": "Quest Monitor"
     }
   ],
+  "featureDependencies": {},
   "gameName": "🎃Muscle Legends",
   "generatedFeatureIds": [
     "auto_train",
-    "auto_equip",
+    "alternate_tool_training",
     "auto_rewards",
     "auto_rebirth",
-    "quest_automation"
+    "inventory_management",
+    "quest_monitor"
   ],
   "generatorMetadata": {
-    "generatorVersion": "receiver_generation_pipeline.observation-contract.3",
+    "generatorVersion": "receiver_generation_pipeline.observation-contract.4",
     "inspectorSchemaVersion": "30.6.live-observation-export.1",
-    "projectVersion": "30.6.45"
+    "projectVersion": "30.6.46"
   },
   "interactionSummary": {
     "controlTypesObserved": [
@@ -223,6 +295,11 @@
       "rebirth",
       "rewards"
     ],
+    "questGuiPathCount": 0,
+    "questRepetitionPathCount": 1,
+    "rewardActionPathCount": 5,
+    "rewardGuardedPathCount": 2,
+    "rewardStatePathCount": 13,
     "totalObservedEvents": 180
   },
   "matchingToolActivationEvents": 26,
@@ -275,7 +352,7 @@
   "placeId": 3623096087,
   "requestedCapability": "Automatically train, collect rewards, and manage supported workflows in Muscle Legends",
   "scanId": "FE1C0EDA-12C4-43BC-B490-062412BD0DD1",
-  "schemaVersion": "117.observation-tool-contract.3",
+  "schemaVersion": "117.observation-tool-contract.4",
   "stateDeltaEvents": 317,
   "timing": {
     "activationIntervalSeconds": 0.35,

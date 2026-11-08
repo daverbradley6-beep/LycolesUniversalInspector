@@ -73,12 +73,36 @@ end
 
 local function readNumber(path)
     local obj = resolvePath(path)
-    if obj and obj:IsA("ValueBase") then
+    if not obj then return nil end
+
+    if obj:IsA("ValueBase") then
         local ok, value = pcall(function() return obj.Value end)
-        if ok and type(value) == "number" then
-            return value
+        if ok then
+            if type(value) == "number" then return value end
+            if type(value) == "boolean" then return value and 1 or 0 end
         end
     end
+
+    if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+        local text = string.lower(string.gsub(obj.Text or "", "%s+", ""))
+        local numeric = tonumber(text)
+        if numeric ~= nil then return numeric end
+        if text == "ready" or text == "claim" then return 1 end
+        if text == "claimed" then return 0 end
+        local mm, ss = string.match(text, "^(%d+):(%d+)$")
+        if mm and ss then
+            return (tonumber(mm) or 0) * 60 + (tonumber(ss) or 0)
+        end
+        local hh, mm2, ss2 = string.match(text, "^(%d+):(%d+):(%d+)$")
+        if hh and mm2 and ss2 then
+            return (tonumber(hh) or 0) * 3600 + (tonumber(mm2) or 0) * 60 + (tonumber(ss2) or 0)
+        end
+    end
+
+    if obj:IsA("GuiObject") then
+        return obj.Visible and 1 or 0
+    end
+
     return nil
 end
 
@@ -181,7 +205,16 @@ local function featureRuntime(definition, supported)
         unresolvedPaths = {},
         lastProgress = "none",
         lastError = nil,
+        outcomeState = supported and "action-invoked-outcome-unverified" or "unsupported-interaction",
         lastStatus = supported and "idle" or "unavailable",
+        verifiedOutcomes = 0,
+        unverifiedOutcomes = 0,
+        blockedOutcomes = 0,
+        unsupportedOutcomes = 0,
+        runtimeFailureOutcomes = 0,
+        lastInvokeAt = nil,
+        pendingVerification = false,
+        verifyEventSnapshot = 0,
         running = false,
         token = 0,
         cursor = 0,
@@ -190,6 +223,8 @@ local function featureRuntime(definition, supported)
         monitorPaths = {},
     }
 end
+
+local featureDependencies = CONTRACT.featureDependencies or {}
 
 for _, definition in ipairs(CONTRACT.featureContracts or {}) do
     local feature = featureRuntime(definition, definition.supported ~= false)
@@ -275,6 +310,48 @@ local function refreshFeatureProgress(feature)
     end
 end
 
+local function markOutcome(feature, stateName, statusText)
+    feature.outcomeState = stateName
+    if statusText then
+        feature.lastStatus = statusText
+    end
+    if stateName == "action-verified-in-gameplay" then
+        feature.verifiedOutcomes += 1
+    elseif stateName == "action-invoked-outcome-unverified" then
+        feature.unverifiedOutcomes += 1
+    elseif stateName == "blocked-by-eligibility" then
+        feature.blockedOutcomes += 1
+    elseif stateName == "unsupported-interaction" then
+        feature.unsupportedOutcomes += 1
+    elseif stateName == "runtime-failure" then
+        feature.runtimeFailureOutcomes += 1
+    end
+end
+
+local function armVerification(feature)
+    feature.pendingVerification = true
+    feature.lastInvokeAt = os.clock()
+    feature.verifyEventSnapshot = feature.progressEvents
+end
+
+local function reconcileVerification(feature)
+    if not feature.pendingVerification then return end
+    local outcomeContract = feature.definition.outcomeContract or {}
+    local window = tonumber(outcomeContract.verificationWindowSeconds) or math.max(2.0, SETTINGS.delayedOutcomeWindowSeconds * 2.0)
+
+    if feature.progressEvents > (feature.verifyEventSnapshot or 0) then
+        feature.pendingVerification = false
+        markOutcome(feature, "action-verified-in-gameplay", "outcome verified by state delta")
+        return
+    end
+
+    if feature.lastInvokeAt and (os.clock() - feature.lastInvokeAt) >= window then
+        feature.pendingVerification = false
+        markOutcome(feature, "action-invoked-outcome-unverified", "action sent; no verified reward-state change")
+    end
+end
+
+
 local function executeFeature(feature)
     local action = feature.action or {}
     local kind = action.kind
@@ -285,7 +362,7 @@ local function executeFeature(feature)
         if not tool then
             feature.errors += 1
             feature.lastError = "tool unavailable"
-            feature.lastStatus = "tool unavailable"
+            markOutcome(feature, "runtime-failure", "tool unavailable")
             return
         end
         local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -297,12 +374,47 @@ local function executeFeature(feature)
         if not ok then
             feature.errors += 1
             feature.lastError = tostring(err)
-            feature.lastStatus = "activation failed"
+            markOutcome(feature, "runtime-failure", "activation failed")
             return
         end
         feature.successes += 1
         feature.successfulCalls += 1
+        feature.outcomeState = "action-invoked-outcome-unverified"
         feature.lastStatus = "activation sent"
+        return
+    end
+
+    if kind == "cycle_tool_activate" then
+        local toolPaths = action.toolPaths or {}
+        if #toolPaths == 0 then
+            markOutcome(feature, "blocked-by-eligibility", "no alternate tools discovered")
+            return
+        end
+        feature.cursor = (feature.cursor % #toolPaths) + 1
+        local targetPath = toolPaths[feature.cursor]
+        local tool = resolveTool(targetPath, nil)
+        if not tool or not tool:IsA("Tool") then
+            feature.errors += 1
+            feature.lastError = "alternate tool unavailable"
+            markOutcome(feature, "runtime-failure", "alternate tool unavailable")
+            return
+        end
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and tool.Parent ~= player.Character then
+            pcall(function() humanoid:EquipTool(tool) end)
+            task.wait(0.05)
+        end
+        local ok, err = pcall(function() tool:Activate() end)
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(err)
+            markOutcome(feature, "runtime-failure", "alternate tool activation failed")
+            return
+        end
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.outcomeState = "action-invoked-outcome-unverified"
+        feature.lastStatus = "alternate tool activation sent"
         return
     end
 
@@ -312,18 +424,19 @@ local function executeFeature(feature)
         if not tool or not humanoid then
             feature.errors += 1
             feature.lastError = "tool or humanoid unavailable"
-            feature.lastStatus = "equip unavailable"
+            markOutcome(feature, "runtime-failure", "equip unavailable")
             return
         end
         local ok, err = pcall(function() humanoid:EquipTool(tool) end)
         if not ok then
             feature.errors += 1
             feature.lastError = tostring(err)
-            feature.lastStatus = "equip failed"
+            markOutcome(feature, "runtime-failure", "equip failed")
             return
         end
         feature.successes += 1
         feature.successfulCalls += 1
+        feature.outcomeState = "action-invoked-outcome-unverified"
         feature.lastStatus = "equip requested"
         return
     end
@@ -396,8 +509,18 @@ local function executeFeature(feature)
             return true, "no-indicator"
         end
 
+        local function listenerCount(obj)
+            if type(getconnections) ~= "function" then return nil end
+            local total = 0
+            local okClick, clickConnections = pcall(function() return getconnections(obj.MouseButton1Click) end)
+            if okClick and type(clickConnections) == "table" then total += #clickConnections end
+            local okActivated, activatedConnections = pcall(function() return getconnections(obj.Activated) end)
+            if okActivated and type(activatedConnections) == "table" then total += #activatedConnections end
+            return total
+        end
+
         if #candidates == 0 then
-            feature.lastStatus = "no reward candidates"
+            markOutcome(feature, "blocked-by-eligibility", "no reward candidates")
             return
         end
 
@@ -405,7 +528,13 @@ local function executeFeature(feature)
         local target = candidates[feature.cursor]
         local eligible, reason = isEligible(target)
         if not eligible then
-            feature.lastStatus = "reward not eligible: " .. tostring(reason)
+            markOutcome(feature, "blocked-by-eligibility", "reward not eligible: " .. tostring(reason))
+            return
+        end
+
+        local listeners = listenerCount(target)
+        if listeners ~= nil and listeners <= 0 and not runtimeCapabilities.firesignal then
+            markOutcome(feature, "unsupported-interaction", "no reward listeners and no firesignal")
             return
         end
 
@@ -413,21 +542,26 @@ local function executeFeature(feature)
         if not ok then
             feature.errors += 1
             feature.lastError = tostring(methodOrErr)
-            feature.lastStatus = "reward trigger unsupported"
+            if string.find(tostring(methodOrErr), "no-supported-gui-trigger", 1, true) then
+                markOutcome(feature, "unsupported-interaction", "reward trigger unsupported")
+            else
+                markOutcome(feature, "runtime-failure", "reward trigger runtime failure")
+            end
             return
         end
 
         feature.successes += 1
         feature.successfulCalls += 1
-        feature.lastStatus = "reward trigger: " .. tostring(methodOrErr)
+        feature.lastStatus = "reward trigger sent via " .. tostring(methodOrErr)
+        feature.outcomeState = "action-invoked-outcome-unverified"
+        armVerification(feature)
         return
     end
 
     if kind == "quest_train_workflow" then
         local autoTrainFeature = features["auto_train"]
-        if autoTrainFeature and autoTrainFeature.running then
-            feature.successes += 1
-            feature.lastStatus = "quest progression monitoring via active auto_train"
+        if not autoTrainFeature or not autoTrainFeature.running then
+            markOutcome(feature, "blocked-by-eligibility", "auto_train dependency not running")
             return
         end
 
@@ -438,34 +572,23 @@ local function executeFeature(feature)
             local qOk, qErr = activateGuiPath(questPath)
             if qOk then
                 feature.successfulCalls += 1
-            else
-                feature.lastError = tostring(qErr)
+                feature.successes += 1
+                feature.outcomeState = "action-invoked-outcome-unverified"
+                feature.lastStatus = "quest interface action sent"
+                return
             end
-        end
-
-        local tool = resolveTool(action.trainToolPath, action.trainToolName)
-        if not tool then
-            feature.errors += 1
-            feature.lastError = "quest workflow tool unavailable"
-            feature.lastStatus = "quest workflow unavailable"
-            return
-        end
-        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid and tool.Parent ~= player.Character then
-            pcall(function() humanoid:EquipTool(tool) end)
-            task.wait(0.05)
-        end
-        local ok, err = pcall(function() tool:Activate() end)
-        if not ok then
-            feature.errors += 1
-            feature.lastError = tostring(err)
-            feature.lastStatus = "quest workflow activation failed"
+            feature.lastError = tostring(qErr)
+            if string.find(tostring(qErr), "no-supported-gui-trigger", 1, true) then
+                markOutcome(feature, "unsupported-interaction", "quest interface trigger unsupported")
+            else
+                markOutcome(feature, "runtime-failure", "quest interface action failed")
+            end
             return
         end
 
         feature.successes += 1
-        feature.successfulCalls += 1
-        feature.lastStatus = "quest workflow train activation sent"
+        feature.outcomeState = "action-invoked-outcome-unverified"
+        feature.lastStatus = "quest monitoring via auto_train dependency"
         return
     end
 
@@ -473,7 +596,7 @@ local function executeFeature(feature)
     if kind == "gui_activate_many" then
         local paths = action.paths or {}
         if #paths == 0 then
-            feature.lastStatus = "monitor only"
+            markOutcome(feature, "blocked-by-eligibility", "no actionable GUI paths")
             return
         end
         feature.cursor = (feature.cursor % #paths) + 1
@@ -481,11 +604,16 @@ local function executeFeature(feature)
         if not ok then
             feature.errors += 1
             feature.lastError = tostring(err)
-            feature.lastStatus = "gui activation failed"
+            if string.find(tostring(err), "no-supported-gui-trigger", 1, true) then
+                markOutcome(feature, "unsupported-interaction", "gui activation unsupported")
+            else
+                markOutcome(feature, "runtime-failure", "gui activation failed")
+            end
             return
         end
         feature.successes += 1
         feature.successfulCalls += 1
+        feature.outcomeState = "action-invoked-outcome-unverified"
         feature.lastStatus = "gui activation sent"
         return
     end
@@ -493,7 +621,7 @@ local function executeFeature(feature)
     if kind == "gui_sequence" then
         local steps = action.steps or {}
         if #steps == 0 then
-            feature.lastStatus = "monitor only"
+            markOutcome(feature, "blocked-by-eligibility", "no sequence steps")
             return
         end
         for _, step in ipairs(steps) do
@@ -502,7 +630,11 @@ local function executeFeature(feature)
                 if not ok then
                     feature.errors += 1
                     feature.lastError = tostring(err)
-                    feature.lastStatus = "sequence failed"
+                    if string.find(tostring(err), "no-supported-gui-trigger", 1, true) then
+                        markOutcome(feature, "unsupported-interaction", "sequence trigger unsupported")
+                    else
+                        markOutcome(feature, "runtime-failure", "sequence failed")
+                    end
                     return
                 end
                 feature.successfulCalls += 1
@@ -510,20 +642,29 @@ local function executeFeature(feature)
             end
         end
         feature.successes += 1
+        feature.outcomeState = "action-invoked-outcome-unverified"
         feature.lastStatus = "sequence sent"
         return
     end
 
+    if kind == "observe_only" then
+        feature.outcomeState = "action-invoked-outcome-unverified"
+        feature.lastStatus = "monitor only"
+        return
+    end
+
+    feature.outcomeState = "action-invoked-outcome-unverified"
     feature.lastStatus = "monitor only"
 end
 
 local function stopFeature(feature, reason)
     feature.running = false
+    feature.pendingVerification = false
     feature.token += 1
     feature.lastStatus = reason or feature.lastStatus
 end
 
-local function startFeature(feature)
+local function startFeature(feature, visited)
     if not feature.supported then
         feature.lastStatus = "unavailable"
         return
@@ -532,6 +673,30 @@ local function startFeature(feature)
         feature.lastStatus = "already running"
         return
     end
+
+    visited = visited or {}
+    if visited[feature.id] then return end
+    visited[feature.id] = true
+
+    local dependencies = featureDependencies[feature.id] or {}
+    for _, dependencyId in ipairs(dependencies) do
+        local dependencyFeature = features[dependencyId]
+        if dependencyFeature and not dependencyFeature.running then
+            startFeature(dependencyFeature, visited)
+        end
+    end
+
+    if feature.destructive then
+        local now = os.clock()
+        feature.confirmUntil = feature.confirmUntil or 0
+        if now > feature.confirmUntil then
+            feature.confirmUntil = now + 5.0
+            markOutcome(feature, "blocked-by-eligibility", "confirmation required: press START again within 5s")
+            return
+        end
+        feature.confirmUntil = 0
+    end
+
     feature.running = true
     feature.token += 1
     local token = feature.token
@@ -601,8 +766,27 @@ local function buildDiagnosticReport()
             progressionByUnit = feature.progressionByUnit,
             unresolvedPaths = unresolved,
             status = feature.lastStatus,
+            outcomeState = feature.outcomeState,
+            outcomeCounters = {
+                verified = feature.verifiedOutcomes,
+                unverified = feature.unverifiedOutcomes,
+                blocked = feature.blockedOutcomes,
+                unsupported = feature.unsupportedOutcomes,
+                runtimeFailure = feature.runtimeFailureOutcomes,
+            },
+            actionable = feature.definition.actionable,
             evidence = feature.definition.evidence,
         }
+    end
+
+    local sessionStrengthNetChange = nil
+    if state.currentStrength ~= nil and state.initialStrength ~= nil then
+        sessionStrengthNetChange = round(state.currentStrength - state.initialStrength, 6)
+    end
+
+    local attributedStrengthTotal = 0
+    for _, feature in ipairs(featureOrder) do
+        attributedStrengthTotal += tonumber(feature.progressionByUnit.strength or 0) or 0
     end
 
     return {
@@ -618,6 +802,8 @@ local function buildDiagnosticReport()
             generatorVersion = ((CONTRACT.generatorMetadata or {}).generatorVersion),
         },
         generatedFeatureList = CONTRACT.generatedFeatureIds or {},
+        featureDependencies = CONTRACT.featureDependencies or {},
+        deduplicatedFeatures = CONTRACT.deduplicatedFeatures or {},
         runtimeCapabilities = runtimeCapabilities,
         featureReports = featureReports,
         successfulApiCalls = successfulApiCalls,
@@ -629,8 +815,15 @@ local function buildDiagnosticReport()
             currentStrength = state.currentStrength,
             initialStrength = state.initialStrength,
             totalStrengthGain = round(state.totalStrengthGain, 6),
+            sessionStrengthNetChange = sessionStrengthNetChange,
             strengthGainPerMinute = round(state.strengthGainPerMinute, 6),
             stalled = state.stalled,
+        },
+        progressionAccounting = {
+            positiveStrengthDeltaObserved = round(state.totalStrengthGain, 6),
+            sessionStrengthNetChange = sessionStrengthNetChange,
+            featureAttributedStrengthDeltaSum = round(attributedStrengthTotal, 6),
+            attributionOvercountEstimate = round(attributedStrengthTotal - state.totalStrengthGain, 6),
         },
         unsupportedFeatures = CONTRACT.unsupportedFeatures or {},
         claims = CONTRACT.claims,
@@ -832,7 +1025,10 @@ for _, feature in ipairs(featureOrder) do
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.TextColor3 = Color3.fromRGB(235, 240, 245)
     titleLabel.TextSize = 12
-    titleLabel.Text = feature.title .. (feature.destructive and " [manual only]" or "")
+    local monitorOnly = ((feature.action or {}).kind == "observe_only") or (feature.definition.actionable == false)
+    titleLabel.Text = feature.title
+        .. (monitorOnly and " [monitor]" or "")
+        .. (feature.destructive and " [manual only]" or "")
 
     local statusLabel = Instance.new("TextLabel", row)
     statusLabel.Size = UDim2.new(1, -350, 0, 24)
@@ -888,15 +1084,35 @@ local function renderRows()
                 row.toggle.BackgroundColor3 = Color3.fromRGB(140, 70, 70)
                 row.status.TextColor3 = Color3.fromRGB(208, 216, 224)
             else
-                row.toggle.Text = "START"
-                row.toggle.BackgroundColor3 = Color3.fromRGB(52, 118, 84)
+                if feature.destructive then
+                    local confirmUntil = feature.confirmUntil or 0
+                    if confirmUntil > os.clock() then
+                        row.toggle.Text = "CONFIRM"
+                    else
+                        row.toggle.Text = "ARM"
+                    end
+                    row.toggle.BackgroundColor3 = Color3.fromRGB(150, 94, 58)
+                else
+                    row.toggle.Text = "START"
+                    row.toggle.BackgroundColor3 = Color3.fromRGB(52, 118, 84)
+                end
                 row.status.TextColor3 = Color3.fromRGB(208, 216, 224)
+            end
+
+            if feature.outcomeState == "action-verified-in-gameplay" then
+                row.status.TextColor3 = Color3.fromRGB(166, 222, 178)
+            elseif feature.outcomeState == "blocked-by-eligibility" then
+                row.status.TextColor3 = Color3.fromRGB(232, 207, 137)
+            elseif feature.outcomeState == "unsupported-interaction" then
+                row.status.TextColor3 = Color3.fromRGB(231, 156, 156)
+            elseif feature.outcomeState == "runtime-failure" then
+                row.status.TextColor3 = Color3.fromRGB(230, 122, 122)
             end
 
             local strengthDelta = round(feature.progressionByUnit.strength or 0, 3)
             local repsDelta = round(feature.progressionByUnit.reps or 0, 3)
-            row.status.Text = string.format("status=%s | lastProgress=%s", tostring(feature.lastStatus), tostring(feature.lastProgress))
-            row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta))
+            row.status.Text = string.format("status=%s | outcome=%s | lastProgress=%s", tostring(feature.lastStatus), tostring(feature.outcomeState), tostring(feature.lastProgress))
+            row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s V:%d U:%d B:%d F:%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta), feature.verifiedOutcomes, feature.unverifiedOutcomes, feature.blockedOutcomes, feature.runtimeFailureOutcomes)
         end
     end
     state.stalled = (runningCount > 0 and state.strengthGainPerMinute <= 0 and (os.clock() - state.startClock) > SETTINGS.stallWindowSeconds)
@@ -907,9 +1123,27 @@ local function renderSummary()
     local currentStrengthText = state.currentStrength and tostring(round(state.currentStrength, 3)) or "n/a"
     local initialStrengthText = state.initialStrength and tostring(round(state.initialStrength, 3)) or "n/a"
     local strengthResolved = state.currentStrength ~= nil
+    local netChange = (state.currentStrength and state.initialStrength) and round(state.currentStrength - state.initialStrength, 3) or "n/a"
+
+    local verified, unverified, blocked, unsupported, failures = 0, 0, 0, 0, 0
+    for _, feature in ipairs(featureOrder) do
+        if feature.outcomeState == "action-verified-in-gameplay" then
+            verified += 1
+        elseif feature.outcomeState == "action-invoked-outcome-unverified" then
+            unverified += 1
+        elseif feature.outcomeState == "blocked-by-eligibility" then
+            blocked += 1
+        elseif feature.outcomeState == "unsupported-interaction" then
+            unsupported += 1
+        elseif feature.outcomeState == "runtime-failure" then
+            failures += 1
+        end
+    end
+
     speedLabel.Text = string.format("Global speed scale: %.2fx", state.intervalScale)
     local lines = {
-        string.format("Strength current=%s initial=%s totalGain=%s gain/min=%s pathResolved=%s", currentStrengthText, initialStrengthText, tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3)), tostring(strengthResolved)),
+        string.format("Strength current=%s initial=%s net=%s positiveDelta=%s gain/min=%s pathResolved=%s", currentStrengthText, initialStrengthText, tostring(netChange), tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3)), tostring(strengthResolved)),
+        string.format("Outcomes verified=%d unverified=%d blocked=%d unsupported=%d failures=%d", verified, unverified, blocked, unsupported, failures),
         string.format("Elapsed %.1fs | stalled=%s | status=%s", elapsed, tostring(state.stalled), tostring(state.lastStatus)),
         string.format("Delayed window=%.2fs | unsupportedFeatures=%d", SETTINGS.delayedOutcomeWindowSeconds, #(CONTRACT.unsupportedFeatures or {})),
     }
@@ -965,6 +1199,7 @@ task.spawn(function()
         updateGlobalProgression()
         for _, feature in ipairs(featureOrder) do
             refreshFeatureProgress(feature)
+            reconcileVerification(feature)
         end
         renderRows()
         renderSummary()

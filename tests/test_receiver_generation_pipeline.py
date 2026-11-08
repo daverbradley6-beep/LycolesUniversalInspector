@@ -730,7 +730,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
 
             contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
-            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.3")
+            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.4")
             outcome_model = contract["outcomeModel"]
             self.assertEqual(outcome_model["kind"], "delayed-cumulative")
             self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")
@@ -745,14 +745,17 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("auto_train", contract["generatedFeatureIds"])
             self.assertIn("auto_rewards", contract["generatedFeatureIds"])
             self.assertIn("auto_rebirth", contract["generatedFeatureIds"])
+            self.assertNotIn("auto_equip", contract["generatedFeatureIds"])
+
             feature_map = {item["id"]: item for item in contract["featureContracts"]}
             self.assertEqual(feature_map["auto_rewards"]["action"]["kind"], "auto_rewards_discovery")
             self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("rewardContainerPaths") or []), 1)
-            self.assertEqual(feature_map["quest_automation"]["action"]["kind"], "quest_train_workflow")
-
+            self.assertEqual(feature_map["quest_monitor"]["action"]["kind"], "observe_only")
+            self.assertEqual(contract.get("featureDependencies", {}), {})
 
             self.assertEqual(summary["generatedScriptKind"], "observation-multi-feature-batch")
-            self.assertIn("quest_automation", summary["implementedFeatures"])
+            self.assertIn("quest_monitor", summary["monitoredFeatures"])
+            self.assertNotIn("quest_monitor", summary["implementedFeatures"])
             self.assertIn("proximity_interactions", summary["excludedFeatures"])
 
             script_text = pathlib.Path(summary["generatedScriptPath"]).read_text(encoding="utf-8")
@@ -760,8 +763,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("STOP ALL", script_text)
             self.assertIn("COPY REPORT", script_text)
             self.assertIn("MIN", script_text)
+            self.assertIn("ARM", script_text)
             self.assertIn("title.InputBegan", script_text)
             self.assertIn("runtimeCapabilities", script_text)
+            self.assertIn("action-verified-in-gameplay", script_text)
             self.assertIn("firesignal", script_text)
             self.assertIn("unsupportedFeatures", script_text)
 
