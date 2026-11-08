@@ -314,3 +314,6 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - HTTP API accepts `requireExecutable: boolean` for queued jobs.
 - `tools/receiver_generation_pipeline.py` supports strict request gating (`--require-executable`) in both `from-parts` and `from-receiver` modes and emits actionable failure reasons.
 - `summarize_generation_result(...)` now reports executable status plus delivered script path/kind so observational-only outputs are explicit, not silent.
+- `tools/receiver_generation_pipeline.py exercise-live` now distinguishes scenario outcomes:
+  - `succeeded` only when `summary.executableLogic.requestExecutableStatus == "request-executable-ready"`.
+  - `observational-only-request-unmet` when a requested capability remains non-executable from available evidence.

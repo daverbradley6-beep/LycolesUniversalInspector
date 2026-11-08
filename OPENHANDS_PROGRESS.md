@@ -33,6 +33,19 @@
   - `python3 -m unittest tests.test_lycoles_generation_service_provider tests.test_fetch_receiver_scan tests.test_build_release` → **54 passed**.
 
 
+## Update — 2026-11-08 — exercise-live status now distinguishes executable-ready success
+
+- Extended `tools/receiver_generation_pipeline.py` live-exercise reporting:
+  - scenario status now emits `succeeded` only when summary reports `request-executable-ready`,
+  - otherwise emits `observational-only-request-unmet` instead of generic success.
+- Added live-exercise regressions in `tests/test_receiver_generation_pipeline.py`:
+  - observational-only scenario classification from non-executable requested capability,
+  - executable-ready success classification when workflow-ready evidence is provided.
+- Validation:
+  - `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_lycoles_generation_service` → **19 passed**.
+  - broader touched-suite sweep (`service + receiver + provider + fetch + build`) → **73 passed**.
+
+
 ## Update — 2026-11-08 — routing optimization + universal automatic-action inference
 
 - Completed requested routing optimization based on measured complexity, cost, and retry economics:

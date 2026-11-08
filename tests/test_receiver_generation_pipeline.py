@@ -352,6 +352,61 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertEqual(scenarios["phantom-forces"]["requestedBaselineScanId"],
                              "6D3741EF-9569-4F40-B38A-E4FD2AE0A063")
 
+
+    def test_exercise_live_marks_observational_only_when_request_not_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            extracted = root / "extracted"
+            arsenal_dir = extracted / "arsenal_case"
+            arsenal_dir.mkdir(parents=True)
+            make_parts(arsenal_dir, request="Automatically shoot and reload", scan_id="arsenal-scan")
+            (arsenal_dir / "1.json").replace(arsenal_dir / "part-1.json")
+            (arsenal_dir / "2.json").replace(arsenal_dir / "part-2.json")
+
+            result = MODULE.run_live_evidence_exercise(
+                output_root=root / "out",
+                requested_capability_arsenal="Automatically shoot and reload",
+                requested_capability_phantom="Automatically shoot and reload",
+                observation_paths=[],
+                extracted_root=extracted,
+                arsenal_baseline_scan_id="arsenal-scan",
+                phantom_baseline_scan_id="phantom-missing",
+            )
+            scenarios = {item["name"]: item for item in result["scenarios"]}
+            self.assertEqual(scenarios["arsenal"]["status"], "observational-only-request-unmet")
+            self.assertEqual(
+                scenarios["arsenal"]["summary"]["executableLogic"]["requestExecutableStatus"],
+                "request-executable-unavailable",
+            )
+            self.assertEqual(scenarios["phantom-forces"]["status"], "blocked")
+
+    def test_exercise_live_marks_success_when_request_executable_workflow_is_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            extracted = root / "extracted"
+            arsenal_dir = extracted / "arsenal_case"
+            arsenal_dir.mkdir(parents=True)
+            make_workflow_ready_parts(arsenal_dir, request="Complete observed shop flow", scan_id="arsenal-ready")
+            (arsenal_dir / "1.json").replace(arsenal_dir / "part-1.json")
+            (arsenal_dir / "2.json").replace(arsenal_dir / "part-2.json")
+
+            result = MODULE.run_live_evidence_exercise(
+                output_root=root / "out",
+                requested_capability_arsenal="Complete observed shop flow",
+                requested_capability_phantom="Automatically shoot and reload",
+                observation_paths=[],
+                extracted_root=extracted,
+                arsenal_baseline_scan_id="arsenal-ready",
+                phantom_baseline_scan_id="phantom-missing",
+            )
+            scenarios = {item["name"]: item for item in result["scenarios"]}
+            self.assertEqual(scenarios["arsenal"]["status"], "succeeded")
+            self.assertEqual(
+                scenarios["arsenal"]["summary"]["executableLogic"]["requestExecutableStatus"],
+                "request-executable-ready",
+            )
+            self.assertTrue(pathlib.Path(scenarios["arsenal"]["summary"]["generatedScriptPath"]).is_file())
+
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

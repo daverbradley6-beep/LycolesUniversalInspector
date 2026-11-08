@@ -361,9 +361,16 @@ def run_live_evidence_exercise(
             requested_capability=scenario["requestedCapability"],
             observation_paths=selected_overlays,
         )
+        summary = summarize_generation_result(generation)
+        executable = summary.get("executableLogic") if isinstance(summary.get("executableLogic"), dict) else {}
+        scenario_status = (
+            "succeeded"
+            if executable.get("requestExecutableStatus") == "request-executable-ready"
+            else "observational-only-request-unmet"
+        )
         run_report["scenarios"].append({
             "name": scenario["name"],
-            "status": "succeeded",
+            "status": scenario_status,
             "requestedBaselineScanId": scenario.get("requestedBaselineScanId"),
             "baselineScanId": baseline_scan_id,
             "partsDir": str(parts_dir),
@@ -371,7 +378,7 @@ def run_live_evidence_exercise(
             "overlayCount": len(selected_overlays),
             "overlayMetadata": overlay_metadata,
             "result": generation,
-            "summary": summarize_generation_result(generation),
+            "summary": summary,
         })
 
     report_path = output_root / "live-evidence-exercise-report.json"
