@@ -730,7 +730,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
 
             contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
-            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.4")
+            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.5")
             outcome_model = contract["outcomeModel"]
             self.assertEqual(outcome_model["kind"], "delayed-cumulative")
             self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")
@@ -746,17 +746,29 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("auto_rewards", contract["generatedFeatureIds"])
             self.assertIn("auto_rebirth", contract["generatedFeatureIds"])
             self.assertNotIn("auto_equip", contract["generatedFeatureIds"])
+            self.assertNotIn("alternate_tool_training", contract["generatedFeatureIds"])
 
             feature_map = {item["id"]: item for item in contract["featureContracts"]}
+            self.assertEqual(feature_map["auto_train"]["action"]["kind"], "tool_activate_selectable")
+            training_methods = feature_map["auto_train"]["action"].get("methods") or []
+            self.assertGreaterEqual(len(training_methods), 1)
+            self.assertGreaterEqual(len(feature_map["auto_train"]["action"].get("defaultSelectedMethodIds") or []), 1)
+            for method in training_methods:
+                if "punch" in str(method.get("name", "")).lower() or "punch" in str(method.get("path", "")).lower():
+                    self.assertFalse(method.get("defaultSelected"))
             self.assertEqual(feature_map["auto_rewards"]["action"]["kind"], "auto_rewards_discovery")
             self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("rewardContainerPaths") or []), 1)
             self.assertEqual(feature_map["quest_monitor"]["action"]["kind"], "observe_only")
             self.assertEqual(contract.get("featureDependencies", {}), {})
+            self.assertIn("trainingDiscovery", contract)
+            self.assertIn("inventoryMethods", contract["trainingDiscovery"])
+            self.assertIn("worldStations", contract["trainingDiscovery"])
 
             self.assertEqual(summary["generatedScriptKind"], "observation-multi-feature-batch")
             self.assertIn("quest_monitor", summary["monitoredFeatures"])
             self.assertNotIn("quest_monitor", summary["implementedFeatures"])
             self.assertIn("proximity_interactions", summary["excludedFeatures"])
+            self.assertIn("world_training_stations", summary["excludedFeatures"])
 
             script_text = pathlib.Path(summary["generatedScriptPath"]).read_text(encoding="utf-8")
             self.assertIn("START ALL", script_text)
@@ -764,6 +776,8 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("COPY REPORT", script_text)
             self.assertIn("MIN", script_text)
             self.assertIn("ARM", script_text)
+            self.assertIn("tool_activate_selectable", script_text)
+            self.assertIn("Training methods (select enabled methods)", script_text)
             self.assertIn("title.InputBegan", script_text)
             self.assertIn("runtimeCapabilities", script_text)
             self.assertIn("action-verified-in-gameplay", script_text)

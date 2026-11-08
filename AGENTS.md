@@ -378,3 +378,25 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `potassium_artifacts/automatic_workflow_live_package/`
   - Includes generated utility/guided scripts, readiness/release manifests, generation result, and `PotassiumLoader.template.lua`.
 
+
+## Update — 2026-11-08 — v30.6.47 selectable training methods + world discovery diagnostics
+
+- Observation contract upgraded to `117.observation-tool-contract.5` (`receiver_generation_pipeline.observation-contract.5`).
+- `auto_train` now emits a single `tool_activate_selectable` action contract with evidence-ranked `methods[]` and `defaultSelectedMethodIds`; standalone `alternate_tool_training` emission removed.
+- Training method defaults are safety-biased:
+  - primary evidenced inventory tool selected by default,
+  - weaker methods (e.g., `Punch`) can be present but are not auto-selected.
+- Quest behavior remains fail-closed:
+  - `quest_automation` only when actionable select/claim GUI paths are observed,
+  - otherwise `quest_monitor` (`observe_only`) with explicit missing-evidence diagnostics.
+- Unsupported world/proximity evidence now emits explicit exclusions and counters:
+  - `proximity_interactions`,
+  - `world_training_stations` when no world-space training evidence exists.
+- Runtime template (`tools/observation_auto_train_template.lua`) now supports:
+  - training-method selector UI (`ON/OFF` per method),
+  - per-method attempt/success/error/progress accounting,
+  - method cooldown/backoff when unavailable,
+  - reward candidate cooldown backoff to avoid repeated unsupported spam,
+  - quest open/claim path handling without duplicate loops,
+  - diagnostic export including method-level telemetry + `trainingDiscovery`.
+- Inspector world discovery (`LycolesUniversalInspector.lua`) now includes bounded `worldInteractionDiscovery` candidates and summary counters in scan output for downstream station/proximity gating.

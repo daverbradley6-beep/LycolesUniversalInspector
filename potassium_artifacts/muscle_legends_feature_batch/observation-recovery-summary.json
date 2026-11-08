@@ -8,12 +8,13 @@
   },
   "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/observation-tool-contract.json",
   "excludedFeatures": [
-    "proximity_interactions"
+    "proximity_interactions",
+    "world_training_stations"
   ],
   "executableLogic": {
-    "automaticExecutionReadyWorkflowCandidates": 5,
+    "automaticExecutionReadyWorkflowCandidates": 4,
     "automaticExecutionRequired": true,
-    "requestAlignedAutomaticExecutionReadyWorkflows": 5,
+    "requestAlignedAutomaticExecutionReadyWorkflows": 4,
     "requestExecutableStatus": "request-executable-ready",
     "requestImplementationReady": false,
     "requestStatus": "generated-bounded-subset",
@@ -23,7 +24,6 @@
   "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/LycolesGeneratedFeatureBatch.lua",
   "implementedFeatures": [
     "auto_train",
-    "alternate_tool_training",
     "auto_rewards",
     "auto_rebirth",
     "inventory_management"
@@ -35,7 +35,7 @@
   "outcomeStateKeyCount": 12,
   "primaryOutcomePath": "leaderstats.Strength",
   "questRepetitionStatePathCount": 1,
-  "schemaVersion": "117.observation-recovery-summary.3",
+  "schemaVersion": "117.observation-recovery-summary.4",
   "status": "generated-observation-contract",
   "toolPath": "LocalPlayer.Backpack.Weight",
   "unsupportedFeatures": [
@@ -47,6 +47,16 @@
       "id": "proximity_interactions",
       "reason": "No explicit ProximityPrompt trigger paths were observed",
       "title": "Proximity Interactions"
+    },
+    {
+      "category": "training-stations",
+      "evidence": {
+        "proximityPromptTriggers": 0,
+        "worldStationCandidates": 0
+      },
+      "id": "world_training_stations",
+      "reason": "No world-space training station interactions were evidenced in this export",
+      "title": "World Training Stations"
     }
   ]
 }

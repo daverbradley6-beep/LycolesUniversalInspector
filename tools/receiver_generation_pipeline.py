@@ -9,6 +9,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import sys
 from typing import Any, Optional, Sequence
 
@@ -770,7 +771,31 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     rebirth_confirm_paths = [
         path for path in collect_gui_paths() if "yesbutton" in path.lower() and "basechoice" in path.lower()
     ]
-    quest_gui_paths = [path for path in collect_gui_paths() if "quest" in path.lower()]
+
+    quest_gui_paths_observed = [path for path in collect_gui_paths() if "quest" in path.lower()]
+    quest_gui_paths_payload: list[str] = []
+    for path in sorted(payload_paths):
+        low = path.lower()
+        if "playergui" not in low or "quest" not in low:
+            continue
+        normalized = path
+        if normalized.startswith("PlayerGui."):
+            normalized = "LocalPlayer." + normalized
+        if not is_actionable_gui_path(normalized):
+            continue
+        if any(token in low for token in ("button", "claim", "collect", "tab", "select", "playtime", "prizes", "accept")):
+            quest_gui_paths_payload.append(normalized)
+
+    quest_gui_paths = sorted(set(quest_gui_paths_observed + quest_gui_paths_payload))
+    quest_claim_paths = [
+        path for path in quest_gui_paths
+        if any(token in path.lower() for token in ("claim", "collect", "reward", "prize"))
+    ]
+    quest_select_paths = [
+        path for path in quest_gui_paths
+        if any(token in path.lower() for token in ("tab", "select", "playtime", "objective", "quest"))
+    ]
+
     proximity_paths = [path for path in control_paths_by_type.get("ProximityPrompt.Triggered", []) if isinstance(path, str)]
 
     inventory_feature = features_by_name.get("inventory", {})
@@ -804,11 +829,78 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         if "itemsnewmenu" in path.lower() and is_actionable_gui_path(path)
     ]
 
-    alternate_tool_paths = [
-        item["path"]
-        for item in ranked
-        if item["path"] != selected["path"]
-    ][:6]
+    def classify_training_source(path: str) -> str:
+        low = path.lower()
+        if low.startswith("workspace.") or ".workspace." in low:
+            return "world-station"
+        if low.startswith("localplayer.backpack.") or low.startswith("character."):
+            return "inventory-tool"
+        return "unknown"
+
+    training_methods: list[dict[str, Any]] = []
+    seen_method_ids: set[str] = set()
+    for index, item in enumerate(ranked[:10], start=1):
+        path = item["path"]
+        method_name = path.split(".")[-1]
+        method_key = re.sub(r"[^a-z0-9]+", "_", method_name.lower()).strip("_") or f"method_{index}"
+        method_id = f"training_{method_key}"
+        unique_method_id = method_id
+        suffix = 2
+        while unique_method_id in seen_method_ids:
+            unique_method_id = f"{method_id}_{suffix}"
+            suffix += 1
+        seen_method_ids.add(unique_method_id)
+
+        low = path.lower()
+        source_kind = classify_training_source(path)
+        default_selected = path == selected["path"]
+        if "punch" in low:
+            default_selected = False
+
+        training_methods.append({
+            "id": unique_method_id,
+            "name": method_name,
+            "path": path,
+            "source": source_kind,
+            "observedActivations": int(item.get("count", 0)),
+            "metadata": item.get("metadata") or {},
+            "defaultSelected": bool(default_selected),
+            "safeByDefault": "punch" not in low,
+            "readiness": "observed-activation-candidate" if int(item.get("count", 0)) > 0 else "unobserved",
+        })
+
+    world_station_candidates: list[dict[str, Any]] = []
+    seen_world_paths: set[str] = set()
+    for path in sorted(payload_paths):
+        low = path.lower()
+        if "workspace." not in low and not low.startswith("workspace"):
+            continue
+        if not any(token in low for token in (
+            "proximityprompt", "clickdetector", "seat", "vehicle", "bench", "machine", "trainer", "training",
+        )):
+            continue
+        normalized = path
+        mechanism = "unknown"
+        if "proximityprompt" in low:
+            mechanism = "proximity"
+        elif "clickdetector" in low:
+            mechanism = "click"
+        elif "seat" in low:
+            mechanism = "seat"
+        if normalized in seen_world_paths:
+            continue
+        seen_world_paths.add(normalized)
+        world_station_candidates.append({
+            "path": normalized,
+            "mechanism": mechanism,
+            "readiness": "observed-interaction-candidate",
+        })
+
+    training_discovery = {
+        "inventoryMethods": training_methods,
+        "worldStations": world_station_candidates,
+        "worldStationEvidencePresent": len(world_station_candidates) > 0 or len(proximity_paths) > 0,
+    }
 
     feature_contracts: list[dict[str, Any]] = []
     unsupported_features: list[dict[str, Any]] = []
@@ -867,11 +959,18 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         "includeInStartAll": True,
         "defaultEnabled": True,
         "action": {
-            "kind": "tool_activate",
-            "toolPath": selected["path"],
-            "toolName": tool_name,
+            "kind": "tool_activate_selectable",
+            "primaryToolPath": selected["path"],
+            "primaryToolName": tool_name,
             "requiresEquippedTool": True,
             "implicitActions": ["ensure_tool_equipped"],
+            "cycleMode": "round-robin-selected",
+            "methods": training_methods,
+            "defaultSelectedMethodIds": [
+                item["id"]
+                for item in training_methods
+                if item.get("defaultSelected") is True
+            ],
             "intervalSeconds": activation_interval,
         },
         "monitor": {
@@ -887,38 +986,12 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "featureCandidate": "inventory",
             "interactionEvents": len(tool_events),
             "matchingPathEvents": selected["count"],
+            "trainingMethodCount": len(training_methods),
+            "trainingMethods": training_methods,
             "readiness": inventory_feature.get("readiness") or inventory_readiness.get("readiness"),
             "observableOutcomeCandidates": inventory_feature.get("observableOutcomeCandidates") or inventory_readiness.get("observableOutcomeCandidates"),
         },
     })
-
-    if len(alternate_tool_paths) > 0:
-        add_feature({
-            "id": "alternate_tool_training",
-            "title": "Alternate Tool Training",
-            "category": "training-variant",
-            "supported": True,
-            "actionable": True,
-            "destructive": False,
-            "includeInStartAll": False,
-            "defaultEnabled": False,
-            "action": {
-                "kind": "cycle_tool_activate",
-                "toolPaths": alternate_tool_paths,
-                "intervalSeconds": max(0.5, round(activation_interval * 1.8, 2)),
-            },
-            "monitor": {
-                "kind": "multi-state",
-                "candidateStatePaths": [
-                    path for path in candidate_paths
-                    if path != primary_path and ("reps.progress" in path.lower() or "agility" in path.lower())
-                ],
-            },
-            "evidence": {
-                "featureCandidate": "training",
-                "alternateToolPathCount": len(alternate_tool_paths),
-            },
-        })
 
     if len(reward_paths) > 0:
         add_feature({
@@ -1041,7 +1114,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
         })
 
-    if len(repetition_paths) > 0 and len(quest_gui_paths) > 0:
+    quest_actionable_paths = sorted(set(quest_select_paths + quest_claim_paths))
+
+    if len(repetition_paths) > 0 and len(quest_actionable_paths) > 0:
         add_feature({
             "id": "quest_automation",
             "title": "Quest Automation",
@@ -1053,9 +1128,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "defaultEnabled": False,
             "action": {
                 "kind": "quest_train_workflow",
-                "trainToolPath": selected["path"],
-                "trainToolName": tool_name,
-                "questOpenPaths": quest_gui_paths,
+                "trainFeatureId": "auto_train",
+                "questOpenPaths": quest_select_paths[:8],
+                "questClaimPaths": quest_claim_paths[:8],
                 "intervalSeconds": max(0.9, round(delay * 1.8, 2)),
             },
             "monitor": {
@@ -1064,12 +1139,19 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
+                "questSelectPathCount": len(quest_select_paths),
+                "questClaimPathCount": len(quest_claim_paths),
                 "repetitionStatePathCount": len(repetition_paths),
-                "workflowBasis": "quest repetition paths plus quest interface actions",
+                "workflowBasis": "quest repetition plus actionable quest GUI evidence",
             },
         })
         feature_dependencies["quest_automation"] = ["auto_train"]
     elif len(repetition_paths) > 0:
+        missing_requirements: list[str] = []
+        if len(quest_select_paths) == 0:
+            missing_requirements.append("quest selection/acceptance controls")
+        if len(quest_claim_paths) == 0:
+            missing_requirements.append("quest claim controls")
         add_feature({
             "id": "quest_monitor",
             "title": "Quest Monitor",
@@ -1089,8 +1171,11 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
+                "questSelectPathCount": len(quest_select_paths),
+                "questClaimPathCount": len(quest_claim_paths),
                 "repetitionStatePathCount": len(repetition_paths),
-                "workflowBasis": "no additional quest actions observed",
+                "workflowBasis": "progress monitoring only; actionable quest steps not evidenced",
+                "missingEvidence": missing_requirements,
             },
         })
     elif len(quest_gui_paths) > 0:
@@ -1105,7 +1190,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "defaultEnabled": False,
             "action": {
                 "kind": "gui_activate_many",
-                "paths": quest_gui_paths,
+                "paths": quest_actionable_paths[:10],
                 "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
             },
             "monitor": {
@@ -1114,6 +1199,8 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
+                "questSelectPathCount": len(quest_select_paths),
+                "questClaimPathCount": len(quest_claim_paths),
                 "repetitionStatePathCount": 0,
                 "workflowBasis": "quest GUI interactions only",
             },
@@ -1137,6 +1224,19 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "observedInteractActionKinds": sum(1 for event in events if event.get("actionKind") == "interact"),
             },
         })
+
+    if not training_discovery["worldStationEvidencePresent"]:
+        unsupported_features.append({
+            "id": "world_training_stations",
+            "title": "World Training Stations",
+            "category": "training-stations",
+            "reason": "No world-space training station interactions were evidenced in this export",
+            "evidence": {
+                "worldStationCandidates": len(training_discovery["worldStations"]),
+                "proximityPromptTriggers": len(proximity_paths),
+            },
+        })
+
     version_file = pathlib.Path(__file__).resolve().parent.parent / "version.txt"
     try:
         project_version = version_file.read_text(encoding="utf-8").strip() or "unknown"
@@ -1146,7 +1246,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     generated_feature_ids = [item["id"] for item in feature_contracts]
 
     return {
-        "schemaVersion": "117.observation-tool-contract.4",
+        "schemaVersion": "117.observation-tool-contract.5",
         "requestedCapability": requested_capability,
         "scanId": payload.get("scanId"),
         "placeId": payload.get("placeId"),
@@ -1182,6 +1282,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "observedStateKeyCount": len(state_key_stats),
         },
         "outcomeStateKeys": candidate_paths,
+        "trainingDiscovery": training_discovery,
         "featureContracts": feature_contracts,
         "unsupportedFeatures": unsupported_features,
         "featureDependencies": feature_dependencies,
@@ -1195,10 +1296,15 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "rewardGuardedPathCount": len(reward_guarded_paths),
             "rewardStatePathCount": len(reward_state_paths),
             "questGuiPathCount": len(quest_gui_paths),
+            "questSelectPathCount": len(quest_select_paths),
+            "questClaimPathCount": len(quest_claim_paths),
             "questRepetitionPathCount": len(repetition_paths),
+            "trainingMethodCount": len(training_methods),
+            "worldTrainingStationCount": len(world_station_candidates),
+            "proximityPromptTriggerCount": len(proximity_paths),
         },
         "generatorMetadata": {
-            "generatorVersion": "receiver_generation_pipeline.observation-contract.4",
+            "generatorVersion": "receiver_generation_pipeline.observation-contract.5",
             "projectVersion": project_version,
             "inspectorSchemaVersion": payload.get("schemaVersion"),
         },
@@ -1257,7 +1363,7 @@ def _recover_observation_only_auto_train(
     monitor_features = [item for item in supported_features if item not in executable_features]
 
     summary = {
-        "schemaVersion": "117.observation-recovery-summary.3",
+        "schemaVersion": "117.observation-recovery-summary.4",
         "status": "generated-observation-contract",
         "generatedScriptPath": str(script_path),
         "generatedScriptKind": "observation-multi-feature-batch",

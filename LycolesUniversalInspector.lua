@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.40
+-- Lycoles Universal Inspector v30.6.47
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.40"
+local VERSION = "30.6.47"
 
 local endpoint = ""
 local autoSend = true
@@ -4808,7 +4808,12 @@ local function inspect(requestType, featureRequest)
                 featureRequest = featureRequest,
                 objects = {},
                 counts = {},
-                groups = {}
+                groups = {},
+                worldInteractionDiscovery = {
+                    candidates = {},
+                    maxCandidates = 160,
+                    notes = "client-visible world interaction candidates only"
+                }
             }
 
             local okName, info = pcall(function()
@@ -4848,6 +4853,13 @@ local function inspect(requestType, featureRequest)
                 valueBase = {scanned = 0, recorded = 0, byClass = {}},
                 guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
+                worldInteractionDiscovery = {
+                    candidates = 0,
+                    trainingStations = 0,
+                    proximityPrompts = 0,
+                    clickDetectors = 0,
+                    seatStations = 0
+                },
                 omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0, profileFiltered = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
                 pathCollisionsResolved = 0,
@@ -4901,10 +4913,62 @@ local function inspect(requestType, featureRequest)
                 end
                 return stablePathCache[obj]
             end
+
             local function vec3(v)
                 return {x = math.floor(v.X * 100) / 100,
                     y = math.floor(v.Y * 100) / 100,
                     z = math.floor(v.Z * 100) / 100}
+            end
+
+            local worldDiscoverySeen = {}
+            local function recordWorldInteractionCandidate(entry, obj, path)
+                if not entry or type(path) ~= "string" then return end
+                local low = string.lower(path)
+                if not string.find(low, "workspace", 1, true) then return end
+
+                local mechanism = nil
+                if obj:IsA("ProximityPrompt") then
+                    mechanism = "proximity-prompt"
+                elseif obj:IsA("ClickDetector") then
+                    mechanism = "click-detector"
+                elseif obj:IsA("Seat") or obj:IsA("VehicleSeat") then
+                    mechanism = "seat-station"
+                elseif string.find(low, "train", 1, true)
+                    or string.find(low, "trainer", 1, true)
+                    or string.find(low, "bench", 1, true)
+                    or string.find(low, "machine", 1, true) then
+                    mechanism = "training-object"
+                end
+                if not mechanism then return end
+
+                local dedupeKey = mechanism .. "|" .. path
+                if worldDiscoverySeen[dedupeKey] then return end
+                worldDiscoverySeen[dedupeKey] = true
+
+                local counters = report.scanStats.worldInteractionDiscovery
+                counters.candidates = counters.candidates + 1
+                if mechanism == "proximity-prompt" then
+                    counters.proximityPrompts = counters.proximityPrompts + 1
+                elseif mechanism == "click-detector" then
+                    counters.clickDetectors = counters.clickDetectors + 1
+                elseif mechanism == "seat-station" then
+                    counters.seatStations = counters.seatStations + 1
+                end
+                if mechanism == "training-object" or mechanism == "proximity-prompt" or mechanism == "click-detector" then
+                    counters.trainingStations = counters.trainingStations + 1
+                end
+
+                local list = report.worldInteractionDiscovery.candidates
+                if #list < report.worldInteractionDiscovery.maxCandidates then
+                    list[#list + 1] = {
+                        path = string.sub(path, 1, 400),
+                        class = obj.ClassName,
+                        mechanism = mechanism,
+                        category = categoryOf(obj),
+                        visible = entry.visible,
+                        maxActivationDistance = entry.maxActivationDistance,
+                    }
+                end
             end
             report.scanStats.rootAvailability = {}
             local requiredRoots = profile.requiredRoots
@@ -5009,6 +5073,8 @@ local function inspect(requestType, featureRequest)
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
                             enrichEntry(entry, obj, profile)
+                            recordWorldInteractionCandidate(entry, obj, path)
+
                             if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
                                 local n = string.lower(obj.Name)
                                 if n:find("controller",1,true) or n:find("manager",1,true)

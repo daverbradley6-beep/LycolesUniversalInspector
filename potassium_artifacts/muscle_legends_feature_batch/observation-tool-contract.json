@@ -10,14 +10,105 @@
   "featureContracts": [
     {
       "action": {
+        "cycleMode": "round-robin-selected",
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
         "implicitActions": [
           "ensure_tool_equipped"
         ],
         "intervalSeconds": 0.35,
-        "kind": "tool_activate",
-        "requiresEquippedTool": true,
-        "toolName": "Weight",
-        "toolPath": "LocalPlayer.Backpack.Weight"
+        "kind": "tool_activate_selectable",
+        "methods": [
+          {
+            "defaultSelected": true,
+            "id": "training_weight",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Weight",
+            "observedActivations": 26,
+            "path": "LocalPlayer.Backpack.Weight",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_handstands",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": false,
+              "tooltip": ""
+            },
+            "name": "Handstands",
+            "observedActivations": 5,
+            "path": "LocalPlayer.Backpack.Handstands",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_energy_shake",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Energy Shake",
+            "observedActivations": 5,
+            "path": "Character.Energy Shake",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_tough_bar",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "TOUGH Bar",
+            "observedActivations": 4,
+            "path": "Character.TOUGH Bar",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_punch",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": false,
+              "tooltip": ""
+            },
+            "name": "Punch",
+            "observedActivations": 2,
+            "path": "LocalPlayer.Backpack.Punch",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": false,
+            "source": "inventory-tool"
+          }
+        ],
+        "primaryToolName": "Weight",
+        "primaryToolPath": "LocalPlayer.Backpack.Weight",
+        "requiresEquippedTool": true
       },
       "actionable": true,
       "category": "auto-train",
@@ -28,7 +119,95 @@
         "interactionEvents": 42,
         "matchingPathEvents": 26,
         "observableOutcomeCandidates": 1,
-        "readiness": "observable-outcome-candidate-needs-causal-validation"
+        "readiness": "observable-outcome-candidate-needs-causal-validation",
+        "trainingMethodCount": 5,
+        "trainingMethods": [
+          {
+            "defaultSelected": true,
+            "id": "training_weight",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Weight",
+            "observedActivations": 26,
+            "path": "LocalPlayer.Backpack.Weight",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_handstands",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": false,
+              "tooltip": ""
+            },
+            "name": "Handstands",
+            "observedActivations": 5,
+            "path": "LocalPlayer.Backpack.Handstands",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_energy_shake",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Energy Shake",
+            "observedActivations": 5,
+            "path": "Character.Energy Shake",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_tough_bar",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "TOUGH Bar",
+            "observedActivations": 4,
+            "path": "Character.TOUGH Bar",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "defaultSelected": false,
+            "id": "training_punch",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": false,
+              "tooltip": ""
+            },
+            "name": "Punch",
+            "observedActivations": 2,
+            "path": "LocalPlayer.Backpack.Punch",
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": false,
+            "source": "inventory-tool"
+          }
+        ]
       },
       "id": "auto_train",
       "includeInStartAll": true,
@@ -55,37 +234,6 @@
       },
       "supported": true,
       "title": "Auto Train"
-    },
-    {
-      "action": {
-        "intervalSeconds": 0.63,
-        "kind": "cycle_tool_activate",
-        "toolPaths": [
-          "LocalPlayer.Backpack.Handstands",
-          "Character.Energy Shake",
-          "Character.TOUGH Bar",
-          "LocalPlayer.Backpack.Punch"
-        ]
-      },
-      "actionable": true,
-      "category": "training-variant",
-      "defaultEnabled": false,
-      "destructive": false,
-      "evidence": {
-        "alternateToolPathCount": 4,
-        "featureCandidate": "training"
-      },
-      "id": "alternate_tool_training",
-      "includeInStartAll": false,
-      "monitor": {
-        "candidateStatePaths": [
-          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
-        ],
-        "kind": "multi-state"
-      },
-      "supported": true,
-      "title": "Alternate Tool Training"
     },
     {
       "action": {
@@ -248,8 +396,14 @@
       "destructive": false,
       "evidence": {
         "guiQuestPathCount": 0,
+        "missingEvidence": [
+          "quest selection/acceptance controls",
+          "quest claim controls"
+        ],
+        "questClaimPathCount": 0,
+        "questSelectPathCount": 0,
         "repetitionStatePathCount": 1,
-        "workflowBasis": "no additional quest actions observed"
+        "workflowBasis": "progress monitoring only; actionable quest steps not evidenced"
       },
       "id": "quest_monitor",
       "includeInStartAll": false,
@@ -267,16 +421,15 @@
   "gameName": "🎃Muscle Legends",
   "generatedFeatureIds": [
     "auto_train",
-    "alternate_tool_training",
     "auto_rewards",
     "auto_rebirth",
     "inventory_management",
     "quest_monitor"
   ],
   "generatorMetadata": {
-    "generatorVersion": "receiver_generation_pipeline.observation-contract.4",
+    "generatorVersion": "receiver_generation_pipeline.observation-contract.5",
     "inspectorSchemaVersion": "30.6.live-observation-export.1",
-    "projectVersion": "30.6.46"
+    "projectVersion": "30.6.47"
   },
   "interactionSummary": {
     "controlTypesObserved": [
@@ -295,12 +448,17 @@
       "rebirth",
       "rewards"
     ],
+    "proximityPromptTriggerCount": 0,
+    "questClaimPathCount": 0,
     "questGuiPathCount": 0,
     "questRepetitionPathCount": 1,
+    "questSelectPathCount": 0,
     "rewardActionPathCount": 5,
     "rewardGuardedPathCount": 2,
     "rewardStatePathCount": 13,
-    "totalObservedEvents": 180
+    "totalObservedEvents": 180,
+    "trainingMethodCount": 5,
+    "worldTrainingStationCount": 0
   },
   "matchingToolActivationEvents": 26,
   "observationDelaySeconds": 1.25,
@@ -352,7 +510,7 @@
   "placeId": 3623096087,
   "requestedCapability": "Automatically train, collect rewards, and manage supported workflows in Muscle Legends",
   "scanId": "FE1C0EDA-12C4-43BC-B490-062412BD0DD1",
-  "schemaVersion": "117.observation-tool-contract.4",
+  "schemaVersion": "117.observation-tool-contract.5",
   "stateDeltaEvents": 317,
   "timing": {
     "activationIntervalSeconds": 0.35,
@@ -373,6 +531,97 @@
   },
   "toolName": "Weight",
   "toolPath": "LocalPlayer.Backpack.Weight",
+  "trainingDiscovery": {
+    "inventoryMethods": [
+      {
+        "defaultSelected": true,
+        "id": "training_weight",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "Weight",
+        "observedActivations": 26,
+        "path": "LocalPlayer.Backpack.Weight",
+        "readiness": "observed-activation-candidate",
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "defaultSelected": false,
+        "id": "training_handstands",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": false,
+          "tooltip": ""
+        },
+        "name": "Handstands",
+        "observedActivations": 5,
+        "path": "LocalPlayer.Backpack.Handstands",
+        "readiness": "observed-activation-candidate",
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "defaultSelected": false,
+        "id": "training_energy_shake",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "Energy Shake",
+        "observedActivations": 5,
+        "path": "Character.Energy Shake",
+        "readiness": "observed-activation-candidate",
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "defaultSelected": false,
+        "id": "training_tough_bar",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "TOUGH Bar",
+        "observedActivations": 4,
+        "path": "Character.TOUGH Bar",
+        "readiness": "observed-activation-candidate",
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "defaultSelected": false,
+        "id": "training_punch",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": false,
+          "tooltip": ""
+        },
+        "name": "Punch",
+        "observedActivations": 2,
+        "path": "LocalPlayer.Backpack.Punch",
+        "readiness": "observed-activation-candidate",
+        "safeByDefault": false,
+        "source": "inventory-tool"
+      }
+    ],
+    "worldStationEvidencePresent": false,
+    "worldStations": []
+  },
   "unsupportedFeatures": [
     {
       "category": "proximity",
@@ -382,6 +631,16 @@
       "id": "proximity_interactions",
       "reason": "No explicit ProximityPrompt trigger paths were observed",
       "title": "Proximity Interactions"
+    },
+    {
+      "category": "training-stations",
+      "evidence": {
+        "proximityPromptTriggers": 0,
+        "worldStationCandidates": 0
+      },
+      "id": "world_training_stations",
+      "reason": "No world-space training station interactions were evidenced in this export",
+      "title": "World Training Stations"
     }
   ]
 }

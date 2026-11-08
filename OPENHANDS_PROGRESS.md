@@ -2048,3 +2048,54 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - Current artifact summary: `regions=120`, `interactables=500`, `economySignals=600`, `actionRecords=180`, `workflowCandidates=30`.
   - Runtime/gameplay/causality remain intentionally unverified pending live testing.
 
+
+## Update — 2026-11-08 — v30.6.47 selectable training methods + world/station evidence gating
+
+- Release version advanced to **30.6.47** (`version.txt` + `LycolesUniversalInspector.lua` constants).
+- Receiver contract upgraded to **`117.observation-tool-contract.5`** and summary to **`117.observation-recovery-summary.4`**.
+- `tools/receiver_generation_pipeline.py` refactor completed:
+  - Removed standalone `alternate_tool_training` emission.
+  - Unified training under `auto_train` with `action.kind = tool_activate_selectable`.
+  - Added evidence-ranked `methods[]` + `defaultSelectedMethodIds` (safe defaults; weaker methods like Punch disabled by default).
+  - Added `trainingDiscovery` payload in contract.
+  - Added quest actionable gating (`quest_select_paths`/`quest_claim_paths`) with fail-closed monitor fallback.
+  - Added explicit world/proximity unsupported diagnostics (`world_training_stations`, `proximity_interactions`) when evidence is absent.
+  - Added interactionSummary counters for quest action paths, training method count, and world/proximity signals.
+- Runtime generated-template improvements (`tools/observation_auto_train_template.lua`):
+  - New in-GUI training-method selector panel (multi-select ON/OFF).
+  - Per-method attempt/success/error/progress accounting in diagnostics.
+  - Method backoff for unavailable tools to avoid repetitive failure spam.
+  - Reward discovery now uses candidate cooldown backoff to reduce unsupported loops.
+  - Quest workflow runtime now handles distinct open/claim path actions without duplicate loops.
+  - Character respawn resets method temporary unavailability.
+- Inspector evidence enrichment (`LycolesUniversalInspector.lua`):
+  - Added bounded `worldInteractionDiscovery` candidates and counters to scan output to improve downstream world/station discovery quality.
+
+### Validation completed
+
+- Python syntax:
+  - `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py`
+- Receiver generation regressions:
+  - `python3 -m unittest -v tests.test_receiver_generation_pipeline` (**16/16 passed**)
+- Inspector compile/register safety:
+  - `python3 -m unittest -v tests.test_inspector_compiler_limits` (**2/2 passed**)
+- Luau compile/syntax:
+  - `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua`
+  - `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua`
+  - `node tools/validate_luau_syntax.mjs ...` (PASS)
+- Full regression:
+  - `python3 -m unittest discover -s tests` (**1642 passed, 17 skipped**) after version synchronization.
+
+### Regenerated live-test artifact bundle
+
+- Regenerated from user-provided observation payload with `--require-executable` and copied to:
+  - `potassium_artifacts/muscle_legends_feature_batch/LycolesGeneratedFeatureBatch.lua`
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-tool-contract.json`
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-recovery-summary.json`
+  - `potassium_artifacts/muscle_legends_feature_batch/PotassiumLoaderTemplate.lua`
+  - `potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch-result.json`
+- Generated contract now reports:
+  - `auto_train` selectable methods (Weight, Handstands, Energy Shake, TOUGH Bar, Punch)
+  - `quest_monitor` fallback (no actionable quest select/claim evidence)
+  - explicit unsupported `world_training_stations` and `proximity_interactions` when absent
+  - upgraded generator metadata version `.5`
