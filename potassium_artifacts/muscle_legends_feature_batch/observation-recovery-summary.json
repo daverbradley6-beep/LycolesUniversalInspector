@@ -1,4 +1,5 @@
 {
+  "actionStatRelationshipCount": 84,
   "claims": {
     "causalityProven": false,
     "gameplayVerified": false,
@@ -6,7 +7,7 @@
     "serverAuthorityVerified": false,
     "sourceAuthenticityVerified": false
   },
-  "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/observation-tool-contract.json",
+  "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/observation-tool-contract.json",
   "excludedFeatures": [
     "proximity_interactions",
     "world_training_stations"
@@ -21,21 +22,23 @@
     "selectedWorkflowCandidateId": "observation-recovery-multi-feature-contract"
   },
   "generatedScriptKind": "observation-multi-feature-batch",
-  "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/LycolesGeneratedFeatureBatch.lua",
+  "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/LycolesGeneratedFeatureBatch.lua",
   "implementedFeatures": [
     "auto_train",
     "auto_rewards",
     "auto_rebirth",
     "inventory_management"
   ],
-  "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-feature-batch/PotassiumLoaderTemplate.lua",
+  "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/PotassiumLoaderTemplate.lua",
   "monitoredFeatures": [
     "quest_monitor"
   ],
-  "outcomeStateKeyCount": 12,
-  "primaryOutcomePath": "leaderstats.Strength",
+  "outcomeStateKeyCount": 16,
+  "primaryOutcomePath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
   "questRepetitionStatePathCount": 1,
-  "schemaVersion": "117.observation-recovery-summary.4",
+  "schemaVersion": "117.observation-recovery-summary.5",
+  "statRegistryCount": 28,
+  "statTrainingTargetCount": 21,
   "status": "generated-observation-contract",
   "toolPath": "LocalPlayer.Backpack.Weight",
   "unsupportedFeatures": [

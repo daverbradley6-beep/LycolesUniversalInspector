@@ -1,3 +1,34 @@
+## Update — 2026-11-08 — v30.6.48 universal stat discovery + stat-oriented feature batch regeneration
+
+- Upgraded observation recovery contracts:
+  - `117.observation-tool-contract.6`
+  - `receiver_generation_pipeline.observation-contract.6`
+  - `117.observation-recovery-summary.5`
+- Extended generator (`tools/receiver_generation_pipeline.py`) for universal action→stat modeling:
+  - added state-key classification and method/state correlation accumulation,
+  - added `trainingDiscovery.statRegistry`, `statTrainingTargets`, and `actionStatEvidence.relationships`,
+  - added `auto_train.action.statTargets` + `methodStatMap` with stat-aware default selections.
+- Refactored runtime template (`tools/observation_auto_train_template.lua`) to stat-oriented controls:
+  - stat target ACTIVE/PAUSE controls, per-stat gain telemetry, and mapped method diagnostics,
+  - active stat-target filtering now drives method selection and execution gating.
+- Extended inspector evidence (`LycolesUniversalInspector.lua`) with bounded stat candidate discovery:
+  - `report.statDiscovery.candidates[]`
+  - `report.scanStats.statDiscovery` counters
+  - all new fields remain explicitly observational (no causality/authority/gameplay upgrades).
+- Regenerated Muscle Legends feature-batch artifacts:
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-tool-contract.json` now `.6`,
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-recovery-summary.json` now `.5`,
+  - regenerated `LycolesGeneratedFeatureBatch.lua` + `PotassiumLoaderTemplate.lua`.
+- Version bump:
+  - `LycolesUniversalInspector.lua` updated to `v30.6.48`.
+
+Validation:
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py`
+- `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua`
+- `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua`
+- `python3 -m unittest -v tests.test_receiver_generation_pipeline tests.test_inspector_ui tests.test_inspector_compiler_limits` (48 passed)
+- `python3 -m unittest discover -s tests` (**1642 passed**, 17 skipped)
+
 # OpenHands Development Progress
 
 

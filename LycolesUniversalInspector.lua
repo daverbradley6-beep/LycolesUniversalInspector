@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.47
+-- Lycoles Universal Inspector v30.6.48
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.47"
+local VERSION = "30.6.48"
 
 local endpoint = ""
 local autoSend = true
@@ -4813,6 +4813,11 @@ local function inspect(requestType, featureRequest)
                     candidates = {},
                     maxCandidates = 160,
                     notes = "client-visible world interaction candidates only"
+                },
+                statDiscovery = {
+                    candidates = {},
+                    maxCandidates = 220,
+                    notes = "client-visible progression-stat candidates only"
                 }
             }
 
@@ -4859,6 +4864,14 @@ local function inspect(requestType, featureRequest)
                     proximityPrompts = 0,
                     clickDetectors = 0,
                     seatStations = 0
+                },
+                statDiscovery = {
+                    candidates = 0,
+                    leaderstats = 0,
+                    replicatedValues = 0,
+                    characterAttributes = 0,
+                    guiDisplays = 0,
+                    levelOrExperience = 0
                 },
                 omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0, profileFiltered = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
@@ -4936,7 +4949,9 @@ local function inspect(requestType, featureRequest)
                 elseif string.find(low, "train", 1, true)
                     or string.find(low, "trainer", 1, true)
                     or string.find(low, "bench", 1, true)
-                    or string.find(low, "machine", 1, true) then
+                    or string.find(low, "machine", 1, true)
+                    or string.find(low, "treadmill", 1, true)
+                    or string.find(low, "punch", 1, true) then
                     mechanism = "training-object"
                 end
                 if not mechanism then return end
@@ -4970,6 +4985,78 @@ local function inspect(requestType, featureRequest)
                     }
                 end
             end
+
+            local statDiscoverySeen = {}
+            local function recordStatDiscoveryCandidate(entry, obj, path)
+                if not entry or type(path) ~= "string" or not obj:IsA("ValueBase") then return end
+                if type(entry.value) ~= "number" and type(entry.value) ~= "boolean" then return end
+
+                local low = string.lower(path)
+                if string.find(low, ".health", 1, true)
+                    or string.find(low, "walkspeed", 1, true)
+                    or string.find(low, "jump", 1, true)
+                    or string.find(low, "velocity", 1, true)
+                    or string.find(low, "position", 1, true)
+                    or string.find(low, "activeanimationcount", 1, true) then
+                    return
+                end
+
+                local source = "replicated-values"
+                if string.find(low, ".leaderstats.", 1, true) then
+                    source = "leaderstats"
+                elseif string.find(low, "playergui", 1, true) then
+                    source = "gui-display"
+                elseif string.find(low, "character", 1, true) then
+                    source = "character"
+                end
+
+                local statLike = string.find(low, ".leaderstats.", 1, true)
+                    or string.find(low, "progress", 1, true)
+                    or string.find(low, "level", 1, true)
+                    or string.find(low, "experience", 1, true)
+                    or string.find(low, "xp", 1, true)
+                    or string.find(low, "rebirth", 1, true)
+                    or string.find(low, ".stats.", 1, true)
+                    or string.find(low, ".data.", 1, true)
+                if not statLike then return end
+
+                if statDiscoverySeen[path] then return end
+                statDiscoverySeen[path] = true
+
+                local counters = report.scanStats.statDiscovery
+                counters.candidates = counters.candidates + 1
+                if source == "leaderstats" then
+                    counters.leaderstats = counters.leaderstats + 1
+                elseif source == "gui-display" then
+                    counters.guiDisplays = counters.guiDisplays + 1
+                elseif source == "character" then
+                    counters.characterAttributes = counters.characterAttributes + 1
+                else
+                    counters.replicatedValues = counters.replicatedValues + 1
+                end
+                if string.find(low, "level", 1, true)
+                    or string.find(low, "experience", 1, true)
+                    or string.find(low, "xp", 1, true) then
+                    counters.levelOrExperience = counters.levelOrExperience + 1
+                end
+
+                local list = report.statDiscovery.candidates
+                if #list < report.statDiscovery.maxCandidates then
+                    list[#list + 1] = {
+                        path = string.sub(path, 1, 400),
+                        class = obj.ClassName,
+                        name = string.sub(obj.Name, 1, 80),
+                        source = source,
+                        valueType = type(entry.value),
+                        value = entry.value,
+                        confidence = source == "leaderstats" and "high" or "medium",
+                        temporalCorrelationOnly = true,
+                        gameplayVerified = false,
+                        causalityProven = false,
+                    }
+                end
+            end
+
             report.scanStats.rootAvailability = {}
             local requiredRoots = profile.requiredRoots
             local scanAborted = false
@@ -5074,6 +5161,7 @@ local function inspect(requestType, featureRequest)
                             end
                             enrichEntry(entry, obj, profile)
                             recordWorldInteractionCandidate(entry, obj, path)
+                            recordStatDiscoveryCandidate(entry, obj, path)
 
                             if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
                                 local n = string.lower(obj.Name)

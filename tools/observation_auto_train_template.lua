@@ -184,6 +184,7 @@ local features = {}
 local featureOrder = {}
 local rows = {}
 local trainingMethodRows = {}
+local statTargetRows = {}
 local connections = {}
 
 local function featureRuntime(definition, supported)
@@ -230,6 +231,11 @@ local function featureRuntime(definition, supported)
         lastTrainingMethodId = nil,
         pendingTrainingMethodId = nil,
         pendingTrainingMethodProgressSnapshot = 0,
+        statTargets = {},
+        statTargetOrder = {},
+        activeStatTargets = {},
+        methodStatMap = {},
+        statRuntime = {},
         candidateCooldowns = {},
     }
 end
@@ -280,6 +286,55 @@ for _, definition in ipairs(CONTRACT.featureContracts or {}) do
                 }
             end
         end
+
+        for methodId, statIds in pairs(feature.action.methodStatMap or {}) do
+            if type(methodId) == "string" and type(statIds) == "table" then
+                feature.methodStatMap[methodId] = statIds
+            end
+        end
+
+        for _, target in ipairs(feature.action.statTargets or {}) do
+            if type(target) == "table" and type(target.id) == "string" then
+                local targetId = target.id
+                feature.statTargets[targetId] = target
+                feature.statTargetOrder[#feature.statTargetOrder + 1] = targetId
+                local isUnsupported = type(target.unsupportedReason) == "string" and target.unsupportedReason ~= ""
+                feature.activeStatTargets[targetId] = (target.defaultActive ~= false) and not isUnsupported
+
+                local runtimeTarget = {
+                    selectedMethodIds = {},
+                    currentValue = nil,
+                    initialValue = nil,
+                    totalGain = 0,
+                    gainPerMinute = 0,
+                    progressEvents = 0,
+                    lastStatus = isUnsupported and "unsupported" or (target.defaultActive ~= false and "active" or "paused"),
+                }
+
+                local hasSelection = false
+                for _, methodId in ipairs(target.defaultSelectedMethodIds or {}) do
+                    if type(methodId) == "string" then
+                        runtimeTarget.selectedMethodIds[methodId] = true
+                        feature.selectedTrainingMethodIds[methodId] = true
+                        hasSelection = true
+                    end
+                end
+
+                if not hasSelection then
+                    for _, methodRef in ipairs(target.methods or {}) do
+                        if type(methodRef) == "table" and type(methodRef.methodId) == "string" then
+                            runtimeTarget.selectedMethodIds[methodRef.methodId] = true
+                            feature.selectedTrainingMethodIds[methodRef.methodId] = true
+                            hasSelection = true
+                            break
+                        end
+                    end
+                end
+
+                feature.statRuntime[targetId] = runtimeTarget
+            end
+        end
+
     end
 
     features[feature.id] = feature
@@ -348,6 +403,25 @@ local function refreshFeatureProgress(feature)
             end
             feature.monitorValues[path] = value
             feature.unresolvedPaths[path] = nil
+
+            for _, targetId in ipairs(feature.statTargetOrder or {}) do
+                local target = feature.statTargets[targetId]
+                local runtimeTarget = feature.statRuntime[targetId]
+                if target and runtimeTarget and target.path == path then
+                    if runtimeTarget.currentValue ~= nil and value > runtimeTarget.currentValue then
+                        local statDelta = value - runtimeTarget.currentValue
+                        runtimeTarget.totalGain = (runtimeTarget.totalGain or 0) + statDelta
+                        runtimeTarget.progressEvents = (runtimeTarget.progressEvents or 0) + 1
+                        runtimeTarget.lastStatus = string.format("+%s", tostring(round(statDelta, 3)))
+                    end
+                    runtimeTarget.currentValue = value
+                    if runtimeTarget.initialValue == nil then
+                        runtimeTarget.initialValue = value
+                    end
+                    local elapsed = math.max(0.01, os.clock() - state.startClock)
+                    runtimeTarget.gainPerMinute = ((runtimeTarget.totalGain or 0) / elapsed) * 60
+                end
+            end
         else
             feature.unresolvedPaths[path] = true
         end
@@ -387,17 +461,42 @@ end
 
 local function selectedTrainingMethodIds(feature)
     local selected = {}
-    for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
-        if feature.selectedTrainingMethodIds[methodId] then
-            selected[#selected + 1] = methodId
+    local seen = {}
+
+    local hasStatTargets = #(feature.statTargetOrder or {}) > 0
+    if hasStatTargets then
+        for _, targetId in ipairs(feature.statTargetOrder or {}) do
+            if feature.activeStatTargets[targetId] ~= false then
+                local runtimeTarget = feature.statRuntime[targetId] or {}
+                local localSelections = runtimeTarget.selectedMethodIds or {}
+                for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
+                    if localSelections[methodId] and feature.selectedTrainingMethodIds[methodId] and not seen[methodId] then
+                        seen[methodId] = true
+                        selected[#selected + 1] = methodId
+                    end
+                end
+            end
         end
     end
+
+    if #selected == 0 and not hasStatTargets then
+        for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
+            if feature.selectedTrainingMethodIds[methodId] and not seen[methodId] then
+                seen[methodId] = true
+                selected[#selected + 1] = methodId
+            end
+        end
+    end
+
     return selected
 end
 
 local function chooseTrainingMethod(feature)
     local selected = selectedTrainingMethodIds(feature)
     if #selected == 0 then
+        if #(feature.statTargetOrder or {}) > 0 then
+            return nil, "no active stat targets with selected methods"
+        end
         return nil, "no training methods selected"
     end
 
@@ -953,12 +1052,46 @@ local function buildDiagnosticReport()
                         path = method.path,
                         source = method.source,
                         selected = feature.selectedTrainingMethodIds[methodId] == true,
+                        statTargetIds = feature.methodStatMap[methodId] or {},
+                        candidateStats = method.candidateStats or {},
                         attempts = stats.attempts or 0,
                         successes = stats.successes or 0,
                         errors = stats.errors or 0,
                         progressEvents = stats.progressEvents or 0,
                         progressionByUnit = stats.progressionByUnit or {},
                         lastStatus = stats.lastStatus,
+                    }
+                end
+                return rowsLocal
+            end)(),
+            statTargets = (function()
+                if feature.action.kind ~= "tool_activate_selectable" then return nil end
+                local rowsLocal = {}
+                for _, targetId in ipairs(feature.statTargetOrder or {}) do
+                    local target = feature.statTargets[targetId] or {}
+                    local runtimeTarget = feature.statRuntime[targetId] or {}
+                    rowsLocal[#rowsLocal + 1] = {
+                        id = targetId,
+                        name = target.name,
+                        path = target.path,
+                        confidenceScore = target.confidenceScore,
+                        confidenceLevel = target.confidenceLevel,
+                        active = feature.activeStatTargets[targetId] ~= false,
+                        selectedMethodIds = (function()
+                            local ids = {}
+                            for methodId, enabled in pairs(runtimeTarget.selectedMethodIds or {}) do
+                                if enabled then ids[#ids + 1] = methodId end
+                            end
+                            table.sort(ids)
+                            return ids
+                        end)(),
+                        currentValue = runtimeTarget.currentValue,
+                        initialValue = runtimeTarget.initialValue,
+                        totalGain = runtimeTarget.totalGain,
+                        gainPerMinute = runtimeTarget.gainPerMinute,
+                        progressEvents = runtimeTarget.progressEvents,
+                        status = runtimeTarget.lastStatus,
+                        unsupportedReason = target.unsupportedReason,
                     }
                 end
                 return rowsLocal
@@ -1204,8 +1337,12 @@ speedLabel.TextSize = 12
 local trainingPanelHeight = 0
 local autoTrainFeature = features["auto_train"]
 if autoTrainFeature and autoTrainFeature.action.kind == "tool_activate_selectable" and #autoTrainFeature.trainingMethodOrder > 0 then
+    local visibleStats = math.min(#(autoTrainFeature.statTargetOrder or {}), 4)
     local visibleMethods = math.min(#autoTrainFeature.trainingMethodOrder, 6)
-    trainingPanelHeight = 26 + (visibleMethods * 22)
+    local statSectionHeight = visibleStats > 0 and (22 + (visibleStats * 22)) or 0
+    local methodsStartY = 22 + statSectionHeight + (visibleStats > 0 and 4 or 0)
+    trainingPanelHeight = 26 + statSectionHeight + (visibleMethods * 22) + (visibleStats > 0 and 4 or 0)
+
     local methodPanel = Instance.new("Frame", frame)
     methodPanel.Size = UDim2.new(1, -24, 0, trainingPanelHeight)
     methodPanel.Position = UDim2.fromOffset(12, 160)
@@ -1219,13 +1356,58 @@ if autoTrainFeature and autoTrainFeature.action.kind == "tool_activate_selectabl
     methodTitle.TextXAlignment = Enum.TextXAlignment.Left
     methodTitle.TextColor3 = Color3.fromRGB(216, 226, 236)
     methodTitle.TextSize = 12
-    methodTitle.Text = "Training methods (select enabled methods):"
+    methodTitle.Text = "Stat targets and training methods:"
+
+    if visibleStats > 0 then
+        for index, targetId in ipairs(autoTrainFeature.statTargetOrder) do
+            if index > visibleStats then break end
+            local target = autoTrainFeature.statTargets[targetId] or {}
+            local runtimeTarget = autoTrainFeature.statRuntime[targetId] or {}
+            local rowY = 22 + ((index - 1) * 22)
+
+            local targetToggle = Instance.new("TextButton", methodPanel)
+            targetToggle.Size = UDim2.fromOffset(58, 18)
+            targetToggle.Position = UDim2.fromOffset(6, rowY)
+            targetToggle.TextColor3 = Color3.new(1, 1, 1)
+            targetToggle.TextSize = 11
+
+            local targetLabel = Instance.new("TextLabel", methodPanel)
+            targetLabel.Size = UDim2.new(1, -300, 0, 18)
+            targetLabel.Position = UDim2.fromOffset(70, rowY)
+            targetLabel.BackgroundTransparency = 1
+            targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+            targetLabel.TextColor3 = Color3.fromRGB(232, 239, 246)
+            targetLabel.TextSize = 11
+            targetLabel.Text = tostring(target.name or targetId)
+
+            local targetStatus = Instance.new("TextLabel", methodPanel)
+            targetStatus.Size = UDim2.fromOffset(220, 18)
+            targetStatus.Position = UDim2.new(1, -224, 0, rowY)
+            targetStatus.BackgroundTransparency = 1
+            targetStatus.TextXAlignment = Enum.TextXAlignment.Right
+            targetStatus.TextColor3 = Color3.fromRGB(190, 208, 224)
+            targetStatus.TextSize = 10
+            targetStatus.Text = tostring(runtimeTarget.lastStatus or "")
+
+            targetToggle.MouseButton1Click:Connect(function()
+                local active = autoTrainFeature.activeStatTargets[targetId] ~= false
+                autoTrainFeature.activeStatTargets[targetId] = not active
+                runtimeTarget.lastStatus = (not active) and "active" or "paused"
+            end)
+
+            statTargetRows[targetId] = {
+                toggle = targetToggle,
+                label = targetLabel,
+                status = targetStatus,
+            }
+        end
+    end
 
     for index, methodId in ipairs(autoTrainFeature.trainingMethodOrder) do
         if index > 6 then break end
         local method = autoTrainFeature.trainingMethods[methodId] or {}
         local stats = autoTrainFeature.trainingMethodStats[methodId] or {}
-        local rowY = 22 + ((index - 1) * 22)
+        local rowY = methodsStartY + ((index - 1) * 22)
 
         local methodToggle = Instance.new("TextButton", methodPanel)
         methodToggle.Size = UDim2.fromOffset(58, 18)
@@ -1258,6 +1440,22 @@ if autoTrainFeature and autoTrainFeature.action.kind == "tool_activate_selectabl
             local methodStats = autoTrainFeature.trainingMethodStats[methodId]
             if methodStats then
                 methodStats.lastStatus = nowSelected and "selected" or "not-selected"
+            end
+            local linkedTargets = autoTrainFeature.methodStatMap[methodId] or {}
+            if #linkedTargets == 0 then
+                for _, targetId in ipairs(autoTrainFeature.statTargetOrder or {}) do
+                    local runtimeTarget = autoTrainFeature.statRuntime[targetId]
+                    if runtimeTarget then
+                        runtimeTarget.selectedMethodIds[methodId] = nowSelected
+                    end
+                end
+            else
+                for _, targetId in ipairs(linkedTargets) do
+                    local runtimeTarget = autoTrainFeature.statRuntime[targetId]
+                    if runtimeTarget then
+                        runtimeTarget.selectedMethodIds[methodId] = nowSelected
+                    end
+                end
             end
         end)
 
@@ -1393,10 +1591,14 @@ local function renderRows()
 
             if feature.id == "auto_train" and feature.action.kind == "tool_activate_selectable" then
                 local selectedCount = 0
+                local activeStatCount = 0
                 for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
                     if feature.selectedTrainingMethodIds[methodId] then selectedCount += 1 end
                 end
-                row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s Sel:%d/%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta), selectedCount, #feature.trainingMethodOrder)
+                for _, targetId in ipairs(feature.statTargetOrder or {}) do
+                    if feature.activeStatTargets[targetId] ~= false then activeStatCount += 1 end
+                end
+                row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s Sel:%d/%d Stats:%d/%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta), selectedCount, #feature.trainingMethodOrder, activeStatCount, #feature.statTargetOrder)
             else
                 row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s V:%d U:%d B:%d F:%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta), feature.verifiedOutcomes, feature.unverifiedOutcomes, feature.blockedOutcomes, feature.runtimeFailureOutcomes)
             end
@@ -1405,6 +1607,25 @@ local function renderRows()
 
     local trainFeature = features["auto_train"]
     if trainFeature and trainFeature.action.kind == "tool_activate_selectable" then
+        for targetId, ui in pairs(statTargetRows) do
+            local target = trainFeature.statTargets[targetId] or {}
+            local runtimeTarget = trainFeature.statRuntime[targetId] or {}
+            local active = trainFeature.activeStatTargets[targetId] ~= false
+            ui.toggle.Text = active and "ACTIVE" or "PAUSE"
+            ui.toggle.BackgroundColor3 = active and Color3.fromRGB(52, 118, 84) or Color3.fromRGB(90, 88, 82)
+
+            local confidenceText = tostring(target.confidenceLevel or "unknown")
+            ui.label.Text = string.format("%s [%s]", tostring(target.name or targetId), confidenceText)
+            local currentValue = runtimeTarget.currentValue ~= nil and tostring(round(runtimeTarget.currentValue, 3)) or "n/a"
+            local gain = tostring(round(runtimeTarget.totalGain or 0, 3))
+            local unsupportedReason = type(target.unsupportedReason) == "string" and target.unsupportedReason or nil
+            if unsupportedReason then
+                ui.status.Text = string.format("unsupported | %s", unsupportedReason)
+            else
+                ui.status.Text = string.format("%s | value=%s gain=%s/min=%s", tostring(runtimeTarget.lastStatus or ""), currentValue, gain, tostring(round(runtimeTarget.gainPerMinute or 0, 3)))
+            end
+        end
+
         for methodId, ui in pairs(trainingMethodRows) do
             local method = trainFeature.trainingMethods[methodId] or {}
             local stats = trainFeature.trainingMethodStats[methodId] or {}
@@ -1414,7 +1635,15 @@ local function renderRows()
 
             local sourceTag = method.source == "world-station" and "[world]" or "[tool]"
             local safeTag = method.safeByDefault == false and " [manual]" or ""
-            ui.label.Text = string.format("%s %s%s", sourceTag, tostring(method.name or methodId), safeTag)
+            local mappedTargetNames = {}
+            for _, targetId in ipairs(trainFeature.methodStatMap[methodId] or {}) do
+                local target = trainFeature.statTargets[targetId]
+                if target and target.name then
+                    mappedTargetNames[#mappedTargetNames + 1] = tostring(target.name)
+                end
+            end
+            local targetTag = #mappedTargetNames > 0 and (" -> " .. table.concat(mappedTargetNames, ",")) or ""
+            ui.label.Text = string.format("%s %s%s%s", sourceTag, tostring(method.name or methodId), safeTag, targetTag)
 
             local strengthGain = round(((stats.progressionByUnit or {}).strength) or 0, 3)
             ui.status.Text = string.format("%s | A:%d S:%d E:%d P:%d STR:+%s", tostring(stats.lastStatus or ""), stats.attempts or 0, stats.successes or 0, stats.errors or 0, stats.progressEvents or 0, tostring(strengthGain))
@@ -1453,6 +1682,21 @@ local function renderSummary()
         string.format("Elapsed %.1fs | stalled=%s | status=%s", elapsed, tostring(state.stalled), tostring(state.lastStatus)),
         string.format("Delayed window=%.2fs | unsupportedFeatures=%d", SETTINGS.delayedOutcomeWindowSeconds, #(CONTRACT.unsupportedFeatures or {})),
     }
+
+    local trainFeature = features["auto_train"]
+    if trainFeature and trainFeature.action.kind == "tool_activate_selectable" then
+        local added = 0
+        for _, targetId in ipairs(trainFeature.statTargetOrder or {}) do
+            if added >= 3 then break end
+            local target = trainFeature.statTargets[targetId] or {}
+            local runtimeTarget = trainFeature.statRuntime[targetId] or {}
+            local active = trainFeature.activeStatTargets[targetId] ~= false
+            local valueText = runtimeTarget.currentValue ~= nil and tostring(round(runtimeTarget.currentValue, 3)) or "n/a"
+            local gainText = tostring(round(runtimeTarget.totalGain or 0, 3))
+            lines[#lines + 1] = string.format("Stat %s (%s) active=%s value=%s gain=%s/min=%s", tostring(target.name or targetId), tostring(target.confidenceLevel or "unknown"), tostring(active), valueText, gainText, tostring(round(runtimeTarget.gainPerMinute or 0, 3)))
+            added += 1
+        end
+    end
     summary.Text = table.concat(lines, "\n")
 end
 

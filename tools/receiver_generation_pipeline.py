@@ -470,17 +470,51 @@ def _luau_literal(value: Any) -> str:
 def _classify_observed_state_key(key: str) -> dict[str, bool]:
     lower = key.lower()
     return {
-        "is_strength": "strength" in lower,
         "is_leaderstats": ".leaderstats." in lower or lower.startswith("leaderstats."),
         "is_quest": ".quests." in lower or "quest" in lower,
         "is_repetition": "reps" in lower or "rep." in lower or "rep_" in lower,
         "is_minutes": "minutes.progress" in lower or ".minutes" in lower,
-        "is_health": ".health" in lower,
+        "is_health": ".health" in lower or ".humanoid.health" in lower,
         "is_animation": "activeanimationcount" in lower,
-        "is_movement": any(token in lower for token in ("walkspeed", "jump", "velocity", "position")),
+        "is_movement": any(token in lower for token in ("walkspeed", "jump", "velocity", "position", "hipheight", "cframe")),
         "is_progress": "progress" in lower,
-        "is_time": "time" in lower or "playtime" in lower,
+        "is_time": "time" in lower or "playtime" in lower or "cooldown" in lower,
+        "is_level": any(token in lower for token in ("level", ".lvl", "rank")),
+        "is_experience": any(token in lower for token in ("xp", "exp", "experience")),
+        "is_currency": any(token in lower for token in ("coin", "cash", "gem", "gold", "token", "currency")),
+        "is_rebirth": "rebirth" in lower,
+        "is_stat_folder": any(token in lower for token in (".stats.", ".attributes.", ".data.")),
     }
+
+
+def _stat_source_from_key(key: str) -> str:
+    low = key.lower()
+    if ".leaderstats." in low or low.startswith("leaderstats."):
+        return "leaderstats"
+    if ".playergui." in low or low.startswith("playergui."):
+        return "gui-display"
+    if low.startswith("localplayer.character.") or low.startswith("character."):
+        return "character"
+    if low.startswith("localplayer."):
+        return "replicated-player"
+    if low.startswith("workspace."):
+        return "world"
+    return "unknown"
+
+
+def _normalize_stat_name_from_key(key: str) -> str:
+    raw = key.split(".")[-1].replace("_", " ").strip()
+    if not raw:
+        return key
+    return " ".join(part[:1].upper() + part[1:] for part in raw.split())
+
+
+def _confidence_level(score: float) -> str:
+    if score >= 0.78:
+        return "high"
+    if score >= 0.52:
+        return "medium"
+    return "low"
 
 
 
@@ -532,15 +566,27 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
 
     windows: list[float] = []
     state_key_stats: dict[str, dict[str, Any]] = {}
-    for event in selected_events:
-        observation_windows = event.get("observationWindows")
-        if isinstance(observation_windows, list):
-            for window in observation_windows:
-                if not isinstance(window, dict):
-                    continue
-                seconds = _numeric(window.get("seconds"))
-                if seconds is not None and 0.05 <= seconds <= 8.0:
-                    windows.append(seconds)
+    method_state_key_stats: dict[str, dict[str, dict[str, Any]]] = {}
+    action_envelopes: list[dict[str, Any]] = []
+    passive_stat_hits: dict[str, int] = {}
+
+    for event in events:
+        event_path = event.get("path") if isinstance(event.get("path"), str) else None
+        if event in selected_events:
+            observation_windows = event.get("observationWindows")
+            if isinstance(observation_windows, list):
+                for window in observation_windows:
+                    if not isinstance(window, dict):
+                        continue
+                    seconds = _numeric(window.get("seconds"))
+                    if seconds is not None and 0.05 <= seconds <= 8.0:
+                        windows.append(seconds)
+
+        action_envelopes.append({
+            "path": event_path,
+            "controlType": event.get("controlType") if isinstance(event.get("controlType"), str) else None,
+            "elapsed": _numeric(event.get("sessionElapsedSeconds")),
+        })
 
         for change in event.get("stateChanges") or []:
             if not isinstance(change, dict):
@@ -560,24 +606,34 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             classification = _classify_observed_state_key(key)
             score = 0.0
             if change_delta > 0:
-                score += 5.0
-            score += min(6.0, absolute_delta)
-            if classification["is_strength"]:
-                score += 60.0
+                score += 4.0
+            score += min(5.0, absolute_delta)
             if classification["is_leaderstats"]:
-                score += 24.0
+                score += 20.0
             if classification["is_progress"]:
                 score += 4.0
+            if classification["is_level"] or classification["is_experience"]:
+                score += 7.0
+            if classification["is_rebirth"]:
+                score += 5.0
+            if classification["is_currency"]:
+                score += 2.5
+            if classification["is_stat_folder"]:
+                score += 3.0
             if classification["is_quest"] and classification["is_repetition"]:
-                score += 8.0
+                score += 6.0
             if classification["is_minutes"] or classification["is_time"]:
-                score -= 30.0
+                score -= 15.0
             if classification["is_health"] or classification["is_animation"] or classification["is_movement"]:
-                score -= 36.0
+                score -= 24.0
             lower_key = key.lower()
             for token in capability_tokens:
                 if token in lower_key:
-                    score += 2.0
+                    score += 1.5
+
+            control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else ""
+            if change_delta > 0 and control_type != "Tool.Activated":
+                passive_stat_hits[key] = passive_stat_hits.get(key, 0) + 1
 
             bucket = state_key_stats.setdefault(key, {
                 "changes": 0,
@@ -585,17 +641,57 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "decreases": 0,
                 "delta_abs": 0.0,
                 "delta_up": 0.0,
+                "delta_down": 0.0,
                 "weighted_score": 0.0,
                 "classification": classification,
+                "samples": [],
+                "lastAfter": None,
             })
             bucket["changes"] += 1
             bucket["delta_abs"] += absolute_delta
             bucket["weighted_score"] += score
+            bucket["lastAfter"] = after
             if change_delta > 0:
                 bucket["increases"] += 1
                 bucket["delta_up"] += change_delta
             else:
                 bucket["decreases"] += 1
+                bucket["delta_down"] += abs(change_delta)
+            if len(bucket["samples"]) < 8:
+                bucket["samples"].append({
+                    "before": before,
+                    "after": after,
+                    "delta": change_delta,
+                    "eventPath": event_path,
+                    "controlType": event.get("controlType"),
+                    "sessionElapsedSeconds": _numeric(event.get("sessionElapsedSeconds")),
+                })
+
+            if event_path:
+                method_bucket = method_state_key_stats.setdefault(event_path, {}).setdefault(key, {
+                    "changes": 0,
+                    "increases": 0,
+                    "decreases": 0,
+                    "delta_up": 0.0,
+                    "delta_down": 0.0,
+                    "delta_abs": 0.0,
+                    "samples": [],
+                })
+                method_bucket["changes"] += 1
+                method_bucket["delta_abs"] += absolute_delta
+                if change_delta > 0:
+                    method_bucket["increases"] += 1
+                    method_bucket["delta_up"] += change_delta
+                else:
+                    method_bucket["decreases"] += 1
+                    method_bucket["delta_down"] += abs(change_delta)
+                if len(method_bucket["samples"]) < 6:
+                    method_bucket["samples"].append({
+                        "before": before,
+                        "after": after,
+                        "delta": change_delta,
+                        "sessionElapsedSeconds": _numeric(event.get("sessionElapsedSeconds")),
+                    })
 
     ranked_keys = sorted(
         state_key_stats.items(),
@@ -611,36 +707,23 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     if len(positive_ranked) == 0:
         return None
 
-    primary_candidates = [
+    progression_ranked = [
         item
         for item in positive_ranked
-        if not item[1]["classification"]["is_minutes"]
-        and not item[1]["classification"]["is_time"]
-        and not item[1]["classification"]["is_health"]
+        if not item[1]["classification"]["is_health"]
         and not item[1]["classification"]["is_animation"]
-        and (
-            item[1]["classification"]["is_strength"]
-            or item[1]["classification"]["is_leaderstats"]
-            or any(token in item[0].lower() for token in capability_tokens)
-        )
+        and not item[1]["classification"]["is_movement"]
+        and not item[1]["classification"]["is_minutes"]
+        and not item[1]["classification"]["is_time"]
     ]
-    if len(primary_candidates) == 0:
-        primary_candidates = [
-            item
-            for item in positive_ranked
-            if not item[1]["classification"]["is_minutes"]
-            and not item[1]["classification"]["is_time"]
-            and not item[1]["classification"]["is_health"]
-            and not item[1]["classification"]["is_animation"]
-        ]
-    if len(primary_candidates) == 0:
-        primary_candidates = positive_ranked
+    if len(progression_ranked) == 0:
+        progression_ranked = positive_ranked
 
-    primary_path = primary_candidates[0][0]
+    primary_path = progression_ranked[0][0]
 
     repetition_paths = [
         key
-        for key, stats in positive_ranked
+        for key, stats in progression_ranked
         if stats["classification"]["is_quest"]
         and stats["classification"]["is_repetition"]
         and not stats["classification"]["is_minutes"]
@@ -655,10 +738,10 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         or stats["classification"]["is_movement"]
         or stats["classification"]["is_minutes"]
         or stats["classification"]["is_time"]
-    ][:16]
+    ][:20]
 
     candidate_paths = [primary_path]
-    for key, stats in positive_ranked:
+    for key, stats in progression_ranked:
         if key == primary_path:
             continue
         if stats["classification"]["is_health"] or stats["classification"]["is_animation"] or stats["classification"]["is_movement"]:
@@ -666,7 +749,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         if stats["classification"]["is_minutes"] or stats["classification"]["is_time"]:
             continue
         candidate_paths.append(key)
-        if len(candidate_paths) >= 12:
+        if len(candidate_paths) >= 16:
             break
 
     if windows:
@@ -674,7 +757,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         delay = sorted_windows[len(sorted_windows) // 2]
     else:
         delay = 0.45
-    delay = max(0.2, min(2.5, float(delay)))
+    delay = max(0.2, min(2.8, float(delay)))
 
     activation_interval = max(0.12, min(1.5, round(delay * 0.28, 2)))
     poll_interval = max(0.1, min(1.0, round(delay * 0.45, 2)))
@@ -810,12 +893,10 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     strength_paths: list[str] = []
     for path in candidate_paths:
         low = path.lower()
-        if path == primary_path or "strength" in low:
+        if path == primary_path or "leaderstats" in low or "progress" in low or "level" in low or "experience" in low:
             strength_paths.append(path)
     if len(strength_paths) == 0:
         strength_paths = [primary_path]
-    if len(strength_paths) > 1:
-        strength_paths = [strength_paths[0]]
 
     reward_state_paths = sorted({
         path
@@ -869,14 +950,240 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "readiness": "observed-activation-candidate" if int(item.get("count", 0)) > 0 else "unobserved",
         })
 
+    stat_registry_entries: list[dict[str, Any]] = []
+    stat_by_path: dict[str, dict[str, Any]] = {}
+    excluded_stat_signals: list[dict[str, Any]] = []
+    for key, stats in ranked_keys[:80]:
+        classification = stats.get("classification") or {}
+        progression_candidate = (
+            not classification.get("is_health")
+            and not classification.get("is_animation")
+            and not classification.get("is_movement")
+            and not classification.get("is_minutes")
+            and not classification.get("is_time")
+            and (
+                classification.get("is_leaderstats")
+                or classification.get("is_progress")
+                or classification.get("is_level")
+                or classification.get("is_experience")
+                or classification.get("is_rebirth")
+                or classification.get("is_stat_folder")
+                or int(stats.get("increases", 0)) > 0
+            )
+        )
+        score = 0.16
+        score += min(0.45, float(stats.get("increases", 0)) * 0.08)
+        if classification.get("is_leaderstats"):
+            score += 0.2
+        if classification.get("is_level") or classification.get("is_experience"):
+            score += 0.12
+        if classification.get("is_health") or classification.get("is_animation") or classification.get("is_movement"):
+            score -= 0.22
+        if classification.get("is_minutes") or classification.get("is_time"):
+            score -= 0.2
+        confidence_score = max(0.0, min(0.98, score))
+        entry = {
+            "id": "stat_" + (re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_") or "unknown"),
+            "name": _normalize_stat_name_from_key(key),
+            "path": key,
+            "source": _stat_source_from_key(key),
+            "dataType": "number",
+            "progressionCandidate": bool(progression_candidate),
+            "observedChanges": {
+                "changes": int(stats.get("changes", 0)),
+                "increases": int(stats.get("increases", 0)),
+                "decreases": int(stats.get("decreases", 0)),
+                "positiveDelta": round(float(stats.get("delta_up", 0.0)), 6),
+                "negativeDelta": round(float(stats.get("delta_down", 0.0)), 6),
+                "passiveIncreaseHits": int(passive_stat_hits.get(key, 0)),
+            },
+            "lastObservedValue": stats.get("lastAfter"),
+            "confidenceScore": round(confidence_score, 4),
+            "confidenceLevel": _confidence_level(confidence_score),
+            "classification": classification,
+        }
+        stat_registry_entries.append(entry)
+        if progression_candidate:
+            stat_by_path[key] = entry
+        else:
+            excluded_stat_signals.append({
+                "path": key,
+                "reason": "non-progression-or-noisy-signal",
+            })
+
+    if primary_path not in stat_by_path:
+        fallback_entry = {
+            "id": "stat_" + (re.sub(r"[^a-z0-9]+", "_", primary_path.lower()).strip("_") or "primary"),
+            "name": _normalize_stat_name_from_key(primary_path),
+            "path": primary_path,
+            "source": _stat_source_from_key(primary_path),
+            "dataType": "number",
+            "progressionCandidate": True,
+            "observedChanges": {
+                "changes": 1,
+                "increases": 1,
+                "decreases": 0,
+                "positiveDelta": 0.0,
+                "negativeDelta": 0.0,
+                "passiveIncreaseHits": int(passive_stat_hits.get(primary_path, 0)),
+            },
+            "lastObservedValue": None,
+            "confidenceScore": 0.65,
+            "confidenceLevel": "medium",
+            "classification": _classify_observed_state_key(primary_path),
+        }
+        stat_registry_entries.insert(0, fallback_entry)
+        stat_by_path[primary_path] = fallback_entry
+
+    action_stat_relationships: list[dict[str, Any]] = []
+    relationships_by_method_path: dict[str, list[dict[str, Any]]] = {}
+    for method_path, related_stats in method_state_key_stats.items():
+        for key, method_stats in related_stats.items():
+            stat_entry = stat_by_path.get(key)
+            if not stat_entry:
+                continue
+            increases = int(method_stats.get("increases", 0))
+            decreases = int(method_stats.get("decreases", 0))
+            relation_score = 0.18 + min(0.5, increases * 0.12)
+            relation_score += min(0.2, float(method_stats.get("delta_up", 0.0)) * 0.05)
+            if decreases > 0:
+                relation_score -= min(0.25, decreases * 0.07)
+            confidence_score = max(0.0, min(0.95, relation_score))
+            relation = {
+                "methodPath": method_path,
+                "statId": stat_entry["id"],
+                "statName": stat_entry["name"],
+                "statPath": stat_entry["path"],
+                "increases": increases,
+                "decreases": decreases,
+                "positiveDelta": round(float(method_stats.get("delta_up", 0.0)), 6),
+                "negativeDelta": round(float(method_stats.get("delta_down", 0.0)), 6),
+                "confidenceScore": round(confidence_score, 4),
+                "confidenceLevel": _confidence_level(confidence_score),
+                "samples": method_stats.get("samples") or [],
+                "temporalCorrelationOnly": True,
+                "causalityProven": False,
+            }
+            action_stat_relationships.append(relation)
+            relationships_by_method_path.setdefault(method_path, []).append(relation)
+
+    for relations in relationships_by_method_path.values():
+        relations.sort(key=lambda item: (-float(item.get("confidenceScore", 0.0)), -float(item.get("positiveDelta", 0.0)), item.get("statPath") or ""))
+
+    for method in training_methods:
+        relations = relationships_by_method_path.get(str(method.get("path") or ""), [])
+        method["candidateStats"] = [
+            {
+                "statId": rel["statId"],
+                "statName": rel["statName"],
+                "statPath": rel["statPath"],
+                "confidenceScore": rel["confidenceScore"],
+                "confidenceLevel": rel["confidenceLevel"],
+                "positiveDelta": rel["positiveDelta"],
+            }
+            for rel in relations[:6]
+        ]
+        method["relationCount"] = len(relations)
+
+    stat_training_targets: list[dict[str, Any]] = []
+    unsupported_stat_targets: list[dict[str, Any]] = []
+    for stat in [item for item in stat_registry_entries if item.get("progressionCandidate")]:
+        methods_for_stat: list[dict[str, Any]] = []
+        for method in training_methods:
+            for relation in method.get("candidateStats") or []:
+                if relation.get("statId") == stat.get("id"):
+                    methods_for_stat.append({
+                        "methodId": method["id"],
+                        "name": method["name"],
+                        "path": method["path"],
+                        "source": method["source"],
+                        "safeByDefault": method.get("safeByDefault") is True,
+                        "readiness": method.get("readiness"),
+                        "confidenceScore": relation.get("confidenceScore"),
+                        "confidenceLevel": relation.get("confidenceLevel"),
+                        "positiveDelta": relation.get("positiveDelta"),
+                    })
+                    break
+        methods_for_stat.sort(key=lambda item: (-float(item.get("confidenceScore") or 0.0), -float(item.get("positiveDelta") or 0.0), str(item.get("name") or "")))
+        default_selected_method_ids = [
+            method["methodId"]
+            for method in methods_for_stat
+            if method.get("safeByDefault") and float(method.get("confidenceScore") or 0.0) >= 0.62
+        ][:2]
+        if len(default_selected_method_ids) == 0 and len(methods_for_stat) > 0:
+            default_selected_method_ids = [methods_for_stat[0]["methodId"]]
+        target = {
+            "id": stat["id"],
+            "name": stat["name"],
+            "path": stat["path"],
+            "source": stat.get("source"),
+            "dataType": stat.get("dataType", "number"),
+            "lastObservedValue": stat.get("lastObservedValue"),
+            "confidenceScore": stat.get("confidenceScore"),
+            "confidenceLevel": stat.get("confidenceLevel"),
+            "observedChanges": stat.get("observedChanges"),
+            "methods": methods_for_stat,
+            "defaultSelectedMethodIds": default_selected_method_ids,
+            "defaultActive": stat.get("path") == primary_path,
+            "temporalCorrelationOnly": True,
+            "causalityProven": False,
+        }
+        if len(methods_for_stat) == 0:
+            target["unsupportedReason"] = "No evidence-backed training relationship observed"
+            unsupported_stat_targets.append({
+                "statId": stat["id"],
+                "statPath": stat["path"],
+                "reason": target["unsupportedReason"],
+            })
+        stat_training_targets.append(target)
+
+    method_stat_map: dict[str, list[str]] = {}
+    for target in stat_training_targets:
+        for method in target.get("methods") or []:
+            method_id = method.get("methodId")
+            if isinstance(method_id, str):
+                method_stat_map.setdefault(method_id, []).append(str(target.get("id")))
+
+    passive_progression_stats = [
+        {
+            "statPath": key,
+            "statId": stat_by_path[key]["id"],
+            "name": stat_by_path[key]["name"],
+            "passiveIncreaseHits": count,
+            "source": stat_by_path[key].get("source"),
+        }
+        for key, count in sorted(passive_stat_hits.items(), key=lambda item: (-item[1], item[0]))
+        if key in stat_by_path and count > 0
+    ]
+
     world_station_candidates: list[dict[str, Any]] = []
     seen_world_paths: set[str] = set()
+
+    default_selected_method_ids: list[str] = []
+    selected_seen: set[str] = set()
+    for target in stat_training_targets:
+        if target.get("defaultActive") is not True:
+            continue
+        for method_id in target.get("defaultSelectedMethodIds") or []:
+            if isinstance(method_id, str) and method_id not in selected_seen:
+                selected_seen.add(method_id)
+                default_selected_method_ids.append(method_id)
+    if len(default_selected_method_ids) == 0:
+        for item in training_methods:
+            method_id = item.get("id")
+            if isinstance(method_id, str) and item.get("defaultSelected") is True:
+                default_selected_method_ids.append(method_id)
+    if len(default_selected_method_ids) == 0 and len(training_methods) > 0:
+        fallback_id = training_methods[0].get("id")
+        if isinstance(fallback_id, str):
+            default_selected_method_ids = [fallback_id]
+
     for path in sorted(payload_paths):
         low = path.lower()
         if "workspace." not in low and not low.startswith("workspace"):
             continue
         if not any(token in low for token in (
-            "proximityprompt", "clickdetector", "seat", "vehicle", "bench", "machine", "trainer", "training",
+            "proximityprompt", "clickdetector", "seat", "vehicle", "bench", "machine", "trainer", "training", "treadmill", "punch",
         )):
             continue
         normalized = path
@@ -898,8 +1205,22 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
 
     training_discovery = {
         "inventoryMethods": training_methods,
+        "inventoryMethodEvidencePresent": len(training_methods) > 0,
         "worldStations": world_station_candidates,
         "worldStationEvidencePresent": len(world_station_candidates) > 0 or len(proximity_paths) > 0,
+        "statRegistry": {
+            "stats": stat_registry_entries,
+            "excludedSignals": excluded_stat_signals,
+        },
+        "statTrainingTargets": stat_training_targets,
+        "unsupportedStatTargets": unsupported_stat_targets,
+        "actionStatEvidence": {
+            "relationships": action_stat_relationships,
+            "passiveProgressionStats": passive_progression_stats,
+            "temporalCorrelationOnly": True,
+            "causalityProven": False,
+        },
+        "methodStatMap": method_stat_map,
     }
 
     feature_contracts: list[dict[str, Any]] = []
@@ -966,11 +1287,11 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "implicitActions": ["ensure_tool_equipped"],
             "cycleMode": "round-robin-selected",
             "methods": training_methods,
-            "defaultSelectedMethodIds": [
-                item["id"]
-                for item in training_methods
-                if item.get("defaultSelected") is True
-            ],
+            "defaultSelectedMethodIds": default_selected_method_ids,
+            "statTargets": stat_training_targets,
+            "methodStatMap": method_stat_map,
+            "allowConcurrentStatRoutines": True,
+            "conflictPolicy": "single-tool-activation-queue",
             "intervalSeconds": activation_interval,
         },
         "monitor": {
@@ -988,6 +1309,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "matchingPathEvents": selected["count"],
             "trainingMethodCount": len(training_methods),
             "trainingMethods": training_methods,
+            "statRegistryCount": len(stat_registry_entries),
+            "statTrainingTargetCount": len(stat_training_targets),
+            "actionStatRelationshipCount": len(action_stat_relationships),
             "readiness": inventory_feature.get("readiness") or inventory_readiness.get("readiness"),
             "observableOutcomeCandidates": inventory_feature.get("observableOutcomeCandidates") or inventory_readiness.get("observableOutcomeCandidates"),
         },
@@ -1246,7 +1570,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     generated_feature_ids = [item["id"] for item in feature_contracts]
 
     return {
-        "schemaVersion": "117.observation-tool-contract.5",
+        "schemaVersion": "117.observation-tool-contract.6",
         "requestedCapability": requested_capability,
         "scanId": payload.get("scanId"),
         "placeId": payload.get("placeId"),
@@ -1300,11 +1624,15 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "questClaimPathCount": len(quest_claim_paths),
             "questRepetitionPathCount": len(repetition_paths),
             "trainingMethodCount": len(training_methods),
+            "statRegistryCount": len(stat_registry_entries),
+            "progressionStatCount": len(stat_training_targets),
+            "actionStatRelationshipCount": len(action_stat_relationships),
+            "passiveProgressionSignalCount": len(passive_progression_stats),
             "worldTrainingStationCount": len(world_station_candidates),
             "proximityPromptTriggerCount": len(proximity_paths),
         },
         "generatorMetadata": {
-            "generatorVersion": "receiver_generation_pipeline.observation-contract.5",
+            "generatorVersion": "receiver_generation_pipeline.observation-contract.6",
             "projectVersion": project_version,
             "inspectorSchemaVersion": payload.get("schemaVersion"),
         },
@@ -1363,7 +1691,7 @@ def _recover_observation_only_auto_train(
     monitor_features = [item for item in supported_features if item not in executable_features]
 
     summary = {
-        "schemaVersion": "117.observation-recovery-summary.4",
+        "schemaVersion": "117.observation-recovery-summary.5",
         "status": "generated-observation-contract",
         "generatedScriptPath": str(script_path),
         "generatedScriptKind": "observation-multi-feature-batch",
@@ -1373,6 +1701,9 @@ def _recover_observation_only_auto_train(
         "primaryOutcomePath": ((contract.get("outcomeModel") or {}).get("primaryStatePath")),
         "questRepetitionStatePathCount": len(((contract.get("outcomeModel") or {}).get("questRepetitionStatePaths") or [])),
         "outcomeStateKeyCount": len(contract.get("outcomeStateKeys") or []),
+        "statRegistryCount": len((((contract.get("trainingDiscovery") or {}).get("statRegistry") or {}).get("stats") or [])),
+        "statTrainingTargetCount": len(((contract.get("trainingDiscovery") or {}).get("statTrainingTargets") or [])),
+        "actionStatRelationshipCount": len((((contract.get("trainingDiscovery") or {}).get("actionStatEvidence") or {}).get("relationships") or [])),
         "implementedFeatures": [item.get("id") for item in executable_features],
         "monitoredFeatures": [item.get("id") for item in monitor_features],
         "excludedFeatures": [item.get("id") for item in unsupported_features],

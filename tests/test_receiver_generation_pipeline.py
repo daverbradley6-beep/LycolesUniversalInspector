@@ -730,7 +730,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
 
             contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
-            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.5")
+            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.6")
             outcome_model = contract["outcomeModel"]
             self.assertEqual(outcome_model["kind"], "delayed-cumulative")
             self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")
@@ -763,8 +763,21 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("trainingDiscovery", contract)
             self.assertIn("inventoryMethods", contract["trainingDiscovery"])
             self.assertIn("worldStations", contract["trainingDiscovery"])
+            self.assertIn("statRegistry", contract["trainingDiscovery"])
+            self.assertIn("statTrainingTargets", contract["trainingDiscovery"])
+            self.assertIn("actionStatEvidence", contract["trainingDiscovery"])
+            self.assertGreaterEqual(len((contract["trainingDiscovery"]["statRegistry"] or {}).get("stats") or []), 1)
+            self.assertGreaterEqual(len(contract["trainingDiscovery"].get("statTrainingTargets") or []), 1)
+            self.assertGreaterEqual(len((contract["trainingDiscovery"].get("actionStatEvidence") or {}).get("relationships") or []), 1)
+
+            auto_train_action = feature_map["auto_train"]["action"]
+            self.assertIn("statTargets", auto_train_action)
+            self.assertIn("methodStatMap", auto_train_action)
+            self.assertGreaterEqual(len(auto_train_action.get("statTargets") or []), 1)
+            self.assertGreaterEqual(len(auto_train_action.get("defaultSelectedMethodIds") or []), 1)
 
             self.assertEqual(summary["generatedScriptKind"], "observation-multi-feature-batch")
+            self.assertGreaterEqual(summary.get("statRegistryCount", 0), 1)
             self.assertIn("quest_monitor", summary["monitoredFeatures"])
             self.assertNotIn("quest_monitor", summary["implementedFeatures"])
             self.assertIn("proximity_interactions", summary["excludedFeatures"])
@@ -777,7 +790,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("MIN", script_text)
             self.assertIn("ARM", script_text)
             self.assertIn("tool_activate_selectable", script_text)
-            self.assertIn("Training methods (select enabled methods)", script_text)
+            self.assertIn("Stat targets and training methods:", script_text)
             self.assertIn("title.InputBegan", script_text)
             self.assertIn("runtimeCapabilities", script_text)
             self.assertIn("action-verified-in-gameplay", script_text)

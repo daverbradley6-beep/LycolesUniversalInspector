@@ -400,3 +400,32 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - quest open/claim path handling without duplicate loops,
   - diagnostic export including method-level telemetry + `trainingDiscovery`.
 - Inspector world discovery (`LycolesUniversalInspector.lua`) now includes bounded `worldInteractionDiscovery` candidates and summary counters in scan output for downstream station/proximity gating.
+
+## Update — 2026-11-08 — v30.6.48 universal stat discovery + stat-oriented auto-train runtime
+
+- Observation recovery contract upgraded to:
+  - `117.observation-tool-contract.6`
+  - `receiver_generation_pipeline.observation-contract.6`
+  - `117.observation-recovery-summary.5`
+- `tools/receiver_generation_pipeline.py` now emits a universal stat model for `auto_train`:
+  - `trainingDiscovery.statRegistry.stats[]`
+  - `trainingDiscovery.statTrainingTargets[]`
+  - `trainingDiscovery.actionStatEvidence.relationships[]`
+  - `auto_train.action.statTargets[]`
+  - `auto_train.action.methodStatMap`
+- Default training selection is now stat-target-aware and evidence-ranked:
+  - methods are selected through stat targets (not a flat interchangeable tool list),
+  - unsupported/low-confidence mappings remain explicit limitations,
+  - weaker methods (like Punch) remain non-default unless evidence supports inclusion.
+- Runtime template (`tools/observation_auto_train_template.lua`) now supports stat-oriented controls:
+  - stat-target ACTIVE/PAUSE toggles,
+  - per-stat current value / gain / gain-per-minute telemetry,
+  - method labels mapped to stat targets,
+  - method and stat diagnostics exported in `featureReports`.
+- Inspector (`LycolesUniversalInspector.lua`) now emits bounded `statDiscovery` evidence:
+  - `report.statDiscovery.candidates[]` (client-visible progression-stat candidates),
+  - `report.scanStats.statDiscovery` counters,
+  - explicit temporal-correlation-only fields with causality/gameplay verification false.
+- Muscle Legends feature-batch artifacts regenerated with the new schema and stat model under:
+  - `potassium_artifacts/muscle_legends_feature_batch/`
+  - top-level files now synced from scenario output and include `statTargets` + relationship diagnostics.
