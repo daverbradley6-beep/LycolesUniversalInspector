@@ -724,7 +724,48 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             if isinstance(key, str) and isinstance(value, dict):
                 readiness_by_name[key.lower()] = value
 
-    reward_paths = collect_gui_paths(feature="rewards")
+    def collect_payload_path_candidates(value: Any) -> set[str]:
+        result: set[str] = set()
+
+        def walk(item: Any) -> None:
+            if isinstance(item, dict):
+                for key, inner in item.items():
+                    if key in {"path", "key", "statePath", "objectPath", "instancePath", "targetPath"} and isinstance(inner, str):
+                        result.add(inner)
+                    walk(inner)
+                return
+            if isinstance(item, list):
+                for inner in item:
+                    walk(inner)
+
+        walk(value)
+        return result
+
+    payload_paths = collect_payload_path_candidates(payload)
+
+    reward_paths_observed = collect_gui_paths(feature="rewards")
+    reward_paths_payload: list[str] = []
+    reward_indicator_paths: list[str] = []
+    for path in sorted(payload_paths):
+        low = path.lower()
+        if "playergui" not in low:
+            continue
+        normalized = path
+        if normalized.startswith("PlayerGui."):
+            normalized = "LocalPlayer." + normalized
+        if any(token in low for token in (".readytext", ".timer", ".claimed")):
+            reward_indicator_paths.append(normalized)
+        if any(token in low for token in ("claimbutton", ".claim", "hitbox", "spinbutton", "wheelbtn")) and is_actionable_gui_path(normalized):
+            reward_paths_payload.append(normalized)
+
+    reward_paths = sorted(set(reward_paths_observed + reward_paths_payload))
+    reward_guarded_paths = [path for path in reward_paths if "spinbutton" in path.lower() or "wheelbtn" in path.lower()]
+    reward_activation_paths = [path for path in reward_paths if path not in reward_guarded_paths]
+    reward_container_paths = sorted({
+        path.split(".HitBox")[0].rsplit(".", 1)[0] if ".HitBox" in path else path.rsplit(".", 1)[0]
+        for path in reward_paths
+    })
+
     rebirth_open_paths = [path for path in collect_gui_paths(feature="rebirth") if "rebirth" in path.lower()]
     rebirth_confirm_paths = [
         path for path in collect_gui_paths() if "yesbutton" in path.lower() and "basechoice" in path.lower()
@@ -740,6 +781,14 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     rebirth_readiness = readiness_by_name.get("rebirth", {})
 
     tool_name = selected["path"].split(".")[-1]
+
+    strength_paths: list[str] = []
+    for path in candidate_paths:
+        low = path.lower()
+        if path == primary_path or "strength" in low:
+            strength_paths.append(path)
+    if len(strength_paths) == 0:
+        strength_paths = [primary_path]
 
     feature_contracts: list[dict[str, Any]] = []
     unsupported_features: list[dict[str, Any]] = []
@@ -761,7 +810,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         "monitor": {
             "kind": "delayed-cumulative",
             "primaryOutcomePath": primary_path,
-            "candidateStatePaths": candidate_paths,
+            "candidateStatePaths": strength_paths,
             "questRepetitionStatePaths": repetition_paths,
             "ignoredNoisyStatePaths": noisy_paths,
             "stallWindowSeconds": stall_window,
@@ -825,17 +874,23 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "includeInStartAll": True,
             "defaultEnabled": False,
             "action": {
-                "kind": "gui_activate_many",
-                "paths": reward_paths,
+                "kind": "auto_rewards_discovery",
+                "paths": reward_activation_paths,
+                "guardedPaths": reward_guarded_paths,
+                "rewardContainerPaths": reward_container_paths,
+                "eligibilityIndicatorPaths": reward_indicator_paths,
                 "intervalSeconds": max(0.75, round(delay * 1.6, 2)),
             },
             "monitor": {
                 "kind": "multi-state",
-                "candidateStatePaths": [path for path in candidate_paths if "reward" in path.lower() or "gift" in path.lower()],
+                "candidateStatePaths": [path for path in candidate_paths if "reward" in path.lower() or "gift" in path.lower() or ".claimed" in path.lower()],
             },
             "evidence": {
                 "featureCandidate": "rewards",
                 "guiActionPathCount": len(reward_paths),
+                "guardedPathCount": len(reward_guarded_paths),
+                "rewardContainerPathCount": len(reward_container_paths),
+                "eligibilityIndicatorPathCount": len(reward_indicator_paths),
                 "readiness": rewards_feature.get("readiness") or rewards_readiness.get("readiness"),
                 "observableOutcomeCandidates": rewards_feature.get("observableOutcomeCandidates") or rewards_readiness.get("observableOutcomeCandidates"),
             },
@@ -848,7 +903,8 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "reason": "No actionable reward GUI controls were observed",
             "evidence": {
                 "featureCandidate": "rewards",
-                "observedGuiInteractions": len(collect_gui_paths(feature="rewards")),
+                "observedGuiInteractions": len(reward_paths_observed),
+                "payloadDerivedInteractions": len(reward_paths_payload),
             },
         })
 
@@ -893,32 +949,22 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             },
         })
 
-    if len(quest_gui_paths) > 0 or len(repetition_paths) > 0:
-        if len(quest_gui_paths) > 0:
-            action_payload = {
-                "kind": "gui_activate_many",
-                "paths": quest_gui_paths,
-                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
-            }
-            include_in_start_all = True
-            title = "Quest Automation"
-        else:
-            action_payload = {
-                "kind": "observe_only",
-                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
-            }
-            include_in_start_all = False
-            title = "Quest Progress Watch"
-
+    if len(repetition_paths) > 0:
         feature_contracts.append({
             "id": "quest_automation",
-            "title": title,
+            "title": "Quest Automation",
             "category": "quest",
             "supported": True,
             "destructive": False,
-            "includeInStartAll": include_in_start_all,
+            "includeInStartAll": True,
             "defaultEnabled": False,
-            "action": action_payload,
+            "action": {
+                "kind": "quest_train_workflow",
+                "trainToolPath": selected["path"],
+                "trainToolName": tool_name,
+                "questOpenPaths": quest_gui_paths,
+                "intervalSeconds": max(0.9, round(delay * 1.8, 2)),
+            },
             "monitor": {
                 "kind": "quest-repetition",
                 "candidateStatePaths": repetition_paths,
@@ -926,6 +972,31 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
                 "repetitionStatePathCount": len(repetition_paths),
+                "workflowBasis": "quest repetition paths plus train-tool contract",
+            },
+        })
+    elif len(quest_gui_paths) > 0:
+        feature_contracts.append({
+            "id": "quest_automation",
+            "title": "Quest Automation",
+            "category": "quest",
+            "supported": True,
+            "destructive": False,
+            "includeInStartAll": False,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "gui_activate_many",
+                "paths": quest_gui_paths,
+                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
+            },
+            "monitor": {
+                "kind": "quest-repetition",
+                "candidateStatePaths": [],
+            },
+            "evidence": {
+                "guiQuestPathCount": len(quest_gui_paths),
+                "repetitionStatePathCount": 0,
+                "workflowBasis": "quest GUI interactions only",
             },
         })
     else:

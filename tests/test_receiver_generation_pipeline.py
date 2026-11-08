@@ -745,6 +745,11 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("auto_train", contract["generatedFeatureIds"])
             self.assertIn("auto_rewards", contract["generatedFeatureIds"])
             self.assertIn("auto_rebirth", contract["generatedFeatureIds"])
+            feature_map = {item["id"]: item for item in contract["featureContracts"]}
+            self.assertEqual(feature_map["auto_rewards"]["action"]["kind"], "auto_rewards_discovery")
+            self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("rewardContainerPaths") or []), 1)
+            self.assertEqual(feature_map["quest_automation"]["action"]["kind"], "quest_train_workflow")
+
 
             self.assertEqual(summary["generatedScriptKind"], "observation-multi-feature-batch")
             self.assertIn("quest_automation", summary["implementedFeatures"])
@@ -754,6 +759,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("START ALL", script_text)
             self.assertIn("STOP ALL", script_text)
             self.assertIn("COPY REPORT", script_text)
+            self.assertIn("MIN", script_text)
+            self.assertIn("title.InputBegan", script_text)
+            self.assertIn("runtimeCapabilities", script_text)
+            self.assertIn("firesignal", script_text)
             self.assertIn("unsupportedFeatures", script_text)
 
     def test_generate_from_receiver_requires_read_key(self):

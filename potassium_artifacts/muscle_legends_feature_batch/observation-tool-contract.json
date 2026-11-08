@@ -29,17 +29,10 @@
       "monitor": {
         "candidateStatePaths": [
           "leaderstats.Strength",
-          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
           "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
           "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
           "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
-          "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
-          "Backpack.Tools.Count",
-          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength"
         ],
         "ignoredNoisyStatePaths": [
           "Character.RootPart.VelocityMagnitude",
@@ -91,24 +84,44 @@
     },
     {
       "action": {
+        "eligibilityIndicatorPaths": [
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Timer"
+        ],
+        "guardedPaths": [
+          "LocalPlayer.PlayerGui.fortuneWheelMenuGui.fortuneMenu.buttonsFrame.spinButton",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Top.WheelBtn"
+        ],
         "intervalSeconds": 2.0,
-        "kind": "gui_activate_many",
+        "kind": "auto_rewards_discovery",
         "paths": [
-          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
-          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim",
-          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift8.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base.Claimed",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.HitBox",
-          "LocalPlayer.PlayerGui.fortuneWheelMenuGui.fortuneMenu.buttonsFrame.spinButton"
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift8.HitBox",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim"
+        ],
+        "rewardContainerPaths": [
+          "LocalPlayer.PlayerGui.fortuneWheelMenuGui.fortuneMenu.buttonsFrame",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.Base",
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Top"
         ]
       },
       "category": "auto-rewards",
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
+        "eligibilityIndicatorPathCount": 3,
         "featureCandidate": "rewards",
-        "guiActionPathCount": 5,
+        "guardedPathCount": 2,
+        "guiActionPathCount": 7,
         "observableOutcomeCandidates": 3,
-        "readiness": "observable-outcome-candidate-needs-causal-validation"
+        "readiness": "observable-outcome-candidate-needs-causal-validation",
+        "rewardContainerPathCount": 6
       },
       "id": "auto_rewards",
       "includeInStartAll": true,
@@ -154,18 +167,22 @@
     },
     {
       "action": {
-        "intervalSeconds": 2.75,
-        "kind": "observe_only"
+        "intervalSeconds": 2.25,
+        "kind": "quest_train_workflow",
+        "questOpenPaths": [],
+        "trainToolName": "Weight",
+        "trainToolPath": "LocalPlayer.Backpack.Weight"
       },
       "category": "quest",
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
         "guiQuestPathCount": 0,
-        "repetitionStatePathCount": 1
+        "repetitionStatePathCount": 1,
+        "workflowBasis": "quest repetition paths plus train-tool contract"
       },
       "id": "quest_automation",
-      "includeInStartAll": false,
+      "includeInStartAll": true,
       "monitor": {
         "candidateStatePaths": [
           "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
@@ -173,7 +190,7 @@
         "kind": "quest-repetition"
       },
       "supported": true,
-      "title": "Quest Progress Watch"
+      "title": "Quest Automation"
     }
   ],
   "gameName": "🎃Muscle Legends",
@@ -187,7 +204,7 @@
   "generatorMetadata": {
     "generatorVersion": "receiver_generation_pipeline.observation-contract.3",
     "inspectorSchemaVersion": "30.6.live-observation-export.1",
-    "projectVersion": "30.6.40"
+    "projectVersion": "30.6.45"
   },
   "interactionSummary": {
     "controlTypesObserved": [

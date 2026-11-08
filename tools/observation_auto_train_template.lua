@@ -3,6 +3,7 @@
 local CONTRACT = __CONTRACT__
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 assert(game.PlaceId == __PLACE_ID__, "Wrong place for generated script package")
 if type(_G.LycolesMuscleAutoTrainClose) == "function" then pcall(_G.LycolesMuscleAutoTrainClose) end
@@ -49,6 +50,13 @@ local function resolvePath(path)
         root = workspace
     elseif parts[1] == "ReplicatedStorage" then
         root = game:GetService("ReplicatedStorage")
+    elseif parts[1] == "Character" then
+        root = player.Character
+    elseif parts[1] == "Backpack" then
+        root = player:FindFirstChild("Backpack")
+    elseif player:FindFirstChild(parts[1]) then
+        root = player
+        index = 1
     else
         root = player:FindFirstChild("PlayerGui")
         index = 1
@@ -96,13 +104,38 @@ local function resolveTool(toolPath, toolName)
     return nil
 end
 
+local function activateGuiObject(obj)
+    if not obj then return false, "nil object" end
+    if not obj:IsA("GuiButton") then return false, "object is not GuiButton" end
+
+    if type(firesignal) == "function" then
+        local okClick = pcall(function()
+            if obj.MouseButton1Click then
+                firesignal(obj.MouseButton1Click)
+            end
+        end)
+        if okClick then return true, "firesignal.MouseButton1Click" end
+
+        local okActivated = pcall(function()
+            if obj.Activated then
+                firesignal(obj.Activated)
+            end
+        end)
+        if okActivated then return true, "firesignal.Activated" end
+    end
+
+    local okActivate, activateErr = pcall(function() obj:Activate() end)
+    if okActivate then
+        return true, "GuiButton.Activate"
+    end
+
+    return false, "no-supported-gui-trigger: " .. tostring(activateErr)
+end
+
 local function activateGuiPath(path)
     local obj, err = resolvePath(path)
     if not obj then return false, "resolve failed: " .. tostring(err) end
-    if not obj:IsA("GuiButton") then return false, "object is not GuiButton" end
-    local ok, callErr = pcall(function() obj:Activate() end)
-    if not ok then return false, "activate failed: " .. tostring(callErr) end
-    return true, nil
+    return activateGuiObject(obj)
 end
 
 local state = {
@@ -116,6 +149,11 @@ local state = {
     stalled = false,
     intervalScale = 1.0,
     lastStatus = "ready",
+}
+
+local runtimeCapabilities = {
+    firesignal = (type(firesignal) == "function"),
+    setclipboard = (type(setclipboard) == "function" or type(toclipboard) == "function" or type(toClipboard) == "function"),
 }
 
 local features = {}
@@ -139,6 +177,8 @@ local function featureRuntime(definition, supported)
         errors = 0,
         progressEvents = 0,
         progressTotal = 0,
+        progressionByUnit = {},
+        unresolvedPaths = {},
         lastProgress = "none",
         lastError = nil,
         lastStatus = supported and "idle" or "unavailable",
@@ -204,6 +244,16 @@ local function updateGlobalProgression()
     state.strengthGainPerMinute = (state.totalStrengthGain / elapsed) * 60
 end
 
+local function classifyProgressUnit(path)
+    local low = string.lower(path or "")
+    if string.find(low, "strength", 1, true) then return "strength" end
+    if string.find(low, ".reps.progress", 1, true) then return "reps" end
+    if string.find(low, ".minutes.progress", 1, true) then return "minutes" end
+    if string.find(low, "agility", 1, true) then return "agility" end
+    if string.find(low, ".claimed", 1, true) then return "claimed" end
+    return "other"
+end
+
 local function refreshFeatureProgress(feature)
     for _, path in ipairs(feature.monitorPaths) do
         local value = readNumber(path)
@@ -211,11 +261,16 @@ local function refreshFeatureProgress(feature)
             local previous = feature.monitorValues[path]
             if previous ~= nil and value > previous then
                 local delta = value - previous
+                local unit = classifyProgressUnit(path)
                 feature.progressEvents += 1
                 feature.progressTotal += delta
-                feature.lastProgress = string.format("%s (+%s)", path, tostring(round(delta, 3)))
+                feature.progressionByUnit[unit] = (feature.progressionByUnit[unit] or 0) + delta
+                feature.lastProgress = string.format("%s (+%s %s)", path, tostring(round(delta, 3)), unit)
             end
             feature.monitorValues[path] = value
+            feature.unresolvedPaths[path] = nil
+        else
+            feature.unresolvedPaths[path] = true
         end
     end
 end
@@ -272,6 +327,148 @@ local function executeFeature(feature)
         feature.lastStatus = "equip requested"
         return
     end
+
+    if kind == "auto_rewards_discovery" then
+        local candidates = {}
+        local seen = {}
+
+        local function pushCandidate(obj)
+            if not obj or not obj:IsA("GuiButton") then return end
+            if seen[obj] then return end
+            local lowName = string.lower(obj.Name or "")
+            if string.find(lowName, "buy", 1, true) or string.find(lowName, "robux", 1, true) or string.find(lowName, "vip", 1, true) then
+                return
+            end
+            if string.find(lowName, "spin", 1, true) or string.find(lowName, "wheel", 1, true) then
+                return
+            end
+            seen[obj] = true
+            candidates[#candidates + 1] = obj
+        end
+
+        for _, path in ipairs(action.paths or {}) do
+            local obj = resolvePath(path)
+            pushCandidate(obj)
+        end
+
+        for _, containerPath in ipairs(action.rewardContainerPaths or {}) do
+            local container = resolvePath(containerPath)
+            if container then
+                for _, descendant in ipairs(container:GetDescendants()) do
+                    local lowName = string.lower(descendant.Name or "")
+                    if descendant:IsA("GuiButton") and (
+                        string.find(lowName, "hitbox", 1, true)
+                        or string.find(lowName, "claim", 1, true)
+                        or string.find(lowName, "collect", 1, true)
+                    ) then
+                        pushCandidate(descendant)
+                    end
+                end
+            end
+        end
+
+        local function isEligible(obj)
+            if not obj.Visible then return false, "hidden" end
+            local parent = obj.Parent
+            if not parent then return true, "no-parent" end
+
+            local claimed = parent:FindFirstChild("Claimed", true)
+            if claimed and claimed:IsA("GuiObject") and claimed.Visible then
+                return false, "already-claimed"
+            end
+
+            local timer = parent:FindFirstChild("Timer", true)
+            if timer and timer:IsA("TextLabel") then
+                local text = string.lower(timer.Text or "")
+                if text ~= "" and text ~= "0" and text ~= "00:00" and text ~= "00:00:00" then
+                    return false, "cooldown"
+                end
+            end
+
+            local readyText = parent:FindFirstChild("ReadyText", true)
+            if readyText and readyText:IsA("GuiObject") then
+                if readyText.Visible then return true, "ready-text-visible" end
+                if readyText:IsA("TextLabel") and string.find(string.lower(readyText.Text or ""), "ready", 1, true) then
+                    return true, "ready-text-content"
+                end
+            end
+
+            return true, "no-indicator"
+        end
+
+        if #candidates == 0 then
+            feature.lastStatus = "no reward candidates"
+            return
+        end
+
+        feature.cursor = (feature.cursor % #candidates) + 1
+        local target = candidates[feature.cursor]
+        local eligible, reason = isEligible(target)
+        if not eligible then
+            feature.lastStatus = "reward not eligible: " .. tostring(reason)
+            return
+        end
+
+        local ok, methodOrErr = activateGuiObject(target)
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(methodOrErr)
+            feature.lastStatus = "reward trigger unsupported"
+            return
+        end
+
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.lastStatus = "reward trigger: " .. tostring(methodOrErr)
+        return
+    end
+
+    if kind == "quest_train_workflow" then
+        local autoTrainFeature = features["auto_train"]
+        if autoTrainFeature and autoTrainFeature.running then
+            feature.successes += 1
+            feature.lastStatus = "quest progression monitoring via active auto_train"
+            return
+        end
+
+        local questPaths = action.questOpenPaths or {}
+        if #questPaths > 0 then
+            feature.cursor = (feature.cursor % #questPaths) + 1
+            local questPath = questPaths[feature.cursor]
+            local qOk, qErr = activateGuiPath(questPath)
+            if qOk then
+                feature.successfulCalls += 1
+            else
+                feature.lastError = tostring(qErr)
+            end
+        end
+
+        local tool = resolveTool(action.trainToolPath, action.trainToolName)
+        if not tool then
+            feature.errors += 1
+            feature.lastError = "quest workflow tool unavailable"
+            feature.lastStatus = "quest workflow unavailable"
+            return
+        end
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and tool.Parent ~= player.Character then
+            pcall(function() humanoid:EquipTool(tool) end)
+            task.wait(0.05)
+        end
+        local ok, err = pcall(function() tool:Activate() end)
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(err)
+            feature.lastStatus = "quest workflow activation failed"
+            return
+        end
+
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.lastStatus = "quest workflow train activation sent"
+        return
+    end
+
 
     if kind == "gui_activate_many" then
         local paths = action.paths or {}
@@ -376,10 +573,17 @@ local function buildDiagnosticReport()
         if feature.lastError then
             runtimeErrors[#runtimeErrors + 1] = {featureId = feature.id, message = feature.lastError}
         end
+        local unresolved = {}
+        for path, unresolvedFlag in pairs(feature.unresolvedPaths or {}) do
+            if unresolvedFlag then unresolved[#unresolved + 1] = path end
+        end
+
         observedStateChanges[#observedStateChanges + 1] = {
             featureId = feature.id,
             progressionEvents = feature.progressEvents,
             progressionTotal = round(feature.progressTotal, 6),
+            progressionByUnit = feature.progressionByUnit,
+            unresolvedPaths = unresolved,
             lastProgression = feature.lastProgress,
         }
         featureReports[#featureReports + 1] = {
@@ -394,6 +598,8 @@ local function buildDiagnosticReport()
             errors = feature.errors,
             progressionEvents = feature.progressEvents,
             progressionTotal = round(feature.progressTotal, 6),
+            progressionByUnit = feature.progressionByUnit,
+            unresolvedPaths = unresolved,
             status = feature.lastStatus,
             evidence = feature.definition.evidence,
         }
@@ -412,12 +618,14 @@ local function buildDiagnosticReport()
             generatorVersion = ((CONTRACT.generatorMetadata or {}).generatorVersion),
         },
         generatedFeatureList = CONTRACT.generatedFeatureIds or {},
+        runtimeCapabilities = runtimeCapabilities,
         featureReports = featureReports,
         successfulApiCalls = successfulApiCalls,
         runtimeErrors = runtimeErrors,
         observedStateChanges = observedStateChanges,
         delayedProgressionOutcomes = {
             strengthPath = globalStrengthPath,
+            strengthPathResolved = (state.currentStrength ~= nil),
             currentStrength = state.currentStrength,
             initialStrength = state.initialStrength,
             totalStrengthGain = round(state.totalStrengthGain, 6),
@@ -470,6 +678,7 @@ title.BackgroundTransparency = 1
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextSize = 16
+title.Active = true
 title.Text = "Lycoles Muscle Legends Multi-Feature Batch"
 
 local startAllButton = Instance.new("TextButton", frame)
@@ -499,6 +708,62 @@ closeButton.Position = UDim2.new(1, -82, 0, 10)
 closeButton.Text = "CLOSE"
 closeButton.BackgroundColor3 = Color3.fromRGB(82, 68, 90)
 closeButton.TextColor3 = Color3.new(1, 1, 1)
+
+
+local minimizeButton = Instance.new("TextButton", frame)
+minimizeButton.Size = UDim2.fromOffset(72, 24)
+minimizeButton.Position = UDim2.new(1, -160, 0, 10)
+minimizeButton.Text = "MIN"
+minimizeButton.BackgroundColor3 = Color3.fromRGB(86, 94, 112)
+minimizeButton.TextColor3 = Color3.new(1, 1, 1)
+
+local collapsed = false
+local expandedSize = frame.Size
+local collapsedSize = UDim2.fromOffset(680, 42)
+
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+local function beginDrag(input)
+    dragging = true
+    dragStart = input.Position
+    startPos = frame.Position
+end
+
+local function updateDrag(input)
+    if not dragging or not dragStart or not startPos then return end
+    local delta = input.Position - dragStart
+    frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+local function endDrag()
+    dragging = false
+end
+
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        beginDrag(input)
+    end
+end)
+
+title.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        endDrag()
+    end
+end)
+
+connections[#connections + 1] = UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        updateDrag(input)
+    end
+end)
+
+connections[#connections + 1] = UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        endDrag()
+    end
+end)
 
 local summary = Instance.new("TextLabel", frame)
 summary.Size = UDim2.new(1, -24, 0, 86)
@@ -617,15 +882,21 @@ local function renderRows()
             if not feature.supported then
                 row.toggle.Text = "N/A"
                 row.toggle.BackgroundColor3 = Color3.fromRGB(72, 74, 80)
+                row.status.TextColor3 = Color3.fromRGB(220, 160, 160)
             elseif feature.running then
                 row.toggle.Text = "STOP"
                 row.toggle.BackgroundColor3 = Color3.fromRGB(140, 70, 70)
+                row.status.TextColor3 = Color3.fromRGB(208, 216, 224)
             else
                 row.toggle.Text = "START"
                 row.toggle.BackgroundColor3 = Color3.fromRGB(52, 118, 84)
+                row.status.TextColor3 = Color3.fromRGB(208, 216, 224)
             end
+
+            local strengthDelta = round(feature.progressionByUnit.strength or 0, 3)
+            local repsDelta = round(feature.progressionByUnit.reps or 0, 3)
             row.status.Text = string.format("status=%s | lastProgress=%s", tostring(feature.lastStatus), tostring(feature.lastProgress))
-            row.metrics.Text = string.format("A:%d S:%d E:%d P:%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents)
+            row.metrics.Text = string.format("A:%d S:%d E:%d P:%d STR:+%s REP:+%s", feature.attempts, feature.successes, feature.errors, feature.progressEvents, tostring(strengthDelta), tostring(repsDelta))
         end
     end
     state.stalled = (runningCount > 0 and state.strengthGainPerMinute <= 0 and (os.clock() - state.startClock) > SETTINGS.stallWindowSeconds)
@@ -635,9 +906,10 @@ local function renderSummary()
     local elapsed = os.clock() - state.startClock
     local currentStrengthText = state.currentStrength and tostring(round(state.currentStrength, 3)) or "n/a"
     local initialStrengthText = state.initialStrength and tostring(round(state.initialStrength, 3)) or "n/a"
+    local strengthResolved = state.currentStrength ~= nil
     speedLabel.Text = string.format("Global speed scale: %.2fx", state.intervalScale)
     local lines = {
-        string.format("Strength current=%s initial=%s totalGain=%s gain/min=%s", currentStrengthText, initialStrengthText, tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3))),
+        string.format("Strength current=%s initial=%s totalGain=%s gain/min=%s pathResolved=%s", currentStrengthText, initialStrengthText, tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3)), tostring(strengthResolved)),
         string.format("Elapsed %.1fs | stalled=%s | status=%s", elapsed, tostring(state.stalled), tostring(state.lastStatus)),
         string.format("Delayed window=%.2fs | unsupportedFeatures=%d", SETTINGS.delayedOutcomeWindowSeconds, #(CONTRACT.unsupportedFeatures or {})),
     }
@@ -657,9 +929,23 @@ local function closeAll()
     _G.LycolesMuscleAutoTrainClose = nil
 end
 
+local function setCollapsed(nextState)
+    collapsed = nextState
+    frame.Size = collapsed and collapsedSize or expandedSize
+    summary.Visible = not collapsed
+    controls.Visible = not collapsed
+    list.Visible = not collapsed
+    minimizeButton.Text = collapsed and "RESTORE" or "MIN"
+end
+
+setCollapsed(false)
+
 startAllButton.MouseButton1Click:Connect(function() startAll() end)
 stopAllButton.MouseButton1Click:Connect(function() stopAll("stop-all") state.lastStatus = "stop-all issued" end)
 copyReportButton.MouseButton1Click:Connect(function() exportDiagnosticReport() end)
+connections[#connections + 1] = minimizeButton.MouseButton1Click:Connect(function()
+    setCollapsed(not collapsed)
+end)
 closeButton.MouseButton1Click:Connect(closeAll)
 
 connections[#connections + 1] = speedMinus.MouseButton1Click:Connect(function()
