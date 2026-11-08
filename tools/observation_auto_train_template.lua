@@ -2,8 +2,9 @@
 -- Evidence-bounded client helper. No remote fabrication or authority claims.
 local CONTRACT = __CONTRACT__
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-assert(game.PlaceId == __PLACE_ID__, "Wrong place for generated auto-train utility")
+assert(game.PlaceId == __PLACE_ID__, "Wrong place for generated script package")
 if type(_G.LycolesMuscleAutoTrainClose) == "function" then pcall(_G.LycolesMuscleAutoTrainClose) end
 
 local timing = CONTRACT.timing or {}
@@ -14,8 +15,6 @@ local SETTINGS = {
     pollIntervalSeconds = tonumber(timing.pollIntervalSeconds) or 0.2,
     minActivationIntervalSeconds = tonumber(timing.minActivationIntervalSeconds) or 0.1,
     maxActivationIntervalSeconds = tonumber(timing.maxActivationIntervalSeconds) or 2.0,
-    minOutcomeWindowSeconds = tonumber(timing.minOutcomeWindowSeconds) or 0.25,
-    maxOutcomeWindowSeconds = tonumber(timing.maxOutcomeWindowSeconds) or 10.0,
 }
 
 local function clamp(value, minValue, maxValue)
@@ -25,17 +24,8 @@ local function clamp(value, minValue, maxValue)
 end
 
 local function round(value, digits)
-    local power = 10 ^ (digits or 0)
-    return math.floor(value * power + 0.5) / power
-end
-
-local function formatDuration(seconds)
-    local total = math.max(0, math.floor(seconds + 0.5))
-    local h = math.floor(total / 3600)
-    local m = math.floor((total % 3600) / 60)
-    local s = total % 60
-    if h > 0 then return string.format("%02d:%02d:%02d", h, m, s) end
-    return string.format("%02d:%02d", m, s)
+    local p = 10 ^ (digits or 0)
+    return math.floor(value * p + 0.5) / p
 end
 
 local function splitPath(path)
@@ -73,475 +63,625 @@ local function resolvePath(path)
     return current, nil
 end
 
-local function valueFromObject(obj)
-    if not obj or not obj:IsA("ValueBase") then return nil end
-    local ok, value = pcall(function() return obj.Value end)
-    if not ok or type(value) ~= "number" then return nil end
-    return value
-end
-
-local state = {
-    startClock = os.clock(),
-    activationAttempts = 0,
-    activationSuccess = 0,
-    activationFailures = 0,
-    attributedActivations = 0,
-    pendingActivations = {},
-    currentStrength = nil,
-    initialStrength = nil,
-    totalStrengthGain = 0,
-    strengthGainPerMinute = 0,
-    progressionEvents = 0,
-    lastProgressionAt = nil,
-    lastProgressionDelta = 0,
-    lastProgressionNote = "none",
-    repetitionProgressGain = 0,
-    stalled = false,
-    lastStatus = "ready",
-    lastError = nil,
-}
-
-local connections = {}
-local alive = true
-local running = false
-local runGeneration = 0
-
-local ActionExecutor = {}
-local StateObserver = {}
-local OutcomeAssessor = {}
-
-function ActionExecutor.verifyToolMetadata(tool)
-    if type(CONTRACT.toolMetadata) ~= "table" then return true end
-    local checks = {
-        {"requiresHandle", CONTRACT.toolMetadata.requiresHandle},
-        {"canBeDropped", CONTRACT.toolMetadata.canBeDropped},
-        {"manualActivationOnly", CONTRACT.toolMetadata.manualActivationOnly},
-    }
-    for _, item in ipairs(checks) do
-        local name, expected = item[1], item[2]
-        if type(expected) == "boolean" then
-            local ok, actual = pcall(function() return tool[name] end)
-            if (not ok) or actual ~= expected then return false end
+local function readNumber(path)
+    local obj = resolvePath(path)
+    if obj and obj:IsA("ValueBase") then
+        local ok, value = pcall(function() return obj.Value end)
+        if ok and type(value) == "number" then
+            return value
         end
     end
-    return true
+    return nil
 end
 
-function ActionExecutor.resolveTool()
-    local exact, err = resolvePath(CONTRACT.toolPath)
-    if exact and exact:IsA("Tool") and ActionExecutor.verifyToolMetadata(exact) then
-        return exact, nil, "contract-path"
+local function resolveTool(toolPath, toolName)
+    local exact = nil
+    if type(toolPath) == "string" and toolPath ~= "" then
+        exact = resolvePath(toolPath)
+    end
+    if exact and exact:IsA("Tool") then
+        return exact
     end
 
-    local candidates = {
-        {player:FindFirstChild("Backpack"), "backpack"},
-        {player.Character, "character"},
-    }
-    for _, candidate in ipairs(candidates) do
-        local parent = candidate[1]
+    local candidates = {player:FindFirstChild("Backpack"), player.Character}
+    for _, parent in ipairs(candidates) do
         if parent then
             for _, child in ipairs(parent:GetChildren()) do
-                if child:IsA("Tool") and child.Name == CONTRACT.toolName and ActionExecutor.verifyToolMetadata(child) then
-                    return child, nil, candidate[2]
+                if child:IsA("Tool") and child.Name == toolName then
+                    return child
                 end
             end
         end
     end
-    return nil, err or "tool unavailable", "none"
+    return nil
 end
 
-function ActionExecutor.activateOnce()
-    state.activationAttempts += 1
-    local tool, err, source = ActionExecutor.resolveTool()
-    if not tool then
-        state.activationFailures += 1
-        state.lastError = tostring(err)
-        state.lastStatus = "tool resolve failed"
-        return false
-    end
-
-    local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if humanoid and tool.Parent ~= player.Character then
-        pcall(function() humanoid:EquipTool(tool) end)
-        task.wait(0.05)
-    end
-
-    local ok, activateErr = pcall(function() tool:Activate() end)
-    if not ok then
-        state.activationFailures += 1
-        state.lastError = tostring(activateErr)
-        state.lastStatus = "activation failed"
-        return false
-    end
-
-    state.activationSuccess += 1
-    table.insert(state.pendingActivations, os.clock())
-    state.lastStatus = "activation succeeded via " .. tostring(source)
-    return true
+local function activateGuiPath(path)
+    local obj, err = resolvePath(path)
+    if not obj then return false, "resolve failed: " .. tostring(err) end
+    if not obj:IsA("GuiButton") then return false, "object is not GuiButton" end
+    local ok, callErr = pcall(function() obj:Activate() end)
+    if not ok then return false, "activate failed: " .. tostring(callErr) end
+    return true, nil
 end
 
-StateObserver.primaryObject = nil
-StateObserver.primaryPath = nil
-StateObserver.repetitionObjects = {}
-StateObserver.repetitionBaselines = {}
+local state = {
+    alive = true,
+    startClock = os.clock(),
+    currentStrength = nil,
+    initialStrength = nil,
+    totalStrengthGain = 0,
+    strengthGainPerMinute = 0,
+    lastProgression = "none",
+    stalled = false,
+    intervalScale = 1.0,
+    lastStatus = "ready",
+}
 
-function StateObserver.resolvePrimaryOutcomeObject()
-    local outcomeModel = CONTRACT.outcomeModel or {}
-    local primaryPath = outcomeModel.primaryStatePath
-    local candidates = outcomeModel.candidateStatePaths or CONTRACT.outcomeStateKeys or {}
+local features = {}
+local featureOrder = {}
+local rows = {}
+local connections = {}
 
-    local ordered = {}
-    if type(primaryPath) == "string" and primaryPath ~= "" then
-        ordered[#ordered + 1] = primaryPath
+local function featureRuntime(definition, supported)
+    local action = definition.action or {}
+    return {
+        id = tostring(definition.id or "feature"),
+        title = tostring(definition.title or definition.id or "Feature"),
+        supported = supported,
+        includeInStartAll = definition.includeInStartAll == true,
+        destructive = definition.destructive == true,
+        definition = definition,
+        action = action,
+        attempts = 0,
+        successes = 0,
+        successfulCalls = 0,
+        errors = 0,
+        progressEvents = 0,
+        progressTotal = 0,
+        lastProgress = "none",
+        lastError = nil,
+        lastStatus = supported and "idle" or "unavailable",
+        running = false,
+        token = 0,
+        cursor = 0,
+        intervalSeconds = tonumber(action.intervalSeconds) or SETTINGS.activationIntervalSeconds,
+        monitorValues = {},
+        monitorPaths = {},
+    }
+end
+
+for _, definition in ipairs(CONTRACT.featureContracts or {}) do
+    local feature = featureRuntime(definition, definition.supported ~= false)
+    local monitor = definition.monitor or {}
+    if type(monitor.primaryOutcomePath) == "string" then
+        feature.monitorPaths[#feature.monitorPaths + 1] = monitor.primaryOutcomePath
     end
-    for _, path in ipairs(candidates) do
-        if type(path) == "string" and path ~= "" and path ~= primaryPath then
-            ordered[#ordered + 1] = path
+    for _, path in ipairs(monitor.candidateStatePaths or {}) do
+        if type(path) == "string" then
+            feature.monitorPaths[#feature.monitorPaths + 1] = path
         end
     end
-
-    for _, path in ipairs(ordered) do
-        local obj = resolvePath(path)
-        local value = valueFromObject(obj)
-        if obj and value ~= nil then
-            return obj, path
+    for _, path in ipairs(monitor.questRepetitionStatePaths or {}) do
+        if type(path) == "string" then
+            feature.monitorPaths[#feature.monitorPaths + 1] = path
         end
     end
-    return nil, nil
+    features[feature.id] = feature
+    featureOrder[#featureOrder + 1] = feature
 end
 
-function StateObserver.refreshBindings(resetBaselines)
-    local primaryObj, primaryPath = StateObserver.resolvePrimaryOutcomeObject()
-    StateObserver.primaryObject = primaryObj
-    StateObserver.primaryPath = primaryPath
+for _, unsupported in ipairs(CONTRACT.unsupportedFeatures or {}) do
+    if features[unsupported.id] == nil then
+        local definition = {
+            id = unsupported.id,
+            title = unsupported.title,
+            includeInStartAll = false,
+            destructive = false,
+            action = {kind = "none"},
+            evidence = unsupported.evidence,
+        }
+        local feature = featureRuntime(definition, false)
+        features[feature.id] = feature
+        featureOrder[#featureOrder + 1] = feature
+    end
+end
 
-    if primaryObj then
-        local value = valueFromObject(primaryObj)
+local globalStrengthPath = ((CONTRACT.outcomeModel or {}).primaryStatePath)
+
+local function updateGlobalProgression()
+    local value = readNumber(globalStrengthPath)
+    if value ~= nil then
+        if state.currentStrength ~= nil and value > state.currentStrength then
+            local delta = value - state.currentStrength
+            state.totalStrengthGain += delta
+            state.lastProgression = string.format("+%s Strength", tostring(round(delta, 3)))
+        end
         state.currentStrength = value
-        if resetBaselines or state.initialStrength == nil then
-            state.initialStrength = value
+        if state.initialStrength == nil then state.initialStrength = value end
+    end
+    local elapsed = math.max(0.01, os.clock() - state.startClock)
+    state.strengthGainPerMinute = (state.totalStrengthGain / elapsed) * 60
+end
+
+local function refreshFeatureProgress(feature)
+    for _, path in ipairs(feature.monitorPaths) do
+        local value = readNumber(path)
+        if value ~= nil then
+            local previous = feature.monitorValues[path]
+            if previous ~= nil and value > previous then
+                local delta = value - previous
+                feature.progressEvents += 1
+                feature.progressTotal += delta
+                feature.lastProgress = string.format("%s (+%s)", path, tostring(round(delta, 3)))
+            end
+            feature.monitorValues[path] = value
         end
     end
+end
 
-    local outcomeModel = CONTRACT.outcomeModel or {}
-    StateObserver.repetitionObjects = {}
-    for _, path in ipairs(outcomeModel.questRepetitionStatePaths or {}) do
-        local obj = resolvePath(path)
-        local value = valueFromObject(obj)
-        if obj and value ~= nil then
-            StateObserver.repetitionObjects[#StateObserver.repetitionObjects + 1] = {path = path, object = obj}
-            if resetBaselines or StateObserver.repetitionBaselines[path] == nil then
-                StateObserver.repetitionBaselines[path] = value
+local function executeFeature(feature)
+    local action = feature.action or {}
+    local kind = action.kind
+    feature.attempts += 1
+
+    if kind == "tool_activate" then
+        local tool = resolveTool(action.toolPath, action.toolName)
+        if not tool then
+            feature.errors += 1
+            feature.lastError = "tool unavailable"
+            feature.lastStatus = "tool unavailable"
+            return
+        end
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and tool.Parent ~= player.Character then
+            pcall(function() humanoid:EquipTool(tool) end)
+            task.wait(0.05)
+        end
+        local ok, err = pcall(function() tool:Activate() end)
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(err)
+            feature.lastStatus = "activation failed"
+            return
+        end
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.lastStatus = "activation sent"
+        return
+    end
+
+    if kind == "ensure_tool_equipped" then
+        local tool = resolveTool(action.toolPath, action.toolName)
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if not tool or not humanoid then
+            feature.errors += 1
+            feature.lastError = "tool or humanoid unavailable"
+            feature.lastStatus = "equip unavailable"
+            return
+        end
+        local ok, err = pcall(function() humanoid:EquipTool(tool) end)
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(err)
+            feature.lastStatus = "equip failed"
+            return
+        end
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.lastStatus = "equip requested"
+        return
+    end
+
+    if kind == "gui_activate_many" then
+        local paths = action.paths or {}
+        if #paths == 0 then
+            feature.lastStatus = "monitor only"
+            return
+        end
+        feature.cursor = (feature.cursor % #paths) + 1
+        local ok, err = activateGuiPath(paths[feature.cursor])
+        if not ok then
+            feature.errors += 1
+            feature.lastError = tostring(err)
+            feature.lastStatus = "gui activation failed"
+            return
+        end
+        feature.successes += 1
+        feature.successfulCalls += 1
+        feature.lastStatus = "gui activation sent"
+        return
+    end
+
+    if kind == "gui_sequence" then
+        local steps = action.steps or {}
+        if #steps == 0 then
+            feature.lastStatus = "monitor only"
+            return
+        end
+        for _, step in ipairs(steps) do
+            if step.kind == "gui_activate" then
+                local ok, err = activateGuiPath(step.path)
+                if not ok then
+                    feature.errors += 1
+                    feature.lastError = tostring(err)
+                    feature.lastStatus = "sequence failed"
+                    return
+                end
+                feature.successfulCalls += 1
+                task.wait(0.05)
             end
         end
+        feature.successes += 1
+        feature.lastStatus = "sequence sent"
+        return
     end
 
-    if resetBaselines then
-        state.totalStrengthGain = 0
-        state.progressionEvents = 0
-        state.lastProgressionAt = nil
-        state.lastProgressionDelta = 0
-        state.lastProgressionNote = "none"
-        state.repetitionProgressGain = 0
-        state.pendingActivations = {}
-        state.attributedActivations = 0
-        state.stalled = false
+    feature.lastStatus = "monitor only"
+end
+
+local function stopFeature(feature, reason)
+    feature.running = false
+    feature.token += 1
+    feature.lastStatus = reason or feature.lastStatus
+end
+
+local function startFeature(feature)
+    if not feature.supported then
+        feature.lastStatus = "unavailable"
+        return
+    end
+    if feature.running then
+        feature.lastStatus = "already running"
+        return
+    end
+    feature.running = true
+    feature.token += 1
+    local token = feature.token
+    feature.lastStatus = "running"
+    task.spawn(function()
+        while state.alive and feature.running and token == feature.token do
+            executeFeature(feature)
+            local waitTime = clamp(feature.intervalSeconds * state.intervalScale, SETTINGS.minActivationIntervalSeconds, SETTINGS.maxActivationIntervalSeconds)
+            task.wait(waitTime)
+        end
+    end)
+end
+
+local function startAll()
+    for _, feature in ipairs(featureOrder) do
+        if feature.supported and feature.includeInStartAll and not feature.destructive then
+            startFeature(feature)
+        end
+    end
+    state.lastStatus = "start-all issued"
+end
+
+local function stopAll(reason)
+    for _, feature in ipairs(featureOrder) do
+        if feature.running then
+            stopFeature(feature, reason or "stopped")
+        end
     end
 end
 
-function OutcomeAssessor.consumePending(nowClock)
-    local consumed = 0
-    local keep = {}
-    for _, timestamp in ipairs(state.pendingActivations) do
-        local age = nowClock - timestamp
-        if age <= SETTINGS.delayedOutcomeWindowSeconds then
-            consumed += 1
-        elseif age < (SETTINGS.delayedOutcomeWindowSeconds * 3.0) then
-            keep[#keep + 1] = timestamp
+local function buildDiagnosticReport()
+    local featureReports = {}
+    local successfulApiCalls = 0
+    local runtimeErrors = {}
+    local observedStateChanges = {}
+
+    for _, feature in ipairs(featureOrder) do
+        successfulApiCalls += feature.successfulCalls
+        if feature.lastError then
+            runtimeErrors[#runtimeErrors + 1] = {featureId = feature.id, message = feature.lastError}
         end
+        observedStateChanges[#observedStateChanges + 1] = {
+            featureId = feature.id,
+            progressionEvents = feature.progressEvents,
+            progressionTotal = round(feature.progressTotal, 6),
+            lastProgression = feature.lastProgress,
+        }
+        featureReports[#featureReports + 1] = {
+            id = feature.id,
+            title = feature.title,
+            supported = feature.supported,
+            includeInStartAll = feature.includeInStartAll,
+            destructive = feature.destructive,
+            attempts = feature.attempts,
+            successes = feature.successes,
+            successfulApiCalls = feature.successfulCalls,
+            errors = feature.errors,
+            progressionEvents = feature.progressEvents,
+            progressionTotal = round(feature.progressTotal, 6),
+            status = feature.lastStatus,
+            evidence = feature.definition.evidence,
+        }
     end
-    state.pendingActivations = keep
-    if consumed == 0 and #state.pendingActivations > 0 then
-        consumed = 1
-        table.remove(state.pendingActivations, 1)
-    end
-    state.attributedActivations += consumed
-    return consumed
+
+    return {
+        schemaVersion = "lycoles.batch-diagnostic.1",
+        game = {
+            gameName = CONTRACT.gameName,
+            placeId = CONTRACT.placeId,
+            gameId = game.GameId,
+        },
+        versions = {
+            inspectorSchemaVersion = ((CONTRACT.generatorMetadata or {}).inspectorSchemaVersion),
+            projectVersion = ((CONTRACT.generatorMetadata or {}).projectVersion),
+            generatorVersion = ((CONTRACT.generatorMetadata or {}).generatorVersion),
+        },
+        generatedFeatureList = CONTRACT.generatedFeatureIds or {},
+        featureReports = featureReports,
+        successfulApiCalls = successfulApiCalls,
+        runtimeErrors = runtimeErrors,
+        observedStateChanges = observedStateChanges,
+        delayedProgressionOutcomes = {
+            strengthPath = globalStrengthPath,
+            currentStrength = state.currentStrength,
+            initialStrength = state.initialStrength,
+            totalStrengthGain = round(state.totalStrengthGain, 6),
+            strengthGainPerMinute = round(state.strengthGainPerMinute, 6),
+            stalled = state.stalled,
+        },
+        unsupportedFeatures = CONTRACT.unsupportedFeatures or {},
+        claims = CONTRACT.claims,
+    }
 end
 
-function OutcomeAssessor.recordStrengthDelta(delta)
-    if delta <= 0 then return end
-    local nowClock = os.clock()
-    state.totalStrengthGain += delta
-    state.progressionEvents += 1
-    state.lastProgressionAt = nowClock
-    state.lastProgressionDelta = delta
-    local consumed = OutcomeAssessor.consumePending(nowClock)
-    state.lastProgressionNote = string.format("+%s strength (attributed activations: %d)", tostring(round(delta, 3)), consumed)
-end
-
-function OutcomeAssessor.updateMetrics()
-    local nowClock = os.clock()
-    local elapsed = math.max(0.01, nowClock - state.startClock)
-    state.strengthGainPerMinute = (state.totalStrengthGain / elapsed) * 60
-
-    local current = valueFromObject(StateObserver.primaryObject)
-    if current ~= nil then
-        if state.currentStrength ~= nil and current > state.currentStrength then
-            OutcomeAssessor.recordStrengthDelta(current - state.currentStrength)
-        end
-        state.currentStrength = current
-        if state.initialStrength == nil then
-            state.initialStrength = current
-        end
+local function exportDiagnosticReport()
+    local encoded = HttpService:JSONEncode(buildDiagnosticReport())
+    local copied = false
+    if type(setclipboard) == "function" then
+        pcall(function() setclipboard(encoded) end)
+        copied = true
+    elseif type(toclipboard) == "function" then
+        pcall(function() toclipboard(encoded) end)
+        copied = true
+    elseif type(toClipboard) == "function" then
+        pcall(function() toClipboard(encoded) end)
+        copied = true
     end
-
-    local repetitionTotal = 0
-    for _, item in ipairs(StateObserver.repetitionObjects) do
-        local value = valueFromObject(item.object)
-        local baseline = StateObserver.repetitionBaselines[item.path]
-        if value ~= nil and baseline ~= nil and value > baseline then
-            repetitionTotal += (value - baseline)
-        end
+    _G.LycolesLastDiagnosticReport = encoded
+    if copied then
+        state.lastStatus = "diagnostic report copied"
+    else
+        state.lastStatus = "clipboard unavailable; report printed and cached"
+        print(encoded)
     end
-    state.repetitionProgressGain = repetitionTotal
-
-    local reference = state.lastProgressionAt or state.startClock
-    local staleFor = nowClock - reference
-    state.stalled = (state.activationSuccess >= 4 and staleFor >= SETTINGS.stallWindowSeconds and #state.pendingActivations > 0)
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "LycolesMuscleAutoTrain"
+gui.Name = "LycolesUniversalFeatureBatch"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(490, 320)
-frame.Position = UDim2.new(0.5, -245, 0.5, -160)
+frame.Size = UDim2.fromOffset(680, 430)
+frame.Position = UDim2.new(0.5, -340, 0.5, -215)
 frame.BackgroundColor3 = Color3.fromRGB(26, 29, 35)
 frame.Parent = gui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, -96, 0, 30)
+title.Size = UDim2.new(1, -420, 0, 30)
 title.Position = UDim2.fromOffset(12, 8)
 title.BackgroundTransparency = 1
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextSize = 16
-title.Text = "Lycoles Auto Train (Delayed Progress Tracking)"
+title.Text = "Lycoles Muscle Legends Multi-Feature Batch"
 
-local close = Instance.new("TextButton", frame)
-close.Size = UDim2.fromOffset(74, 26)
-close.Position = UDim2.new(1, -82, 0, 8)
-close.Text = "CLOSE"
-close.BackgroundColor3 = Color3.fromRGB(82, 68, 90)
-close.TextColor3 = Color3.new(1, 1, 1)
-close.TextSize = 12
+local startAllButton = Instance.new("TextButton", frame)
+startAllButton.Size = UDim2.fromOffset(96, 24)
+startAllButton.Position = UDim2.new(1, -402, 0, 10)
+startAllButton.Text = "START ALL"
+startAllButton.BackgroundColor3 = Color3.fromRGB(49, 122, 88)
+startAllButton.TextColor3 = Color3.new(1, 1, 1)
 
-local status = Instance.new("TextLabel", frame)
-status.Size = UDim2.new(1, -24, 0, 170)
-status.Position = UDim2.fromOffset(12, 44)
-status.BackgroundColor3 = Color3.fromRGB(33, 36, 43)
-status.TextColor3 = Color3.fromRGB(228, 236, 240)
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.TextYAlignment = Enum.TextYAlignment.Top
-status.TextWrapped = true
-status.TextSize = 13
-status.Text = "Initializing"
+local stopAllButton = Instance.new("TextButton", frame)
+stopAllButton.Size = UDim2.fromOffset(96, 24)
+stopAllButton.Position = UDim2.new(1, -302, 0, 10)
+stopAllButton.Text = "STOP ALL"
+stopAllButton.BackgroundColor3 = Color3.fromRGB(128, 68, 68)
+stopAllButton.TextColor3 = Color3.new(1, 1, 1)
 
-local intervalLabel = Instance.new("TextLabel", frame)
-intervalLabel.Size = UDim2.fromOffset(228, 22)
-intervalLabel.Position = UDim2.fromOffset(12, 220)
-intervalLabel.BackgroundTransparency = 1
-intervalLabel.TextXAlignment = Enum.TextXAlignment.Left
-intervalLabel.TextColor3 = Color3.fromRGB(210, 220, 230)
-intervalLabel.TextSize = 12
+local copyReportButton = Instance.new("TextButton", frame)
+copyReportButton.Size = UDim2.fromOffset(112, 24)
+copyReportButton.Position = UDim2.new(1, -202, 0, 10)
+copyReportButton.Text = "COPY REPORT"
+copyReportButton.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
+copyReportButton.TextColor3 = Color3.new(1, 1, 1)
 
-local intervalMinus = Instance.new("TextButton", frame)
-intervalMinus.Size = UDim2.fromOffset(28, 22)
-intervalMinus.Position = UDim2.fromOffset(244, 220)
-intervalMinus.Text = "-"
-intervalMinus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-intervalMinus.TextColor3 = Color3.new(1, 1, 1)
+local closeButton = Instance.new("TextButton", frame)
+closeButton.Size = UDim2.fromOffset(72, 24)
+closeButton.Position = UDim2.new(1, -82, 0, 10)
+closeButton.Text = "CLOSE"
+closeButton.BackgroundColor3 = Color3.fromRGB(82, 68, 90)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
 
-local intervalPlus = Instance.new("TextButton", frame)
-intervalPlus.Size = UDim2.fromOffset(28, 22)
-intervalPlus.Position = UDim2.fromOffset(276, 220)
-intervalPlus.Text = "+"
-intervalPlus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-intervalPlus.TextColor3 = Color3.new(1, 1, 1)
+local summary = Instance.new("TextLabel", frame)
+summary.Size = UDim2.new(1, -24, 0, 86)
+summary.Position = UDim2.fromOffset(12, 42)
+summary.BackgroundColor3 = Color3.fromRGB(33, 36, 43)
+summary.TextColor3 = Color3.fromRGB(228, 236, 240)
+summary.TextXAlignment = Enum.TextXAlignment.Left
+summary.TextYAlignment = Enum.TextYAlignment.Top
+summary.TextWrapped = true
+summary.TextSize = 13
+summary.Text = "Initializing"
 
-local windowLabel = Instance.new("TextLabel", frame)
-windowLabel.Size = UDim2.fromOffset(228, 22)
-windowLabel.Position = UDim2.fromOffset(12, 246)
-windowLabel.BackgroundTransparency = 1
-windowLabel.TextXAlignment = Enum.TextXAlignment.Left
-windowLabel.TextColor3 = Color3.fromRGB(210, 220, 230)
-windowLabel.TextSize = 12
+local controls = Instance.new("Frame", frame)
+controls.Size = UDim2.new(1, -24, 0, 24)
+controls.Position = UDim2.fromOffset(12, 132)
+controls.BackgroundTransparency = 1
 
-local windowMinus = Instance.new("TextButton", frame)
-windowMinus.Size = UDim2.fromOffset(28, 22)
-windowMinus.Position = UDim2.fromOffset(244, 246)
-windowMinus.Text = "-"
-windowMinus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-windowMinus.TextColor3 = Color3.new(1, 1, 1)
+local speedMinus = Instance.new("TextButton", controls)
+speedMinus.Size = UDim2.fromOffset(20, 20)
+speedMinus.Position = UDim2.fromOffset(0, 2)
+speedMinus.Text = "-"
+speedMinus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
+speedMinus.TextColor3 = Color3.new(1, 1, 1)
 
-local windowPlus = Instance.new("TextButton", frame)
-windowPlus.Size = UDim2.fromOffset(28, 22)
-windowPlus.Position = UDim2.fromOffset(276, 246)
-windowPlus.Text = "+"
-windowPlus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-windowPlus.TextColor3 = Color3.new(1, 1, 1)
+local speedPlus = Instance.new("TextButton", controls)
+speedPlus.Size = UDim2.fromOffset(20, 20)
+speedPlus.Position = UDim2.fromOffset(24, 2)
+speedPlus.Text = "+"
+speedPlus.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
+speedPlus.TextColor3 = Color3.new(1, 1, 1)
 
-local start = Instance.new("TextButton", frame)
-start.Size = UDim2.fromOffset(130, 34)
-start.Position = UDim2.fromOffset(318, 220)
-start.Text = "START AUTO"
-start.BackgroundColor3 = Color3.fromRGB(49, 122, 88)
-start.TextColor3 = Color3.new(1, 1, 1)
-start.TextSize = 13
+local speedLabel = Instance.new("TextLabel", controls)
+speedLabel.Size = UDim2.fromOffset(220, 20)
+speedLabel.Position = UDim2.fromOffset(48, 2)
+speedLabel.BackgroundTransparency = 1
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.TextColor3 = Color3.fromRGB(210, 220, 230)
+speedLabel.TextSize = 12
 
-local stop = Instance.new("TextButton", frame)
-stop.Size = UDim2.fromOffset(130, 34)
-stop.Position = UDim2.fromOffset(318, 258)
-stop.Text = "STOP"
-stop.BackgroundColor3 = Color3.fromRGB(128, 68, 68)
-stop.TextColor3 = Color3.new(1, 1, 1)
-stop.TextSize = 13
+local list = Instance.new("ScrollingFrame", frame)
+list.Size = UDim2.new(1, -24, 1, -170)
+list.Position = UDim2.fromOffset(12, 160)
+list.BackgroundColor3 = Color3.fromRGB(28, 31, 38)
+list.BorderSizePixel = 0
+list.ScrollBarThickness = 8
 
-local pulse = Instance.new("TextButton", frame)
-pulse.Size = UDim2.fromOffset(130, 22)
-pulse.Position = UDim2.fromOffset(318, 196)
-pulse.Text = "PULSE ONCE"
-pulse.BackgroundColor3 = Color3.fromRGB(56, 97, 130)
-pulse.TextColor3 = Color3.new(1, 1, 1)
-pulse.TextSize = 12
+local listLayout = Instance.new("UIListLayout")
+listLayout.Parent = list
+listLayout.Padding = UDim.new(0, 4)
 
-local function renderStatus()
-    if not alive then return end
-    OutcomeAssessor.updateMetrics()
-    intervalLabel.Text = string.format("Activation interval: %.2fs", SETTINGS.activationIntervalSeconds)
-    windowLabel.Text = string.format("Outcome window: %.2fs (stall %.1fs)", SETTINGS.delayedOutcomeWindowSeconds, SETTINGS.stallWindowSeconds)
+for _, feature in ipairs(featureOrder) do
+    local row = Instance.new("Frame", list)
+    row.Size = UDim2.new(1, -8, 0, 52)
+    row.BackgroundColor3 = Color3.fromRGB(36, 40, 49)
+    row.BorderSizePixel = 0
 
+    local toggle = Instance.new("TextButton", row)
+    toggle.Size = UDim2.fromOffset(84, 28)
+    toggle.Position = UDim2.fromOffset(6, 12)
+    toggle.TextColor3 = Color3.new(1, 1, 1)
+
+    local titleLabel = Instance.new("TextLabel", row)
+    titleLabel.Size = UDim2.fromOffset(250, 22)
+    titleLabel.Position = UDim2.fromOffset(98, 4)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.TextColor3 = Color3.fromRGB(235, 240, 245)
+    titleLabel.TextSize = 12
+    titleLabel.Text = feature.title .. (feature.destructive and " [manual only]" or "")
+
+    local statusLabel = Instance.new("TextLabel", row)
+    statusLabel.Size = UDim2.new(1, -350, 0, 24)
+    statusLabel.Position = UDim2.fromOffset(98, 26)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.TextColor3 = Color3.fromRGB(208, 216, 224)
+    statusLabel.TextSize = 11
+
+    local metricsLabel = Instance.new("TextLabel", row)
+    metricsLabel.Size = UDim2.fromOffset(220, 24)
+    metricsLabel.Position = UDim2.new(1, -224, 0, 14)
+    metricsLabel.BackgroundTransparency = 1
+    metricsLabel.TextXAlignment = Enum.TextXAlignment.Right
+    metricsLabel.TextColor3 = Color3.fromRGB(218, 228, 238)
+    metricsLabel.TextSize = 11
+
+    rows[feature.id] = {
+        toggle = toggle,
+        status = statusLabel,
+        metrics = metricsLabel,
+    }
+
+    toggle.MouseButton1Click:Connect(function()
+        if not feature.supported then
+            feature.lastStatus = "unavailable"
+            return
+        end
+        if feature.running then
+            stopFeature(feature, "stopped")
+        else
+            startFeature(feature)
+        end
+    end)
+end
+
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    list.CanvasSize = UDim2.fromOffset(0, listLayout.AbsoluteContentSize.Y + 8)
+end)
+
+local function renderRows()
+    local runningCount = 0
+    for _, feature in ipairs(featureOrder) do
+        local row = rows[feature.id]
+        if feature.running then runningCount += 1 end
+        if row then
+            if not feature.supported then
+                row.toggle.Text = "N/A"
+                row.toggle.BackgroundColor3 = Color3.fromRGB(72, 74, 80)
+            elseif feature.running then
+                row.toggle.Text = "STOP"
+                row.toggle.BackgroundColor3 = Color3.fromRGB(140, 70, 70)
+            else
+                row.toggle.Text = "START"
+                row.toggle.BackgroundColor3 = Color3.fromRGB(52, 118, 84)
+            end
+            row.status.Text = string.format("status=%s | lastProgress=%s", tostring(feature.lastStatus), tostring(feature.lastProgress))
+            row.metrics.Text = string.format("A:%d S:%d E:%d P:%d", feature.attempts, feature.successes, feature.errors, feature.progressEvents)
+        end
+    end
+    state.stalled = (runningCount > 0 and state.strengthGainPerMinute <= 0 and (os.clock() - state.startClock) > SETTINGS.stallWindowSeconds)
+end
+
+local function renderSummary()
     local elapsed = os.clock() - state.startClock
     local currentStrengthText = state.currentStrength and tostring(round(state.currentStrength, 3)) or "n/a"
     local initialStrengthText = state.initialStrength and tostring(round(state.initialStrength, 3)) or "n/a"
-    local lastProgress = "none"
-    if state.lastProgressionAt then
-        lastProgress = string.format("%.1fs ago (%s)", os.clock() - state.lastProgressionAt, state.lastProgressionNote)
-    end
-
+    speedLabel.Text = string.format("Global speed scale: %.2fx", state.intervalScale)
     local lines = {
-        "Tool: " .. tostring(CONTRACT.toolPath),
-        "Primary progression path: " .. tostring(StateObserver.primaryPath or ((CONTRACT.outcomeModel or {}).primaryStatePath or "n/a")),
-        "Current Strength: " .. currentStrengthText .. " | Initial: " .. initialStrengthText,
-        "Total Strength gained: " .. tostring(round(state.totalStrengthGain, 3)) .. " | Strength gained per minute: " .. tostring(round(state.strengthGainPerMinute, 3)),
-        "Quest repetition gain (separate): " .. tostring(round(state.repetitionProgressGain, 3)),
-        "Activations attempted/succeeded/failed: " .. tostring(state.activationAttempts) .. "/" .. tostring(state.activationSuccess) .. "/" .. tostring(state.activationFailures),
-        "Delayed attribution: " .. tostring(state.attributedActivations) .. " activations linked within window; pending=" .. tostring(#state.pendingActivations),
-        "Training duration: " .. formatDuration(elapsed) .. " | Last progression: " .. lastProgress,
-        "Stall detection: " .. tostring(state.stalled) .. " (no forced per-activation increase assumption)",
-        "Running: " .. tostring(running) .. " | Status: " .. tostring(state.lastStatus),
+        string.format("Strength current=%s initial=%s totalGain=%s gain/min=%s", currentStrengthText, initialStrengthText, tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3))),
+        string.format("Elapsed %.1fs | stalled=%s | status=%s", elapsed, tostring(state.stalled), tostring(state.lastStatus)),
+        string.format("Delayed window=%.2fs | unsupportedFeatures=%d", SETTINGS.delayedOutcomeWindowSeconds, #(CONTRACT.unsupportedFeatures or {})),
     }
-    if state.lastError then
-        lines[#lines + 1] = "Last error: " .. tostring(state.lastError)
-    end
-    status.Text = table.concat(lines, "\n")
-end
-
-local function stopLoop(reason)
-    running = false
-    state.lastStatus = reason or "stopped"
-    renderStatus()
-end
-
-local function runPulse()
-    ActionExecutor.activateOnce()
-    renderStatus()
-end
-
-local function startLoop()
-    if running then
-        state.lastStatus = "already running"
-        renderStatus()
-        return
-    end
-    running = true
-    runGeneration += 1
-    local generation = runGeneration
-    state.lastStatus = "running"
-    task.spawn(function()
-        while alive and running and generation == runGeneration do
-            ActionExecutor.activateOnce()
-            renderStatus()
-            task.wait(SETTINGS.activationIntervalSeconds)
-        end
-    end)
-    renderStatus()
+    summary.Text = table.concat(lines, "\n")
 end
 
 local function closeAll()
-    if not alive then return end
-    alive = false
-    running = false
-    runGeneration += 1
+    state.alive = false
+    stopAll("closed")
     for _, connection in ipairs(connections) do
         pcall(function() connection:Disconnect() end)
     end
     gui:Destroy()
+    _G.LycolesMuscleAutoTrainStartAll = nil
+    _G.LycolesMuscleAutoTrainStopAll = nil
+    _G.LycolesMuscleAutoTrainExportReport = nil
     _G.LycolesMuscleAutoTrainClose = nil
-    _G.LycolesMuscleAutoTrainStart = nil
-    _G.LycolesMuscleAutoTrainStop = nil
-    _G.LycolesMuscleAutoTrainPulse = nil
 end
 
-StateObserver.refreshBindings(true)
+startAllButton.MouseButton1Click:Connect(function() startAll() end)
+stopAllButton.MouseButton1Click:Connect(function() stopAll("stop-all") state.lastStatus = "stop-all issued" end)
+copyReportButton.MouseButton1Click:Connect(function() exportDiagnosticReport() end)
+closeButton.MouseButton1Click:Connect(closeAll)
 
-connections[#connections + 1] = player.CharacterAdded:Connect(function()
-    task.delay(0.2, function()
-        if not alive then return end
-        StateObserver.refreshBindings(false)
-        state.lastStatus = "character respawn detected; bindings refreshed"
-        renderStatus()
-    end)
+connections[#connections + 1] = speedMinus.MouseButton1Click:Connect(function()
+    state.intervalScale = clamp(state.intervalScale - 0.05, 0.25, 3.0)
+end)
+connections[#connections + 1] = speedPlus.MouseButton1Click:Connect(function()
+    state.intervalScale = clamp(state.intervalScale + 0.05, 0.25, 3.0)
 end)
 
-connections[#connections + 1] = intervalMinus.MouseButton1Click:Connect(function()
-    SETTINGS.activationIntervalSeconds = clamp(SETTINGS.activationIntervalSeconds - 0.05, SETTINGS.minActivationIntervalSeconds, SETTINGS.maxActivationIntervalSeconds)
-    renderStatus()
-end)
-connections[#connections + 1] = intervalPlus.MouseButton1Click:Connect(function()
-    SETTINGS.activationIntervalSeconds = clamp(SETTINGS.activationIntervalSeconds + 0.05, SETTINGS.minActivationIntervalSeconds, SETTINGS.maxActivationIntervalSeconds)
-    renderStatus()
-end)
-connections[#connections + 1] = windowMinus.MouseButton1Click:Connect(function()
-    SETTINGS.delayedOutcomeWindowSeconds = clamp(SETTINGS.delayedOutcomeWindowSeconds - 0.1, SETTINGS.minOutcomeWindowSeconds, SETTINGS.maxOutcomeWindowSeconds)
-    SETTINGS.stallWindowSeconds = math.max(8.0, SETTINGS.delayedOutcomeWindowSeconds * 6.0)
-    renderStatus()
-end)
-connections[#connections + 1] = windowPlus.MouseButton1Click:Connect(function()
-    SETTINGS.delayedOutcomeWindowSeconds = clamp(SETTINGS.delayedOutcomeWindowSeconds + 0.1, SETTINGS.minOutcomeWindowSeconds, SETTINGS.maxOutcomeWindowSeconds)
-    SETTINGS.stallWindowSeconds = math.max(8.0, SETTINGS.delayedOutcomeWindowSeconds * 6.0)
-    renderStatus()
-end)
-connections[#connections + 1] = start.MouseButton1Click:Connect(startLoop)
-connections[#connections + 1] = stop.MouseButton1Click:Connect(function() stopLoop("stopped by operator") end)
-connections[#connections + 1] = pulse.MouseButton1Click:Connect(runPulse)
-connections[#connections + 1] = close.MouseButton1Click:Connect(closeAll)
+_G.LycolesMuscleAutoTrainStartAll = startAll
+_G.LycolesMuscleAutoTrainStopAll = stopAll
+_G.LycolesMuscleAutoTrainExportReport = exportDiagnosticReport
+_G.LycolesMuscleAutoTrainClose = closeAll
 
 task.spawn(function()
-    while alive do
-        StateObserver.refreshBindings(false)
-        renderStatus()
+    while state.alive do
+        updateGlobalProgression()
+        for _, feature in ipairs(featureOrder) do
+            refreshFeatureProgress(feature)
+        end
+        renderRows()
+        renderSummary()
         task.wait(SETTINGS.pollIntervalSeconds)
     end
 end)
-
-state.lastStatus = "ready"
-renderStatus()
-_G.LycolesMuscleAutoTrainStart = startLoop
-_G.LycolesMuscleAutoTrainStop = stopLoop
-_G.LycolesMuscleAutoTrainPulse = runPulse
-_G.LycolesMuscleAutoTrainClose = closeAll

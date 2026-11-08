@@ -679,9 +679,285 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     poll_interval = max(0.1, min(1.0, round(delay * 0.45, 2)))
     stall_window = max(8.0, min(75.0, round(delay * 12.0 + 6.0, 2)))
 
+    def is_actionable_gui_path(path: str) -> bool:
+        low = path.lower()
+        blocked_tokens = ("exitbutton", "xbutton", ".close", "declinebutton", ".no", "cancel")
+        return not any(token in low for token in blocked_tokens)
+
+    control_paths_by_type: dict[str, list[str]] = {}
+    for event in events:
+        control_type = event.get("controlType")
+        path = event.get("path")
+        if not isinstance(control_type, str) or not isinstance(path, str):
+            continue
+        bucket = control_paths_by_type.setdefault(control_type, [])
+        if path not in bucket:
+            bucket.append(path)
+
+    def collect_gui_paths(feature: Optional[str] = None) -> list[str]:
+        found: list[str] = []
+        seen: set[str] = set()
+        for event in events:
+            if event.get("controlType") != "GuiButton.Activated":
+                continue
+            if feature is not None and event.get("featureCandidate") != feature:
+                continue
+            path = event.get("path")
+            if not isinstance(path, str) or "PlayerGui" not in path:
+                continue
+            if not is_actionable_gui_path(path):
+                continue
+            if path not in seen:
+                seen.add(path)
+                found.append(path)
+        return found
+
+    features_by_name = {}
+    for item in payload.get("features") or []:
+        if isinstance(item, dict) and isinstance(item.get("feature"), str):
+            features_by_name[item["feature"].lower()] = item
+
+    readiness_by_name = {}
+    feature_readiness = payload.get("featureReadiness")
+    if isinstance(feature_readiness, dict):
+        for key, value in feature_readiness.items():
+            if isinstance(key, str) and isinstance(value, dict):
+                readiness_by_name[key.lower()] = value
+
+    reward_paths = collect_gui_paths(feature="rewards")
+    rebirth_open_paths = [path for path in collect_gui_paths(feature="rebirth") if "rebirth" in path.lower()]
+    rebirth_confirm_paths = [
+        path for path in collect_gui_paths() if "yesbutton" in path.lower() and "basechoice" in path.lower()
+    ]
+    quest_gui_paths = [path for path in collect_gui_paths() if "quest" in path.lower()]
+    proximity_paths = [path for path in control_paths_by_type.get("ProximityPrompt.Triggered", []) if isinstance(path, str)]
+
+    inventory_feature = features_by_name.get("inventory", {})
+    rewards_feature = features_by_name.get("rewards", {})
+    rebirth_feature = features_by_name.get("rebirth", {})
+    inventory_readiness = readiness_by_name.get("inventory", {})
+    rewards_readiness = readiness_by_name.get("rewards", {})
+    rebirth_readiness = readiness_by_name.get("rebirth", {})
+
     tool_name = selected["path"].split(".")[-1]
+
+    feature_contracts: list[dict[str, Any]] = []
+    unsupported_features: list[dict[str, Any]] = []
+
+    feature_contracts.append({
+        "id": "auto_train",
+        "title": "Auto Train",
+        "category": "auto-train",
+        "supported": True,
+        "destructive": False,
+        "includeInStartAll": True,
+        "defaultEnabled": True,
+        "action": {
+            "kind": "tool_activate",
+            "toolPath": selected["path"],
+            "toolName": tool_name,
+            "intervalSeconds": activation_interval,
+        },
+        "monitor": {
+            "kind": "delayed-cumulative",
+            "primaryOutcomePath": primary_path,
+            "candidateStatePaths": candidate_paths,
+            "questRepetitionStatePaths": repetition_paths,
+            "ignoredNoisyStatePaths": noisy_paths,
+            "stallWindowSeconds": stall_window,
+            "pollIntervalSeconds": poll_interval,
+        },
+        "evidence": {
+            "featureCandidate": "inventory",
+            "interactionEvents": len(tool_events),
+            "matchingPathEvents": selected["count"],
+            "readiness": inventory_feature.get("readiness") or inventory_readiness.get("readiness"),
+            "observableOutcomeCandidates": inventory_feature.get("observableOutcomeCandidates") or inventory_readiness.get("observableOutcomeCandidates"),
+        },
+    })
+
+    equip_event_count = len(control_paths_by_type.get("Tool.Equipped", []))
+    if selected["count"] >= 1 and equip_event_count >= 1:
+        feature_contracts.append({
+            "id": "auto_equip",
+            "title": "Auto Equip",
+            "category": "auto-equip",
+            "supported": True,
+            "destructive": False,
+            "includeInStartAll": True,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "ensure_tool_equipped",
+                "toolPath": selected["path"],
+                "toolName": tool_name,
+                "intervalSeconds": max(0.4, round(activation_interval * 2.0, 2)),
+            },
+            "monitor": {
+                "kind": "toggle-state",
+                "candidateStatePaths": [selected["path"] + ".Equipped", selected["path"] + ".Unequipped"],
+            },
+            "evidence": {
+                "featureCandidate": "inventory",
+                "toolEquippedEvents": equip_event_count,
+                "toolUnequippedEvents": len(control_paths_by_type.get("Tool.Unequipped", [])),
+                "readiness": inventory_feature.get("readiness") or inventory_readiness.get("readiness"),
+            },
+        })
+    else:
+        unsupported_features.append({
+            "id": "auto_equip",
+            "title": "Auto Equip",
+            "category": "auto-equip",
+            "reason": "Tool equip/unequip interaction evidence is insufficient",
+            "evidence": {
+                "toolEquippedEvents": equip_event_count,
+                "toolPath": selected["path"],
+            },
+        })
+
+    if len(reward_paths) > 0:
+        feature_contracts.append({
+            "id": "auto_rewards",
+            "title": "Auto Rewards",
+            "category": "auto-rewards",
+            "supported": True,
+            "destructive": False,
+            "includeInStartAll": True,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "gui_activate_many",
+                "paths": reward_paths,
+                "intervalSeconds": max(0.75, round(delay * 1.6, 2)),
+            },
+            "monitor": {
+                "kind": "multi-state",
+                "candidateStatePaths": [path for path in candidate_paths if "reward" in path.lower() or "gift" in path.lower()],
+            },
+            "evidence": {
+                "featureCandidate": "rewards",
+                "guiActionPathCount": len(reward_paths),
+                "readiness": rewards_feature.get("readiness") or rewards_readiness.get("readiness"),
+                "observableOutcomeCandidates": rewards_feature.get("observableOutcomeCandidates") or rewards_readiness.get("observableOutcomeCandidates"),
+            },
+        })
+    else:
+        unsupported_features.append({
+            "id": "auto_rewards",
+            "title": "Auto Rewards",
+            "category": "auto-rewards",
+            "reason": "No actionable reward GUI controls were observed",
+            "evidence": {
+                "featureCandidate": "rewards",
+                "observedGuiInteractions": len(collect_gui_paths(feature="rewards")),
+            },
+        })
+
+    if len(rebirth_open_paths) > 0 and len(rebirth_confirm_paths) > 0:
+        feature_contracts.append({
+            "id": "auto_rebirth",
+            "title": "Auto Rebirth",
+            "category": "auto-rebirth",
+            "supported": True,
+            "destructive": True,
+            "includeInStartAll": False,
+            "defaultEnabled": False,
+            "action": {
+                "kind": "gui_sequence",
+                "steps": [
+                    {"kind": "gui_activate", "path": rebirth_open_paths[0]},
+                    {"kind": "gui_activate", "path": rebirth_confirm_paths[0]},
+                ],
+                "intervalSeconds": max(1.5, round(delay * 3.0, 2)),
+            },
+            "monitor": {
+                "kind": "multi-state",
+                "candidateStatePaths": [path for path in candidate_paths if "rebirth" in path.lower()],
+            },
+            "evidence": {
+                "featureCandidate": "rebirth",
+                "openPath": rebirth_open_paths[0],
+                "confirmPath": rebirth_confirm_paths[0],
+                "readiness": rebirth_feature.get("readiness") or rebirth_readiness.get("readiness"),
+            },
+        })
+    else:
+        unsupported_features.append({
+            "id": "auto_rebirth",
+            "title": "Auto Rebirth",
+            "category": "auto-rebirth",
+            "reason": "Observed rebirth interactions do not include both open and confirm actions",
+            "evidence": {
+                "rebirthOpenPaths": rebirth_open_paths,
+                "rebirthConfirmPaths": rebirth_confirm_paths,
+                "featureCandidate": "rebirth",
+            },
+        })
+
+    if len(quest_gui_paths) > 0 or len(repetition_paths) > 0:
+        if len(quest_gui_paths) > 0:
+            action_payload = {
+                "kind": "gui_activate_many",
+                "paths": quest_gui_paths,
+                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
+            }
+            include_in_start_all = True
+            title = "Quest Automation"
+        else:
+            action_payload = {
+                "kind": "observe_only",
+                "intervalSeconds": max(1.0, round(delay * 2.2, 2)),
+            }
+            include_in_start_all = False
+            title = "Quest Progress Watch"
+
+        feature_contracts.append({
+            "id": "quest_automation",
+            "title": title,
+            "category": "quest",
+            "supported": True,
+            "destructive": False,
+            "includeInStartAll": include_in_start_all,
+            "defaultEnabled": False,
+            "action": action_payload,
+            "monitor": {
+                "kind": "quest-repetition",
+                "candidateStatePaths": repetition_paths,
+            },
+            "evidence": {
+                "guiQuestPathCount": len(quest_gui_paths),
+                "repetitionStatePathCount": len(repetition_paths),
+            },
+        })
+    else:
+        unsupported_features.append({
+            "id": "quest_automation",
+            "title": "Quest Automation",
+            "category": "quest",
+            "reason": "No quest GUI controls or repetition-progress states were observed",
+            "evidence": {"repetitionStatePathCount": len(repetition_paths)},
+        })
+
+    if len(proximity_paths) == 0:
+        unsupported_features.append({
+            "id": "proximity_interactions",
+            "title": "Proximity Interactions",
+            "category": "proximity",
+            "reason": "No explicit ProximityPrompt trigger paths were observed",
+            "evidence": {
+                "observedInteractActionKinds": sum(1 for event in events if event.get("actionKind") == "interact"),
+            },
+        })
+
+    version_file = pathlib.Path(__file__).resolve().parent.parent / "version.txt"
+    try:
+        project_version = version_file.read_text(encoding="utf-8").strip() or "unknown"
+    except OSError:
+        project_version = "unknown"
+
+    generated_feature_ids = [item["id"] for item in feature_contracts]
+
     return {
-        "schemaVersion": "117.observation-tool-contract.2",
+        "schemaVersion": "117.observation-tool-contract.3",
         "requestedCapability": requested_capability,
         "scanId": payload.get("scanId"),
         "placeId": payload.get("placeId"),
@@ -717,6 +993,19 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "observedStateKeyCount": len(state_key_stats),
         },
         "outcomeStateKeys": candidate_paths,
+        "featureContracts": feature_contracts,
+        "unsupportedFeatures": unsupported_features,
+        "generatedFeatureIds": generated_feature_ids,
+        "interactionSummary": {
+            "totalObservedEvents": len(events),
+            "controlTypesObserved": sorted(control_paths_by_type.keys()),
+            "featureCandidatesObserved": sorted({event.get("featureCandidate") for event in events if isinstance(event.get("featureCandidate"), str)}),
+        },
+        "generatorMetadata": {
+            "generatorVersion": "receiver_generation_pipeline.observation-contract.3",
+            "projectVersion": project_version,
+            "inspectorSchemaVersion": payload.get("schemaVersion"),
+        },
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -743,7 +1032,7 @@ def _recover_observation_only_auto_train(
     if not isinstance(contract, dict):
         return None
     scenario_output_root.mkdir(parents=True, exist_ok=True)
-    script_path = scenario_output_root / "LycolesGeneratedAutoTrain.lua"
+    script_path = scenario_output_root / "LycolesGeneratedFeatureBatch.lua"
     contract_path = scenario_output_root / "observation-tool-contract.json"
     summary_path = scenario_output_root / "observation-recovery-summary.json"
     loader_path = scenario_output_root / "PotassiumLoaderTemplate.lua"
@@ -762,17 +1051,23 @@ def _recover_observation_only_auto_train(
         encoding="utf-8",
     )
 
+    supported_features = [item for item in (contract.get("featureContracts") or []) if item.get("supported") is not False]
+    unsupported_features = list(contract.get("unsupportedFeatures") or [])
+
     summary = {
-        "schemaVersion": "117.observation-recovery-summary.1",
+        "schemaVersion": "117.observation-recovery-summary.2",
         "status": "generated-observation-contract",
         "generatedScriptPath": str(script_path),
-        "generatedScriptKind": "observation-tool-auto-train",
+        "generatedScriptKind": "observation-multi-feature-batch",
         "loaderTemplatePath": str(loader_path),
         "contractPath": str(contract_path),
         "toolPath": contract["toolPath"],
         "primaryOutcomePath": ((contract.get("outcomeModel") or {}).get("primaryStatePath")),
         "questRepetitionStatePathCount": len(((contract.get("outcomeModel") or {}).get("questRepetitionStatePaths") or [])),
         "outcomeStateKeyCount": len(contract.get("outcomeStateKeys") or []),
+        "implementedFeatures": [item.get("id") for item in supported_features],
+        "excludedFeatures": [item.get("id") for item in unsupported_features],
+        "unsupportedFeatures": unsupported_features,
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -783,9 +1078,9 @@ def _recover_observation_only_auto_train(
         "executableLogic": {
             "requestExecutableStatus": "request-executable-ready",
             "automaticExecutionRequired": True,
-            "automaticExecutionReadyWorkflowCandidates": 1,
-            "requestAlignedAutomaticExecutionReadyWorkflows": 1,
-            "selectedWorkflowCandidateId": "observation-recovery-tool-contract",
+            "automaticExecutionReadyWorkflowCandidates": len(supported_features),
+            "requestAlignedAutomaticExecutionReadyWorkflows": len(supported_features),
+            "selectedWorkflowCandidateId": "observation-recovery-multi-feature-contract",
             "requestImplementationReady": False,
             "requestStatus": "generated-bounded-subset",
         },

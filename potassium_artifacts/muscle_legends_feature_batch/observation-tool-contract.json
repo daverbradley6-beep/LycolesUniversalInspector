@@ -1,0 +1,293 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "featureContracts": [
+    {
+      "action": {
+        "intervalSeconds": 0.35,
+        "kind": "tool_activate",
+        "toolName": "Weight",
+        "toolPath": "LocalPlayer.Backpack.Weight"
+      },
+      "category": "auto-train",
+      "defaultEnabled": true,
+      "destructive": false,
+      "evidence": {
+        "featureCandidate": "inventory",
+        "interactionEvents": 42,
+        "matchingPathEvents": 26,
+        "observableOutcomeCandidates": 1,
+        "readiness": "observable-outcome-candidate-needs-causal-validation"
+      },
+      "id": "auto_train",
+      "includeInStartAll": true,
+      "monitor": {
+        "candidateStatePaths": [
+          "leaderstats.Strength",
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
+          "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
+          "Backpack.Tools.Count",
+          "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
+        ],
+        "ignoredNoisyStatePaths": [
+          "Character.RootPart.VelocityMagnitude",
+          "Character.Humanoid.WalkSpeed",
+          "Character.Humanoid.JumpPower",
+          "Character.Humanoid.ActiveAnimationCount",
+          "Character.Humanoid.Health",
+          "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
+          "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress"
+        ],
+        "kind": "delayed-cumulative",
+        "pollIntervalSeconds": 0.56,
+        "primaryOutcomePath": "leaderstats.Strength",
+        "questRepetitionStatePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+        ],
+        "stallWindowSeconds": 21.0
+      },
+      "supported": true,
+      "title": "Auto Train"
+    },
+    {
+      "action": {
+        "intervalSeconds": 0.7,
+        "kind": "ensure_tool_equipped",
+        "toolName": "Weight",
+        "toolPath": "LocalPlayer.Backpack.Weight"
+      },
+      "category": "auto-equip",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "featureCandidate": "inventory",
+        "readiness": "observable-outcome-candidate-needs-causal-validation",
+        "toolEquippedEvents": 5,
+        "toolUnequippedEvents": 5
+      },
+      "id": "auto_equip",
+      "includeInStartAll": true,
+      "monitor": {
+        "candidateStatePaths": [
+          "LocalPlayer.Backpack.Weight.Equipped",
+          "LocalPlayer.Backpack.Weight.Unequipped"
+        ],
+        "kind": "toggle-state"
+      },
+      "supported": true,
+      "title": "Auto Equip"
+    },
+    {
+      "action": {
+        "intervalSeconds": 2.0,
+        "kind": "gui_activate_many",
+        "paths": [
+          "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift8.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift1.HitBox",
+          "LocalPlayer.PlayerGui.fortuneWheelMenuGui.fortuneMenu.buttonsFrame.spinButton"
+        ]
+      },
+      "category": "auto-rewards",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "featureCandidate": "rewards",
+        "guiActionPathCount": 5,
+        "observableOutcomeCandidates": 3,
+        "readiness": "observable-outcome-candidate-needs-causal-validation"
+      },
+      "id": "auto_rewards",
+      "includeInStartAll": true,
+      "monitor": {
+        "candidateStatePaths": [],
+        "kind": "multi-state"
+      },
+      "supported": true,
+      "title": "Auto Rewards"
+    },
+    {
+      "action": {
+        "intervalSeconds": 3.75,
+        "kind": "gui_sequence",
+        "steps": [
+          {
+            "kind": "gui_activate",
+            "path": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.MiddleLeft.BTNList.Rebirth"
+          },
+          {
+            "kind": "gui_activate",
+            "path": "LocalPlayer.PlayerGui.gameGui.baseChoiceMenu.Content.Buttons.yesButton"
+          }
+        ]
+      },
+      "category": "auto-rebirth",
+      "defaultEnabled": false,
+      "destructive": true,
+      "evidence": {
+        "confirmPath": "LocalPlayer.PlayerGui.gameGui.baseChoiceMenu.Content.Buttons.yesButton",
+        "featureCandidate": "rebirth",
+        "openPath": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.MiddleLeft.BTNList.Rebirth",
+        "readiness": "interaction-observed-needs-state-verification"
+      },
+      "id": "auto_rebirth",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [],
+        "kind": "multi-state"
+      },
+      "supported": true,
+      "title": "Auto Rebirth"
+    },
+    {
+      "action": {
+        "intervalSeconds": 2.75,
+        "kind": "observe_only"
+      },
+      "category": "quest",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "guiQuestPathCount": 0,
+        "repetitionStatePathCount": 1
+      },
+      "id": "quest_automation",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+        ],
+        "kind": "quest-repetition"
+      },
+      "supported": true,
+      "title": "Quest Progress Watch"
+    }
+  ],
+  "gameName": "🎃Muscle Legends",
+  "generatedFeatureIds": [
+    "auto_train",
+    "auto_equip",
+    "auto_rewards",
+    "auto_rebirth",
+    "quest_automation"
+  ],
+  "generatorMetadata": {
+    "generatorVersion": "receiver_generation_pipeline.observation-contract.3",
+    "inspectorSchemaVersion": "30.6.live-observation-export.1",
+    "projectVersion": "30.6.40"
+  },
+  "interactionSummary": {
+    "controlTypesObserved": [
+      "GuiButton.Activated",
+      "Humanoid.Jumping",
+      "InputBegan.Keyboard",
+      "InputBegan.MouseButton1",
+      "InputBegan.MouseButton2",
+      "Tool.Activated",
+      "Tool.Equipped",
+      "Tool.Unequipped"
+    ],
+    "featureCandidatesObserved": [
+      "inventory",
+      "movement",
+      "rebirth",
+      "rewards"
+    ],
+    "totalObservedEvents": 180
+  },
+  "matchingToolActivationEvents": 26,
+  "observationDelaySeconds": 1.25,
+  "outcomeModel": {
+    "candidateStatePaths": [
+      "leaderstats.Strength",
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+      "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+      "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+      "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
+      "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
+      "Backpack.Tools.Count",
+      "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
+    ],
+    "ignoredNoisyStatePaths": [
+      "Character.RootPart.VelocityMagnitude",
+      "Character.Humanoid.WalkSpeed",
+      "Character.Humanoid.JumpPower",
+      "Character.Humanoid.ActiveAnimationCount",
+      "Character.Humanoid.Health",
+      "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
+      "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress"
+    ],
+    "kind": "delayed-cumulative",
+    "observedStateKeyCount": 21,
+    "primaryStatePath": "leaderstats.Strength",
+    "questRepetitionStatePaths": [
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+    ]
+  },
+  "outcomeStateKeys": [
+    "leaderstats.Strength",
+    "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+    "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+    "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+    "LocalPlayer.Quests.Daily Quests.Strength King.requirements.Strength.progress",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.strength",
+    "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.exp",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.damage",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.durability",
+    "Backpack.Tools.Count",
+    "LocalPlayer.petsFolder.Epic.Cursed Candle.perksFolder.agility"
+  ],
+  "placeId": 3623096087,
+  "requestedCapability": "Automatically train, collect rewards, and manage supported workflows in Muscle Legends",
+  "scanId": "FE1C0EDA-12C4-43BC-B490-062412BD0DD1",
+  "schemaVersion": "117.observation-tool-contract.3",
+  "stateDeltaEvents": 317,
+  "timing": {
+    "activationIntervalSeconds": 0.35,
+    "delayedOutcomeWindowSeconds": 1.25,
+    "maxActivationIntervalSeconds": 2.0,
+    "maxOutcomeWindowSeconds": 10.0,
+    "minActivationIntervalSeconds": 0.1,
+    "minOutcomeWindowSeconds": 0.25,
+    "pollIntervalSeconds": 0.56,
+    "stallWindowSeconds": 21.0
+  },
+  "toolActivationEvents": 42,
+  "toolMetadata": {
+    "canBeDropped": false,
+    "enabled": true,
+    "manualActivationOnly": false,
+    "requiresHandle": true
+  },
+  "toolName": "Weight",
+  "toolPath": "LocalPlayer.Backpack.Weight",
+  "unsupportedFeatures": [
+    {
+      "category": "proximity",
+      "evidence": {
+        "observedInteractActionKinds": 2
+      },
+      "id": "proximity_interactions",
+      "reason": "No explicit ProximityPrompt trigger paths were observed",
+      "title": "Proximity Interactions"
+    }
+  ]
+}

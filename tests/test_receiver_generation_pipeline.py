@@ -383,6 +383,44 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                     ],
                     "observationWindows": [{"seconds": 0.4}],
                 },
+                {
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "rewards",
+                    "path": "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+                    "stateChanges": [
+                        {"key": "LocalPlayer.leaderstats.Strength", "before": 1045, "after": 1050},
+                    ],
+                    "observationWindows": [{"seconds": 0.7}],
+                },
+                {
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "rewards",
+                    "path": "LocalPlayer.PlayerGui.fortuneWheelMenuGui.fortuneMenu.buttonsFrame.spinButton",
+                    "stateChanges": [],
+                    "observationWindows": [{"seconds": 0.9}],
+                },
+                {
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "rebirth",
+                    "path": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.MiddleLeft.BTNList.Rebirth",
+                    "stateChanges": [],
+                    "observationWindows": [{"seconds": 0.8}],
+                },
+                {
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": None,
+                    "path": "LocalPlayer.PlayerGui.gameGui.baseChoiceMenu.Content.Buttons.yesButton",
+                    "stateChanges": [],
+                    "observationWindows": [{"seconds": 0.8}],
+                },
+                {
+                    "controlType": "InputBegan.Keyboard",
+                    "actionKind": "interact",
+                    "path": "LocalPlayer.Input.Keyboard.E",
+                    "stateChanges": [],
+                    "observationWindows": [{"seconds": 0.5}],
+                },
+
             ],
         },
     }
@@ -692,6 +730,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(pathlib.Path(summary["loaderTemplatePath"]).is_file())
 
             contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
+            self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.3")
             outcome_model = contract["outcomeModel"]
             self.assertEqual(outcome_model["kind"], "delayed-cumulative")
             self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")
@@ -703,12 +742,19 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress",
                 outcome_model["questRepetitionStatePaths"],
             )
+            self.assertIn("auto_train", contract["generatedFeatureIds"])
+            self.assertIn("auto_rewards", contract["generatedFeatureIds"])
+            self.assertIn("auto_rebirth", contract["generatedFeatureIds"])
+
+            self.assertEqual(summary["generatedScriptKind"], "observation-multi-feature-batch")
+            self.assertIn("quest_automation", summary["implementedFeatures"])
+            self.assertIn("proximity_interactions", summary["excludedFeatures"])
 
             script_text = pathlib.Path(summary["generatedScriptPath"]).read_text(encoding="utf-8")
-            self.assertIn("Strength gained per minute", script_text)
-            self.assertIn("Activation interval", script_text)
-            self.assertIn("Outcome window", script_text)
-            self.assertIn("Stall detection", script_text)
+            self.assertIn("START ALL", script_text)
+            self.assertIn("STOP ALL", script_text)
+            self.assertIn("COPY REPORT", script_text)
+            self.assertIn("unsupportedFeatures", script_text)
 
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:
