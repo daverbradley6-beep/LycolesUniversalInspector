@@ -168,11 +168,12 @@
         "requiresEquippedTool": true,
         "statTargets": [
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.61,
             "dataType": "number",
-            "defaultActive": true,
+            "defaultActive": false,
             "defaultSelectedMethodIds": [
               "training_weight"
             ],
@@ -205,11 +206,12 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "primary-progression",
             "causalityProven": false,
             "confidenceLevel": "high",
             "confidenceScore": 0.81,
             "dataType": "number",
-            "defaultActive": false,
+            "defaultActive": true,
             "defaultSelectedMethodIds": [
               "training_weight"
             ],
@@ -242,6 +244,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.61,
@@ -279,6 +282,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.61,
@@ -316,6 +320,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.73,
@@ -340,6 +345,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.73,
@@ -377,6 +383,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "inventory-count",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.61,
@@ -425,6 +432,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "currency-resource",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.4,
@@ -449,6 +457,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "medium",
             "confidenceScore": 0.52,
@@ -473,6 +482,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.4,
@@ -497,6 +507,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.4,
@@ -521,6 +532,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "other-progression",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.44,
@@ -545,6 +557,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.4,
@@ -569,6 +582,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "equipment-or-pet-experience",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.4,
@@ -593,6 +607,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.32,
@@ -617,6 +632,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "inventory-count",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.48,
@@ -654,6 +670,7 @@
             "temporalCorrelationOnly": true
           },
           {
+            "category": "other-progression",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.48,
@@ -678,6 +695,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.24,
@@ -702,6 +720,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.24,
@@ -726,6 +745,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "quest-progress",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.24,
@@ -750,6 +770,7 @@
             "unsupportedReason": "No evidence-backed training relationship observed"
           },
           {
+            "category": "other-progression",
             "causalityProven": false,
             "confidenceLevel": "low",
             "confidenceScore": 0.24,
@@ -920,8 +941,8 @@
       "includeInStartAll": true,
       "monitor": {
         "candidateStatePaths": [
-          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
           "leaderstats.Strength",
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
           "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
           "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
           "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
@@ -938,7 +959,7 @@
         ],
         "kind": "delayed-cumulative",
         "pollIntervalSeconds": 0.56,
-        "primaryOutcomePath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+        "primaryOutcomePath": "leaderstats.Strength",
         "questRepetitionStatePaths": [
           "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
         ],
@@ -949,6 +970,10 @@
     },
     {
       "action": {
+        "claimPaths": [
+          "LocalPlayer.PlayerGui.crystalOpeningGui.bulkClaimButton",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox"
+        ],
         "eligibilityIndicatorPaths": [
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
@@ -957,16 +982,17 @@
         "guardedPaths": [],
         "intervalSeconds": 2.0,
         "kind": "auto_rewards_discovery",
+        "menuOpenPaths": [
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim"
+        ],
         "paths": [
           "LocalPlayer.PlayerGui.crystalOpeningGui.bulkClaimButton",
-          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox",
           "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim"
         ],
         "rewardContainerPaths": [
           "LocalPlayer.PlayerGui.crystalOpeningGui",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards",
-          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base",
           "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs"
         ]
       },
@@ -975,18 +1001,21 @@
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
+        "claimPathCount": 2,
         "eligibilityIndicatorPathCount": 3,
         "featureCandidate": "rewards",
         "guardedPathCount": 0,
-        "guiActionPathCount": 4,
+        "guiActionPathCount": 3,
+        "menuOpenPathCount": 1,
         "observableOutcomeCandidates": 2,
         "readiness": "observable-outcome-candidate-needs-causal-validation",
-        "rewardContainerPathCount": 4
+        "rewardContainerPathCount": 3
       },
       "id": "auto_rewards",
       "includeInStartAll": true,
       "monitor": {
         "candidateStatePaths": [
+          "LocalPlayer.Gems",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
@@ -1011,6 +1040,7 @@
       "outcomeContract": {
         "kind": "reward-state-change",
         "statePaths": [
+          "LocalPlayer.Gems",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
           "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
@@ -1114,18 +1144,16 @@
         "kind": "quest_train_workflow",
         "questClaimPaths": [
           "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton.ButtonLabel",
           "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.CollectButton"
         ],
         "questOpenPaths": [
           "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.TopBtns.Quests",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.LeftSlots.DailyButton.Sunburst",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.LeftSlots.EnchantButton.Sunburst",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.LeftSlots.WeeklyButton.Sunburst",
           "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton.ButtonLabel",
           "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.skipButton",
-          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsEnchant.LeftSlots.WeeklyButton"
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsEnchant.LeftSlots.WeeklyButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.LeftSlots.DailyButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.CollectButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.skipButton"
         ],
         "trainFeatureId": "auto_train"
       },
@@ -1134,19 +1162,28 @@
       "defaultEnabled": false,
       "destructive": false,
       "evidence": {
-        "guiQuestPathCount": 15,
-        "questClaimPathCount": 3,
-        "questSelectPathCount": 15,
+        "guiQuestPathCount": 7,
+        "questClaimPathCount": 2,
+        "questClaimStatePathCount": 1,
+        "questSelectPathCount": 7,
         "repetitionStatePathCount": 1,
-        "workflowBasis": "quest repetition plus actionable quest GUI evidence"
+        "workflowBasis": "quest claim-state plus actionable quest GUI evidence"
       },
       "id": "quest_automation",
       "includeInStartAll": false,
       "monitor": {
         "candidateStatePaths": [
-          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+          "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
         ],
         "kind": "quest-repetition"
+      },
+      "outcomeContract": {
+        "kind": "quest-state-change",
+        "statePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+        ],
+        "strictlyRequireObservedDelta": true,
+        "verificationWindowSeconds": 5.0
       },
       "supported": true,
       "title": "Quest Automation"
@@ -1193,13 +1230,16 @@
     "passiveProgressionSignalCount": 16,
     "progressionStatCount": 21,
     "proximityPromptTriggerCount": 0,
-    "questClaimPathCount": 3,
-    "questGuiPathCount": 15,
+    "questClaimPathCount": 2,
+    "questClaimStatePathCount": 1,
+    "questGuiPathCount": 7,
     "questRepetitionPathCount": 1,
-    "questSelectPathCount": 15,
-    "rewardActionPathCount": 4,
+    "questSelectPathCount": 7,
+    "rewardActionPathCount": 3,
+    "rewardClaimPathCount": 2,
     "rewardGuardedPathCount": 0,
-    "rewardStatePathCount": 18,
+    "rewardMenuOpenPathCount": 1,
+    "rewardStatePathCount": 19,
     "statRegistryCount": 30,
     "totalObservedEvents": 180,
     "trainingMethodCount": 3,
@@ -1209,8 +1249,8 @@
   "observationDelaySeconds": 1.25,
   "outcomeModel": {
     "candidateStatePaths": [
-      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
       "leaderstats.Strength",
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
       "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
       "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
       "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
@@ -1236,14 +1276,14 @@
     ],
     "kind": "delayed-cumulative",
     "observedStateKeyCount": 30,
-    "primaryStatePath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+    "primaryStatePath": "leaderstats.Strength",
     "questRepetitionStatePaths": [
       "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
     ]
   },
   "outcomeStateKeys": [
-    "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
     "leaderstats.Strength",
+    "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
     "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
     "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
     "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
@@ -3270,20 +3310,26 @@
       ],
       "stats": [
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": true,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3305,20 +3351,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "primary-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": true,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": true,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": true,
             "is_time": false
           },
           "confidenceLevel": "high",
@@ -3340,20 +3392,26 @@
           "source": "leaderstats"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": true,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3375,20 +3433,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": true,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3410,20 +3474,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": true,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3445,20 +3515,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": true,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3480,20 +3556,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "inventory-count",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": true,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": true,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3515,20 +3597,26 @@
           "source": "unknown"
         },
         {
+          "category": "currency-resource",
           "classification": {
             "is_animation": false,
             "is_currency": true,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3550,20 +3638,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": true,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "medium",
@@ -3585,20 +3679,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3620,20 +3720,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": true,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3655,20 +3761,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": true,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": true,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3690,20 +3802,26 @@
           "source": "leaderstats"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3725,20 +3843,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "equipment-or-pet-experience",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3760,20 +3884,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3795,20 +3925,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "inventory-count",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": true,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": true,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3830,20 +3966,26 @@
           "source": "character"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3865,20 +4007,26 @@
           "source": "character"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": true,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3900,20 +4048,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": true,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3935,20 +4089,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": true,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -3970,20 +4130,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": true,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4005,20 +4171,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4040,20 +4212,26 @@
           "source": "character"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4075,20 +4253,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "other-progression",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4110,20 +4294,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "transient-state",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4145,20 +4335,26 @@
           "source": "character"
         },
         {
+          "category": "transient-state",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4180,20 +4376,26 @@
           "source": "character"
         },
         {
+          "category": "transient-state",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4215,20 +4417,26 @@
           "source": "character"
         },
         {
+          "category": "transient-state",
           "classification": {
             "is_animation": true,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": false,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": false,
             "is_quest": false,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4250,20 +4458,26 @@
           "source": "character"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": true,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4285,20 +4499,26 @@
           "source": "replicated-player"
         },
         {
+          "category": "quest-progress",
           "classification": {
             "is_animation": false,
             "is_currency": false,
+            "is_equipment": false,
             "is_experience": false,
             "is_health": false,
+            "is_inventory_count": false,
             "is_leaderstats": false,
             "is_level": false,
             "is_minutes": true,
             "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
             "is_progress": true,
             "is_quest": true,
             "is_rebirth": false,
             "is_repetition": false,
             "is_stat_folder": false,
+            "is_strength": false,
             "is_time": false
           },
           "confidenceLevel": "low",
@@ -4323,11 +4543,12 @@
     },
     "statTrainingTargets": [
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.61,
         "dataType": "number",
-        "defaultActive": true,
+        "defaultActive": false,
         "defaultSelectedMethodIds": [
           "training_weight"
         ],
@@ -4360,11 +4581,12 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "primary-progression",
         "causalityProven": false,
         "confidenceLevel": "high",
         "confidenceScore": 0.81,
         "dataType": "number",
-        "defaultActive": false,
+        "defaultActive": true,
         "defaultSelectedMethodIds": [
           "training_weight"
         ],
@@ -4397,6 +4619,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.61,
@@ -4434,6 +4657,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.61,
@@ -4471,6 +4695,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.73,
@@ -4495,6 +4720,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.73,
@@ -4532,6 +4758,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "inventory-count",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.61,
@@ -4580,6 +4807,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "currency-resource",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.4,
@@ -4604,6 +4832,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "medium",
         "confidenceScore": 0.52,
@@ -4628,6 +4857,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.4,
@@ -4652,6 +4882,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.4,
@@ -4676,6 +4907,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "other-progression",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.44,
@@ -4700,6 +4932,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.4,
@@ -4724,6 +4957,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "equipment-or-pet-experience",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.4,
@@ -4748,6 +4982,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.32,
@@ -4772,6 +5007,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "inventory-count",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.48,
@@ -4809,6 +5045,7 @@
         "temporalCorrelationOnly": true
       },
       {
+        "category": "other-progression",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.48,
@@ -4833,6 +5070,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.24,
@@ -4857,6 +5095,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.24,
@@ -4881,6 +5120,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "quest-progress",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.24,
@@ -4905,6 +5145,7 @@
         "unsupportedReason": "No evidence-backed training relationship observed"
       },
       {
+        "category": "other-progression",
         "causalityProven": false,
         "confidenceLevel": "low",
         "confidenceScore": 0.24,

@@ -1,4 +1,45 @@
-## Update — 2026-11-10 — FA86 archive ingestion + dynamic overlay merge hardening
+## Update — 2026-11-10 — Critical live bug-fix pass (train/quest/reward/stat)
+
+### Implemented
+
+- Runtime lifecycle hardening in `tools/observation_auto_train_template.lua`:
+  - Added character lifecycle state machine with `CharacterRemoving`, `CharacterAdded`, and `Humanoid.Died` handling.
+  - Added temporary suspension semantics during respawn and bounded recovery retries/backoff.
+  - Added selected-tool re-equip attempts on recovered characters.
+  - Added lifecycle telemetry export: death count, recovery attempts/successes/failures, last/total recovery durations, failure reasons.
+  - Added visible recovery state in GUI row and summary outputs.
+- Quest/runtime GUI activation safety:
+  - Added actionable button resolution from non-button paths (ancestor + descendant resolution) to avoid `object is not GuiButton` failures.
+  - Added quest control cooldown handling and monitor-only fallback after repeated unresolved actionable controls.
+  - Claim actions now arm verification windows; non-claim navigation does not count as completion.
+- Reward runtime reliability:
+  - Prioritized claim controls vs menu-open controls, with independent cooldown behavior.
+  - Added monitor-only fallback after repeated inability to resolve executable claim controls.
+  - Preserved strict outcome verification (no claim success without observed state/resource deltas).
+- Contract-generation hardening in `tools/receiver_generation_pipeline.py`:
+  - Primary progression path now explicitly prefers leaderstats Strength when evidenced.
+  - Added stat categorization buckets (`primary-progression`, `quest-progress`, `currency-resource`, `inventory-count`, `equipment-or-pet-experience`, `transient-state`, `other-progression`).
+  - Filtered payload-derived quest/reward GUI paths to probable actionable controls (exclude label/frame/decorative paths like `ButtonLabel`/`Sunburst`).
+  - Reward payload-derived candidates are now reward-scoped to avoid quest-collect leakage.
+  - Quest automation now requires claim-state evidence paths; otherwise remains monitor-only.
+- Regenerated Muscle Legends FA86 artifacts and synced:
+  - `potassium_artifacts/muscle_legends_feature_batch/LycolesGeneratedFeatureBatch.lua`
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-tool-contract.json`
+  - `potassium_artifacts/muscle_legends_feature_batch/observation-recovery-summary.json`
+  - `potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch-result.json`
+
+### Validation completed
+
+- Receiver pipeline regressions:
+  - `python3 tests/test_receiver_generation_pipeline.py` (**21/21 passed**)
+- Full regression suite:
+  - `python3 -m unittest discover -s tests` (**1650 passed, 17 skipped**)
+- Luau compile:
+  - `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua` ✅
+  - `build/luau-0.744/luau-compile --null potassium_artifacts/muscle_legends_feature_batch/LycolesGeneratedFeatureBatch.lua` ✅
+  - `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua` ✅
+
+
 
 - Added direct multipart archive ingestion to `tools/receiver_generation_pipeline.py`:
   - `from-parts` now accepts a `.zip` baseline archive or a parts directory,

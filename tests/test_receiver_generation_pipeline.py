@@ -874,7 +874,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                     self.assertFalse(method.get("defaultSelected"))
             self.assertEqual(feature_map["auto_rewards"]["action"]["kind"], "auto_rewards_discovery")
             self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("rewardContainerPaths") or []), 1)
+            self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("claimPaths") or []), 1)
+            self.assertTrue(all(".claimed" not in str(path).lower() for path in (feature_map["auto_rewards"]["action"].get("paths") or [])))
             self.assertEqual(feature_map["quest_monitor"]["action"]["kind"], "observe_only")
+            self.assertIn("quest completion/claim state deltas", feature_map["quest_monitor"]["evidence"].get("missingEvidence") or [])
             self.assertEqual(contract.get("featureDependencies", {}), {})
             self.assertIn("trainingDiscovery", contract)
             self.assertIn("inventoryMethods", contract["trainingDiscovery"])
@@ -882,6 +885,12 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("statRegistry", contract["trainingDiscovery"])
             self.assertIn("statTrainingTargets", contract["trainingDiscovery"])
             self.assertIn("actionStatEvidence", contract["trainingDiscovery"])
+
+            stat_registry = (contract["trainingDiscovery"]["statRegistry"] or {}).get("stats") or []
+            categories = {item.get("category") for item in stat_registry}
+            self.assertIn("primary-progression", categories)
+            self.assertIn("quest-progress", categories)
+
             self.assertGreaterEqual(len((contract["trainingDiscovery"]["statRegistry"] or {}).get("stats") or []), 1)
             self.assertGreaterEqual(len(contract["trainingDiscovery"].get("statTrainingTargets") or []), 1)
             self.assertGreaterEqual(len((contract["trainingDiscovery"].get("actionStatEvidence") or {}).get("relationships") or []), 1)
@@ -912,6 +921,104 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("action-verified-in-gameplay", script_text)
             self.assertIn("firesignal", script_text)
             self.assertIn("unsupportedFeatures", script_text)
+            self.assertIn("CharacterRemoving", script_text)
+            self.assertIn("beginLifecycleRecovery", script_text)
+            self.assertIn("recoveryAttempts", script_text)
+            self.assertIn("no executable reward claim control; monitor-only fallback", script_text)
+            self.assertIn("quest actionable controls unresolved; monitor-only fallback", script_text)
+
+
+    def test_observation_contract_prefers_leaderstats_strength_as_primary_progression(self):
+        payload = {
+            "schemaVersion": "30.6.live-observation-export.1",
+            "scanId": "scan-strength-priority",
+            "placeId": 3623096087,
+            "gameName": "Muscle Legends",
+            "interactionDiagnostics": {
+                "recentInteractions": [
+                    {
+                        "controlType": "Tool.Activated",
+                        "path": "LocalPlayer.Backpack.Weight",
+                        "controlMetadata": {
+                            "enabled": True,
+                            "requiresHandle": True,
+                            "canBeDropped": False,
+                            "manualActivationOnly": False,
+                        },
+                        "stateChanges": [
+                            {"key": "LocalPlayer.leaderstats.Strength", "before": 1000, "after": 1001},
+                            {"key": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress", "before": 40, "after": 52},
+                        ],
+                        "observationWindows": [{"seconds": 0.3}],
+                    },
+                    {
+                        "controlType": "Tool.Activated",
+                        "path": "LocalPlayer.Backpack.Weight",
+                        "controlMetadata": {
+                            "enabled": True,
+                            "requiresHandle": True,
+                            "canBeDropped": False,
+                            "manualActivationOnly": False,
+                        },
+                        "stateChanges": [
+                            {"key": "LocalPlayer.leaderstats.Strength", "before": 1001, "after": 1002},
+                            {"key": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress", "before": 52, "after": 65},
+                        ],
+                        "observationWindows": [{"seconds": 0.4}],
+                    },
+                ]
+            },
+        }
+
+        contract = MODULE._build_observation_tool_contract(payload, "Automatically train strength")
+        self.assertIsNotNone(contract)
+        self.assertEqual((contract.get("outcomeModel") or {}).get("primaryStatePath"), "LocalPlayer.leaderstats.Strength")
+
+        targets = ((contract.get("featureContracts") or [])[0].get("action") or {}).get("statTargets") or []
+        targets_by_path = {item.get("path"): item for item in targets}
+        self.assertTrue(targets_by_path["LocalPlayer.leaderstats.Strength"].get("defaultActive"))
+        self.assertFalse(targets_by_path["LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"].get("defaultActive"))
+
+
+
+    def test_observation_contract_filters_non_actionable_quest_buttonlabel_paths(self):
+        payload = {
+            "schemaVersion": "30.6.live-observation-export.1",
+            "scanId": "scan-quest-filter",
+            "placeId": 3623096087,
+            "gameName": "Muscle Legends",
+            "objects": [
+                {"path": "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton.ButtonLabel"},
+                {"path": "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton"},
+            ],
+            "interactionDiagnostics": {
+                "recentInteractions": [
+                    {
+                        "controlType": "Tool.Activated",
+                        "path": "LocalPlayer.Backpack.Weight",
+                        "controlMetadata": {
+                            "enabled": True,
+                            "requiresHandle": True,
+                            "canBeDropped": False,
+                            "manualActivationOnly": False,
+                        },
+                        "stateChanges": [
+                            {"key": "LocalPlayer.leaderstats.Strength", "before": 100, "after": 110},
+                        ],
+                        "observationWindows": [{"seconds": 0.3}],
+                    }
+                ]
+            },
+        }
+
+        contract = MODULE._build_observation_tool_contract(payload, "Open quest interface")
+        self.assertIsNotNone(contract)
+        feature_map = {item["id"]: item for item in contract.get("featureContracts") or []}
+        self.assertIn("quest_interface", feature_map)
+        paths = (feature_map["quest_interface"]["action"] or {}).get("paths") or []
+        self.assertTrue(any("collectbutton" in str(path).lower() for path in paths))
+        self.assertTrue(all("buttonlabel" not in str(path).lower() for path in paths))
+
 
     def test_generate_from_receiver_requires_read_key(self):
         with tempfile.TemporaryDirectory() as tmp:

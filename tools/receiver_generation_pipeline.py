@@ -675,9 +675,12 @@ def _luau_literal(value: Any) -> str:
 
 def _classify_observed_state_key(key: str) -> dict[str, bool]:
     lower = key.lower()
+    is_leaderstats = ".leaderstats." in lower or lower.startswith("leaderstats.")
+    is_quest = ".quests." in lower or "quest" in lower
+    is_strength = "strength" in lower
     return {
-        "is_leaderstats": ".leaderstats." in lower or lower.startswith("leaderstats."),
-        "is_quest": ".quests." in lower or "quest" in lower,
+        "is_leaderstats": is_leaderstats,
+        "is_quest": is_quest,
         "is_repetition": "reps" in lower or "rep." in lower or "rep_" in lower,
         "is_minutes": "minutes.progress" in lower or ".minutes" in lower,
         "is_health": ".health" in lower or ".humanoid.health" in lower,
@@ -690,6 +693,11 @@ def _classify_observed_state_key(key: str) -> dict[str, bool]:
         "is_currency": any(token in lower for token in ("coin", "cash", "gem", "gold", "token", "currency")),
         "is_rebirth": "rebirth" in lower,
         "is_stat_folder": any(token in lower for token in (".stats.", ".attributes.", ".data.")),
+        "is_inventory_count": lower.endswith(".count") or ".equippedcount" in lower or ".tools.count" in lower,
+        "is_equipment": lower.startswith("backpack.") or ".backpack." in lower or ".tools." in lower,
+        "is_pet": ".petsfolder." in lower or ".pets." in lower,
+        "is_strength": is_strength,
+        "is_primary_strength": is_strength and is_leaderstats and not is_quest,
     }
 
 
@@ -706,6 +714,24 @@ def _stat_source_from_key(key: str) -> str:
     if low.startswith("workspace."):
         return "world"
     return "unknown"
+
+
+def _stat_category_from_key(key: str, classification: dict[str, bool]) -> str:
+    low = key.lower()
+    if classification.get("is_primary_strength"):
+        return "primary-progression"
+    if classification.get("is_quest"):
+        return "quest-progress"
+    if classification.get("is_currency"):
+        return "currency-resource"
+    if classification.get("is_inventory_count"):
+        return "inventory-count"
+    if classification.get("is_pet") or (classification.get("is_experience") and ("pet" in low or "powerupsfolder" in low)):
+        return "equipment-or-pet-experience"
+    if classification.get("is_health") or classification.get("is_animation") or classification.get("is_movement") or classification.get("is_time"):
+        return "transient-state"
+    return "other-progression"
+
 
 
 def _normalize_stat_name_from_key(key: str) -> str:
@@ -925,7 +951,40 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
     if len(progression_ranked) == 0:
         progression_ranked = positive_ranked
 
-    primary_path = progression_ranked[0][0]
+    def _primary_sort_key(item: tuple[str, dict[str, Any]]) -> tuple[float, int, float, str]:
+        key, stats = item
+        return (
+            -float(stats.get("weighted_score", 0.0)),
+            -int(stats.get("increases", 0)),
+            -float(stats.get("delta_up", 0.0)),
+            key,
+        )
+
+    def _pick_primary_path(candidates: list[tuple[str, dict[str, Any]]]) -> Optional[str]:
+        if not candidates:
+            return None
+        preferred_strength = [
+            item for item in candidates
+            if item[1]["classification"].get("is_primary_strength")
+        ]
+        if preferred_strength:
+            return sorted(preferred_strength, key=_primary_sort_key)[0][0]
+
+        leaderstats_non_quest = [
+            item for item in candidates
+            if item[1]["classification"].get("is_leaderstats")
+            and not item[1]["classification"].get("is_quest")
+        ]
+        if leaderstats_non_quest:
+            return sorted(leaderstats_non_quest, key=_primary_sort_key)[0][0]
+
+        non_quest = [item for item in candidates if not item[1]["classification"].get("is_quest")]
+        if non_quest:
+            return sorted(non_quest, key=_primary_sort_key)[0][0]
+
+        return sorted(candidates, key=_primary_sort_key)[0][0]
+
+    primary_path = _pick_primary_path(progression_ranked) or progression_ranked[0][0]
 
     repetition_paths = [
         key
@@ -973,6 +1032,16 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         low = path.lower()
         blocked_tokens = ("exitbutton", "xbutton", ".close", "declinebutton", ".no", "cancel")
         return not any(token in low for token in blocked_tokens)
+
+    def is_probable_gui_button_path(path: str) -> bool:
+        low = path.lower()
+        if not is_actionable_gui_path(path):
+            return False
+        blocked_segments = ("buttonlabel", "textlabel", "uilistlayout", "uistroke", "uicorner", "image", "icon", "sunburst")
+        if any(token in low for token in blocked_segments):
+            return False
+        button_tokens = ("button", "hitbox", "claim", "collect", "accept", "tab", "playtime", "yesbutton")
+        return any(token in low for token in button_tokens)
 
     control_paths_by_type: dict[str, list[str]] = {}
     for event in events:
@@ -1043,14 +1112,22 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         normalized = path
         if normalized.startswith("PlayerGui."):
             normalized = "LocalPlayer." + normalized
-        if any(token in low for token in (".readytext", ".timer", ".claimed")):
+        reward_scope_match = any(token in low for token in ("reward", "gift", "fortune", "wheel", "crystal", "groupreward", "claim.notification"))
+        if any(token in low for token in (".readytext", ".timer", ".claimed")) and reward_scope_match:
             reward_indicator_paths.append(normalized)
-        if any(token in low for token in ("claimbutton", ".claim", "hitbox", "spinbutton", "wheelbtn")) and is_actionable_gui_path(normalized):
-            reward_paths_payload.append(normalized)
+        if reward_scope_match and any(token in low for token in ("claimbutton", "collectbutton", "hitbox", "spinbutton", "wheelbtn", "claim")) and is_probable_gui_button_path(normalized):
+            if not any(token in low for token in (".readytext", ".timer", ".claimed", "notification")):
+                reward_paths_payload.append(normalized)
 
     reward_paths = sorted(set(reward_paths_observed + reward_paths_payload))
     reward_guarded_paths = [path for path in reward_paths if "spinbutton" in path.lower() or "wheelbtn" in path.lower()]
     reward_activation_paths = [path for path in reward_paths if path not in reward_guarded_paths]
+    reward_claim_paths = [
+        path
+        for path in reward_activation_paths
+        if any(token in path.lower() for token in ("hitbox", "collectbutton", "claimbutton", "rewards.gift", "freegifts"))
+    ]
+    reward_open_paths = [path for path in reward_activation_paths if path not in reward_claim_paths]
     reward_container_paths = sorted({
         path.split(".HitBox")[0].rsplit(".", 1)[0] if ".HitBox" in path else path.rsplit(".", 1)[0]
         for path in reward_paths
@@ -1070,9 +1147,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         normalized = path
         if normalized.startswith("PlayerGui."):
             normalized = "LocalPlayer." + normalized
-        if not is_actionable_gui_path(normalized):
+        if not is_probable_gui_button_path(normalized):
             continue
-        if any(token in low for token in ("button", "claim", "collect", "tab", "select", "playtime", "prizes", "accept")):
+        if any(token in low for token in ("button", "claim", "collect", "tab", "select", "playtime", "prizes", "accept", "quest")):
             quest_gui_paths_payload.append(normalized)
 
     quest_gui_paths = sorted(set(quest_gui_paths_observed + quest_gui_paths_payload))
@@ -1084,6 +1161,16 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         path for path in quest_gui_paths
         if any(token in path.lower() for token in ("tab", "select", "playtime", "objective", "quest"))
     ]
+
+    quest_claim_state_paths = [
+        key
+        for key, stats in ranked_keys
+        if stats["classification"]["is_quest"]
+        and not stats["classification"]["is_minutes"]
+        and not stats["classification"]["is_time"]
+        and any(token in key.lower() for token in ("claim", "collect", "reward", "complete", "completed"))
+    ][:10]
+
 
     proximity_paths = [path for path in control_paths_by_type.get("ProximityPrompt.Triggered", []) if isinstance(path, str)]
 
@@ -1109,6 +1196,12 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
         for path in (reward_indicator_paths + [item for item in payload_paths if isinstance(item, str)])
         if any(token in path.lower() for token in ("reward", "gift", ".claimed", ".timer", ".readytext", "claim.notification"))
     })
+    reward_outcome_support_paths = [
+        key
+        for key, stats in ranked_keys
+        if stats["classification"].get("is_currency")
+    ][:8]
+    reward_state_paths = sorted(set(reward_state_paths + reward_outcome_support_paths))
 
     inventory_gui_paths = [
         path
@@ -1193,6 +1286,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "name": _normalize_stat_name_from_key(key),
             "path": key,
             "source": _stat_source_from_key(key),
+            "category": _stat_category_from_key(key, classification),
             "dataType": "number",
             "progressionCandidate": bool(progression_candidate),
             "observedChanges": {
@@ -1223,6 +1317,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "name": _normalize_stat_name_from_key(primary_path),
             "path": primary_path,
             "source": _stat_source_from_key(primary_path),
+            "category": _stat_category_from_key(primary_path, _classify_observed_state_key(primary_path)),
             "dataType": "number",
             "progressionCandidate": True,
             "observedChanges": {
@@ -1323,6 +1418,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "name": stat["name"],
             "path": stat["path"],
             "source": stat.get("source"),
+            "category": stat.get("category"),
             "dataType": stat.get("dataType", "number"),
             "lastObservedValue": stat.get("lastObservedValue"),
             "confidenceScore": stat.get("confidenceScore"),
@@ -1535,7 +1631,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "defaultEnabled": False,
             "action": {
                 "kind": "auto_rewards_discovery",
-                "paths": reward_activation_paths,
+                "paths": reward_claim_paths + reward_open_paths,
+                "claimPaths": reward_claim_paths,
+                "menuOpenPaths": reward_open_paths,
                 "guardedPaths": reward_guarded_paths,
                 "rewardContainerPaths": reward_container_paths,
                 "eligibilityIndicatorPaths": reward_indicator_paths,
@@ -1554,6 +1652,8 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "evidence": {
                 "featureCandidate": "rewards",
                 "guiActionPathCount": len(reward_paths),
+                "claimPathCount": len(reward_claim_paths),
+                "menuOpenPathCount": len(reward_open_paths),
                 "guardedPathCount": len(reward_guarded_paths),
                 "rewardContainerPathCount": len(reward_container_paths),
                 "eligibilityIndicatorPathCount": len(reward_indicator_paths),
@@ -1646,7 +1746,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
 
     quest_actionable_paths = sorted(set(quest_select_paths + quest_claim_paths))
 
-    if len(repetition_paths) > 0 and len(quest_actionable_paths) > 0:
+    if len(quest_select_paths) > 0 and len(quest_claim_paths) > 0 and len(quest_claim_state_paths) > 0:
         add_feature({
             "id": "quest_automation",
             "title": "Quest Automation",
@@ -1663,16 +1763,23 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "questClaimPaths": quest_claim_paths[:8],
                 "intervalSeconds": max(0.9, round(delay * 1.8, 2)),
             },
+            "outcomeContract": {
+                "kind": "quest-state-change",
+                "verificationWindowSeconds": max(2.5, round(delay * 4.0, 2)),
+                "statePaths": quest_claim_state_paths,
+                "strictlyRequireObservedDelta": True,
+            },
             "monitor": {
                 "kind": "quest-repetition",
-                "candidateStatePaths": repetition_paths,
+                "candidateStatePaths": quest_claim_state_paths,
             },
             "evidence": {
                 "guiQuestPathCount": len(quest_gui_paths),
                 "questSelectPathCount": len(quest_select_paths),
                 "questClaimPathCount": len(quest_claim_paths),
+                "questClaimStatePathCount": len(quest_claim_state_paths),
                 "repetitionStatePathCount": len(repetition_paths),
-                "workflowBasis": "quest repetition plus actionable quest GUI evidence",
+                "workflowBasis": "quest claim-state plus actionable quest GUI evidence",
             },
         })
         feature_dependencies["quest_automation"] = ["auto_train"]
@@ -1682,6 +1789,8 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             missing_requirements.append("quest selection/acceptance controls")
         if len(quest_claim_paths) == 0:
             missing_requirements.append("quest claim controls")
+        if len(quest_claim_state_paths) == 0:
+            missing_requirements.append("quest completion/claim state deltas")
         add_feature({
             "id": "quest_monitor",
             "title": "Quest Monitor",
@@ -1703,8 +1812,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
                 "guiQuestPathCount": len(quest_gui_paths),
                 "questSelectPathCount": len(quest_select_paths),
                 "questClaimPathCount": len(quest_claim_paths),
+                "questClaimStatePathCount": len(quest_claim_state_paths),
                 "repetitionStatePathCount": len(repetition_paths),
-                "workflowBasis": "progress monitoring only; actionable quest steps not evidenced",
+                "workflowBasis": "progress monitoring only; actionable quest steps not fully evidenced",
                 "missingEvidence": missing_requirements,
             },
         })
@@ -1823,11 +1933,14 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "controlTypesObserved": sorted(control_paths_by_type.keys()),
             "featureCandidatesObserved": sorted({event.get("featureCandidate") for event in events if isinstance(event.get("featureCandidate"), str)}),
             "rewardActionPathCount": len(reward_activation_paths),
+            "rewardClaimPathCount": len(reward_claim_paths),
+            "rewardMenuOpenPathCount": len(reward_open_paths),
             "rewardGuardedPathCount": len(reward_guarded_paths),
             "rewardStatePathCount": len(reward_state_paths),
             "questGuiPathCount": len(quest_gui_paths),
             "questSelectPathCount": len(quest_select_paths),
             "questClaimPathCount": len(quest_claim_paths),
+            "questClaimStatePathCount": len(quest_claim_state_paths),
             "questRepetitionPathCount": len(repetition_paths),
             "trainingMethodCount": len(training_methods),
             "statRegistryCount": len(stat_registry_entries),

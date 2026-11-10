@@ -33,7 +33,7 @@
   "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/fa86_observation_recovery/muscle-legends-fa86-observation/PotassiumLoaderTemplate.lua",
   "monitoredFeatures": [],
   "outcomeStateKeyCount": 16,
-  "primaryOutcomePath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+  "primaryOutcomePath": "leaderstats.Strength",
   "questRepetitionStatePathCount": 1,
   "schemaVersion": "117.observation-recovery-summary.5",
   "statRegistryCount": 30,

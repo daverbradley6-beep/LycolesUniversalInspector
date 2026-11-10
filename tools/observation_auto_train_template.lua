@@ -156,10 +156,80 @@ local function activateGuiObject(obj)
     return false, "no-supported-gui-trigger: " .. tostring(activateErr)
 end
 
-local function activateGuiPath(path)
+local function scoreActionableGuiButton(button, contextKind)
+    if not button or not button:IsA("GuiButton") then return -1e9 end
+    local score = 0
+    local low = string.lower(button.Name or "")
+    if button.Visible then score += 10 else score -= 40 end
+    if button.Active then score += 6 end
+    if button.AutoButtonColor then score += 2 end
+    if string.find(low, "claim", 1, true) or string.find(low, "collect", 1, true) then score += 12 end
+    if string.find(low, "accept", 1, true) or string.find(low, "quest", 1, true) then score += 7 end
+    if string.find(low, "button", 1, true) or string.find(low, "hitbox", 1, true) then score += 5 end
+    if string.find(low, "label", 1, true) or string.find(low, "text", 1, true) then score -= 8 end
+    if string.find(low, "close", 1, true) or string.find(low, "exit", 1, true) or string.find(low, "cancel", 1, true) then score -= 14 end
+    if string.find(low, "skip", 1, true) then score -= 6 end
+    if contextKind == "claim" and (string.find(low, "claim", 1, true) or string.find(low, "collect", 1, true)) then score += 10 end
+    if contextKind == "open" and (string.find(low, "quest", 1, true) or string.find(low, "tab", 1, true) or string.find(low, "playtime", 1, true)) then score += 6 end
+    return score
+end
+
+local function resolveActionableGuiButton(path, contextKind)
     local obj, err = resolvePath(path)
-    if not obj then return false, "resolve failed: " .. tostring(err) end
-    return activateGuiObject(obj)
+    if not obj then return nil, "resolve failed: " .. tostring(err) end
+
+    if obj:IsA("GuiButton") then
+        return obj, nil
+    end
+
+    local ancestor = obj
+    for _ = 1, 6 do
+        ancestor = ancestor and ancestor.Parent or nil
+        if not ancestor then break end
+        if ancestor:IsA("GuiButton") then
+            return ancestor, nil
+        end
+    end
+
+    local best = nil
+    local bestScore = -1e9
+    local searchRoot = obj
+    if not searchRoot:IsA("GuiObject") and searchRoot.Parent and searchRoot.Parent:IsA("GuiObject") then
+        searchRoot = searchRoot.Parent
+    end
+    if not searchRoot then
+        return nil, "resolved object has no GUI ancestry"
+    end
+
+    local descendants = {}
+    local okDesc = pcall(function()
+        descendants = searchRoot:GetDescendants()
+    end)
+    if not okDesc then
+        return nil, "descendant resolution failed"
+    end
+
+    for _, descendant in ipairs(descendants) do
+        if descendant:IsA("GuiButton") then
+            local score = scoreActionableGuiButton(descendant, contextKind)
+            if score > bestScore then
+                bestScore = score
+                best = descendant
+            end
+        end
+    end
+
+    if best then
+        return best, nil
+    end
+
+    return nil, "no actionable GuiButton resolved"
+end
+
+local function activateGuiPath(path, contextKind)
+    local button, err = resolveActionableGuiButton(path, contextKind)
+    if not button then return false, tostring(err) end
+    return activateGuiObject(button)
 end
 
 local state = {
@@ -173,6 +243,24 @@ local state = {
     stalled = false,
     intervalScale = 1.0,
     lastStatus = "ready",
+    characterLifecycle = {
+        respawnSuspended = false,
+        suspensionReason = "ready",
+        characterGeneration = 0,
+        recoveryToken = 0,
+        recoveryInProgress = false,
+        lastRecoveryStartClock = nil,
+        lastRecoveryDurationSeconds = 0,
+        deathCount = 0,
+        recoveryAttempts = 0,
+        recoverySuccesses = 0,
+        recoveryFailures = 0,
+        recoveryTotalDurationSeconds = 0,
+        lastFailureReason = nil,
+        nextRecoveryAttemptAt = 0,
+        missingToolRetryCount = 0,
+        lastCharacterId = nil,
+    },
 }
 
 local runtimeCapabilities = {
@@ -186,6 +274,7 @@ local rows = {}
 local trainingMethodRows = {}
 local statTargetRows = {}
 local connections = {}
+local characterConnections = {}
 
 local function featureRuntime(definition, supported)
     local action = definition.action or {}
@@ -237,6 +326,8 @@ local function featureRuntime(definition, supported)
         methodStatMap = {},
         statRuntime = {},
         candidateCooldowns = {},
+        monitorOnlyFallback = false,
+        unresolvedActionableAttempts = 0,
     }
 end
 
@@ -361,14 +452,24 @@ local globalStrengthPath = ((CONTRACT.outcomeModel or {}).primaryStatePath)
 
 local function updateGlobalProgression()
     local value = readNumber(globalStrengthPath)
+    local lifecycle = state.characterLifecycle
     if value ~= nil then
-        if state.currentStrength ~= nil and value > state.currentStrength then
-            local delta = value - state.currentStrength
-            state.totalStrengthGain += delta
-            state.lastProgression = string.format("+%s Strength", tostring(round(delta, 3)))
+        if lifecycle.respawnSuspended or lifecycle.recoveryInProgress then
+            state.currentStrength = value
+            if state.initialStrength == nil then state.initialStrength = value end
+        else
+            if state.currentStrength ~= nil then
+                local delta = value - state.currentStrength
+                if delta > 0 then
+                    state.totalStrengthGain += delta
+                    state.lastProgression = string.format("+%s Strength", tostring(round(delta, 3)))
+                elseif delta < 0 and math.abs(delta) >= math.max(25, math.abs(state.currentStrength) * 0.20) then
+                    state.lastProgression = "strength baseline realigned after character lifecycle transition"
+                end
+            end
+            state.currentStrength = value
+            if state.initialStrength == nil then state.initialStrength = value end
         end
-        state.currentStrength = value
-        if state.initialStrength == nil then state.initialStrength = value end
     end
     local elapsed = math.max(0.01, os.clock() - state.startClock)
     state.strengthGainPerMinute = (state.totalStrengthGain / elapsed) * 60
@@ -557,6 +658,166 @@ local function reconcileVerification(feature)
 end
 
 
+local function disconnectCharacterConnections()
+    for _, connection in ipairs(characterConnections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    characterConnections = {}
+end
+
+local function clearTrainingMethodBackoffWindows()
+    for _, feature in ipairs(featureOrder) do
+        if feature.action.kind == "tool_activate_selectable" then
+            for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
+                local stats = feature.trainingMethodStats[methodId]
+                if stats then
+                    stats.unavailableUntil = 0
+                end
+            end
+        end
+    end
+end
+
+local function selectRecoveryMethodId(feature)
+    if not feature then return nil end
+    if type(feature.lastTrainingMethodId) == "string" and feature.selectedTrainingMethodIds[feature.lastTrainingMethodId] then
+        return feature.lastTrainingMethodId
+    end
+    for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
+        if feature.selectedTrainingMethodIds[methodId] then
+            return methodId
+        end
+    end
+    return nil
+end
+
+local function setRespawnSuspended(reason)
+    local lifecycle = state.characterLifecycle
+    lifecycle.respawnSuspended = true
+    lifecycle.suspensionReason = tostring(reason or "respawn recovery pending")
+end
+
+local function beginLifecycleRecovery(triggerReason)
+    local lifecycle = state.characterLifecycle
+    if not state.alive then return end
+    local now = os.clock()
+    if lifecycle.recoveryInProgress then return end
+    if now < (lifecycle.nextRecoveryAttemptAt or 0) then return end
+
+    lifecycle.recoveryInProgress = true
+    lifecycle.recoveryAttempts += 1
+    lifecycle.recoveryToken += 1
+    local token = lifecycle.recoveryToken
+    local startClock = os.clock()
+    lifecycle.lastRecoveryStartClock = startClock
+    lifecycle.lastFailureReason = nil
+    setRespawnSuspended(triggerReason or "respawn recovery pending")
+
+    task.spawn(function()
+        local timeoutAt = startClock + 18.0
+        while state.alive and token == lifecycle.recoveryToken do
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local backpack = player:FindFirstChild("Backpack")
+            local humanoidReady = humanoid and humanoid.Health > 0
+
+            if character and humanoidReady and backpack then
+                disconnectCharacterConnections()
+                characterConnections[#characterConnections + 1] = humanoid.Died:Connect(function()
+                    lifecycle.deathCount += 1
+                    setRespawnSuspended("humanoid died")
+                    lifecycle.nextRecoveryAttemptAt = math.max(lifecycle.nextRecoveryAttemptAt or 0, os.clock() + 0.1)
+                    beginLifecycleRecovery("humanoid died")
+                end)
+
+                lifecycle.characterGeneration += 1
+                lifecycle.lastCharacterId = tostring(character)
+                clearTrainingMethodBackoffWindows()
+
+                local autoTrainFeature = features["auto_train"]
+                local equipBlocked = false
+                if autoTrainFeature and autoTrainFeature.running and autoTrainFeature.action.kind == "tool_activate_selectable" then
+                    local methodId = selectRecoveryMethodId(autoTrainFeature)
+                    if methodId then
+                        local method = autoTrainFeature.trainingMethods[methodId] or {}
+                        local tool = resolveTool(method.path, method.name)
+                        if tool and tool:IsA("Tool") then
+                            if tool.Parent ~= character then
+                                pcall(function() humanoid:EquipTool(tool) end)
+                            end
+                            lifecycle.missingToolRetryCount = 0
+                            autoTrainFeature.lastStatus = "respawn recovered; tool re-equipped"
+                        else
+                            lifecycle.missingToolRetryCount += 1
+                            equipBlocked = true
+                            local waitBackoff = clamp(0.4 * (2 ^ math.min(lifecycle.missingToolRetryCount, 4)), 0.5, 6.0)
+                            lifecycle.nextRecoveryAttemptAt = os.clock() + waitBackoff
+                            autoTrainFeature.lastStatus = "respawn recovered; waiting for selected tool"
+                        end
+                    end
+                end
+
+                if not equipBlocked then
+                    local duration = os.clock() - startClock
+                    lifecycle.lastRecoveryDurationSeconds = duration
+                    lifecycle.recoveryTotalDurationSeconds += duration
+                    lifecycle.recoverySuccesses += 1
+                    lifecycle.recoveryInProgress = false
+                    lifecycle.respawnSuspended = false
+                    lifecycle.suspensionReason = "ready"
+                    lifecycle.nextRecoveryAttemptAt = os.clock() + 0.2
+                    return
+                end
+            end
+
+            if os.clock() >= timeoutAt then
+                local duration = os.clock() - startClock
+                lifecycle.lastRecoveryDurationSeconds = duration
+                lifecycle.recoveryTotalDurationSeconds += duration
+                lifecycle.recoveryFailures += 1
+                lifecycle.recoveryInProgress = false
+                lifecycle.lastFailureReason = "replacement character/tool unavailable within timeout"
+                lifecycle.suspensionReason = "temporary recovery failure"
+                local retryBackoff = clamp(1.0 * (2 ^ math.min(lifecycle.recoveryFailures, 4)), 1.0, 12.0)
+                lifecycle.nextRecoveryAttemptAt = os.clock() + retryBackoff
+                return
+            end
+
+            task.wait(0.2)
+        end
+        lifecycle.recoveryInProgress = false
+    end)
+end
+
+local function ensureTrainingCharacterReady(feature)
+    local lifecycle = state.characterLifecycle
+    local now = os.clock()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not character or not humanoid or humanoid.Health <= 0 then
+        setRespawnSuspended("character unavailable")
+        if now >= (lifecycle.nextRecoveryAttemptAt or 0) then
+            beginLifecycleRecovery("character unavailable")
+        end
+        if feature then
+            feature.lastStatus = "temporarily suspended: respawn recovery"
+        end
+        return nil, nil, "respawn recovery pending"
+    end
+
+    if lifecycle.respawnSuspended then
+        if not lifecycle.recoveryInProgress and now >= (lifecycle.nextRecoveryAttemptAt or 0) then
+            beginLifecycleRecovery("resume after respawn")
+        end
+        if feature then
+            feature.lastStatus = "temporarily suspended: " .. tostring(lifecycle.suspensionReason)
+        end
+        return nil, nil, "respawn recovery pending"
+    end
+
+    return character, humanoid, nil
+end
+
 local function executeFeature(feature)
     local action = feature.action or {}
     local kind = action.kind
@@ -576,17 +837,24 @@ local function executeFeature(feature)
             stats.lastStatus = "attempting"
         end
 
+        local character, humanoid, suspendReason = ensureTrainingCharacterReady(feature)
+        if not character or not humanoid then
+            markOutcome(feature, "blocked-by-eligibility", tostring(suspendReason or "respawn recovery pending"))
+            return
+        end
+
         local tool = resolveTool(method.path, method.name)
         if not tool or not tool:IsA("Tool") then
             feature.errors += 1
             feature.lastError = "training method unavailable: " .. tostring(method.name or methodId)
-            markMethodBlocked(feature, methodId, "tool unavailable", 10.0)
+            local unavailableCount = (stats and (stats.errors or 0) or 0) + 1
+            local backoff = clamp(0.8 * (2 ^ math.min(unavailableCount, 4)), 1.0, 12.0)
+            markMethodBlocked(feature, methodId, "tool unavailable", backoff)
             markOutcome(feature, "blocked-by-eligibility", "training method unavailable: " .. tostring(method.name or methodId))
             return
         end
 
-        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid and tool.Parent ~= player.Character then
+        if tool.Parent ~= character then
             pcall(function() humanoid:EquipTool(tool) end)
             task.wait(0.05)
         end
@@ -620,15 +888,19 @@ local function executeFeature(feature)
     end
 
     if kind == "tool_activate" then
+        local character, humanoid, suspendReason = ensureTrainingCharacterReady(feature)
+        if not character or not humanoid then
+            markOutcome(feature, "blocked-by-eligibility", tostring(suspendReason or "respawn recovery pending"))
+            return
+        end
         local tool = resolveTool(action.toolPath, action.toolName)
         if not tool then
             feature.errors += 1
             feature.lastError = "tool unavailable"
-            markOutcome(feature, "runtime-failure", "tool unavailable")
+            markOutcome(feature, "blocked-by-eligibility", "tool unavailable")
             return
         end
-        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid and tool.Parent ~= player.Character then
+        if tool.Parent ~= character then
             pcall(function() humanoid:EquipTool(tool) end)
             task.wait(0.05)
         end
@@ -647,12 +919,16 @@ local function executeFeature(feature)
     end
 
     if kind == "ensure_tool_equipped" then
+        local character, humanoid, suspendReason = ensureTrainingCharacterReady(feature)
+        if not character or not humanoid then
+            markOutcome(feature, "blocked-by-eligibility", tostring(suspendReason or "respawn recovery pending"))
+            return
+        end
         local tool = resolveTool(action.toolPath, action.toolName)
-        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if not tool or not humanoid then
+        if not tool then
             feature.errors += 1
-            feature.lastError = "tool or humanoid unavailable"
-            markOutcome(feature, "runtime-failure", "equip unavailable")
+            feature.lastError = "tool unavailable"
+            markOutcome(feature, "blocked-by-eligibility", "equip unavailable")
             return
         end
         local ok, err = pcall(function() humanoid:EquipTool(tool) end)
@@ -670,26 +946,72 @@ local function executeFeature(feature)
     end
 
     if kind == "auto_rewards_discovery" then
+        if feature.monitorOnlyFallback then
+            feature.lastStatus = "reward monitoring fallback active"
+            feature.outcomeState = "action-invoked-outcome-unverified"
+            return
+        end
+
         local candidates = {}
         local seen = {}
 
-        local function pushCandidate(obj)
-            if not obj or not obj:IsA("GuiButton") then return end
-            if seen[obj] then return end
-            local lowName = string.lower(obj.Name or "")
+        local function candidateKey(button, pathHint, role)
+            local key = tostring(pathHint or "")
+            if key == "" then
+                local ok, fullName = pcall(function() return button:GetFullName() end)
+                if ok and type(fullName) == "string" and fullName ~= "" then
+                    key = fullName
+                else
+                    key = tostring(button)
+                end
+            end
+            return tostring(role or "candidate") .. "::" .. key
+        end
+
+        local function pushCandidateObject(button, role, pathHint)
+            if not button or not button:IsA("GuiButton") then return end
+            local lowName = string.lower(button.Name or "")
             if string.find(lowName, "buy", 1, true) or string.find(lowName, "robux", 1, true) or string.find(lowName, "vip", 1, true) then
                 return
             end
+
+            local normalizedRole = role or "claim"
             if string.find(lowName, "spin", 1, true) or string.find(lowName, "wheel", 1, true) then
+                normalizedRole = "open"
+            end
+
+            local key = candidateKey(button, pathHint, normalizedRole)
+            if seen[key] then return end
+            seen[key] = true
+            candidates[#candidates + 1] = {
+                button = button,
+                role = normalizedRole,
+                key = key,
+                pathHint = pathHint,
+            }
+        end
+
+        local function pushCandidateFromPath(path, role)
+            if type(path) ~= "string" then return end
+            local lowPath = string.lower(path)
+            if string.find(lowPath, ".claimed", 1, true) or string.find(lowPath, ".timer", 1, true) or string.find(lowPath, ".readytext", 1, true) then
                 return
             end
-            seen[obj] = true
-            candidates[#candidates + 1] = obj
+            local button = resolveActionableGuiButton(path, role == "claim" and "claim" or "open")
+            if not button then return end
+            pushCandidateObject(button, role, path)
+        end
+
+        local explicitClaimPaths = {}
+        for _, claimPath in ipairs(action.claimPaths or {}) do
+            explicitClaimPaths[tostring(claimPath)] = true
         end
 
         for _, path in ipairs(action.paths or {}) do
-            local obj = resolvePath(path)
-            pushCandidate(obj)
+            local pathText = tostring(path)
+            local lowPath = string.lower(pathText)
+            local role = explicitClaimPaths[pathText] and "claim" or ((string.find(lowPath, "claim", 1, true) or string.find(lowPath, "collect", 1, true) or string.find(lowPath, "hitbox", 1, true)) and "claim" or "open")
+            pushCandidateFromPath(path, role)
         end
 
         for _, containerPath in ipairs(action.rewardContainerPaths or {}) do
@@ -702,13 +1024,14 @@ local function executeFeature(feature)
                         or string.find(lowName, "claim", 1, true)
                         or string.find(lowName, "collect", 1, true)
                     ) then
-                        pushCandidate(descendant)
+                        pushCandidateObject(descendant, "claim", containerPath .. "." .. tostring(descendant.Name or "button"))
                     end
                 end
             end
         end
 
-        local function isEligible(obj)
+        local function isEligible(entry)
+            local obj = entry.button
             if not obj.Visible then return false, "hidden" end
             local parent = obj.Parent
             if not parent then return true, "no-parent" end
@@ -734,6 +1057,9 @@ local function executeFeature(feature)
                 end
             end
 
+            if entry.role == "open" then
+                return true, "open-navigation"
+            end
             return true, "no-indicator"
         end
 
@@ -747,24 +1073,21 @@ local function executeFeature(feature)
             return total
         end
 
-        local function candidateKey(obj)
-            local ok, fullName = pcall(function() return obj:GetFullName() end)
-            if ok and type(fullName) == "string" and fullName ~= "" then
-                return fullName
-            end
-            return tostring(obj)
-        end
-
         if #candidates == 0 then
-            markOutcome(feature, "blocked-by-eligibility", "no reward candidates")
+            feature.unresolvedActionableAttempts += 1
+            if feature.unresolvedActionableAttempts >= 3 then
+                feature.monitorOnlyFallback = true
+                markOutcome(feature, "unsupported-interaction", "no executable reward claim control; monitor-only fallback")
+            else
+                markOutcome(feature, "blocked-by-eligibility", "no reward claim controls resolved")
+            end
             return
         end
 
         local now = os.clock()
         local availableCandidates = {}
         for _, candidate in ipairs(candidates) do
-            local key = candidateKey(candidate)
-            local blockedUntil = feature.candidateCooldowns[key] or 0
+            local blockedUntil = feature.candidateCooldowns[candidate.key] or 0
             if blockedUntil <= now then
                 availableCandidates[#availableCandidates + 1] = candidate
             end
@@ -775,9 +1098,21 @@ local function executeFeature(feature)
             return
         end
 
-        feature.cursor = (feature.cursor % #availableCandidates) + 1
-        local target = availableCandidates[feature.cursor]
-        local targetKey = candidateKey(target)
+        local claimCandidates = {}
+        local openCandidates = {}
+        for _, candidate in ipairs(availableCandidates) do
+            if candidate.role == "claim" then
+                claimCandidates[#claimCandidates + 1] = candidate
+            else
+                openCandidates[#openCandidates + 1] = candidate
+            end
+        end
+
+        local candidatePool = (#claimCandidates > 0) and claimCandidates or openCandidates
+        feature.cursor = (feature.cursor % #candidatePool) + 1
+        local target = candidatePool[feature.cursor]
+        local targetKey = target.key
+
         local eligible, reason = isEligible(target)
         if not eligible then
             local backoff = 4.0
@@ -788,14 +1123,14 @@ local function executeFeature(feature)
             return
         end
 
-        local listeners = listenerCount(target)
+        local listeners = listenerCount(target.button)
         if listeners ~= nil and listeners <= 0 and not runtimeCapabilities.firesignal then
             feature.candidateCooldowns[targetKey] = now + 15.0
             markOutcome(feature, "unsupported-interaction", "no reward listeners and no firesignal")
             return
         end
 
-        local ok, methodOrErr = activateGuiObject(target)
+        local ok, methodOrErr = activateGuiObject(target.button)
         if not ok then
             feature.errors += 1
             feature.lastError = tostring(methodOrErr)
@@ -810,10 +1145,16 @@ local function executeFeature(feature)
 
         feature.successes += 1
         feature.successfulCalls += 1
-        feature.candidateCooldowns[targetKey] = now + 2.0
-        feature.lastStatus = "reward trigger sent via " .. tostring(methodOrErr)
-        feature.outcomeState = "action-invoked-outcome-unverified"
-        armVerification(feature)
+        if target.role == "claim" then
+            feature.candidateCooldowns[targetKey] = now + 2.0
+            feature.lastStatus = "reward claim trigger sent via " .. tostring(methodOrErr)
+            feature.outcomeState = "action-invoked-outcome-unverified"
+            feature.unresolvedActionableAttempts = 0
+            armVerification(feature)
+        else
+            feature.candidateCooldowns[targetKey] = now + 8.0
+            markOutcome(feature, "blocked-by-eligibility", "reward navigation sent; waiting for claim-eligible control")
+        end
         return
     end
 
@@ -821,6 +1162,12 @@ local function executeFeature(feature)
         local autoTrainFeature = features["auto_train"]
         if not autoTrainFeature or not autoTrainFeature.running then
             markOutcome(feature, "blocked-by-eligibility", "auto_train dependency not running")
+            return
+        end
+
+        if feature.monitorOnlyFallback then
+            feature.lastStatus = "quest monitor-only fallback active"
+            feature.outcomeState = "action-invoked-outcome-unverified"
             return
         end
 
@@ -833,18 +1180,50 @@ local function executeFeature(feature)
         end
 
         if #questPaths > 0 then
-            feature.cursor = (feature.cursor % #questPaths) + 1
-            local item = questPaths[feature.cursor]
-            local qOk, qErr = activateGuiPath(item.path)
+            local now = os.clock()
+            local available = {}
+            for _, item in ipairs(questPaths) do
+                local key = tostring(item.kind) .. "::" .. tostring(item.path)
+                local blockedUntil = feature.candidateCooldowns[key] or 0
+                if blockedUntil <= now then
+                    item.key = key
+                    available[#available + 1] = item
+                end
+            end
+
+            if #available == 0 then
+                markOutcome(feature, "blocked-by-eligibility", "quest controls cooling down")
+                return
+            end
+
+            feature.cursor = (feature.cursor % #available) + 1
+            local item = available[feature.cursor]
+            local qOk, qErr = activateGuiPath(item.path, item.kind == "claim" and "claim" or "open")
             if qOk then
                 feature.successfulCalls += 1
                 feature.successes += 1
+                feature.unresolvedActionableAttempts = 0
+                feature.candidateCooldowns[item.key] = now + (item.kind == "claim" and 2.0 or 6.0)
                 feature.outcomeState = "action-invoked-outcome-unverified"
                 feature.lastStatus = "quest " .. tostring(item.kind) .. " action sent"
+                if item.kind == "claim" then
+                    armVerification(feature)
+                end
                 return
             end
+
             feature.lastError = tostring(qErr)
-            if string.find(tostring(qErr), "no-supported-gui-trigger", 1, true) then
+            feature.errors += 1
+            feature.candidateCooldowns[item.key] = now + 8.0
+            if string.find(tostring(qErr), "no actionable GuiButton resolved", 1, true) or string.find(tostring(qErr), "object is not GuiButton", 1, true) then
+                feature.unresolvedActionableAttempts += 1
+                if feature.unresolvedActionableAttempts >= 3 then
+                    feature.monitorOnlyFallback = true
+                    markOutcome(feature, "unsupported-interaction", "quest actionable controls unresolved; monitor-only fallback")
+                else
+                    markOutcome(feature, "blocked-by-eligibility", "quest actionable button unresolved")
+                end
+            elseif string.find(tostring(qErr), "no-supported-gui-trigger", 1, true) then
                 markOutcome(feature, "unsupported-interaction", "quest interface trigger unsupported")
             else
                 markOutcome(feature, "runtime-failure", "quest interface action failed")
@@ -1096,6 +1475,8 @@ local function buildDiagnosticReport()
                 end
                 return rowsLocal
             end)(),
+            monitorOnlyFallback = feature.monitorOnlyFallback == true,
+            unresolvedActionableAttempts = feature.unresolvedActionableAttempts or 0,
             actionable = feature.definition.actionable,
             evidence = feature.definition.evidence,
         }
@@ -1147,6 +1528,20 @@ local function buildDiagnosticReport()
             sessionStrengthNetChange = sessionStrengthNetChange,
             featureAttributedStrengthDeltaSum = round(attributedStrengthTotal, 6),
             attributionOvercountEstimate = round(attributedStrengthTotal - state.totalStrengthGain, 6),
+        },
+        characterLifecycle = {
+            respawnSuspended = state.characterLifecycle.respawnSuspended,
+            suspensionReason = state.characterLifecycle.suspensionReason,
+            deathCount = state.characterLifecycle.deathCount,
+            recoveryAttempts = state.characterLifecycle.recoveryAttempts,
+            recoverySuccesses = state.characterLifecycle.recoverySuccesses,
+            recoveryFailures = state.characterLifecycle.recoveryFailures,
+            lastRecoveryDurationSeconds = round(state.characterLifecycle.lastRecoveryDurationSeconds or 0, 6),
+            recoveryTotalDurationSeconds = round(state.characterLifecycle.recoveryTotalDurationSeconds or 0, 6),
+            recoveryInProgress = state.characterLifecycle.recoveryInProgress,
+            lastFailureReason = state.characterLifecycle.lastFailureReason,
+            missingToolRetryCount = state.characterLifecycle.missingToolRetryCount,
+            characterGeneration = state.characterLifecycle.characterGeneration,
         },
         unsupportedFeatures = CONTRACT.unsupportedFeatures or {},
         claims = CONTRACT.claims,
@@ -1258,19 +1653,35 @@ local function endDrag()
 end
 
 
-connections[#connections + 1] = player.CharacterAdded:Connect(function()
-    state.lastStatus = "character respawned; tool bindings will re-resolve"
-    for _, feature in ipairs(featureOrder) do
-        if feature.action.kind == "tool_activate_selectable" then
-            for _, methodId in ipairs(feature.trainingMethodOrder or {}) do
-                local stats = feature.trainingMethodStats[methodId]
-                if stats then
-                    stats.unavailableUntil = 0
-                end
-            end
-        end
+connections[#connections + 1] = player.CharacterRemoving:Connect(function()
+    setRespawnSuspended("character removing")
+    state.characterLifecycle.nextRecoveryAttemptAt = math.max(state.characterLifecycle.nextRecoveryAttemptAt or 0, os.clock() + 0.25)
+end)
+
+connections[#connections + 1] = player.CharacterAdded:Connect(function(character)
+    setRespawnSuspended("character added")
+    state.lastStatus = "character respawn detected; recovering"
+    state.characterLifecycle.nextRecoveryAttemptAt = math.max(state.characterLifecycle.nextRecoveryAttemptAt or 0, os.clock() + 0.05)
+    beginLifecycleRecovery("character added")
+
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        disconnectCharacterConnections()
+        characterConnections[#characterConnections + 1] = humanoid.Died:Connect(function()
+            state.characterLifecycle.deathCount += 1
+            setRespawnSuspended("humanoid died")
+            state.characterLifecycle.nextRecoveryAttemptAt = math.max(state.characterLifecycle.nextRecoveryAttemptAt or 0, os.clock() + 0.1)
+            beginLifecycleRecovery("humanoid died")
+        end)
     end
 end)
+
+if player.Character then
+    setRespawnSuspended("initial character binding")
+    state.characterLifecycle.nextRecoveryAttemptAt = 0
+    beginLifecycleRecovery("initialization")
+end
+
 
 title.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1583,9 +1994,13 @@ local function renderRows()
             local strengthDelta = round(feature.progressionByUnit.strength or 0, 3)
             local repsDelta = round(feature.progressionByUnit.reps or 0, 3)
             local statusText = string.format("status=%s | outcome=%s | lastProgress=%s", tostring(feature.lastStatus), tostring(feature.outcomeState), tostring(feature.lastProgress))
-            if feature.id == "auto_train" and feature.lastTrainingMethodId then
-                local method = feature.trainingMethods[feature.lastTrainingMethodId] or {}
-                statusText = statusText .. string.format(" | method=%s", tostring(method.name or feature.lastTrainingMethodId))
+            if feature.id == "auto_train" then
+                if feature.lastTrainingMethodId then
+                    local method = feature.trainingMethods[feature.lastTrainingMethodId] or {}
+                    statusText = statusText .. string.format(" | method=%s", tostring(method.name or feature.lastTrainingMethodId))
+                end
+                local lifecycle = state.characterLifecycle
+                statusText = statusText .. string.format(" | recovery=%s/%s", tostring(lifecycle.respawnSuspended), tostring(lifecycle.suspensionReason))
             end
             row.status.Text = statusText
 
@@ -1676,10 +2091,12 @@ local function renderSummary()
     end
 
     speedLabel.Text = string.format("Global speed scale: %.2fx", state.intervalScale)
+    local lifecycle = state.characterLifecycle
     local lines = {
         string.format("Strength current=%s initial=%s net=%s positiveDelta=%s gain/min=%s pathResolved=%s", currentStrengthText, initialStrengthText, tostring(netChange), tostring(round(state.totalStrengthGain, 3)), tostring(round(state.strengthGainPerMinute, 3)), tostring(strengthResolved)),
         string.format("Outcomes verified=%d unverified=%d blocked=%d unsupported=%d failures=%d", verified, unverified, blocked, unsupported, failures),
         string.format("Elapsed %.1fs | stalled=%s | status=%s", elapsed, tostring(state.stalled), tostring(state.lastStatus)),
+        string.format("Recovery suspended=%s reason=%s deaths=%d attempts=%d ok=%d fail=%d last=%.2fs", tostring(lifecycle.respawnSuspended), tostring(lifecycle.suspensionReason), lifecycle.deathCount or 0, lifecycle.recoveryAttempts or 0, lifecycle.recoverySuccesses or 0, lifecycle.recoveryFailures or 0, tonumber(lifecycle.lastRecoveryDurationSeconds or 0)),
         string.format("Delayed window=%.2fs | unsupportedFeatures=%d", SETTINGS.delayedOutcomeWindowSeconds, #(CONTRACT.unsupportedFeatures or {})),
     }
 
@@ -1702,7 +2119,9 @@ end
 
 local function closeAll()
     state.alive = false
+    state.characterLifecycle.recoveryToken += 1
     stopAll("closed")
+    disconnectCharacterConnections()
     for _, connection in ipairs(connections) do
         pcall(function() connection:Disconnect() end)
     end
@@ -1746,6 +2165,11 @@ _G.LycolesMuscleAutoTrainClose = closeAll
 
 task.spawn(function()
     while state.alive do
+        local lifecycle = state.characterLifecycle
+        if lifecycle.respawnSuspended and not lifecycle.recoveryInProgress and os.clock() >= (lifecycle.nextRecoveryAttemptAt or 0) then
+            beginLifecycleRecovery("periodic recovery tick")
+        end
+
         updateGlobalProgression()
         for _, feature in ipairs(featureOrder) do
             refreshFeatureProgress(feature)

@@ -14,6 +14,22 @@ Target experiences are third-party games that the user does not own and cannot o
 - Do not implement anti-cheat bypasses, exploit loaders, security circumvention, unauthorized remote invocation, stealth mechanisms, or access-control evasion.
 - Do not merge into `main` without explicit authorization. Develop and push verified work on `openhands-development`.
 
+
+## Session notes — 2026-11-10 live-fix pass (Muscle Legends FA86)
+
+- `tools/observation_auto_train_template.lua` now includes a character lifecycle recovery state machine:
+  - listens to `CharacterRemoving`, `CharacterAdded`, and `Humanoid.Died`,
+  - suspends training actions during respawn,
+  - performs bounded recovery retries with backoff,
+  - rebinds humanoid listeners and re-equips selected training tools when available,
+  - exports recovery telemetry (`deathCount`, `recoveryAttempts`, `recoverySuccesses`, `recoveryFailures`, recovery durations).
+- Quest/reward GUI execution now resolves actionable `GuiButton` controls from non-button paths (frame/label inputs), avoiding direct `object is not GuiButton` failures.
+- Reward runtime now prioritizes claim controls over menu-open controls and downgrades to monitor-only after repeated unresolved claim controls.
+- Quest runtime now downgrades to monitor-only after repeated unresolved actionable quest controls.
+- Observation contract primary progression path selection now explicitly prefers leaderstats Strength when evidenced (prevents quest repetition from becoming the primary Strength tracker).
+- Observation stat outputs now include category separation (`primary-progression`, `quest-progress`, `currency-resource`, `inventory-count`, `equipment-or-pet-experience`, `transient-state`, `other-progression`).
+- Reward payload extraction is now reward-scoped; quest collect controls are no longer admitted into `auto_rewards` payload-derived paths.
+
 ## Evidence architecture
 
 Prioritize, in order:
