@@ -1,5 +1,5 @@
 {
-  "actionStatRelationshipCount": 84,
+  "actionStatRelationshipCount": 56,
   "claims": {
     "causalityProven": false,
     "gameplayVerified": false,
@@ -7,37 +7,36 @@
     "serverAuthorityVerified": false,
     "sourceAuthenticityVerified": false
   },
-  "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/observation-tool-contract.json",
+  "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/fa86_observation_recovery/muscle-legends-fa86-observation/observation-tool-contract.json",
   "excludedFeatures": [
     "proximity_interactions",
     "world_training_stations"
   ],
   "executableLogic": {
-    "automaticExecutionReadyWorkflowCandidates": 4,
+    "automaticExecutionReadyWorkflowCandidates": 5,
     "automaticExecutionRequired": true,
-    "requestAlignedAutomaticExecutionReadyWorkflows": 4,
+    "requestAlignedAutomaticExecutionReadyWorkflows": 5,
     "requestExecutableStatus": "request-executable-ready",
     "requestImplementationReady": false,
     "requestStatus": "generated-bounded-subset",
     "selectedWorkflowCandidateId": "observation-recovery-multi-feature-contract"
   },
   "generatedScriptKind": "observation-multi-feature-batch",
-  "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/LycolesGeneratedFeatureBatch.lua",
+  "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/fa86_observation_recovery/muscle-legends-fa86-observation/LycolesGeneratedFeatureBatch.lua",
   "implementedFeatures": [
     "auto_train",
     "auto_rewards",
     "auto_rebirth",
-    "inventory_management"
+    "inventory_management",
+    "quest_automation"
   ],
-  "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/potassium_artifacts/muscle_legends_feature_batch/muscle-legends-feature-batch/PotassiumLoaderTemplate.lua",
-  "monitoredFeatures": [
-    "quest_monitor"
-  ],
+  "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/fa86_observation_recovery/muscle-legends-fa86-observation/PotassiumLoaderTemplate.lua",
+  "monitoredFeatures": [],
   "outcomeStateKeyCount": 16,
   "primaryOutcomePath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
   "questRepetitionStatePathCount": 1,
   "schemaVersion": "117.observation-recovery-summary.5",
-  "statRegistryCount": 28,
+  "statRegistryCount": 30,
   "statTrainingTargetCount": 21,
   "status": "generated-observation-contract",
   "toolPath": "LocalPlayer.Backpack.Weight",
@@ -45,7 +44,7 @@
     {
       "category": "proximity",
       "evidence": {
-        "observedInteractActionKinds": 2
+        "observedInteractActionKinds": 5
       },
       "id": "proximity_interactions",
       "reason": "No explicit ProximityPrompt trigger paths were observed",
