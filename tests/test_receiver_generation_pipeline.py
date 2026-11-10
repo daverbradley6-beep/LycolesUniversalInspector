@@ -786,10 +786,63 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 requested_capability="Automatically train and open shop prompt",
                 extracted_root=root / "missing-extracted",
             )
-            self.assertEqual(result["status"], "blocked")
-            self.assertEqual(result["reason"], "baseline parts evidence unavailable")
+            self.assertEqual(result["status"], "discovery-only")
             self.assertEqual(result["baselineScanId"], "missing-baseline")
             self.assertEqual(result["overlayCount"], 1)
+            self.assertIn("discovery", result)
+            discovery = result["discovery"]
+            self.assertTrue(pathlib.Path(discovery["reportPath"]).is_file())
+            self.assertTrue(pathlib.Path(discovery["summaryPath"]).is_file())
+            self.assertEqual(result["summary"]["status"], "generated-discovery-only")
+            self.assertIsNone(result["summary"].get("generatedScriptPath"))
+
+
+    def test_run_universal_discovery_export_outputs_schema_and_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "live-observation.json"
+            make_live_observation_tool_export(overlay, baseline_scan_id="receiver_pipeline_scan")
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Identify mechanics and progression systems",
+                scenario_name="bubble-like-discovery",
+            )
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(result["schemaVersion"], "live-observation-discovery.1")
+
+            discovery = result["discovery"]
+            report_path = pathlib.Path(discovery["reportPath"])
+            summary_path = pathlib.Path(discovery["summaryPath"])
+            self.assertTrue(report_path.is_file())
+            self.assertTrue(summary_path.is_file())
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["schemaVersion"], "30.8.universal-discovery-report.1")
+            self.assertIn("gameIdentity", report)
+            self.assertIn("scanMetadata", report)
+            self.assertIn("objectAndInteractionInventory", report)
+            self.assertIn("playerProgressionRegistry", report)
+            self.assertIn("discoveredGameplaySystems", report)
+            self.assertIn("candidateActionOutcomeRelationships", report)
+            self.assertIn("guiWorkflowGraph", report)
+            self.assertIn("knownExecutableInteractionMechanisms", report)
+            self.assertIn("uncertaintiesAndValidation", report)
+            self.assertIn("qualityMetrics", report)
+            self.assertIn("crossGameIsolation", report)
+            self.assertGreater(len(report.get("candidateActionOutcomeRelationships") or []), 0)
+
+            quality = report["qualityMetrics"]
+            self.assertIn("distinctMechanicsIdentified", quality)
+            self.assertIn("interactionCoverage", quality)
+            self.assertIn("actionOutcomeRelationships", quality)
+            self.assertIn("workflowCompleteness", quality)
+
+            summary_text = summary_path.read_text(encoding="utf-8")
+            self.assertIn("Lycoles Universal Discovery Summary", summary_text)
+            self.assertIn("Top discovered systems", summary_text)
+
 
     def test_run_live_observation_scenario_succeeds_for_matching_automatic_workflow(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -820,6 +873,9 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 result["summary"]["executableLogic"]["requestExecutableStatus"],
                 "request-executable-ready",
             )
+            self.assertIn("discovery", result)
+            self.assertTrue(pathlib.Path(result["discovery"]["reportPath"]).is_file())
+            self.assertTrue(pathlib.Path(result["discovery"]["summaryPath"]).is_file())
             self.assertTrue(pathlib.Path(result["summary"]["generatedScriptPath"]).is_file())
 
     def test_run_live_observation_scenario_recovers_auto_train_without_baseline_parts(self):
@@ -844,6 +900,9 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
 
             contract = json.loads(pathlib.Path(summary["contractPath"]).read_text(encoding="utf-8"))
             self.assertEqual(contract["schemaVersion"], "117.observation-tool-contract.6")
+            self.assertEqual(summary["schemaVersion"], "117.observation-recovery-summary.6")
+            self.assertTrue(pathlib.Path(summary["discoveryReportPath"]).is_file())
+            self.assertTrue(pathlib.Path(summary["discoverySummaryPath"]).is_file())
             outcome_model = contract["outcomeModel"]
             self.assertEqual(outcome_model["kind"], "delayed-cumulative")
             self.assertEqual(outcome_model["primaryStatePath"], "LocalPlayer.leaderstats.Strength")

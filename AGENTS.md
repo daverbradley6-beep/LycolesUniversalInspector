@@ -30,6 +30,14 @@ Target experiences are third-party games that the user does not own and cannot o
 - Observation stat outputs now include category separation (`primary-progression`, `quest-progress`, `currency-resource`, `inventory-count`, `equipment-or-pet-experience`, `transient-state`, `other-progression`).
 - Reward payload extraction is now reward-scoped; quest collect controls are no longer admitted into `auto_rewards` payload-derived paths.
 
+- Universal discovery pivot (2026-11-10): `tools/receiver_generation_pipeline.py` now emits discovery artifacts independent of executable generation:
+  - machine-readable report schema `30.8.universal-discovery-report.1` (`universal-discovery-report.json`),
+  - human-readable summary (`universal-discovery-summary.txt`),
+  - discovery-only CLI mode: `discover-observation`.
+- `run_live_observation_scenario` now always produces discovery artifacts first; when baseline parts are missing and no executable contract is derivable, status is `discovery-only` with `generated-discovery-only` recovery summary instead of hard failure.
+- Observation recovery summary schema upgraded to `117.observation-recovery-summary.6` to include discovery artifact paths/metrics.
+- Added Potassium universal inspector loader template at `potassium_artifacts/universal_discovery_live_package/PotassiumInspectorLoader.template.lua` pointing to commit-pinned `LycolesUniversalInspector.lua` raw URL.
+
 ## Evidence architecture
 
 Prioritize, in order:

@@ -1,3 +1,40 @@
+## Update — 2026-11-10 — Universal discovery architecture pivot (Bubble Gum validation prep)
+
+### Implemented
+
+- Added discovery-first export pipeline in `tools/receiver_generation_pipeline.py`:
+  - New machine-readable schema: `30.8.universal-discovery-report.1`.
+  - New human-readable summary artifact: `universal-discovery-summary.txt`.
+  - New CLI mode: `discover-observation` for discovery-only processing of one dynamic observation export.
+- Discovery output now includes:
+  - game identity and scan metadata,
+  - object/interaction inventory,
+  - progression/state registry with categories,
+  - discovered gameplay systems with evidence sufficiency and confidence,
+  - action-to-outcome relationship candidates with explicit causality limits,
+  - GUI workflow graph nodes/edges,
+  - requirements/eligibility evidence,
+  - world interaction candidates,
+  - known executable interaction mechanisms,
+  - uncertainty + recommended validation steps,
+  - discovery quality metrics and cross-game contamination signals.
+- `run_live_observation_scenario` now emits discovery artifacts before automation recovery and supports `discovery-only` status when executable contracts are not evidenced.
+- Observation recovery summary upgraded to `117.observation-recovery-summary.6` with discovery paths/metrics.
+- Added universal Potassium inspector loader template:
+  - `potassium_artifacts/universal_discovery_live_package/PotassiumInspectorLoader.template.lua`
+
+### Validation completed
+
+- Focused receiver pipeline regressions:
+  - `python3 tests/test_receiver_generation_pipeline.py` (**22/22 passed**)
+- Full regression suite:
+  - `python3 -m unittest discover -s tests` (**1651 passed, 17 skipped**)
+- Luau compile:
+  - `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua` ✅
+  - `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua` ✅
+- Discovery-only CLI smoke test:
+  - `python3 tools/receiver_generation_pipeline.py discover-observation ...` (PASS)
+
 ## Update — 2026-11-10 — Critical live bug-fix pass (train/quest/reward/stat)
 
 ### Implemented

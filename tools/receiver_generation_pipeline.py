@@ -749,6 +749,699 @@ def _confidence_level(score: float) -> str:
     return "low"
 
 
+_DISCOVERY_FIXTURE_TOKENS: dict[str, tuple[str, ...]] = {
+    "muscle_legends": (
+        "leaderstats.strength",
+        "backpack.weight",
+        "protein shake",
+        "rep titan",
+        "tough bar",
+        "handstands",
+    ),
+    "arsenal": (
+        "weapon",
+        "reload",
+        "magazine",
+        "headshot",
+        "killstreak",
+    ),
+}
+
+
+def _infer_system_category(path: Optional[str], feature_candidate: Optional[str], action_kind: Optional[str]) -> str:
+    candidate = (feature_candidate or "").strip().lower()
+    if candidate:
+        if "quest" in candidate:
+            return "quests-and-achievements"
+        if "reward" in candidate:
+            return "rewards-and-cooldowns"
+        if "pet" in candidate:
+            return "pets-and-companions"
+        if "inventory" in candidate:
+            return "inventory-and-equipment"
+        if "rebirth" in candidate or "prestige" in candidate:
+            return "rebirth-or-prestige"
+        if "shop" in candidate or "upgrade" in candidate:
+            return "shops-and-upgrades"
+        if "travel" in candidate or "portal" in candidate or "teleport" in candidate:
+            return "movement-and-navigation"
+        if candidate in {"combat", "train", "training"}:
+            return "tools-and-abilities"
+        return candidate.replace("_", "-")
+
+    low_path = (path or "").lower()
+    low_action = (action_kind or "").lower()
+    if any(token in low_path for token in ("quest", "objective", "achievement")):
+        return "quests-and-achievements"
+    if any(token in low_path for token in ("reward", "gift", "claim", "cooldown", "timer")):
+        return "rewards-and-cooldowns"
+    if any(token in low_path for token in ("egg", "hatch", "pet", "companion")):
+        return "pets-and-companions"
+    if any(token in low_path for token in ("shop", "upgrade", "buy", "sell")):
+        return "shops-and-upgrades"
+    if any(token in low_path for token in ("inventory", "equip", "backpack")):
+        return "inventory-and-equipment"
+    if any(token in low_path for token in ("bubble", "coin", "currency", "gem", "gold", "money")):
+        return "progression-and-currencies"
+    if any(token in low_path for token in ("rebirth", "prestige", "reset")):
+        return "rebirth-or-prestige"
+    if any(token in low_path for token in ("portal", "teleport", "world", "zone", "island")):
+        return "movement-and-navigation"
+    if "tool.activated" in low_action or "fire" in low_action or "interact" in low_action:
+        return "tools-and-abilities"
+    return "uncategorized"
+
+
+def _build_universal_discovery_report(
+    payload: dict[str, Any],
+    *,
+    requested_capability: Optional[str] = None,
+    generation_contract: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    events = _interaction_events_from_payload(payload)
+    objects = payload.get("objects") if isinstance(payload.get("objects"), list) else []
+    features = payload.get("features") if isinstance(payload.get("features"), list) else []
+    readiness = payload.get("featureReadiness") if isinstance(payload.get("featureReadiness"), dict) else {}
+
+    control_type_counts: dict[str, int] = {}
+    action_kind_counts: dict[str, int] = {}
+    feature_candidate_counts: dict[str, int] = {}
+    unique_paths: set[str] = set()
+
+    state_registry: dict[str, dict[str, Any]] = {}
+    relationships: list[dict[str, Any]] = []
+
+    workflow_nodes: dict[str, dict[str, Any]] = {}
+    workflow_edges: dict[tuple[str, str], int] = {}
+    workflow_transactions: dict[str, list[dict[str, Any]]] = {}
+
+    requirements_samples: list[dict[str, Any]] = []
+    world_candidates: dict[str, dict[str, Any]] = {}
+
+    attributed_events = 0
+    events_with_state_delta = 0
+    events_with_gui_transition = 0
+    path_identity_resolved = 0
+    path_identity_total = 0
+
+    for event in events:
+        control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else "unknown"
+        action_kind = event.get("actionKind") if isinstance(event.get("actionKind"), str) else "unknown"
+        feature_candidate = event.get("featureCandidate") if isinstance(event.get("featureCandidate"), str) else None
+        path = event.get("path") if isinstance(event.get("path"), str) else None
+        attribution = event.get("attribution") if isinstance(event.get("attribution"), str) else "unknown"
+
+        control_type_counts[control_type] = control_type_counts.get(control_type, 0) + 1
+        action_kind_counts[action_kind] = action_kind_counts.get(action_kind, 0) + 1
+        if feature_candidate:
+            feature_candidate_counts[feature_candidate] = feature_candidate_counts.get(feature_candidate, 0) + 1
+        if path:
+            unique_paths.add(path)
+
+        if attribution not in {"unknown", "unattributed", "unattributed-input"}:
+            attributed_events += 1
+
+        path_identity = event.get("pathIdentity")
+        if isinstance(path_identity, list):
+            path_identity_total += 1
+            if len(path_identity) > 0:
+                path_identity_resolved += 1
+
+        transaction_id = event.get("transactionId") if isinstance(event.get("transactionId"), str) else None
+        if transaction_id:
+            workflow_transactions.setdefault(transaction_id, []).append(event)
+
+        preconditions = {}
+        metadata = event.get("controlMetadata") if isinstance(event.get("controlMetadata"), dict) else {}
+        for key in ("enabled", "active", "visible", "effectiveVisible", "interactable", "ancestorVisible", "screenEnabled", "requiresHandle"):
+            if key in metadata:
+                preconditions[key] = metadata.get(key)
+        if preconditions and len(requirements_samples) < 80:
+            requirements_samples.append({
+                "path": path,
+                "controlType": control_type,
+                "featureCandidate": feature_candidate,
+                "preconditions": preconditions,
+            })
+
+        gui_changes = event.get("guiStateChanges") if isinstance(event.get("guiStateChanges"), list) else []
+        if len(gui_changes) > 0:
+            events_with_gui_transition += 1
+
+        state_changes = event.get("stateChanges") if isinstance(event.get("stateChanges"), list) else []
+        numeric_delta_detected = False
+        relationship_state_changes: list[dict[str, Any]] = []
+        for change in state_changes:
+            if not isinstance(change, dict):
+                continue
+            key = change.get("key")
+            if not isinstance(key, str) or not key:
+                continue
+            before = change.get("before")
+            after = change.get("after")
+            before_num = _numeric(before)
+            after_num = _numeric(after)
+            delta = None
+            if before_num is not None and after_num is not None:
+                delta = round(after_num - before_num, 6)
+                if delta != 0:
+                    numeric_delta_detected = True
+
+            classification = _classify_observed_state_key(key)
+            category = _stat_category_from_key(key, classification)
+            bucket = state_registry.setdefault(key, {
+                "id": "state_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
+                "key": key,
+                "name": _normalize_stat_name_from_key(key),
+                "source": _stat_source_from_key(key),
+                "category": category,
+                "classification": classification,
+                "changes": 0,
+                "increases": 0,
+                "decreases": 0,
+                "lastBefore": None,
+                "lastAfter": None,
+                "sampleActions": [],
+            })
+            bucket["changes"] += 1
+            bucket["lastBefore"] = before
+            bucket["lastAfter"] = after
+            if delta is not None and delta > 0:
+                bucket["increases"] += 1
+            elif delta is not None and delta < 0:
+                bucket["decreases"] += 1
+            if len(bucket["sampleActions"]) < 8:
+                bucket["sampleActions"].append({
+                    "path": path,
+                    "controlType": control_type,
+                    "featureCandidate": feature_candidate,
+                    "before": before,
+                    "after": after,
+                    "delta": delta,
+                })
+
+            relationship_state_changes.append({
+                "key": key,
+                "before": before,
+                "after": after,
+                "delta": delta,
+                "category": category,
+            })
+
+        if relationship_state_changes:
+            events_with_state_delta += 1
+
+        relationship_confidence = "low"
+        if numeric_delta_detected:
+            relationship_confidence = "medium"
+            if feature_candidate and control_type in {"Tool.Activated", "GuiButton.Activated", "ProximityPrompt.Triggered"}:
+                relationship_confidence = "high"
+
+        relationships.append({
+            "id": "rel_" + hashlib.sha256(f"{control_type}|{path}|{event.get('sequence')}|{event.get('sessionElapsedSeconds')}".encode("utf-8")).hexdigest()[:16],
+            "action": {
+                "type": control_type,
+                "kind": action_kind,
+                "targetPath": path,
+                "featureCandidate": feature_candidate,
+            },
+            "objectIdentity": {
+                "pathIdentity": path_identity if isinstance(path_identity, list) else None,
+            },
+            "preconditions": preconditions,
+            "stateBeforeAfter": relationship_state_changes,
+            "guiTransitionsObserved": len(gui_changes),
+            "observationWindows": event.get("observationWindows") if isinstance(event.get("observationWindows"), list) else [],
+            "possibleDependencies": [feature_candidate] if feature_candidate else [],
+            "conflictingActivity": {
+                "attribution": attribution,
+                "signals": [] if attribution not in {"unattributed", "unattributed-input"} else ["unattributed-activity"],
+            },
+            "confidence": {
+                "level": relationship_confidence,
+                "causality": "not-proven-temporal-correlation-only",
+                "limitations": [
+                    "Client-observed temporal correlation only",
+                    "No server authority proof",
+                ],
+            },
+        })
+
+        if path:
+            node = workflow_nodes.setdefault(path, {
+                "id": "node_" + hashlib.sha256(path.encode("utf-8")).hexdigest()[:12],
+                "path": path,
+                "controlTypes": set(),
+                "featureCandidates": set(),
+                "activationCount": 0,
+            })
+            node["controlTypes"].add(control_type)
+            if feature_candidate:
+                node["featureCandidates"].add(feature_candidate)
+            node["activationCount"] += 1
+
+        if path and (path.lower().startswith("workspace.") or control_type == "ProximityPrompt.Triggered"):
+            candidate = world_candidates.setdefault(path, {
+                "path": path,
+                "controlTypes": set(),
+                "observedInteractions": 0,
+            })
+            candidate["controlTypes"].add(control_type)
+            candidate["observedInteractions"] += 1
+
+    for transaction_id, transaction_events in workflow_transactions.items():
+        def _event_order_key(item: dict[str, Any]) -> tuple[float, int]:
+            elapsed = _numeric(item.get("sessionElapsedSeconds"))
+            if elapsed is None:
+                elapsed = _numeric(item.get("transactionOrder"))
+            if elapsed is None:
+                elapsed = _numeric(item.get("sequence"))
+            if elapsed is None:
+                elapsed = 0.0
+            sequence = item.get("sequence") if isinstance(item.get("sequence"), int) else 0
+            return (float(elapsed), sequence)
+
+        ordered = sorted(transaction_events, key=_event_order_key)
+        for left, right in zip(ordered, ordered[1:]):
+            left_path = left.get("path") if isinstance(left.get("path"), str) else None
+            right_path = right.get("path") if isinstance(right.get("path"), str) else None
+            if not left_path or not right_path:
+                continue
+            edge_key = (left_path, right_path)
+            workflow_edges[edge_key] = workflow_edges.get(edge_key, 0) + 1
+
+    discovered_systems: dict[str, dict[str, Any]] = {}
+
+    for feature_item in features:
+        if not isinstance(feature_item, dict):
+            continue
+        feature_name = feature_item.get("feature") if isinstance(feature_item.get("feature"), str) else None
+        if not feature_name:
+            continue
+        system_id = _infer_system_category(None, feature_name, None)
+        bucket = discovered_systems.setdefault(system_id, {
+            "id": system_id,
+            "title": system_id.replace("-", " ").title(),
+            "sourceSignals": set(),
+            "observedInteractionEvents": 0,
+            "observedStateChanges": 0,
+            "observedGuiTransitions": 0,
+            "actionableWorkflowDiscovered": False,
+            "evidenceSufficientForGeneration": False,
+            "additionalObservationNeeded": set(),
+        })
+        bucket["sourceSignals"].add("feature-summary")
+        if isinstance(feature_item.get("interactionEvents"), int):
+            bucket["observedInteractionEvents"] += int(feature_item.get("interactionEvents") or 0)
+        if isinstance(feature_item.get("temporalTransitionEvents"), int):
+            bucket["observedStateChanges"] += int(feature_item.get("temporalTransitionEvents") or 0)
+        if not feature_item.get("implementationReady", False):
+            bucket["additionalObservationNeeded"].add("actionable-workflow-validation")
+
+    for key, value in readiness.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        system_id = _infer_system_category(None, key, None)
+        bucket = discovered_systems.setdefault(system_id, {
+            "id": system_id,
+            "title": system_id.replace("-", " ").title(),
+            "sourceSignals": set(),
+            "observedInteractionEvents": 0,
+            "observedStateChanges": 0,
+            "observedGuiTransitions": 0,
+            "actionableWorkflowDiscovered": False,
+            "evidenceSufficientForGeneration": False,
+            "additionalObservationNeeded": set(),
+        })
+        bucket["sourceSignals"].add("feature-readiness")
+        if not value.get("implemented", False):
+            bucket["additionalObservationNeeded"].add("implementation-validation")
+
+    for event in events:
+        path = event.get("path") if isinstance(event.get("path"), str) else None
+        feature_candidate = event.get("featureCandidate") if isinstance(event.get("featureCandidate"), str) else None
+        action_kind = event.get("actionKind") if isinstance(event.get("actionKind"), str) else None
+        control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else None
+        system_id = _infer_system_category(path, feature_candidate, action_kind)
+        bucket = discovered_systems.setdefault(system_id, {
+            "id": system_id,
+            "title": system_id.replace("-", " ").title(),
+            "sourceSignals": set(),
+            "observedInteractionEvents": 0,
+            "observedStateChanges": 0,
+            "observedGuiTransitions": 0,
+            "actionableWorkflowDiscovered": False,
+            "evidenceSufficientForGeneration": False,
+            "additionalObservationNeeded": set(),
+        })
+        bucket["sourceSignals"].add("interaction-events")
+        bucket["observedInteractionEvents"] += 1
+        if isinstance(event.get("stateChanges"), list) and len(event.get("stateChanges") or []) > 0:
+            bucket["observedStateChanges"] += len(event.get("stateChanges") or [])
+        if isinstance(event.get("guiStateChanges"), list) and len(event.get("guiStateChanges") or []) > 0:
+            bucket["observedGuiTransitions"] += len(event.get("guiStateChanges") or [])
+        if control_type in {"Tool.Activated", "GuiButton.Activated", "ProximityPrompt.Triggered"} and path:
+            bucket["actionableWorkflowDiscovered"] = True
+
+    systems_list: list[dict[str, Any]] = []
+    for bucket in discovered_systems.values():
+        evidence_score = 0.0
+        if bucket["observedInteractionEvents"] > 0:
+            evidence_score += min(0.4, bucket["observedInteractionEvents"] / 50.0)
+        if bucket["observedStateChanges"] > 0:
+            evidence_score += min(0.4, bucket["observedStateChanges"] / 80.0)
+        if bucket["actionableWorkflowDiscovered"]:
+            evidence_score += 0.2
+        bucket["evidenceSufficientForGeneration"] = bool(
+            bucket["actionableWorkflowDiscovered"] and bucket["observedStateChanges"] > 0
+        )
+        if not bucket["actionableWorkflowDiscovered"]:
+            bucket["additionalObservationNeeded"].add("actionable-control-paths")
+        if bucket["observedStateChanges"] == 0:
+            bucket["additionalObservationNeeded"].add("outcome-state-deltas")
+        systems_list.append({
+            "id": bucket["id"],
+            "title": bucket["title"],
+            "sourceSignals": sorted(bucket["sourceSignals"]),
+            "observedInteractionEvents": bucket["observedInteractionEvents"],
+            "observedStateChanges": bucket["observedStateChanges"],
+            "observedGuiTransitions": bucket["observedGuiTransitions"],
+            "actionableWorkflowDiscovered": bucket["actionableWorkflowDiscovered"],
+            "evidenceSufficientForGeneration": bucket["evidenceSufficientForGeneration"],
+            "confidence": {
+                "score": round(min(1.0, evidence_score), 3),
+                "level": _confidence_level(min(1.0, evidence_score)),
+            },
+            "additionalObservationNeeded": sorted(bucket["additionalObservationNeeded"]),
+        })
+
+    systems_list.sort(key=lambda item: (-item["confidence"]["score"], -item["observedInteractionEvents"], item["id"]))
+
+    state_signals = []
+    for value in sorted(state_registry.values(), key=lambda item: (-item["changes"], -item["increases"], item["key"])):
+        confidence_score = min(1.0, (value["changes"] / 8.0) + (value["increases"] / 8.0))
+        state_signals.append({
+            "id": value["id"],
+            "key": value["key"],
+            "name": value["name"],
+            "source": value["source"],
+            "category": value["category"],
+            "changes": value["changes"],
+            "increases": value["increases"],
+            "decreases": value["decreases"],
+            "lastBefore": value["lastBefore"],
+            "lastAfter": value["lastAfter"],
+            "confidence": {
+                "score": round(confidence_score, 3),
+                "level": _confidence_level(confidence_score),
+            },
+            "sampleActions": value["sampleActions"],
+            "limitations": [
+                "Temporal observation only",
+                "No server-authority proof",
+            ],
+        })
+
+    workflow_node_items = []
+    for item in sorted(workflow_nodes.values(), key=lambda value: (-value["activationCount"], value["path"])):
+        workflow_node_items.append({
+            "id": item["id"],
+            "path": item["path"],
+            "activationCount": item["activationCount"],
+            "controlTypes": sorted(item["controlTypes"]),
+            "featureCandidates": sorted(item["featureCandidates"]),
+        })
+
+    workflow_edge_items = []
+    for (left, right), count in sorted(workflow_edges.items(), key=lambda item: (-item[1], item[0][0], item[0][1])):
+        workflow_edge_items.append({
+            "from": left,
+            "to": right,
+            "observedTransitions": count,
+        })
+
+    mechanisms = []
+    mechanism_map = {
+        "Tool.Activated": "tool-activation",
+        "GuiButton.Activated": "gui-button-activation",
+        "ProximityPrompt.Triggered": "proximity-prompt-trigger",
+        "InputBegan.Keyboard": "keyboard-input",
+        "InputBegan.MouseButton1": "pointer-input",
+    }
+    for control_type, count in sorted(control_type_counts.items(), key=lambda item: (-item[1], item[0])):
+        mechanisms.append({
+            "kind": mechanism_map.get(control_type, control_type.lower().replace(".", "-")),
+            "controlType": control_type,
+            "observedCount": count,
+            "confidence": "observed",
+            "limitations": ["Observed client execution path only"],
+        })
+
+    contamination_signals: list[dict[str, Any]] = []
+    joined_paths = "\n".join(sorted(unique_paths)).lower()
+    joined_states = "\n".join(item["key"].lower() for item in state_signals)
+    requested_text = (requested_capability or "").lower()
+    game_name = (payload.get("gameName") or "") if isinstance(payload.get("gameName"), str) else ""
+    normalized_game = game_name.lower()
+    for fixture_name, tokens in _DISCOVERY_FIXTURE_TOKENS.items():
+        if fixture_name.replace("_", " ") in normalized_game:
+            continue
+        hits = [token for token in tokens if token in joined_paths or token in joined_states or token in requested_text]
+        if hits:
+            contamination_signals.append({
+                "fixture": fixture_name,
+                "tokenHits": sorted(set(hits)),
+                "severity": "review",
+            })
+
+    relationship_with_outcome = sum(1 for item in relationships if len(item["stateBeforeAfter"]) > 0)
+    workflow_transaction_count = len(workflow_transactions)
+    workflow_complete_transactions = sum(1 for events_in_tx in workflow_transactions.values() if len(events_in_tx) >= 2)
+
+    distinct_mechanics = len(systems_list)
+    object_count = len(objects)
+    interaction_target_count = len(unique_paths)
+    actionable_systems = sum(1 for item in systems_list if item["actionableWorkflowDiscovered"])
+
+    quality_metrics = {
+        "distinctMechanicsIdentified": distinct_mechanics,
+        "objectCoverage": {
+            "objectCount": object_count,
+            "uniqueInteractionTargets": interaction_target_count,
+            "interactionTargetToObjectRatio": round(interaction_target_count / object_count, 4) if object_count > 0 else None,
+        },
+        "interactionCoverage": {
+            "totalObservedInteractions": len(events),
+            "interactionsWithStateDeltas": events_with_state_delta,
+            "interactionsWithGuiTransitions": events_with_gui_transition,
+            "attributedInteractionCount": attributed_events,
+        },
+        "actionOutcomeRelationships": {
+            "totalRelationships": len(relationships),
+            "relationshipsWithOutcomeSignals": relationship_with_outcome,
+        },
+        "resolvableObjectPaths": {
+            "pathIdentityObserved": path_identity_total,
+            "pathIdentityResolved": path_identity_resolved,
+            "resolutionRatio": round(path_identity_resolved / path_identity_total, 4) if path_identity_total > 0 else None,
+        },
+        "workflowCompleteness": {
+            "transactionCount": workflow_transaction_count,
+            "multiStepTransactions": workflow_complete_transactions,
+            "multiStepRatio": round(workflow_complete_transactions / workflow_transaction_count, 4) if workflow_transaction_count > 0 else None,
+            "graphNodeCount": len(workflow_node_items),
+            "graphEdgeCount": len(workflow_edge_items),
+        },
+        "evidenceConfidence": {
+            "actionableSystemCount": actionable_systems,
+            "systemsSufficientForGeneration": sum(1 for item in systems_list if item["evidenceSufficientForGeneration"]),
+            "highConfidenceSystems": sum(1 for item in systems_list if item["confidence"]["level"] == "high"),
+        },
+        "unsupportedAssumptions": {
+            "count": 0,
+            "notes": ["No server-side capability inference is treated as proven"],
+        },
+        "crossGameContamination": {
+            "signalCount": len(contamination_signals),
+            "signals": contamination_signals,
+        },
+    }
+
+    uncertainties: list[str] = [
+        "Temporal correlation does not prove server-side causality",
+        "Client-visible state does not prove remote invocation authority",
+    ]
+    claims = {
+        "runtimeVerified": bool(payload.get("runtimeVerified") is True),
+        "gameplayVerified": bool(payload.get("gameplayVerified") is True),
+        "causalityProven": bool(payload.get("causalityProven") is True),
+        "serverAuthorityVerified": bool(payload.get("serverAuthorityVerified") is True),
+        "sourceAuthenticityVerified": bool(payload.get("sourceAuthenticityVerified") is True),
+    }
+    for key, value in claims.items():
+        if not value:
+            uncertainties.append(f"{key} is not verified")
+
+    recommended_steps: list[str] = []
+    if actionable_systems == 0:
+        recommended_steps.append("Record interactions that activate actionable controls for candidate systems")
+    if relationship_with_outcome == 0:
+        recommended_steps.append("Capture additional runs with clear pre/post progression state changes")
+    if workflow_complete_transactions == 0:
+        recommended_steps.append("Capture complete multi-step GUI workflows using workflow recording")
+    if len(contamination_signals) > 0:
+        recommended_steps.append("Review fixture-token overlap to rule out cross-game heuristic leakage")
+
+    if not recommended_steps:
+        recommended_steps.append("Run targeted validation for highest-confidence mechanics in live gameplay")
+
+    return {
+        "schemaVersion": "30.8.universal-discovery-report.1",
+        "gameIdentity": {
+            "placeId": payload.get("placeId"),
+            "gameId": payload.get("gameId"),
+            "gameName": payload.get("gameName"),
+            "scanId": payload.get("scanId"),
+            "baselineScanId": payload.get("baselineScanId"),
+            "snapshotId": payload.get("snapshotId"),
+            "sessionId": payload.get("sessionId"),
+        },
+        "scanMetadata": {
+            "inspectorSchemaVersion": payload.get("schemaVersion"),
+            "exportKind": payload.get("exportKind"),
+            "integrity": payload.get("integrity") if isinstance(payload.get("integrity"), dict) else {},
+            "sourceDiagnostics": payload.get("sourceDiagnostics") if isinstance(payload.get("sourceDiagnostics"), dict) else {},
+            "sourceProvenance": payload.get("sourceProvenance") if isinstance(payload.get("sourceProvenance"), dict) else {},
+            "requestedCapability": requested_capability,
+        },
+        "objectAndInteractionInventory": {
+            "objectsObserved": object_count,
+            "interactionEventsObserved": len(events),
+            "controlTypes": control_type_counts,
+            "actionKinds": action_kind_counts,
+            "featureCandidates": feature_candidate_counts,
+            "uniqueInteractionTargets": sorted(unique_paths)[:250],
+        },
+        "playerProgressionRegistry": {
+            "stateSignals": state_signals,
+            "totalStateSignals": len(state_signals),
+        },
+        "discoveredGameplaySystems": systems_list,
+        "candidateActionOutcomeRelationships": relationships[:240],
+        "guiWorkflowGraph": {
+            "nodes": workflow_node_items,
+            "edges": workflow_edge_items,
+            "transactionCount": workflow_transaction_count,
+        },
+        "requirementsAndEligibilityEvidence": {
+            "samples": requirements_samples,
+            "sampleCount": len(requirements_samples),
+        },
+        "worldInteractionCandidates": [
+            {
+                "path": item["path"],
+                "controlTypes": sorted(item["controlTypes"]),
+                "observedInteractions": item["observedInteractions"],
+            }
+            for item in sorted(world_candidates.values(), key=lambda value: (-value["observedInteractions"], value["path"]))[:120]
+        ],
+        "knownExecutableInteractionMechanisms": mechanisms,
+        "uncertaintiesAndValidation": {
+            "uncertainties": sorted(set(uncertainties)),
+            "recommendedValidationSteps": recommended_steps,
+            "claims": claims,
+        },
+        "qualityMetrics": quality_metrics,
+        "crossGameIsolation": {
+            "fixturesReviewed": sorted(_DISCOVERY_FIXTURE_TOKENS.keys()),
+            "potentialContaminationSignals": contamination_signals,
+        },
+        "generationLayerContext": {
+            "contractSchemaVersion": generation_contract.get("schemaVersion") if isinstance(generation_contract, dict) else None,
+            "generatedFeatureIds": generation_contract.get("generatedFeatureIds") if isinstance(generation_contract, dict) else [],
+            "generationOptional": True,
+            "note": "Discovery export is produced independently of generated automation availability",
+        },
+    }
+
+
+def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
+    identity = report.get("gameIdentity") if isinstance(report.get("gameIdentity"), dict) else {}
+    metrics = report.get("qualityMetrics") if isinstance(report.get("qualityMetrics"), dict) else {}
+    systems = report.get("discoveredGameplaySystems") if isinstance(report.get("discoveredGameplaySystems"), list) else []
+    uncertainties = ((report.get("uncertaintiesAndValidation") or {}).get("uncertainties") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
+    steps = ((report.get("uncertaintiesAndValidation") or {}).get("recommendedValidationSteps") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
+
+    top_system_lines = []
+    for item in systems[:8]:
+        if not isinstance(item, dict):
+            continue
+        top_system_lines.append(
+            f"- {item.get('title')} | interactions={item.get('observedInteractionEvents')} | stateChanges={item.get('observedStateChanges')} | actionable={item.get('actionableWorkflowDiscovered')} | generationReady={item.get('evidenceSufficientForGeneration')} | confidence={((item.get('confidence') or {}).get('level'))}"
+        )
+
+    lines = [
+        "Lycoles Universal Discovery Summary",
+        "",
+        f"Schema: {report.get('schemaVersion')}",
+        f"Game: {identity.get('gameName') or 'unknown'}",
+        f"Place ID: {identity.get('placeId')}",
+        f"Scan ID: {identity.get('scanId')}",
+        "",
+        "Discovery quality metrics:",
+        f"- Distinct mechanics identified: {(metrics.get('distinctMechanicsIdentified') if isinstance(metrics, dict) else None)}",
+        f"- Observed interactions: {(((metrics.get('interactionCoverage') or {}).get('totalObservedInteractions')) if isinstance(metrics, dict) else None)}",
+        f"- Relationships with outcome signals: {((metrics.get('actionOutcomeRelationships') or {}).get('relationshipsWithOutcomeSignals') if isinstance(metrics, dict) else None)}",
+        f"- Workflow transactions: {((metrics.get('workflowCompleteness') or {}).get('transactionCount') if isinstance(metrics, dict) else None)}",
+        f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",
+        "",
+        "Top discovered systems:",
+    ]
+    lines.extend(top_system_lines or ["- none identified"])
+    lines.extend([
+        "",
+        "Uncertainties:",
+    ])
+    lines.extend([f"- {item}" for item in uncertainties] or ["- none"])
+    lines.extend([
+        "",
+        "Recommended next validation steps:",
+    ])
+    lines.extend([f"- {item}" for item in steps] or ["- none"])
+    return "\n".join(lines) + "\n"
+
+
+def _write_universal_discovery_artifacts(
+    payload: dict[str, Any],
+    *,
+    requested_capability: Optional[str],
+    output_root: pathlib.Path,
+    generation_contract: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    output_root = pathlib.Path(output_root).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    report = _build_universal_discovery_report(
+        payload,
+        requested_capability=requested_capability,
+        generation_contract=generation_contract,
+    )
+    report_path = output_root / "universal-discovery-report.json"
+    summary_path = output_root / "universal-discovery-summary.txt"
+
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    summary_path.write_text(_render_universal_discovery_summary(report), encoding="utf-8")
+
+    return {
+        "schemaVersion": report.get("schemaVersion"),
+        "reportPath": str(report_path),
+        "summaryPath": str(summary_path),
+        "qualityMetrics": report.get("qualityMetrics"),
+    }
+
+
+
+
 
 def _build_observation_tool_contract(payload: dict[str, Any], requested_capability: str) -> Optional[dict[str, Any]]:
     events = _interaction_events_from_payload(payload)
@@ -1976,14 +2669,62 @@ def _recover_observation_only_auto_train(
     payload: dict[str, Any],
     requested_capability: str,
     scenario_output_root: pathlib.Path,
-) -> Optional[dict[str, Any]]:
-    contract = _build_observation_tool_contract(payload, requested_capability)
-    if not isinstance(contract, dict):
-        return None
+) -> dict[str, Any]:
     scenario_output_root.mkdir(parents=True, exist_ok=True)
+    summary_path = scenario_output_root / "observation-recovery-summary.json"
+
+    contract = _build_observation_tool_contract(payload, requested_capability)
+    discovery = _write_universal_discovery_artifacts(
+        payload,
+        requested_capability=requested_capability,
+        output_root=scenario_output_root,
+        generation_contract=contract if isinstance(contract, dict) else None,
+    )
+
+    if not isinstance(contract, dict):
+        summary = {
+            "schemaVersion": "117.observation-recovery-summary.6",
+            "status": "generated-discovery-only",
+            "generatedScriptPath": None,
+            "generatedScriptKind": "none",
+            "loaderTemplatePath": None,
+            "contractPath": None,
+            "toolPath": None,
+            "primaryOutcomePath": None,
+            "questRepetitionStatePathCount": 0,
+            "outcomeStateKeyCount": 0,
+            "statRegistryCount": 0,
+            "statTrainingTargetCount": 0,
+            "actionStatRelationshipCount": 0,
+            "implementedFeatures": [],
+            "monitoredFeatures": [],
+            "excludedFeatures": [],
+            "unsupportedFeatures": [],
+            "discoveryReportPath": discovery.get("reportPath"),
+            "discoverySummaryPath": discovery.get("summaryPath"),
+            "discoveryQualityMetrics": discovery.get("qualityMetrics"),
+            "claims": {
+                "runtimeVerified": False,
+                "gameplayVerified": False,
+                "causalityProven": False,
+                "serverAuthorityVerified": False,
+                "sourceAuthenticityVerified": False,
+            },
+            "executableLogic": {
+                "requestExecutableStatus": "request-executable-unavailable",
+                "automaticExecutionRequired": True,
+                "automaticExecutionReadyWorkflowCandidates": 0,
+                "requestAlignedAutomaticExecutionReadyWorkflows": 0,
+                "selectedWorkflowCandidateId": None,
+                "requestImplementationReady": False,
+                "requestStatus": "discovery-only-evidence",
+            },
+        }
+        summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+        return summary
+
     script_path = scenario_output_root / "LycolesGeneratedFeatureBatch.lua"
     contract_path = scenario_output_root / "observation-tool-contract.json"
-    summary_path = scenario_output_root / "observation-recovery-summary.json"
     loader_path = scenario_output_root / "PotassiumLoaderTemplate.lua"
 
     source = _render_observation_auto_train_luau(contract)
@@ -2010,7 +2751,7 @@ def _recover_observation_only_auto_train(
     monitor_features = [item for item in supported_features if item not in executable_features]
 
     summary = {
-        "schemaVersion": "117.observation-recovery-summary.5",
+        "schemaVersion": "117.observation-recovery-summary.6",
         "status": "generated-observation-contract",
         "generatedScriptPath": str(script_path),
         "generatedScriptKind": "observation-multi-feature-batch",
@@ -2027,6 +2768,9 @@ def _recover_observation_only_auto_train(
         "monitoredFeatures": [item.get("id") for item in monitor_features],
         "excludedFeatures": [item.get("id") for item in unsupported_features],
         "unsupportedFeatures": unsupported_features,
+        "discoveryReportPath": discovery.get("reportPath"),
+        "discoverySummaryPath": discovery.get("summaryPath"),
+        "discoveryQualityMetrics": discovery.get("qualityMetrics"),
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -2067,6 +2811,14 @@ def run_live_observation_scenario(
     if not isinstance(selected_baseline, str) or not selected_baseline:
         raise ValueError("observation baselineScanId is required")
 
+    scenario_output_root = output_root / scenario_name
+    discovery = _write_universal_discovery_artifacts(
+        payload,
+        requested_capability=requested_capability,
+        output_root=scenario_output_root,
+        generation_contract=None,
+    )
+
     overlays, overlay_metadata = discover_observation_overlays(selected_baseline, [observation])
     report: dict[str, Any] = {
         "schemaVersion": "live-observation-exercise.1",
@@ -2077,6 +2829,7 @@ def run_live_observation_scenario(
         "inferredBaselineScanId": inferred_baseline,
         "overlayCount": len(overlays),
         "overlayMetadata": overlay_metadata,
+        "discovery": discovery,
         "claims": {
             "runtimeVerified": False,
             "gameplayVerified": False,
@@ -2091,22 +2844,28 @@ def run_live_observation_scenario(
         report["reason"] = "observation export rejected by dynamic-observation validation"
         return report
 
-    scenario_output_root = output_root / scenario_name
     parts_dir = _resolve_parts_dir_for_scan_id(extracted_root, selected_baseline)
     if not isinstance(parts_dir, pathlib.Path) or not parts_dir.is_dir():
         recovery = _recover_observation_only_auto_train(payload, requested_capability, scenario_output_root)
-        if isinstance(recovery, dict):
+        executable_status = ((recovery.get("executableLogic") or {}).get("requestExecutableStatus") if isinstance(recovery, dict) else None)
+        if require_executable and executable_status != "request-executable-ready":
+            raise ValueError("Executable workflow required but unavailable in observation-only recovery")
+
+        if recovery.get("status") == "generated-observation-contract":
             report["status"] = "recovered-observation-contract"
             report["reason"] = "baseline parts unavailable; generated bounded observation-only action contract"
-            report["extractedRoot"] = str(extracted_root)
-            report["recovery"] = recovery
-            report["summary"] = recovery
-            if require_executable and recovery.get("executableLogic", {}).get("requestExecutableStatus") != "request-executable-ready":
-                raise ValueError("Executable workflow required but unavailable in observation-only recovery")
-            return report
-        report["status"] = "blocked"
-        report["reason"] = "baseline parts evidence unavailable"
+        else:
+            report["status"] = "discovery-only"
+            report["reason"] = "baseline parts unavailable and executable contract not evidenced; produced discovery export"
         report["extractedRoot"] = str(extracted_root)
+        report["recovery"] = recovery
+        report["summary"] = recovery
+        report["discovery"] = {
+            "schemaVersion": recovery.get("schemaVersion"),
+            "reportPath": recovery.get("discoveryReportPath"),
+            "summaryPath": recovery.get("discoverySummaryPath"),
+            "qualityMetrics": recovery.get("discoveryQualityMetrics"),
+        }
         return report
 
     generation = generate_from_parts(
@@ -2129,6 +2888,47 @@ def run_live_observation_scenario(
         "summary": summary,
     })
     return report
+
+
+def run_universal_discovery_export(
+    observation_path: pathlib.Path,
+    output_root: pathlib.Path,
+    requested_capability: Optional[str] = None,
+    scenario_name: str = "universal-discovery",
+) -> dict[str, Any]:
+    observation = pathlib.Path(observation_path).resolve()
+    if not observation.is_file():
+        raise ValueError(f"observation file not found: {observation}")
+    payload = _read_json_document(observation)
+
+    discovery_output_root = pathlib.Path(output_root).resolve() / scenario_name
+    discovery = _write_universal_discovery_artifacts(
+        payload,
+        requested_capability=requested_capability,
+        output_root=discovery_output_root,
+        generation_contract=None,
+    )
+
+    return {
+        "schemaVersion": "live-observation-discovery.1",
+        "status": "succeeded",
+        "scenario": scenario_name,
+        "observationPath": str(observation),
+        "scanId": payload.get("scanId"),
+        "placeId": payload.get("placeId"),
+        "gameName": payload.get("gameName"),
+        "requestedCapability": requested_capability,
+        "discovery": discovery,
+        "claims": {
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+            "causalityProven": False,
+            "serverAuthorityVerified": False,
+            "sourceAuthenticityVerified": False,
+        },
+    }
+
+
 
 
 def generate_from_parts(
@@ -2280,6 +3080,16 @@ def main() -> int:
     observation_parser.add_argument("--require-executable", action="store_true",
         help="Fail if requested capability does not produce request-aligned executable workflow output")
 
+    discovery_parser = subparsers.add_parser(
+        "discover-observation",
+        help="Produce universal discovery report/summary from one dynamic-observation export",
+    )
+    discovery_parser.add_argument("--observation", required=True,
+        help="Path to one dynamic-observations JSON export")
+    discovery_parser.add_argument("--output-root", default="build/live-observation-discovery")
+    discovery_parser.add_argument("--scenario-name", default="universal-discovery")
+    discovery_parser.add_argument("--requested-capability", default=None)
+
     args = parser.parse_args()
     try:
         output_root = pathlib.Path(args.output_root).resolve()
@@ -2320,7 +3130,7 @@ def main() -> int:
                 arsenal_baseline_scan_id=args.arsenal_baseline_scan_id,
                 phantom_baseline_scan_id=args.phantom_baseline_scan_id,
             )
-        else:
+        elif args.mode == "exercise-observation":
             result = run_live_observation_scenario(
                 output_root=output_root,
                 observation_path=pathlib.Path(args.observation).resolve(),
@@ -2329,6 +3139,13 @@ def main() -> int:
                 baseline_scan_id=args.baseline_scan_id,
                 scenario_name=args.scenario_name,
                 require_executable=args.require_executable,
+            )
+        else:
+            result = run_universal_discovery_export(
+                observation_path=pathlib.Path(args.observation).resolve(),
+                output_root=output_root,
+                requested_capability=args.requested_capability,
+                scenario_name=args.scenario_name,
             )
         print(json.dumps(result, sort_keys=True))
         return 0
