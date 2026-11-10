@@ -32,10 +32,19 @@ def compile_workflows(plan):
         counters=(observed,corroborated,transitions,verified,candidates,state_correlations,gui_correlations)
         if any(type(x) is not int or x<0 for x in counters):
             raise ValueError("Invalid evidence counters")
-        if corroborated>observed or transitions>observed or verified>observed or candidates>observed:
-            raise ValueError("Inconsistent evidence counters")
-        if state_correlations>candidates or gui_correlations>candidates:
-            raise ValueError("Inconsistent correlation counters")
+        counter_issues=[]
+        if corroborated>observed:
+            counter_issues.append("clientCorroboratedEvents exceeds interactionEvents")
+        if transitions>observed:
+            counter_issues.append("temporalTransitionEvents exceeds interactionEvents")
+        if verified>observed:
+            counter_issues.append("verifiedClientOutcomes exceeds interactionEvents")
+        if candidates>observed:
+            counter_issues.append("observableOutcomeCandidates exceeds interactionEvents")
+        if state_correlations>candidates:
+            counter_issues.append("featureStateCorrelations exceeds observableOutcomeCandidates")
+        if gui_correlations>candidates:
+            counter_issues.append("featureGuiCorrelations exceeds observableOutcomeCandidates")
         evidence_level=("client-outcome-observed" if verified else
                         "observable-outcome-candidate-unverified" if candidates else
                         "client-state-corroborated" if corroborated else
@@ -51,6 +60,10 @@ def compile_workflows(plan):
             "observableOutcomeCandidates":candidates,
             "featureStateCorrelations":state_correlations,
             "featureGuiCorrelations":gui_correlations,
+            "counterDiagnostics":{
+                "inconsistent":bool(counter_issues),
+                "issues":counter_issues,
+            },
             "correlationSemantics":"Feature-consistent client-visible change; correlation, not causal proof",
             "sourceAuthenticityVerified":False,
             "causalityProven":False,
@@ -74,6 +87,9 @@ def compile_workflows(plan):
                    "clientCorroborated":sum(w["corroboratedInteractions"]>0 for w in workflows),
                    "observableOutcomeCandidates":sum(w["observableOutcomeCandidates"] for w in workflows),
                    "featuresWithObservableOutcomeCandidates":sum(w["observableOutcomeCandidates"]>0 for w in workflows),
+                   "featuresWithCounterInconsistencies":sum(
+                       (w.get("counterDiagnostics") or {}).get("inconsistent") is True for w in workflows
+                   ),
                    "automaticallyExecutable":0},
         "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
                   "serverAuthorityVerified":False,"gameplayVerified":False},
@@ -105,7 +121,12 @@ def render_review(workflows):
             "- Observable outcome candidates: "+str(w.get("observableOutcomeCandidates",0)),
             "- Feature-state correlations: "+str(w.get("featureStateCorrelations",0)),
             "- Feature-GUI correlations: "+str(w.get("featureGuiCorrelations",0)),
-            "- Candidate semantics: "+w.get("correlationSemantics","correlation, not causal proof"),
+            "- Candidate semantics: "+w.get("correlationSemantics","correlation, not causal proof")])
+        counter_diag=w.get("counterDiagnostics") if isinstance(w.get("counterDiagnostics"),dict) else {}
+        if counter_diag.get("inconsistent") is True:
+            issues=counter_diag.get("issues") if isinstance(counter_diag.get("issues"),list) else []
+            lines.append("- Counter diagnostics: inconsistent source counters ("+"; ".join(str(issue) for issue in issues[:4])+")")
+        lines.extend([
             "- Executable contract: not established",
             "- Next validation: "+", ".join(w["requiredValidation"]), ""])
     if not ranked: lines.append("No candidate features were identified.")

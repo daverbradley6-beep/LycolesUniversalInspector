@@ -34,14 +34,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(workflow["reproducibleActionContract"])
         self.assertFalse(workflow["automaticallyExecutable"])
         self.assertIn("correlation, not causal proof",module.render_review(output))
-    def test_inconsistent_candidate_counters_are_rejected(self):
+    def test_inconsistent_candidate_counters_are_reported_not_blocking(self):
         plan={"integrity":{"scanComplete":True,"placeId":123},"features":[
             {"feature":"pets","interactionEvents":1,"clientCorroboratedEvents":0,
              "temporalTransitionEvents":0,"verifiedClientOutcomes":0,
              "observableOutcomeCandidates":1,"featureStateCorrelations":2,
              "featureGuiCorrelations":1}]}
-        with self.assertRaisesRegex(ValueError,"Inconsistent correlation counters"):
-            module.compile_workflows(plan)
+        output=module.compile_workflows(plan)
+        workflow=output["workflows"][0]
+        self.assertTrue(workflow["counterDiagnostics"]["inconsistent"])
+        self.assertIn("featureStateCorrelations exceeds observableOutcomeCandidates", workflow["counterDiagnostics"]["issues"])
+        self.assertEqual(output["summary"]["featuresWithCounterInconsistencies"],1)
     def test_incomplete(self):
         with self.assertRaises(ValueError):
             module.compile_workflows({"integrity":{"scanComplete":False},"features":[]})

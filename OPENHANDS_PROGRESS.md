@@ -1,3 +1,36 @@
+## Update — 2026-11-10 — FA86 archive ingestion + dynamic overlay merge hardening
+
+- Added direct multipart archive ingestion to `tools/receiver_generation_pipeline.py`:
+  - `from-parts` now accepts a `.zip` baseline archive or a parts directory,
+  - validates scan identity/partCount, missing indices, and conflicting duplicate part bytes,
+  - performs safe deterministic extraction with reusable digest metadata,
+  - surfaces ingestion metadata in pipeline output (`partsArchiveIngestion`).
+- Hardened dynamic overlay merge semantics in `tools/merge_observations.py`:
+  - merges and deduplicates `interactionDiagnostics.recentInteractions` into baseline `observedInteractionHistory`,
+  - propagates bounded interaction diagnostic counters and normalized interaction coverage accounting,
+  - sanitizes malformed explicit-recording and baseline timing markers from overlay events before workflow/action planning.
+- Relaxed brittle workflow counter failure mode in `tools/compile_workflows.py`:
+  - non-negative counters remain required,
+  - hierarchy mismatches now produce explicit `counterDiagnostics` instead of hard pipeline failure,
+  - summary now reports `featuresWithCounterInconsistencies`.
+- Improved observation recovery method safety defaults in `tools/receiver_generation_pipeline.py`:
+  - ambiguous `LocalPlayer.Input.*`/unknown-source methods are no longer `safeByDefault`,
+  - default training-method selection remains bounded to safer evidence-backed methods.
+- Processed new Muscle Legends scan inputs:
+  - baseline archive: `Lycoles_3623096087_FA86C322-0EA1-498D-B284-6EADC1390145_part-0650.zip` (651 parts + manifest),
+  - dynamic overlay: `Pasted text(20261110-133042).txt` (`30.6.live-observation-export.1`).
+- Generated fresh artifacts:
+  - merged baseline+overlay generation: `build/fa86_full_analysis/job-1366a38d46824332/` (observational-only request unmet, with merged interaction evidence now preserved),
+  - observation recovery contract/script: `build/fa86_observation_recovery/muscle-legends-fa86-observation/`.
+
+Validation:
+- `python3 -m unittest -v tests.test_compile_workflows tests.test_receiver_generation_pipeline`
+- `python3 -m unittest -v tests.test_merge_observations tests.test_build_release tests.test_lycoles_generation_service`
+- `python3 -m unittest discover -s tests` (**1648 passed**, 17 skipped)
+- `build/luau-0.744/luau-compile --null build/fa86_observation_recovery/muscle-legends-fa86-observation/LycolesGeneratedFeatureBatch.lua`
+- `build/luau-0.744/luau-compile --null build/fa86_full_analysis/job-1366a38d46824332/LycolesGeneratedUtility.lua`
+
+
 ## Update — 2026-11-08 — v30.6.48 universal stat discovery + stat-oriented feature batch regeneration
 
 - Upgraded observation recovery contracts:

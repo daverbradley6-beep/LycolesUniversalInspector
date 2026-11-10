@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
 import os
 import pathlib
 import re
+import shutil
 import sys
+import tempfile
+import zipfile
 from typing import Any, Optional, Sequence
 
 
@@ -26,6 +30,208 @@ def _load_local_module(filename: str, name: str):
 
 SERVICE = _load_local_module("lycoles_generation_service.py", "lycoles_generation_service")
 FETCH = _load_local_module("fetch_receiver_scan.py", "fetch_receiver_scan")
+
+
+def _sha256_bytes(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _sha256_file(path: pathlib.Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1_048_576)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _parse_json_payload(raw: bytes, context: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{context} is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{context} must be a JSON object")
+    return payload
+
+
+def _validate_manifest_identity(manifest: dict[str, Any], *, scan_id: str, place_id: int, part_count: int, context: str) -> None:
+    for key, expected in (("scanId", scan_id), ("placeId", place_id), ("partCount", part_count), ("expectedParts", part_count)):
+        if key not in manifest:
+            continue
+        if manifest.get(key) != expected:
+            raise ValueError(f"{context} identity mismatch for {key}")
+
+
+def ingest_parts_archive(
+    archive_path: pathlib.Path,
+    extracted_root: pathlib.Path,
+    *,
+    expected_scan_id: Optional[str] = None,
+) -> dict[str, Any]:
+    archive = pathlib.Path(archive_path).resolve()
+    if not archive.is_file():
+        raise ValueError(f"parts archive not found: {archive}")
+    if archive.suffix.lower() != ".zip":
+        raise ValueError("parts archive must be a .zip file")
+
+    extracted_root = pathlib.Path(extracted_root).resolve()
+    extracted_root.mkdir(parents=True, exist_ok=True)
+
+    archive_sha256 = _sha256_file(archive)
+
+    part_records: dict[int, dict[str, Any]] = {}
+    manifest_records: list[dict[str, Any]] = []
+    name_digests: dict[str, str] = {}
+    duplicate_part_count = 0
+    extracted_json_count = 0
+
+    scan_id: Optional[str] = None
+    place_id: Optional[int] = None
+    part_count: Optional[int] = None
+
+    staging = pathlib.Path(tempfile.mkdtemp(prefix=".ingest-", dir=str(extracted_root)))
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            members = [entry for entry in bundle.infolist() if not entry.is_dir() and entry.filename.lower().endswith(".json")]
+            if not members:
+                raise ValueError("archive has no JSON parts")
+            for entry in members:
+                if entry.file_size > 8_000_000:
+                    raise ValueError(f"archive member too large: {entry.filename}")
+                raw = bundle.read(entry)
+                context = f"archive member {entry.filename}"
+                payload = _parse_json_payload(raw, context)
+                safe_name = pathlib.PurePosixPath(entry.filename).name
+                if not safe_name:
+                    raise ValueError(f"invalid archive member name: {entry.filename}")
+
+                digest = _sha256_bytes(raw)
+                previous_digest = name_digests.get(safe_name)
+                if previous_digest is not None and previous_digest != digest:
+                    raise ValueError(f"conflicting duplicate filename in archive: {safe_name}")
+                name_digests[safe_name] = digest
+
+                if "partIndex" in payload:
+                    index = payload.get("partIndex")
+                    sid = payload.get("scanId")
+                    pid = payload.get("placeId")
+                    pcount = payload.get("partCount")
+                    if type(index) is not int or index <= 0:
+                        raise ValueError(f"{context} has invalid partIndex")
+                    if not isinstance(payload.get("objects"), list):
+                        raise ValueError(f"{context} missing objects[] payload")
+                    if not isinstance(sid, str) or not sid:
+                        raise ValueError(f"{context} missing scanId")
+                    if type(pid) is not int or pid <= 0:
+                        raise ValueError(f"{context} has invalid placeId")
+                    if type(pcount) is not int or pcount <= 0:
+                        raise ValueError(f"{context} has invalid partCount")
+                    if expected_scan_id is not None and sid != expected_scan_id:
+                        raise ValueError(
+                            f"archive scanId mismatch: expected {expected_scan_id}, got {sid}"
+                        )
+                    if scan_id is None:
+                        scan_id = sid
+                        place_id = pid
+                        part_count = pcount
+                    elif sid != scan_id or pid != place_id or pcount != part_count:
+                        raise ValueError("mixed scan identity across archive parts")
+                    existing = part_records.get(index)
+                    if existing is not None:
+                        duplicate_part_count += 1
+                        if existing["sha256"] != digest:
+                            raise ValueError(f"conflicting duplicate part content for index {index}")
+                    else:
+                        part_records[index] = {
+                            "index": index,
+                            "filename": safe_name,
+                            "sha256": digest,
+                        }
+                else:
+                    manifest_records.append(payload)
+
+                target_path = staging / safe_name
+                if target_path.exists() and target_path.read_bytes() != raw:
+                    raise ValueError(f"conflicting duplicate archive payload for {safe_name}")
+                target_path.write_bytes(raw)
+                extracted_json_count += 1
+
+        if not part_records:
+            raise ValueError("archive does not contain multipart scan parts")
+        assert scan_id is not None and place_id is not None and part_count is not None
+
+        missing_parts = [index for index in range(1, part_count + 1) if index not in part_records]
+        if missing_parts:
+            preview = missing_parts[:20]
+            raise ValueError(f"missing parts: {preview} (total {len(missing_parts)})")
+
+        for manifest in manifest_records:
+            _validate_manifest_identity(
+                manifest,
+                scan_id=scan_id,
+                place_id=place_id,
+                part_count=part_count,
+                context="archive manifest",
+            )
+
+        target = extracted_root / f"archive_{scan_id}"
+        metadata_path = target / ".archive-ingestion.meta"
+        if target.is_dir() and metadata_path.is_file():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                metadata = None
+            if isinstance(metadata, dict) and metadata.get("archiveSha256") == archive_sha256:
+                shutil.rmtree(staging)
+                return {
+                    "scanId": scan_id,
+                    "placeId": place_id,
+                    "partCount": part_count,
+                    "jsonFiles": extracted_json_count,
+                    "manifestFiles": len(manifest_records),
+                    "duplicatePartCount": duplicate_part_count,
+                    "missingPartCount": 0,
+                    "archiveSha256": archive_sha256,
+                    "archivePath": str(archive),
+                    "outputDir": str(target),
+                    "reusedExistingExtraction": True,
+                }
+        if target.exists():
+            shutil.rmtree(target)
+        staging.replace(target)
+
+        metadata = {
+            "scanId": scan_id,
+            "placeId": place_id,
+            "partCount": part_count,
+            "jsonFiles": extracted_json_count,
+            "manifestFiles": len(manifest_records),
+            "duplicatePartCount": duplicate_part_count,
+            "missingPartCount": 0,
+            "archiveSha256": archive_sha256,
+            "archivePath": str(archive),
+            "reusedExistingExtraction": False,
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        metadata["outputDir"] = str(target)
+        return metadata
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def _resolve_parts_input(parts_input: pathlib.Path, output_root: pathlib.Path) -> tuple[pathlib.Path, Optional[dict[str, Any]]]:
+    source = pathlib.Path(parts_input).resolve()
+    if source.is_dir():
+        return source, None
+    if source.is_file() and source.suffix.lower() == ".zip":
+        ingestion_root = output_root / "ingested_parts_archives"
+        info = ingest_parts_archive(source, ingestion_root)
+        return pathlib.Path(info["outputDir"]), info
+    raise ValueError(f"parts input must be a directory or .zip archive: {source}")
 
 
 DYNAMIC_OBSERVATION_SCHEMA = "30.6.live-observation-export.1"
@@ -934,9 +1140,9 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
 
         low = path.lower()
         source_kind = classify_training_source(path)
-        default_selected = path == selected["path"]
-        if "punch" in low:
-            default_selected = False
+        generic_input = low.startswith("localplayer.input.")
+        safe_by_default = ("punch" not in low) and (source_kind != "unknown") and (not generic_input)
+        default_selected = (path == selected["path"]) and safe_by_default
 
         training_methods.append({
             "id": unique_method_id,
@@ -946,7 +1152,7 @@ def _build_observation_tool_contract(payload: dict[str, Any], requested_capabili
             "observedActivations": int(item.get("count", 0)),
             "metadata": item.get("metadata") or {},
             "defaultSelected": bool(default_selected),
-            "safeByDefault": "punch" not in low,
+            "safeByDefault": bool(safe_by_default),
             "readiness": "observed-activation-candidate" if int(item.get("count", 0)) > 0 else "unobserved",
         })
 
@@ -1819,15 +2025,21 @@ def generate_from_parts(
     observation_paths: Optional[Sequence[pathlib.Path]] = None,
     require_executable: bool = False,
 ) -> dict[str, Any]:
+    output_root = pathlib.Path(output_root).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    resolved_parts_dir, archive_ingestion = _resolve_parts_input(pathlib.Path(parts_dir), output_root)
+
     service = SERVICE.LycolesGenerationService(output_root=output_root)
     request = SERVICE.GenerationRequest(
         evidence_kind="parts_dir",
-        evidence_path=parts_dir,
+        evidence_path=resolved_parts_dir,
         requested_capability=requested_capability,
         observation_paths=tuple(pathlib.Path(path).resolve() for path in (observation_paths or [])),
         require_executable=require_executable,
     )
     result = service.run_sync(request)
+    if archive_ingestion is not None:
+        result["partsArchiveIngestion"] = archive_ingestion
     _enforce_executable_requirement(result, requested_capability, require_executable)
     return result
 
@@ -1888,8 +2100,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
-    local_parser = subparsers.add_parser("from-parts", help="Generate directly from local numbered parts")
-    local_parser.add_argument("--parts-dir", required=True)
+    local_parser = subparsers.add_parser("from-parts", help="Generate from local parts directory or zipped multipart archive")
+    local_parser.add_argument("--parts-dir", required=True,
+        help="Path to parts directory or .zip archive containing multipart JSON payloads")
     local_parser.add_argument("--output-root", default="build/receiver-generation")
     local_parser.add_argument("--requested-capability", default=None)
     local_parser.add_argument("--observation-path", action="append", default=[],

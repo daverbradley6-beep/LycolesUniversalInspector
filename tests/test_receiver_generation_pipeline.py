@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "receiver_generation_pipeline.py"
@@ -58,6 +59,81 @@ def make_parts(directory, event=None, request=None, scan_id="receiver_pipeline_s
     )
     (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
     (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
+
+def make_parts_archive(parts_dir, archive_path, scan_id="receiver_pipeline_scan", place_id=3623096087):
+    part_files = []
+    for source_name, index in (("1.json", 1), ("2.json", 2)):
+        payload = json.loads((parts_dir / source_name).read_text(encoding="utf-8"))
+        payload["scanId"] = scan_id
+        payload["placeId"] = place_id
+        payload["partCount"] = 2
+        payload["partIndex"] = index
+        archive_name = f"Lycoles_{place_id}_{scan_id}_part-{index:04d}.json"
+        part_files.append((archive_name, json.dumps(payload).encode("utf-8")))
+
+    manifest = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "expectedParts": 2,
+        "objectCount": 2,
+        "uploadedParts": 0,
+        "version": "10.0",
+    }
+
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for name, raw in part_files:
+            bundle.writestr(name, raw)
+        bundle.writestr(
+            f"Lycoles_{place_id}_{scan_id}_manifest.json",
+            json.dumps(manifest).encode("utf-8"),
+        )
+
+
+def make_broken_parts_archive_missing_part(archive_path, scan_id="receiver_pipeline_scan", place_id=3623096087):
+    part = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "partIndex": 1,
+        "version": "10.0",
+        "objects": [],
+    }
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0001.json", json.dumps(part).encode("utf-8"))
+
+
+def make_broken_parts_archive_duplicate_conflict(archive_path, scan_id="receiver_pipeline_scan", place_id=3623096087):
+    first = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "partIndex": 1,
+        "version": "10.0",
+        "objects": [{"path": "Workspace.A", "class": "Part"}],
+    }
+    conflicting = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "partIndex": 1,
+        "version": "10.0",
+        "objects": [{"path": "Workspace.B", "class": "Part"}],
+    }
+    second = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "partIndex": 2,
+        "version": "10.0",
+        "objects": [{"path": "Workspace.C", "class": "Part"}],
+    }
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0001.json", json.dumps(first).encode("utf-8"))
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0001-duplicate.json", json.dumps(conflicting).encode("utf-8"))
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0002.json", json.dumps(second).encode("utf-8"))
+
 
 
 
@@ -479,6 +555,43 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             )
             self.assertEqual(overlay_provenance["overlays"][0]["scanId"], "live-observation-receiver-1")
 
+    def test_generate_from_parts_accepts_zip_archive_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically hatch the selected egg")
+            archive = root / "parts.zip"
+            make_parts_archive(parts, archive)
+
+            result = MODULE.generate_from_parts(
+                parts_dir=archive,
+                output_root=root / "output",
+                requested_capability="Automatically hatch the selected egg",
+            )
+            self.assertEqual(result["status"], "succeeded")
+            self.assertIn("partsArchiveIngestion", result)
+            ingestion = result["partsArchiveIngestion"]
+            self.assertEqual(ingestion["partCount"], 2)
+            self.assertEqual(ingestion["missingPartCount"], 0)
+            self.assertTrue(pathlib.Path(ingestion["outputDir"]).is_dir())
+
+    def test_ingest_parts_archive_rejects_missing_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            archive = root / "broken_missing.zip"
+            make_broken_parts_archive_missing_part(archive)
+            with self.assertRaisesRegex(ValueError, "missing parts"):
+                MODULE.ingest_parts_archive(archive, root / "extracted")
+
+    def test_ingest_parts_archive_rejects_conflicting_duplicate_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            archive = root / "broken_duplicate.zip"
+            make_broken_parts_archive_duplicate_conflict(archive)
+            with self.assertRaisesRegex(ValueError, "conflicting duplicate part content"):
+                MODULE.ingest_parts_archive(archive, root / "extracted")
+
     def test_generate_from_parts_require_executable_blocks_manual_guided_subset_for_automatic_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -755,6 +868,9 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertGreaterEqual(len(feature_map["auto_train"]["action"].get("defaultSelectedMethodIds") or []), 1)
             for method in training_methods:
                 if "punch" in str(method.get("name", "")).lower() or "punch" in str(method.get("path", "")).lower():
+                    self.assertFalse(method.get("defaultSelected"))
+                if str(method.get("path", "")).lower().startswith("localplayer.input."):
+                    self.assertFalse(method.get("safeByDefault"))
                     self.assertFalse(method.get("defaultSelected"))
             self.assertEqual(feature_map["auto_rewards"]["action"]["kind"], "auto_rewards_discovery")
             self.assertGreaterEqual(len(feature_map["auto_rewards"]["action"].get("rewardContainerPaths") or []), 1)

@@ -104,6 +104,43 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(merged["evidenceOverlays"][0]["scanId"],"live-observation-1")
         self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["inputMode"],"local-multipart")
 
+    def test_overlay_interactions_are_merged_into_history_and_diagnostics(self):
+        b=self.baseline()
+        b["interactionDiagnostics"]={"stateDeltaEvents":0,"recentInteractions":[]}
+        b["observedInteractionHistory"]=[]
+        observation=self.observation()
+        observation["interactionDiagnostics"]={
+            "stateDeltaEvents":3,
+            "guiStateObservation":{"transitionsCaptured":4},
+            "recentInteractions":[
+                {"path":"LocalPlayer.Backpack.Weight","controlType":"Tool.Activated","stateChanges":[{"key":"A","before":1,"after":2}]},
+                {"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated","stateChanges":[]},
+            ],
+        }
+        merged=m.merge_evidence(b,[observation])
+        self.assertEqual(len(merged["observedInteractionHistory"]),2)
+        self.assertEqual(merged["interactionDiagnostics"]["historyTotal"],2)
+        self.assertEqual(merged["interactionDiagnostics"]["stateDeltaEvents"],3)
+        self.assertEqual(merged["interactionDiagnostics"]["guiStateObservation"]["transitionsCaptured"],4)
+        self.assertEqual(merged["interactionObservationSummary"]["mergedOverlayInteractionEvents"],2)
+        self.assertEqual(merged["interactionObservationSummary"]["duplicateOverlayInteractionEventsSkipped"],0)
+
+    def test_overlay_interaction_deduplication_avoids_double_counting(self):
+        b=self.baseline()
+        b["interactionDiagnostics"]={"stateDeltaEvents":0,"recentInteractions":[]}
+        b["observedInteractionHistory"]=[]
+        event={"path":"LocalPlayer.Backpack.Weight","controlType":"Tool.Activated","stateChanges":[{"key":"A","before":1,"after":2}]}
+        one=self.observation()
+        one["interactionDiagnostics"]={"stateDeltaEvents":1,"recentInteractions":[event]}
+        two=self.observation()
+        two["integrity"]["scanId"]="delta-2"
+        two["sourceProvenance"]["scanId"]="delta-2"
+        two["interactionDiagnostics"]={"stateDeltaEvents":1,"recentInteractions":[event]}
+        merged=m.merge_evidence(b,[one,two])
+        self.assertEqual(len(merged["observedInteractionHistory"]),1)
+        self.assertEqual(merged["interactionObservationSummary"]["mergedOverlayInteractionEvents"],1)
+        self.assertEqual(merged["interactionObservationSummary"]["duplicateOverlayInteractionEventsSkipped"],1)
+
     def test_duplicate_rejected(self):
         with self.assertRaises(ValueError):
             m.merge_evidence(self.baseline(),[self.observation(),self.observation()])
