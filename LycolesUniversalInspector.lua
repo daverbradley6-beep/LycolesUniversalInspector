@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.48
+-- Lycoles Universal Inspector v30.6.49
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -4874,7 +4874,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
     table.insert(watchConnections,game:GetService("RunService").Heartbeat:Connect(function()
         if not alive then return end
         capturePlayerPositionSample("heartbeat-adaptive",false)
-        if interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+        if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
     end))
     local keyActions={
         R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",

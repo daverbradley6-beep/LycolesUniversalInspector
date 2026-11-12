@@ -507,3 +507,28 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - pointer-only false-positive rejection,
   - repeat GUI flow readiness promotion,
   - multi-world separation at identical coordinates.
+
+## Update — 2026-11-12 — physical destination model and workflow separation
+
+- Universal discovery now publishes destination-level structures in addition to location-level structures:
+  - `physicalDestinationRegistry` (stable destination IDs, source location IDs, representative coordinates, paths/mechanisms, provenance)
+  - `destinationWorkflows` (destination-scoped workflow identities with targets/mechanisms/state keys)
+  - `locationNavigationCandidates` (legacy-compatible location-scoped candidates retained for diagnostics)
+  - `navigationCandidates` (deduplicated destination-scoped candidates)
+- `functionalLocationRegistry` entries now include `physicalDestinationId` for traceability.
+- Destination merge logic is evidence-scored (distance + shared identity roots + nearby overlap + purpose/feature overlap) with same-world and anti-conflict guards.
+- Navigation readiness and gameplay outcome verification are intentionally separated:
+  - `navigationReadiness`: actionable / ready-for-live-validation / live-validated + blockers
+  - `gameplayOutcomeVerification`: tiered status (interaction/state/temporal/multi-signal/live) + missing evidence
+- `spatialActionOutcomeRelationships` now carries `meaningfulOutcomeStateKeys` and `outcomeVerification` fields.
+- Bubble Gum comparison against commit `6a122e15`:
+  - locations: 12 -> 12
+  - physical destinations: n/a -> 10
+  - destination merges: n/a -> 2
+  - deduped destination navigation candidates: 12 -> 10
+  - navigation-ready: 2 -> 1
+  - gameplay-verified destinations: 0
+- Full Python suite status after this stage: `1658 passed, 17 skipped, 0 failed`.
+- Inspector UI regression causes/fixes:
+  - version drift (`version.txt` 30.6.48 vs inspector runtime 30.6.49) fixed by syncing to `30.6.49`
+  - queue-processing guard assertion fixed by restoring expected line `if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end`

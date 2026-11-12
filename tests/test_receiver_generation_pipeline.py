@@ -808,6 +808,121 @@ def make_multi_world_observation_export(path, scan_id="multi-world-scan"):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+
+def make_overlapping_destination_observation_export(path, scan_id="overlapping-destination-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 444,
+        "gameName": "Overlapping Destination Test",
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "shop-a",
+                    "characterGeneration": 1,
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Lemon.Button",
+                    "stateChanges": [{"key": "Character.Humanoid.ActiveAnimations", "before": 1, "after": 2}],
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "shop-a",
+                        "characterGeneration": 1,
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 35.3212, "y": 9.16, "z": -113.0463},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.GumShop.Counter", "class": "Part", "distanceStuds": 4.1},
+                        {"path": "Workspace.Worlds.Overworld.GumShop.NPC", "class": "Model", "distanceStuds": 4.3},
+                    ],
+                },
+                {
+                    "sequence": 2,
+                    "transactionId": "shop-b",
+                    "characterGeneration": 2,
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+                    "stateChanges": [{"key": "Character.Humanoid.ActiveAnimationCount", "before": 3, "after": 4}],
+                    "actionPositionSample": {
+                        "interactionSequence": 2,
+                        "transactionId": "shop-b",
+                        "characterGeneration": 2,
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 35.29, "y": 9.16, "z": -113.09},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.GumShop.Counter", "class": "Part", "distanceStuds": 4.2},
+                        {"path": "Workspace.Worlds.Overworld.GumShop.NPC", "class": "Model", "distanceStuds": 4.4},
+                    ],
+                },
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def make_nearby_unrelated_observation_export(path, scan_id="nearby-unrelated-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 555,
+        "gameName": "Nearby Unrelated Target Test",
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "shop-tx",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.Shop.Frame.Buy.Button",
+                    "stateChanges": [{"key": "Character.Humanoid.ActiveAnimations", "before": 1, "after": 2}],
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "shop-tx",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 12.0, "y": 6.0, "z": -8.0},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.ShopKeeper", "class": "Model", "distanceStuds": 3.2}
+                    ],
+                },
+                {
+                    "sequence": 2,
+                    "transactionId": "reward-tx",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "rewards",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.Rewards.Frame.Claim.Button",
+                    "stateChanges": [{"key": "leaderstats.Coins", "before": 100, "after": 110}],
+                    "actionPositionSample": {
+                        "interactionSequence": 2,
+                        "transactionId": "reward-tx",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 14.1, "y": 6.0, "z": -8.2},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.DailyChest", "class": "Model", "distanceStuds": 3.0}
+                    ],
+                },
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 class ReceiverGenerationPipelineTests(unittest.TestCase):
     def test_generate_from_parts_runs_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1175,7 +1290,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("playerPositionHistory", report)
             self.assertIn("eventPositionSnapshots", report)
             self.assertIn("functionalLocationRegistry", report)
+            self.assertIn("physicalDestinationRegistry", report)
+            self.assertIn("destinationWorkflows", report)
             self.assertIn("spatialActionOutcomeRelationships", report)
+            self.assertIn("locationNavigationCandidates", report)
             self.assertIn("navigationCandidates", report)
             self.assertIn("spatialDiscovery", report)
             self.assertIn("spatialDiscoveryQualityMetrics", report)
@@ -1196,10 +1314,20 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(any("relevantWorkspaceObjectPaths" in item for item in locations if isinstance(item, dict)))
             self.assertTrue(all("Workspace" not in set(item.get("relevantWorkspaceObjectPaths") or []) for item in locations if isinstance(item, dict)))
             self.assertTrue(any("requiredActivationConditions" in item for item in locations if isinstance(item, dict)))
+            self.assertTrue(any(isinstance(item.get("physicalDestinationId"), str) for item in locations if isinstance(item, dict)))
+
+            destinations = report.get("physicalDestinationRegistry") or []
+            self.assertGreaterEqual(len(destinations), 1)
+            self.assertTrue(all(isinstance(item.get("destinationId"), str) for item in destinations if isinstance(item, dict)))
+            self.assertTrue(any(len(item.get("sourceLocationIds") or []) >= 1 for item in destinations if isinstance(item, dict)))
+            self.assertTrue(any("navigationReadiness" in item for item in destinations if isinstance(item, dict)))
+            self.assertTrue(any("gameplayOutcomeVerification" in item for item in destinations if isinstance(item, dict)))
 
             navigation = report.get("navigationCandidates") or []
             self.assertTrue(any("evidenceStatus" in item for item in navigation if isinstance(item, dict)))
             self.assertTrue(any("validationStatus" in item for item in navigation if isinstance(item, dict)))
+            self.assertTrue(any("associatedWorkflowIds" in item for item in navigation if isinstance(item, dict)))
+            self.assertTrue(any("gameplayOutcomeVerification" in item for item in navigation if isinstance(item, dict)))
 
             quality = report["qualityMetrics"]
             self.assertIn("distinctMechanicsIdentified", quality)
@@ -1264,7 +1392,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             actionable = [
                 item
                 for item in (report.get("navigationCandidates") or [])
-                if (item.get("validationStatus") or "").startswith("actionable-navigation-candidate")
+                if (item.get("validationStatus") or "") in {"actionable-navigation-candidate", "navigation-ready", "live-validated-destination"}
             ]
             self.assertGreaterEqual(len(actionable), 1)
             self.assertTrue(any(len(item.get("targetGuiPaths") or []) > 0 for item in actionable))
@@ -1293,6 +1421,100 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                 world_identities.add(worlds[0])
             self.assertEqual(len(world_identities), 2)
             self.assertTrue(any((location.get("candidatePurpose") or "") in {"movement-and-navigation", "travel-or-teleport"} for location in locations))
+            destinations = report.get("physicalDestinationRegistry") or []
+            self.assertEqual(len(destinations), 2)
+            self.assertEqual(len({item.get("destinationId") for item in destinations}), 2)
+
+    def test_overlapping_locations_consolidate_to_single_physical_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "overlapping.json"
+            make_overlapping_destination_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover shop workflows",
+                scenario_name="overlapping-destinations",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+
+            locations = report.get("functionalLocationRegistry") or []
+            destinations = report.get("physicalDestinationRegistry") or []
+            workflows = report.get("destinationWorkflows") or []
+            navigation = report.get("navigationCandidates") or []
+
+            self.assertGreaterEqual(len(locations), 2)
+            self.assertEqual(len(destinations), 1)
+            self.assertEqual(len(navigation), 1)
+
+            destination = destinations[0]
+            self.assertGreaterEqual(len(destination.get("sourceLocationIds") or []), 2)
+            self.assertGreaterEqual(len(destination.get("associatedWorkflows") or []), 2)
+
+            matching_workflows = [
+                item for item in workflows
+                if item.get("destinationId") == destination.get("destinationId")
+            ]
+            self.assertGreaterEqual(len(matching_workflows), 2)
+
+            candidate = navigation[0]
+            self.assertEqual(candidate.get("destinationId"), destination.get("destinationId"))
+            self.assertGreaterEqual(len(candidate.get("associatedWorkflowIds") or []), 2)
+            self.assertEqual((candidate.get("gameplayOutcomeVerification") or {}).get("status"), "unverified")
+
+            clustering = ((report.get("spatialDiscoveryQualityMetrics") or {}).get("locationClustering") or {})
+            self.assertEqual(clustering.get("functionalLocationCount"), len(locations))
+            self.assertEqual(clustering.get("physicalDestinationCount"), 1)
+            self.assertGreaterEqual(clustering.get("destinationMerges", 0), 1)
+            self.assertGreaterEqual(clustering.get("destinationWorkflowCount", 0), 2)
+
+    def test_nearby_unrelated_targets_remain_separate_destinations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "nearby-unrelated.json"
+            make_nearby_unrelated_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover nearby interaction destinations",
+                scenario_name="nearby-unrelated",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+
+            destinations = report.get("physicalDestinationRegistry") or []
+            navigation = report.get("navigationCandidates") or []
+            self.assertEqual(len(destinations), 2)
+            self.assertEqual(len(navigation), 2)
+            self.assertEqual(len({item.get("destinationId") for item in destinations}), 2)
+
+            clustering = ((report.get("spatialDiscoveryQualityMetrics") or {}).get("locationClustering") or {})
+            self.assertEqual(clustering.get("physicalDestinationCount"), 2)
+            self.assertEqual(clustering.get("destinationMerges"), 0)
+
+    def test_passive_state_changes_do_not_count_as_verified_outcomes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "passive-outcome.json"
+            make_pointer_only_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Assess interaction outcomes",
+                scenario_name="passive-outcome",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+
+            destinations = report.get("physicalDestinationRegistry") or []
+            self.assertGreaterEqual(len(destinations), 1)
+            verification = (destinations[0].get("gameplayOutcomeVerification") or {})
+            self.assertEqual(verification.get("status"), "unverified")
+            self.assertFalse(verification.get("temporallyAssociated"))
+            self.assertFalse(verification.get("multiSignalCorroborated"))
+            self.assertTrue(any("No gameplay-relevant outcome signal observed" in item for item in (verification.get("missingEvidence") or [])))
+
 
 
     def test_run_live_observation_scenario_succeeds_for_matching_automatic_workflow(self):

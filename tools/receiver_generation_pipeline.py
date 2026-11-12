@@ -1749,6 +1749,41 @@ def _build_universal_discovery_report(
         best = max(scores.items(), key=lambda item: item[1])
         return best[0] if best[1] >= 1.5 else "uncategorized"
 
+
+    def _path_identity_key(path: Optional[str]) -> Optional[str]:
+        if not isinstance(path, str) or not path:
+            return None
+        normalized = _canonical_object_path(path)
+        if not normalized:
+            return None
+        parts = [part for part in normalized.split(".") if part]
+        if len(parts) < 2:
+            return normalized.lower()
+        lower_head = ".".join(parts[:3]).lower()
+        if lower_head.startswith("localplayer.playergui"):
+            return ".".join(parts[:5]).lower()
+        if lower_head.startswith("workspace.worlds"):
+            return ".".join(parts[:5]).lower()
+        if parts[0].lower() == "workspace":
+            return ".".join(parts[:4]).lower()
+        return ".".join(parts[:4]).lower()
+
+    def _position_distance(a: Optional[dict[str, Any]], b: Optional[dict[str, Any]]) -> Optional[float]:
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            return None
+        ax, ay, az = _numeric(a.get("x")), _numeric(a.get("y")), _numeric(a.get("z"))
+        bx, by, bz = _numeric(b.get("x")), _numeric(b.get("y")), _numeric(b.get("z"))
+        if None in (ax, ay, az, bx, by, bz):
+            return None
+        return math.dist((ax, ay, az), (bx, by, bz))
+
+    def _same_world_identity(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        worlds_a = [item for item in (a.get("worldContexts") or []) if isinstance(item, str)]
+        worlds_b = [item for item in (b.get("worldContexts") or []) if isinstance(item, str)]
+        if worlds_a and worlds_b:
+            return worlds_a[0] == worlds_b[0]
+        return True
+
     clusters: dict[tuple[Any, ...], dict[str, Any]] = {}
     sequence_to_location: dict[int, str] = {}
     transaction_to_location: dict[str, str] = {}
@@ -2144,6 +2179,33 @@ def _build_universal_discovery_report(
                 for item in (relation.get("stateBeforeAfter") or [])
                 if isinstance(item, dict) and isinstance(item.get("key"), str)
             ][:16],
+            "meaningfulOutcomeStateKeys": [
+                key
+                for key in [
+                    item.get("key")
+                    for item in (relation.get("stateBeforeAfter") or [])
+                    if isinstance(item, dict) and isinstance(item.get("key"), str)
+                ]
+                if _is_gameplay_outcome_key(key)
+            ][:16],
+            "outcomeVerification": {
+                "interactionObserved": True,
+                "stateChangeObserved": len(relation.get("stateBeforeAfter") or []) > 0,
+                "temporallyAssociated": any(
+                    isinstance(item, dict)
+                    and isinstance(item.get("key"), str)
+                    and _is_gameplay_outcome_key(item.get("key"))
+                    for item in (relation.get("stateBeforeAfter") or [])
+                ),
+                "multiSignalCorroborated": len({
+                    item.get("key")
+                    for item in (relation.get("stateBeforeAfter") or [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("key"), str)
+                    and _is_gameplay_outcome_key(item.get("key"))
+                }) >= 2,
+                "causalityProven": False,
+            },
             "confidence": relation.get("confidence") if isinstance(relation.get("confidence"), dict) else {},
             "causality": "not-proven-temporal-correlation-only",
             "potentialConfoundingInteractions": {
@@ -2276,6 +2338,504 @@ def _build_universal_discovery_report(
             ],
         })
 
+
+    location_navigation_candidates = [dict(item) for item in navigation_candidates]
+
+    location_ids = [item.get("id") for item in location_registry if isinstance(item.get("id"), str)]
+    parent = {location_id: location_id for location_id in location_ids}
+    rank = {location_id: 0 for location_id in location_ids}
+
+    def _find_parent(location_id: str) -> str:
+        while parent[location_id] != location_id:
+            parent[location_id] = parent[parent[location_id]]
+            location_id = parent[location_id]
+        return location_id
+
+    def _union_locations(left: str, right: str) -> None:
+        left_root = _find_parent(left)
+        right_root = _find_parent(right)
+        if left_root == right_root:
+            return
+        if rank[left_root] < rank[right_root]:
+            left_root, right_root = right_root, left_root
+        parent[right_root] = left_root
+        if rank[left_root] == rank[right_root]:
+            rank[left_root] += 1
+
+    def _identity_set(paths: Sequence[str]) -> set[str]:
+        out: set[str] = set()
+        for path in paths:
+            key = _path_identity_key(path)
+            if key:
+                out.add(key)
+        return out
+
+    for index, left_id in enumerate(location_ids):
+        left = location_by_id.get(left_id)
+        if not isinstance(left, dict):
+            continue
+        for right_id in location_ids[index + 1:]:
+            right = location_by_id.get(right_id)
+            if not isinstance(right, dict):
+                continue
+            if not _same_world_identity(left, right):
+                continue
+
+            distance = _position_distance(left.get("representativePosition"), right.get("representativePosition"))
+            if distance is None or distance > 12.0:
+                continue
+
+            left_world_targets = _identity_set(left.get("relevantWorkspaceObjectPaths") or [])
+            right_world_targets = _identity_set(right.get("relevantWorkspaceObjectPaths") or [])
+            left_gui_targets = _identity_set(left.get("associatedGuiControls") or [])
+            right_gui_targets = _identity_set(right.get("associatedGuiControls") or [])
+            left_nearby = _identity_set(left.get("nearbyWorldObjectPaths") or [])
+            right_nearby = _identity_set(right.get("nearbyWorldObjectPaths") or [])
+
+            shared_world_targets = len(left_world_targets & right_world_targets)
+            shared_gui_targets = len(left_gui_targets & right_gui_targets)
+            shared_nearby = len(left_nearby & right_nearby)
+            shared_feature_candidates = len(
+                {item for item in (left.get("featureCandidates") or []) if isinstance(item, str)}
+                & {item for item in (right.get("featureCandidates") or []) if isinstance(item, str)}
+            )
+            same_purpose = left.get("candidatePurpose") == right.get("candidatePurpose")
+
+            pair_score = 0
+            if distance <= 3.0:
+                pair_score += 3
+            elif distance <= 6.0:
+                pair_score += 2
+            elif distance <= 10.0:
+                pair_score += 1
+            if shared_world_targets > 0:
+                pair_score += 2
+            if shared_gui_targets > 0:
+                pair_score += 2
+            if shared_nearby >= 3:
+                pair_score += 1
+            if same_purpose:
+                pair_score += 1
+            if shared_feature_candidates > 0:
+                pair_score += 1
+            if left_world_targets and right_world_targets and shared_world_targets == 0 and distance > 4.0:
+                pair_score -= 2
+
+            if pair_score >= 4:
+                _union_locations(left_id, right_id)
+
+    location_components: dict[str, list[str]] = {}
+    for location_id in location_ids:
+        root = _find_parent(location_id)
+        location_components.setdefault(root, []).append(location_id)
+
+    physical_destination_registry: list[dict[str, Any]] = []
+    location_to_destination: dict[str, str] = {}
+
+    for member_ids in sorted(location_components.values(), key=lambda values: (len(values), values), reverse=True):
+        member_ids = sorted(member_ids)
+        members = [location_by_id[item] for item in member_ids if isinstance(location_by_id.get(item), dict)]
+        if not members:
+            continue
+
+        weighted_x = 0.0
+        weighted_y = 0.0
+        weighted_z = 0.0
+        total_weight = 0.0
+        world_counts: dict[str, int] = {}
+
+        supporting_position_samples: list[dict[str, Any]] = []
+        interaction_targets: set[str] = set()
+        workspace_paths: set[str] = set()
+        gui_paths: set[str] = set()
+        interaction_mechanisms: set[str] = set()
+        activation_conditions: set[str] = set()
+        candidate_purposes: dict[str, int] = {}
+        feature_candidates: set[str] = set()
+        confidence_weighted_sum = 0.0
+        confidence_weight_total = 0.0
+        confidence_values: list[float] = []
+
+        interaction_count = 0
+        transaction_count = 0
+        missing_evidence: set[str] = set()
+        unresolved_requirements: set[str] = set()
+
+        for member in members:
+            representative = member.get("representativePosition") if isinstance(member.get("representativePosition"), dict) else None
+            weight = float(max(1, int(member.get("supportingInteractionCount") or 0)))
+            if representative:
+                rx = float(_numeric(representative.get("x")) or 0.0)
+                ry = float(_numeric(representative.get("y")) or 0.0)
+                rz = float(_numeric(representative.get("z")) or 0.0)
+                weighted_x += rx * weight
+                weighted_y += ry * weight
+                weighted_z += rz * weight
+                total_weight += weight
+                supporting_position_samples.append({"source": member.get("id"), "position": representative})
+
+            for position in (member.get("beforePositions") or [])[:4]:
+                if isinstance(position, dict):
+                    supporting_position_samples.append({"source": member.get("id"), "position": position})
+            for position in (member.get("postPositions") or [])[:4]:
+                if isinstance(position, dict):
+                    supporting_position_samples.append({"source": member.get("id"), "position": position})
+
+            interaction_count += int(member.get("supportingInteractionCount") or 0)
+            transaction_count += int(member.get("supportingTransactionCount") or 0)
+
+            confidence_score = _numeric((member.get("confidence") or {}).get("score"))
+            if confidence_score is not None:
+                confidence_weighted_sum += float(confidence_score) * weight
+                confidence_weight_total += weight
+                confidence_values.append(float(confidence_score))
+
+            for world in member.get("worldContexts") or []:
+                if isinstance(world, str):
+                    world_counts[world] = world_counts.get(world, 0) + 1
+            for path in member.get("likelyTargetPaths") or []:
+                if isinstance(path, str):
+                    interaction_targets.add(path)
+            for path in member.get("relevantWorkspaceObjectPaths") or []:
+                if isinstance(path, str):
+                    workspace_paths.add(path)
+            for path in member.get("associatedGuiControls") or []:
+                if isinstance(path, str):
+                    gui_paths.add(path)
+            for mechanism in member.get("interactionMechanisms") or []:
+                if isinstance(mechanism, str):
+                    interaction_mechanisms.add(mechanism)
+            for condition in member.get("requiredActivationConditions") or []:
+                if isinstance(condition, str):
+                    activation_conditions.add(condition)
+            for candidate in member.get("featureCandidates") or []:
+                if isinstance(candidate, str):
+                    feature_candidates.add(candidate)
+            purpose = member.get("candidatePurpose") if isinstance(member.get("candidatePurpose"), str) else "uncategorized"
+            candidate_purposes[purpose] = candidate_purposes.get(purpose, 0) + 1
+            for note in member.get("missingEvidence") or []:
+                if isinstance(note, str):
+                    missing_evidence.add(note)
+            for note in member.get("unresolvedRequirements") or []:
+                if isinstance(note, str):
+                    unresolved_requirements.add(note)
+
+        representative_coordinates = None
+        if total_weight > 0:
+            representative_coordinates = {
+                "x": round(weighted_x / total_weight, 4),
+                "y": round(weighted_y / total_weight, 4),
+                "z": round(weighted_z / total_weight, 4),
+            }
+
+        world_identity = sorted(world_counts.items(), key=lambda item: (-item[1], item[0]))[0][0] if world_counts else None
+        primary_purpose = sorted(candidate_purposes.items(), key=lambda item: (-item[1], item[0]))[0][0] if candidate_purposes else "uncategorized"
+
+        seed_parts = [
+            world_identity or "world:unknown",
+            primary_purpose,
+            str(round((representative_coordinates or {}).get("x", 0.0), 1)),
+            str(round((representative_coordinates or {}).get("y", 0.0), 1)),
+            str(round((representative_coordinates or {}).get("z", 0.0), 1)),
+        ]
+        seed_parts.extend(sorted(_identity_set(sorted(workspace_paths | gui_paths | interaction_targets)))[:4])
+        destination_id = "dest_" + hashlib.sha256("|".join(seed_parts).encode("utf-8")).hexdigest()[:14]
+
+        for location_id in member_ids:
+            location_to_destination[location_id] = destination_id
+
+        physical_destination_registry.append({
+            "destinationId": destination_id,
+            "sourceLocationIds": member_ids,
+            "worldAreaIdentity": world_identity,
+            "representativeCoordinates": representative_coordinates,
+            "supportingPositionSamples": supporting_position_samples[:36],
+            "candidatePurpose": primary_purpose,
+            "candidatePurposes": candidate_purposes,
+            "associatedInteractionTargets": sorted(interaction_targets)[:24],
+            "relevantWorkspacePaths": sorted(workspace_paths)[:24],
+            "relevantGuiPaths": sorted(gui_paths)[:24],
+            "observedInteractionMechanisms": sorted(interaction_mechanisms),
+            "activationConditions": sorted(activation_conditions)[:24],
+            "featureCandidates": sorted(feature_candidates),
+            "supportingInteractionCount": interaction_count,
+            "supportingTransactionCount": transaction_count,
+            "evidenceConfidence": {
+                "score": round(confidence_weighted_sum / confidence_weight_total, 3) if confidence_weight_total > 0 else 0.0,
+                "maxScore": round(max(confidence_values), 3) if confidence_values else 0.0,
+                "minScore": round(min(confidence_values), 3) if confidence_values else 0.0,
+                "locationCount": len(member_ids),
+            },
+            "missingEvidence": sorted(missing_evidence),
+            "unresolvedRequirements": sorted(unresolved_requirements),
+        })
+
+    for location in location_registry:
+        location["physicalDestinationId"] = location_to_destination.get(location.get("id"))
+
+    destination_relationships: dict[str, list[dict[str, Any]]] = {}
+    workflow_buckets: dict[tuple[str, str], dict[str, Any]] = {}
+    for relationship in spatial_relationships:
+        destination_id = location_to_destination.get(relationship.get("locationId"))
+        relationship["physicalDestinationId"] = destination_id
+        if not isinstance(destination_id, str):
+            continue
+
+        destination_relationships.setdefault(destination_id, []).append(relationship)
+        action = relationship.get("action") if isinstance(relationship.get("action"), dict) else {}
+        target_path = action.get("targetPath") if isinstance(action.get("targetPath"), str) else None
+        workflow_identity = relationship.get("transactionId") if isinstance(relationship.get("transactionId"), str) else None
+        if workflow_identity is None:
+            workflow_identity = "|".join([
+                _path_identity_key(target_path) or "target:unknown",
+                relationship.get("interactionType") if isinstance(relationship.get("interactionType"), str) else "type:unknown",
+                relationship.get("interactionMechanism") if isinstance(relationship.get("interactionMechanism"), str) else "mechanism:unknown",
+            ])
+
+        workflow_key = (destination_id, workflow_identity)
+        bucket = workflow_buckets.setdefault(workflow_key, {
+            "destinationId": destination_id,
+            "workflowIdentity": workflow_identity,
+            "relationshipIds": [],
+            "interactionSequences": set(),
+            "transactionIds": set(),
+            "interactionTargets": set(),
+            "interactionMechanisms": set(),
+            "interactionTypes": set(),
+            "stateSignalKeys": {},
+            "meaningfulOutcomeKeys": {},
+            "actionKinds": {},
+        })
+
+        if isinstance(relationship.get("id"), str):
+            bucket["relationshipIds"].append(relationship.get("id"))
+        if isinstance(relationship.get("interactionSequence"), int):
+            bucket["interactionSequences"].add(relationship.get("interactionSequence"))
+        if isinstance(relationship.get("transactionId"), str):
+            bucket["transactionIds"].add(relationship.get("transactionId"))
+        if isinstance(target_path, str):
+            bucket["interactionTargets"].add(target_path)
+        if isinstance(relationship.get("interactionMechanism"), str):
+            bucket["interactionMechanisms"].add(relationship.get("interactionMechanism"))
+        if isinstance(relationship.get("interactionType"), str):
+            bucket["interactionTypes"].add(relationship.get("interactionType"))
+
+        action_kind = action.get("kind") if isinstance(action.get("kind"), str) else None
+        if action_kind:
+            bucket["actionKinds"][action_kind] = bucket["actionKinds"].get(action_kind, 0) + 1
+
+        for state_key in relationship.get("outcomeStateKeys") or []:
+            if isinstance(state_key, str):
+                bucket["stateSignalKeys"][state_key] = bucket["stateSignalKeys"].get(state_key, 0) + 1
+        for state_key in relationship.get("meaningfulOutcomeStateKeys") or []:
+            if isinstance(state_key, str):
+                bucket["meaningfulOutcomeKeys"][state_key] = bucket["meaningfulOutcomeKeys"].get(state_key, 0) + 1
+
+    destination_workflows: list[dict[str, Any]] = []
+    workflows_by_destination: dict[str, list[dict[str, Any]]] = {}
+    for (_, _), bucket in sorted(workflow_buckets.items(), key=lambda item: (item[1]["destinationId"], item[1]["workflowIdentity"])):
+        workflow_id = "wf_" + hashlib.sha256((bucket["destinationId"] + "|" + str(bucket["workflowIdentity"])).encode("utf-8")).hexdigest()[:14]
+        workflow = {
+            "workflowId": workflow_id,
+            "destinationId": bucket["destinationId"],
+            "workflowIdentity": bucket["workflowIdentity"],
+            "relationshipIds": bucket["relationshipIds"][:80],
+            "interactionSequences": sorted(bucket["interactionSequences"]),
+            "transactionIds": sorted(bucket["transactionIds"]),
+            "interactionTargets": sorted(bucket["interactionTargets"])[:24],
+            "interactionMechanisms": sorted(bucket["interactionMechanisms"]),
+            "interactionTypes": sorted(bucket["interactionTypes"]),
+            "actionKinds": [item[0] for item in sorted(bucket["actionKinds"].items(), key=lambda item: (-item[1], item[0]))],
+            "stateSignalKeys": [item[0] for item in sorted(bucket["stateSignalKeys"].items(), key=lambda item: (-item[1], item[0]))[:24]],
+            "meaningfulOutcomeKeys": [item[0] for item in sorted(bucket["meaningfulOutcomeKeys"].items(), key=lambda item: (-item[1], item[0]))[:24]],
+            "outcomeVerificationTier": (
+                "temporally-correlated-multi-signal"
+                if len(bucket["meaningfulOutcomeKeys"]) >= 2
+                else ("temporally-correlated-single-signal" if len(bucket["meaningfulOutcomeKeys"]) == 1 else "interaction-observed-only")
+            ),
+        }
+        destination_workflows.append(workflow)
+        workflows_by_destination.setdefault(bucket["destinationId"], []).append(workflow)
+
+    consolidated_navigation_candidates: list[dict[str, Any]] = []
+    consolidated_actionable_count = 0
+    consolidated_ready_count = 0
+    consolidated_live_validated_count = 0
+    consolidated_gameplay_verified_count = 0
+
+    for destination in sorted(physical_destination_registry, key=lambda item: (-int(item.get("supportingInteractionCount") or 0), item.get("destinationId") or "")):
+        destination_id = destination.get("destinationId")
+        destination_relationship_list = destination_relationships.get(destination_id, []) if isinstance(destination_id, str) else []
+        destination_workflow_list = workflows_by_destination.get(destination_id, []) if isinstance(destination_id, str) else []
+
+        meaningful_outcomes: set[str] = set()
+        state_signals: set[str] = set()
+        interaction_sequences: set[int] = set()
+        transaction_ids: set[str] = set()
+        for relationship in destination_relationship_list:
+            for key in relationship.get("meaningfulOutcomeStateKeys") or []:
+                if isinstance(key, str):
+                    meaningful_outcomes.add(key)
+            for key in relationship.get("outcomeStateKeys") or []:
+                if isinstance(key, str):
+                    state_signals.add(key)
+            if isinstance(relationship.get("interactionSequence"), int):
+                interaction_sequences.add(relationship.get("interactionSequence"))
+            if isinstance(relationship.get("transactionId"), str):
+                transaction_ids.add(relationship.get("transactionId"))
+
+        representative_coordinates = destination.get("representativeCoordinates") if isinstance(destination.get("representativeCoordinates"), dict) else None
+        observed_position = representative_coordinates is not None
+        interaction_observed = int(destination.get("supportingInteractionCount") or 0) > 0
+        workspace_targets = [item for item in (destination.get("relevantWorkspacePaths") or []) if isinstance(item, str)]
+        gui_targets = [item for item in (destination.get("relevantGuiPaths") or []) if isinstance(item, str)]
+        has_action_target = len(workspace_targets) > 0 or len(gui_targets) > 0
+
+        mechanisms = [item for item in (destination.get("observedInteractionMechanisms") or []) if isinstance(item, str)]
+        pointer_only = len(mechanisms) > 0 and set(mechanisms) == {"pointer-input"}
+        has_mechanism = len(mechanisms) > 0 and not (pointer_only and not has_action_target)
+
+        repeated_support = int(destination.get("supportingTransactionCount") or 0) >= 2 or int(destination.get("supportingInteractionCount") or 0) >= 3
+        confidence_score = float(_numeric((destination.get("evidenceConfidence") or {}).get("score")) or 0.0)
+
+        actionable_candidate = observed_position and interaction_observed and has_action_target and has_mechanism
+        ready_for_live_validation = actionable_candidate and repeated_support and confidence_score >= 0.68
+        live_validated = bool(ready_for_live_validation and runtime_verified and gameplay_verified)
+
+        if actionable_candidate:
+            consolidated_actionable_count += 1
+        if ready_for_live_validation:
+            consolidated_ready_count += 1
+        if live_validated:
+            consolidated_live_validated_count += 1
+
+        temporal_associated = len(meaningful_outcomes) > 0
+        multi_signal_corroborated = len(meaningful_outcomes) >= 2
+        gameplay_tier = (
+            "live-validated"
+            if live_validated and temporal_associated
+            else (
+                "temporally-correlated-multi-signal"
+                if multi_signal_corroborated
+                else (
+                    "temporally-correlated-single-signal"
+                    if temporal_associated
+                    else ("state-change-observed" if len(state_signals) > 0 else "interaction-observed-only")
+                )
+            )
+        )
+        if gameplay_tier == "live-validated":
+            consolidated_gameplay_verified_count += 1
+
+        readiness_blockers: list[str] = []
+        if not observed_position:
+            readiness_blockers.append("No representative destination coordinates observed")
+        if not has_action_target:
+            readiness_blockers.append("No actionable target path (workspace or GUI)")
+        if not has_mechanism:
+            readiness_blockers.append("No reliable interaction mechanism evidence")
+        if actionable_candidate and not repeated_support:
+            readiness_blockers.append("Insufficient repeat observations for navigation confidence")
+        if actionable_candidate and confidence_score < 0.68:
+            readiness_blockers.append("Destination confidence below navigation-ready threshold")
+        if ready_for_live_validation and not live_validated:
+            readiness_blockers.append("Live gameplay validation not yet performed")
+
+        if live_validated:
+            navigation_status = "live-validated-destination"
+        elif ready_for_live_validation:
+            navigation_status = "navigation-ready"
+        elif actionable_candidate:
+            navigation_status = "actionable-navigation-candidate"
+        elif interaction_observed:
+            navigation_status = "interaction-position"
+        elif observed_position:
+            navigation_status = "observed-position"
+        else:
+            navigation_status = "insufficient-evidence"
+
+        outcome_missing_evidence: list[str] = []
+        if len(state_signals) == 0:
+            outcome_missing_evidence.append("No state change observed after interaction")
+        if len(meaningful_outcomes) == 0:
+            outcome_missing_evidence.append("No gameplay-relevant outcome signal observed")
+        if temporal_associated and not multi_signal_corroborated:
+            outcome_missing_evidence.append("Outcome supported by only one gameplay-relevant signal")
+        if not live_validated:
+            outcome_missing_evidence.append("No controlled live validation proving reproducible outcome")
+
+        destination["associatedWorkflows"] = [item.get("workflowId") for item in destination_workflow_list if isinstance(item.get("workflowId"), str)]
+        destination["navigationReadiness"] = {
+            "status": navigation_status,
+            "actionable": actionable_candidate,
+            "readyForLiveValidation": ready_for_live_validation,
+            "liveValidated": live_validated,
+            "blockers": readiness_blockers,
+        }
+        destination["gameplayOutcomeVerification"] = {
+            "status": "verified" if gameplay_tier == "live-validated" else "unverified",
+            "tier": gameplay_tier,
+            "interactionObserved": interaction_observed,
+            "stateChangeObserved": len(state_signals) > 0,
+            "temporallyAssociated": temporal_associated,
+            "multiSignalCorroborated": multi_signal_corroborated,
+            "causalityProven": False,
+            "liveValidated": live_validated,
+            "meaningfulOutcomeKeys": sorted(meaningful_outcomes)[:24],
+            "missingEvidence": outcome_missing_evidence,
+        }
+        destination["provenanceReferences"] = {
+            "interactionSequences": sorted(interaction_sequences),
+            "transactionIds": sorted(transaction_ids),
+            "relationshipIds": [item.get("id") for item in destination_relationship_list if isinstance(item.get("id"), str)][:120],
+        }
+
+        consolidated_navigation_candidates.append({
+            "destinationId": destination_id,
+            "sourceLocationIds": destination.get("sourceLocationIds") or [],
+            "candidatePurpose": destination.get("candidatePurpose"),
+            "worldAreaIdentity": destination.get("worldAreaIdentity"),
+            "representativeCoordinates": representative_coordinates,
+            "supportingPositionSamples": destination.get("supportingPositionSamples") or [],
+            "associatedInteractionTargets": destination.get("associatedInteractionTargets") or [],
+            "associatedWorkflowIds": destination.get("associatedWorkflows") or [],
+            "observedInteractionMechanisms": mechanisms,
+            "requiredActionMechanisms": mechanisms,
+            "activationConditions": destination.get("activationConditions") or [],
+            "prerequisites": destination.get("activationConditions") or [],
+            "relevantWorkspacePaths": workspace_targets,
+            "targetObjectPaths": workspace_targets,
+            "relevantGuiPaths": gui_targets,
+            "targetGuiPaths": gui_targets,
+            "evidenceConfidence": destination.get("evidenceConfidence"),
+            "confidence": destination.get("evidenceConfidence"),
+            "navigationReadiness": destination.get("navigationReadiness"),
+            "gameplayOutcomeVerification": destination.get("gameplayOutcomeVerification"),
+            "evidenceStatus": {
+                "observedPosition": observed_position,
+                "interactionPosition": interaction_observed,
+                "outcomeAssociatedPosition": temporal_associated,
+                "actionableNavigationCandidate": actionable_candidate,
+                "readyForLiveValidation": ready_for_live_validation,
+                "liveValidatedDestination": live_validated,
+            },
+            "unresolvedRequirements": sorted(set((destination.get("unresolvedRequirements") or []) + readiness_blockers + outcome_missing_evidence))[:32],
+            "missingEvidence": sorted(set((destination.get("missingEvidence") or []) + readiness_blockers + outcome_missing_evidence))[:32],
+            "provenanceReferences": destination.get("provenanceReferences"),
+            "validationStatus": navigation_status,
+            "readinessBlockers": readiness_blockers,
+            "limitations": [
+                "Approach positions are observational, not guaranteed valid navigation meshes",
+                "Server-side interaction acceptance must be validated in controlled runs",
+            ],
+        })
+
+    navigation_candidates = consolidated_navigation_candidates
+    actionable_navigation_candidates = consolidated_actionable_count
+    ready_navigation_candidates = consolidated_ready_count
+    live_validated_destinations = consolidated_live_validated_count
+    gameplay_verified_destinations = consolidated_gameplay_verified_count
+
     spatial_quality_metrics = {
         "playerPositionSamples": {
             "total": len(position_history),
@@ -2292,14 +2852,19 @@ def _build_universal_discovery_report(
         },
         "locationClustering": {
             "functionalLocationCount": len(location_registry),
+            "physicalDestinationCount": len(physical_destination_registry),
+            "destinationMerges": max(0, len(location_registry) - len(physical_destination_registry)),
             "duplicateObservationsMerged": max(0, len([item for item in events if isinstance(item, dict)]) - len(location_registry)),
             "interactionLinkedLocations": sum(1 for item in location_registry if (item.get("supportingInteractionCount") or 0) > 0),
             "outcomeLinkedLocations": sum(1 for item in location_registry if item.get("outcomeLinked") is True),
+            "multiWorkflowDestinationCount": sum(1 for item in physical_destination_registry if len(item.get("associatedWorkflows") or []) > 1),
+            "destinationWorkflowCount": len(destination_workflows),
             "spatialActionOutcomeRelationshipCount": len(spatial_relationships),
             "navigationCandidateCount": len(navigation_candidates),
             "actionableNavigationCandidates": actionable_navigation_candidates,
             "navigationCandidatesReady": ready_navigation_candidates,
             "liveValidatedDestinations": live_validated_destinations,
+            "gameplayVerifiedDestinations": gameplay_verified_destinations,
         },
         "nearbyObjectRelevance": {
             "actionableCandidateCount": actionable_nearby_candidates,
@@ -2574,7 +3139,10 @@ def _build_universal_discovery_report(
         "playerPositionHistory": position_history[:900],
         "eventPositionSnapshots": event_snapshots[:1400],
         "functionalLocationRegistry": location_registry,
+        "physicalDestinationRegistry": physical_destination_registry,
+        "destinationWorkflows": destination_workflows[:260],
         "spatialActionOutcomeRelationships": spatial_relationships[:260],
+        "locationNavigationCandidates": location_navigation_candidates[:260],
         "navigationCandidates": navigation_candidates,
         "spatialDiscovery": {
             "status": "captured" if len(event_snapshots) > 0 or len(position_history) > 0 else "not-captured",
@@ -2658,10 +3226,14 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Relationships with outcome signals: {((metrics.get('actionOutcomeRelationships') or {}).get('relationshipsWithOutcomeSignals') if isinstance(metrics, dict) else None)}",
         f"- Workflow transactions: {((metrics.get('workflowCompleteness') or {}).get('transactionCount') if isinstance(metrics, dict) else None)}",
         f"- Functional locations clustered: {(spatial_metrics.get('locationClustering') or {}).get('functionalLocationCount') if isinstance(spatial_metrics, dict) else None}",
+        f"- Physical destinations consolidated: {(spatial_metrics.get('locationClustering') or {}).get('physicalDestinationCount') if isinstance(spatial_metrics, dict) else None}",
+        f"- Destination merges applied: {(spatial_metrics.get('locationClustering') or {}).get('destinationMerges') if isinstance(spatial_metrics, dict) else None}",
+        f"- Destination workflows identified: {(spatial_metrics.get('locationClustering') or {}).get('destinationWorkflowCount') if isinstance(spatial_metrics, dict) else None}",
         f"- Duplicate observations merged: {(spatial_metrics.get('locationClustering') or {}).get('duplicateObservationsMerged') if isinstance(spatial_metrics, dict) else None}",
         f"- Actionable navigation candidates: {(spatial_metrics.get('locationClustering') or {}).get('actionableNavigationCandidates') if isinstance(spatial_metrics, dict) else None}",
         f"- Navigation candidates ready: {(spatial_metrics.get('locationClustering') or {}).get('navigationCandidatesReady') if isinstance(spatial_metrics, dict) else None}",
         f"- Live-validated destinations: {(spatial_metrics.get('locationClustering') or {}).get('liveValidatedDestinations') if isinstance(spatial_metrics, dict) else None}",
+        f"- Gameplay-verified destinations: {(spatial_metrics.get('locationClustering') or {}).get('gameplayVerifiedDestinations') if isinstance(spatial_metrics, dict) else None}",
         f"- Event snapshots with coordinates: {(spatial_metrics.get('eventPositionSnapshots') or {}).get('withCoordinates') if isinstance(spatial_metrics, dict) else None}",
         f"- Interaction→location coverage: {(spatial_metrics.get('coverage') or {}).get('interactionToLocationCoverage') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",

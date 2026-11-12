@@ -1,3 +1,83 @@
+## Update — 2026-11-12 — physical destination consolidation + outcome-verification separation
+
+### Acceptance status updates
+
+- **Potassium compile/load:** still **LIVE VERIFIED** for inspector `v30.6.49` (user-confirmed previously).
+- Universal discovery now separates **functional locations** from **physical destinations** and **destination workflows**.
+- Navigation readiness is now destination-scoped and explicitly separated from gameplay-outcome verification tiers.
+- Full test-suite regressions previously failing in `tests/test_inspector_ui.py` are fixed.
+
+### Implemented
+
+- Added destination-level consolidation in `tools/receiver_generation_pipeline.py`:
+  - emits `physicalDestinationRegistry` (stable destination IDs with source-location provenance),
+  - emits `destinationWorkflows` (workflow identity, interaction targets/mechanisms, state/outcome keys),
+  - retains `locationNavigationCandidates` for backward/diagnostic compatibility,
+  - emits deduplicated destination-scoped `navigationCandidates`.
+- Added `physicalDestinationId` linkage on each functional location record.
+- Introduced pairwise merge scoring for nearby same-world locations using:
+  - spatial distance,
+  - shared workspace/gui identity roots,
+  - nearby-object overlap,
+  - candidate-purpose/feature overlap,
+  - anti-merge guard when world anchors conflict.
+- Added explicit destination-scoped separation of concerns:
+  - `navigationReadiness` (actionable/ready/live-validated + blockers),
+  - `gameplayOutcomeVerification` (status/tier/missing evidence) independent of navigation readiness.
+- Added relationship-level `meaningfulOutcomeStateKeys` + `outcomeVerification` in `spatialActionOutcomeRelationships`.
+- Expanded clustering metrics with:
+  - `physicalDestinationCount`, `destinationMerges`,
+  - `destinationWorkflowCount`, `multiWorkflowDestinationCount`,
+  - `gameplayVerifiedDestinations`.
+- Updated inspector consistency issues (runtime metadata/tests):
+  - `LycolesUniversalInspector.lua` banner now `v30.6.49`,
+  - restored expected non-blocking queue call guard line,
+  - synchronized `version.txt` to `30.6.49`.
+
+### New regression coverage
+
+- `test_overlapping_locations_consolidate_to_single_physical_destination`
+- `test_nearby_unrelated_targets_remain_separate_destinations`
+- `test_passive_state_changes_do_not_count_as_verified_outcomes`
+- Expanded existing universal discovery schema assertions for destination/workflow outputs.
+
+### Bubble Gum comparison (same evidence, previous commit vs current)
+
+- Previous (`6a122e15`) location metrics:
+  - `functionalLocationCount = 12`
+  - `navigationCandidateCount = 12`
+  - `actionableNavigationCandidates = 5`
+  - `navigationCandidatesReady = 2`
+- Current destination-scoped metrics:
+  - `functionalLocationCount = 12`
+  - `physicalDestinationCount = 10`
+  - `destinationMerges = 2`
+  - `destinationWorkflowCount = 11`
+  - `navigationCandidateCount = 10` (deduplicated)
+  - `actionableNavigationCandidates = 4`
+  - `navigationCandidatesReady = 1`
+  - `gameplayVerifiedDestinations = 0`
+
+### Validation completed
+
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py tests/test_inspector_ui.py`
+- `python3 -m unittest tests.test_receiver_generation_pipeline` (**29/29 passed**)
+- `python3 -m unittest tests.test_inspector_ui` (**31/31 passed**)
+- `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+- `python3 -m unittest discover -s tests` (**1658 passed, 17 skipped, 0 failed**)
+
+### Updated artifacts
+
+- Current report:
+  - `build/live-observation-discovery/bubblegum-spatial-discovery/universal-discovery-report.json`
+  - `build/live-observation-discovery/bubblegum-spatial-discovery/universal-discovery-summary.txt`
+- Comparison baseline (previous commit behavior):
+  - `build/live-observation-discovery-previous-6a122/bubblegum-spatial-discovery-previous/universal-discovery-report.json`
+- Consolidation analysis:
+  - `build/live-observation-discovery/bubblegum-spatial-discovery/location-consolidation-analysis.md`
+
+
+
 ## Update — 2026-11-12 — location-readiness root-cause fix + staged navigation evidence model
 
 ### Acceptance status updates
