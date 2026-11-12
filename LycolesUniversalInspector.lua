@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.52
+-- Lycoles Universal Inspector v30.6.53
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.52"
+local VERSION = "30.6.53"
 
 local endpoint = ""
 local autoSend = true
@@ -2239,13 +2239,62 @@ local function prepareParts(report)
     local diagnostics = report.interactionDiagnostics or {}
     local history = diagnostics.recentInteractions or {}
     local summary = {}
+    local collectionChunkKeys = {
+        "cursorObservationHistory",
+        "clickTargetObservations",
+        "clickOutcomeRelationships",
+        "characterOrientationSamples",
+        "cameraOrientationSamples",
+        "playerPositionHistory",
+        "eventPositionSnapshots",
+        "spatialLocationHistory",
+    }
+    local collectionChunkLookup = {}
+    for _, key in ipairs(collectionChunkKeys) do collectionChunkLookup[key] = true end
     for k,v in pairs(diagnostics) do
-        if k~="recentInteractions" then summary[k]=v end
+        if k~="recentInteractions" and not collectionChunkLookup[k] then summary[k]=v end
     end
     summary.recentInteractions={}
     summary.historyExportMode="separate-bounded-parts"
     summary.historyTotal=#history
-    local function makePart(items,index,total,meta,historyBatch,historyStart)
+    summary.interactionDiagnosticsChunkSchema="30.6.interaction-diagnostics-chunk.1"
+    summary.interactionDiagnosticsChunkMode="separate-bounded-parts"
+    local chunkedCollections={}
+    local diagnosticCollectionBatches={}
+    local function queueDiagnosticCollectionBatches(key, values)
+        if type(values)~="table" then return end
+        summary[key]={}
+        summary[key.."Total"]=#values
+        summary[key.."ExportMode"]="separate-bounded-parts"
+        chunkedCollections[#chunkedCollections+1]=key
+        local batch={}
+        local batchStart=1
+        local batchBytes=0
+        for i,item in ipairs(values) do
+            local encoded=encodeStage("diag-"..key.."-item-"..i,item)
+            local estimate=#encoded+2
+            if batchBytes+estimate>limit-1500 and #batch>0 then
+                diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
+                    key=key,items=batch,start=batchStart
+                }
+                batch={}
+                batchStart=i
+                batchBytes=0
+            end
+            batch[#batch+1]=item
+            batchBytes=batchBytes+estimate
+        end
+        if #batch>0 then
+            diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
+                key=key,items=batch,start=batchStart
+            }
+        end
+    end
+    for _, key in ipairs(collectionChunkKeys) do
+        queueDiagnosticCollectionBatches(key, diagnostics[key])
+    end
+    summary.chunkedInteractionDiagnosticCollections=chunkedCollections
+    local function makePart(items,index,total,meta,historyBatch,historyStart,diagKey,diagBatch,diagStart)
         return {
             version=report.version,placeId=report.placeId,gameId=report.gameId,
             placeVersion=report.placeVersion,inspectedAt=report.inspectedAt,
@@ -2264,6 +2313,9 @@ local function prepareParts(report)
             diagnostics=meta and report.diagnostics or nil,
             interactionHistoryChunk=historyBatch,
             interactionHistoryStart=historyStart,
+            interactionDiagnosticsChunkKey=diagKey,
+            interactionDiagnosticsChunk=diagBatch,
+            interactionDiagnosticsChunkStart=diagStart,
             objects=items
         }
     end
@@ -2292,7 +2344,10 @@ local function prepareParts(report)
     -- large shared diagnostics into an oversized first object part.
     local payloads={{items={},meta=true}}
     for _,batch in ipairs(historyBatches) do
-        payloads[#payloads+1]={items={},history=batch.items,start=batch.start}
+        payloads[#payloads+1]={items={},history=batch.items,historyStart=batch.start}
+    end
+    for _,batch in ipairs(diagnosticCollectionBatches) do
+        payloads[#payloads+1]={items={},diagKey=batch.key,diag=batch.items,diagStart=batch.start}
     end
     for _,items in ipairs(chunks) do payloads[#payloads+1]={items=items} end
     local changed=true
@@ -2302,10 +2357,11 @@ local function prepareParts(report)
         for i=1,total do
             local entry=payloads[i]
             local body=encodeStage("size-check-"..i,
-                makePart(entry.items,i,total,entry.meta,entry.history,entry.start))
+                makePart(entry.items,i,total,entry.meta,entry.history,entry.historyStart,
+                    entry.diagKey,entry.diag,entry.diagStart))
             if #body>limit then
                 if entry.meta then
-                    error("Shared scan summary exceeds receiver limit without interaction history")
+                    error("Shared scan summary exceeds receiver limit")
                 elseif entry.history then
                     if #entry.history<=1 then
                         error("Single history event exceeds receiver limit")
@@ -2315,8 +2371,22 @@ local function prepareParts(report)
                     for j,v in ipairs(entry.history) do
                         if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
                     end
-                    payloads[i]={items={},history=left,start=entry.start}
-                    table.insert(payloads,i+1,{items={},history=right,start=entry.start+midpoint})
+                    payloads[i]={items={},history=left,historyStart=entry.historyStart}
+                    table.insert(payloads,i+1,{items={},history=right,
+                        historyStart=entry.historyStart+midpoint})
+                elseif entry.diag then
+                    if #entry.diag<=1 then
+                        error("Single interaction diagnostics chunk item exceeds receiver limit ("
+                            ..tostring(entry.diagKey)..")")
+                    end
+                    local midpoint=math.floor(#entry.diag/2)
+                    local left,right={},{}
+                    for j,v in ipairs(entry.diag) do
+                        if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
+                    end
+                    payloads[i]={items={},diagKey=entry.diagKey,diag=left,diagStart=entry.diagStart}
+                    table.insert(payloads,i+1,{items={},diagKey=entry.diagKey,
+                        diag=right,diagStart=entry.diagStart+midpoint})
                 else
                     if #entry.items<=1 then
                         error("Single object exceeds receiver limit")
@@ -2337,7 +2407,8 @@ local function prepareParts(report)
     local parts={}
     for i,entry in ipairs(payloads) do
         local body=encodeStage("part-"..i,
-            makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.start))
+            makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.historyStart,
+                entry.diagKey,entry.diag,entry.diagStart))
         if #body>limit then error("Unexpected oversized part "..i) end
         parts[#parts+1]=body
     end
@@ -2347,7 +2418,8 @@ local function prepareParts(report)
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
-    return parts, scanId
+    report.interactionDiagnosticsManifestSummary = summary
+    return parts, scanId, summary
 end
 
 -- Dynamic discovery records newly replicated instances without accessing script source.
@@ -7108,7 +7180,7 @@ local function inspect(requestType, featureRequest)
         local encoded, resultData = pcall(function()
             -- Large universal scans must never be encoded as one JSON document.
             -- The receiver accepts bounded parts; keep only a small clipboard manifest.
-            local parts, reportScanId = prepareParts(result)
+            local parts, reportScanId, interactionDiagnosticsSummary = prepareParts(result)
             uploadState={attempted=false,status="not-attempted",acknowledgedParts=0,
                 expectedParts=#parts,lastError=nil}
             local manifestData = {
@@ -7117,7 +7189,7 @@ local function inspect(requestType, featureRequest)
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
-                interactionDiagnostics = result.interactionDiagnostics,
+                interactionDiagnostics = interactionDiagnosticsSummary or result.interactionDiagnostics,
                 automationDiagnostics = result.automationDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,

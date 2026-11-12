@@ -17,6 +17,18 @@ Target experiences are third-party games that the user does not own and cannot o
 
 
 
+## Session notes — 2026-11-06 shared-summary overflow fix (v30.6.53)
+
+- Live error `JSON error: 2308: Shared scan summary exceeds receiver limit without interaction` is emitted from inspector `prepareParts` metadata size validation, before upload attempts.
+- "without interaction" means `recentInteractions` was already excluded/chunked, but shared metadata still exceeded `MAX_PART_BYTES`.
+- Required guardrail: large diagnostics collections must never stay embedded in metadata summary; export them as bounded multipart chunks with explicit key + start offset, and keep summary compact with per-collection totals.
+- New optional part fields used for bounded diagnostics transport:
+  - `interactionDiagnosticsChunkKey`
+  - `interactionDiagnosticsChunk`
+  - `interactionDiagnosticsChunkStart`
+- `tools/compile_scan.py` now reconstructs these chunked diagnostics arrays fail-closed (sequence + total validation), preserving compatibility with existing multipart schema consumers.
+
+
 ## Session notes — 2026-11-06 click failure hotfix (v30.6.52)
 
 - Confirmed root cause for Bubble Gum `27/27` click-capture failures in `v30.6.51`: `captureClickTargetObservation` called `_numeric(screen.x/y)` but no `_numeric` Lua helper existed in the inspector runtime, so each click capture attempt threw before append.

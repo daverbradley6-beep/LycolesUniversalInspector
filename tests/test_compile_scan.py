@@ -242,6 +242,76 @@ class ScanCompilerTests(unittest.TestCase):
             self.parts(path,event=event)
             with self.assertRaisesRegex(ValueError,"candidate evidence claims verification"):
                 compiler.compile_scan(path)
+
+    def test_chunked_interaction_diagnostics_are_reconstructed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan123","placeId":3623096087,"partCount":4,
+                  "version":"30.6.52","objects":[]}
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "historyExportMode":"separate-bounded-parts",
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":3,
+                    "cursorObservationHistoryExportMode":"separate-bounded-parts",
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[
+                    {"sampleType":"mouse-movement","source":"MouseMovement"},
+                    {"sampleType":"mouse-movement","source":"MouseMovement"},
+                ])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=3,
+                interactionDiagnosticsChunk=[
+                    {"sampleType":"mouse-click","source":"MouseButton1"},
+                ])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            plan=compiler.compile_scan(path)
+            self.assertEqual(plan["integrity"]["objects"],2)
+            self.assertEqual(plan["integrity"]["interactionEvents"],0)
+            self.assertEqual(
+                len((plan.get("interactionDiagnostics") or {}).get("cursorObservationHistory") or []),
+                3,
+            )
+
+    def test_chunked_interaction_diagnostics_sequence_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan124","placeId":3623096087,"partCount":4,
+                  "version":"30.6.52","objects":[]}
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":3,
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{"sampleType":"mouse-movement"}])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=3,
+                interactionDiagnosticsChunk=[{"sampleType":"mouse-click"}])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,"chunk sequence mismatch"):
+                compiler.compile_scan(path)
     def test_local_manifest_must_match_multipart_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)

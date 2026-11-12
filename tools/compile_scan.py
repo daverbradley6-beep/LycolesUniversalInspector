@@ -830,7 +830,39 @@ def compile_scan(directory):
     if any(manifest.get("objectCount") is not None
            and manifest.get("objectCount")!=len(objects) for manifest in local_manifests):
         fail("Local manifest object count mismatch")
-    interaction_diagnostics=metadata.get("interactionDiagnostics") or {}
+    interaction_diagnostics=metadata.get("interactionDiagnostics") if isinstance(metadata.get("interactionDiagnostics"),dict) else {}
+    diagnostics_chunks: dict[str, list[tuple[int, list[dict]]]] = {}
+    for p in ordered:
+        chunk=p.get("interactionDiagnosticsChunk")
+        if chunk is None:
+            continue
+        if not isinstance(chunk,list):
+            fail("Malformed interaction diagnostics chunk")
+        chunk_key=p.get("interactionDiagnosticsChunkKey")
+        chunk_start=p.get("interactionDiagnosticsChunkStart")
+        if not isinstance(chunk_key,str) or not chunk_key:
+            fail("Malformed interaction diagnostics chunk key")
+        if type(chunk_start) is not int or chunk_start<1:
+            fail("Malformed interaction diagnostics chunk start")
+        if any(not isinstance(item,dict) for item in chunk):
+            fail("Malformed interaction diagnostics chunk item")
+        diagnostics_chunks.setdefault(chunk_key,[]).append((chunk_start,chunk))
+
+    for chunk_key,segments in diagnostics_chunks.items():
+        segments.sort(key=lambda entry: entry[0])
+        expected_start=1
+        merged: list[dict] = []
+        for start,items in segments:
+            if start!=expected_start:
+                fail(f"Interaction diagnostics chunk sequence mismatch for {chunk_key}")
+            merged.extend(items)
+            expected_start += len(items)
+        declared_total=interaction_diagnostics.get(f"{chunk_key}Total")
+        if declared_total is not None and (type(declared_total) is not int or declared_total<0
+                                          or declared_total!=len(merged)):
+            fail(f"Interaction diagnostics chunk total mismatch for {chunk_key}")
+        interaction_diagnostics[chunk_key]=merged
+
     interaction_observation_summary=_interaction_observation_summary(interaction_diagnostics)
     history=[]
     for p in ordered:

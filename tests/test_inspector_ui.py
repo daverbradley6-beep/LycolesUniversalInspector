@@ -70,7 +70,7 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn("refreshLocalManifest(\"post-upload\")",SRC)
     def test_manifest_exposes_receiver_scan_id(self):
         self.assertIn("return parts, scanId",SRC)
-        self.assertIn("local parts, reportScanId = prepareParts(result)",SRC)
+        self.assertIn("local parts, reportScanId, interactionDiagnosticsSummary = prepareParts(result)",SRC)
         self.assertIn("scanId = reportScanId",SRC)
         self.assertIn("scanId=reportScanId",SRC)
         self.assertIn(r'.. "\\nScan ID: " .. tostring(resultData.scanId)',SRC)
@@ -78,6 +78,17 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('type(ack.sha256) == "string"',SRC)
         self.assertIn("acknowledgedPartDigests = digests",SRC)
         self.assertIn("sha256=ack.sha256",SRC)
+
+    def test_shared_summary_overflow_is_partitioned_into_chunk_parts(self):
+        self.assertIn('summary.interactionDiagnosticsChunkMode="separate-bounded-parts"',SRC)
+        self.assertIn('chunkedInteractionDiagnosticCollections=chunkedCollections',SRC)
+        self.assertIn('interactionDiagnosticsChunkKey=diagKey',SRC)
+        self.assertIn('interactionDiagnosticsChunk=diagBatch',SRC)
+        self.assertIn('interactionDiagnosticsChunkStart=diagStart',SRC)
+        self.assertIn('Single interaction diagnostics chunk item exceeds receiver limit (',SRC)
+        self.assertNotIn('Shared scan summary exceeds receiver limit without interaction history',SRC)
+        self.assertIn('local parts, reportScanId, interactionDiagnosticsSummary = prepareParts(result)',SRC)
+        self.assertIn('interactionDiagnostics = interactionDiagnosticsSummary or result.interactionDiagnostics,',SRC)
     def test_local_export_writes_numbered_parts_and_manifest(self):
         self.assertIn('local save = button("SAVE REPORT", 260)',SRC)
         self.assertIn('for i,body in ipairs(pendingParts) do',SRC)

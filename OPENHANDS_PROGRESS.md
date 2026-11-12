@@ -1,3 +1,62 @@
+## Update — 2026-11-06 — v30.6.53 shared-summary overflow fix (no-interaction FULL scans)
+
+### Root cause (confirmed)
+
+- The live error `JSON error: 2308: Shared scan summary exceeds receiver limit without interaction` comes from `prepareParts` metadata size-check failure in `LycolesUniversalInspector.lua`.
+- Exact failing branch was the metadata-part guard (`entry.meta`) during multipart packing when `#body > MAX_PART_BYTES`.
+- "without interaction" means this overflow happened **after** interaction history had already been removed from shared summary (`recentInteractions` exported separately), so metadata was still too large even with no interaction-history payload attached.
+- This is an **inspector-side local validation failure** before upload starts (not receiver HTTP rejection, not JSONEncode parser limit).
+
+### What changed
+
+- Inspector (`v30.6.53`):
+  - Added bounded chunk partitioning for large interaction diagnostics collections:
+    - `cursorObservationHistory`
+    - `clickTargetObservations`
+    - `clickOutcomeRelationships`
+    - `characterOrientationSamples`
+    - `cameraOrientationSamples`
+    - `playerPositionHistory`
+    - `eventPositionSnapshots`
+    - `spatialLocationHistory`
+  - Shared summary now exports compact metadata + per-collection totals and export mode markers.
+  - New optional per-part fields carry bounded diagnostic chunks:
+    - `interactionDiagnosticsChunkKey`
+    - `interactionDiagnosticsChunk`
+    - `interactionDiagnosticsChunkStart`
+  - Manifest now stores bounded diagnostics summary (`interactionDiagnosticsSummary`) instead of the full in-memory diagnostics table.
+- Compiler pipeline (`tools/compile_scan.py`):
+  - Added deterministic reconstruction of `interactionDiagnosticsChunk*` part payloads.
+  - Added fail-closed checks for malformed chunk structure, sequence gaps, and declared-total mismatches.
+
+### Regression coverage
+
+- `tests/test_inspector_ui.py`:
+  - verifies chunked summary export wiring and bounded manifest diagnostics usage.
+  - guards against reintroducing the old "without interaction history" hard-fail path.
+- `tests/test_compile_scan.py`:
+  - reconstructs chunked no-interaction diagnostics across multiple parts.
+  - validates fail-closed behavior on chunk sequence mismatches.
+
+### Validation
+
+- `python3 -m unittest tests.test_inspector_ui tests.test_compile_scan` → **57 passed**
+- `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_build_release tests.test_real_inspector_schema` → **54 passed**
+- `python3 -m unittest discover -s tests` → **1671 passed, 17 skipped, 0 failed**
+- `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- `python3 -m unittest tests.test_inspector_compiler_limits` → **2 passed**
+- `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua` → **PASS**
+- `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua` → **PASS**
+- Luau text compile max register index: **R157**
+
+### Live status
+
+- Potassium launch/load remains required for final live confirmation.
+- This fix specifically removes metadata-summary overflow as a local blocker so multipart transport can proceed to receiver ACK.
+
+
+
+
 ## Update — 2026-11-06 — v30.6.52 click-capture hardening for Bubble Gum 100% failure
 
 ### Root cause confirmed from v30.6.51 live export + source
