@@ -264,16 +264,22 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('cursorObservationHistory=cursorObservationHistory',SRC)
         self.assertIn('clickTargetObservations=clickTargetObservations',SRC)
         self.assertIn('clickOutcomeRelationships=clickOutcomeRelationships',SRC)
+        self.assertIn('inputGestureObservations=inputGestureObservations',SRC)
         self.assertIn('characterOrientationSamples=characterOrientationSamples',SRC)
         self.assertIn('cameraOrientationSamples=cameraOrientationSamples',SRC)
         self.assertIn('cursorClickOrientationSchemas={',SRC)
         self.assertIn('clickTargetObservation="30.6.click-target-observation.1"',SRC)
+        self.assertIn('inputGestureObservation="30.6.input-gesture-observation.1"',SRC)
 
     def test_cursor_click_orientation_helpers_exist(self):
         self.assertIn('function headingFromLookVector(lookVector)',SRC)
         self.assertIn('function compassLabelForHeading(heading)',SRC)
-        self.assertIn('function captureClickTargetObservation(buttonName,input)',SRC)
+        self.assertIn('function captureClickTargetObservation(buttonName,input,gestureId)',SRC)
         self.assertIn('function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)',SRC)
+        self.assertIn('function beginPointerGesture(buttonName,inputType)',SRC)
+        self.assertIn('function updateActivePointerGesturesFromMouseDelta(delta,nowClock)',SRC)
+        self.assertIn('function finalizePointerGesture(buttonName,inputType,reason)',SRC)
+        self.assertIn('function classifyInputGestureIntent(gesture,clickObservation,relation)',SRC)
         self.assertIn('resolveRecentPendingClick(path,"MouseButton1")',SRC)
         self.assertIn('cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil',SRC)
 
@@ -354,6 +360,11 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('if not action and isClickInput then action="pointer-activate" end', SRC)
         self.assertIn('action="inspector-ui-click"', SRC)
         self.assertIn('scope=clickTargetScope', SRC)
+        self.assertIn('pointerGesture=beginPointerGesture(inputName,inputName)', SRC)
+        self.assertIn('gestureByClickObservationId[clickObservation.id]=pointerGesture.id', SRC)
+        self.assertIn('finalizePointerGesture(inputName,inputName,"input-ended")', SRC)
+        self.assertIn('updateActivePointerGesturesFromMouseDelta(delta,now)', SRC)
+        self.assertIn('worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved', SRC)
         self.assertIn('inspectorOwnedTarget=clickInspectorOwned', SRC)
         self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)', SRC)
         self.assertIn('Inspector-owned UI target; excluded from gameplay correlation', SRC)
@@ -362,6 +373,10 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('confirmedGuiTarget=targetClassification=="confirmed-gui-target"', SRC)
         self.assertIn('confirmedWorldTarget=targetClassification=="confirmed-world-target"', SRC)
         self.assertIn('verificationStages={', SRC)
+        self.assertIn('inputGestureIntentDiagnostics=gestureIntentSummary', SRC)
+        self.assertIn('inputGesturesStarted=observerStats.inputGesturesStarted', SRC)
+        self.assertIn('inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements', SRC)
+        self.assertIn('gestureIntentSummary=gestureIntentSummary', SRC)
         self.assertIn('stage="multi-signal-corroborated"', SRC)
 
     def test_click_diagnostics_export_and_workspace_root_filtering(self):
@@ -374,9 +389,9 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('if path and lowPath~="workspace" and pathDepth>1 and not dedupe[path] then', SRC)
 
     def test_click_capture_failure_fallback_and_stage_reason_diagnostics(self):
-        self.assertIn('function createFallbackClickTargetObservation(buttonName,inputType,failureStage,failureReason)', SRC)
+        self.assertIn('function createFallbackClickTargetObservation(buttonName,inputType,gestureId,failureStage,failureReason)', SRC)
         self.assertIn('recordClickCaptureFailure("capture-wrapper",failureReason,inputName,inputName)', SRC)
-        self.assertIn('clickObservation=createFallbackClickTargetObservation(inputName,inputName,"capture-wrapper",failureReason)', SRC)
+        self.assertIn('clickObservation=createFallbackClickTargetObservation(inputName,inputName,gestureId,"capture-wrapper",failureReason)', SRC)
         self.assertIn('recordClickCaptureComponentFailure(stageLabel,reasonLabel,buttonLabel,inputType)', SRC)
         self.assertIn('failureStage=(#componentFailures>0 and componentFailures[1].stage) or nil', SRC)
         self.assertIn('failureReason=(#componentFailures>0 and componentFailures[1].reason) or nil', SRC)

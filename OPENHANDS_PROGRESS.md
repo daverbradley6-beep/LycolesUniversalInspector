@@ -1,4 +1,34 @@
-## Update — 2026-11-12 — Uploaded v30.6.53 replay compatibility and evidence confirmation
+## Update — 2026-11-06 — v30.6.55 pointer-gesture intent classification and export integration
+
+### Scope
+
+- Completed structural gesture instrumentation in `LycolesUniversalInspector.lua` to distinguish likely camera-rotation drags from likely gameplay clicks while preserving existing click-target/outcome semantics.
+- Added bounded `inputGestureObservations` capture, lifecycle tracking, click linkage (`inputGestureId`), and intent classification (`inputIntent`) with explicit non-causality semantics.
+- Wired gesture diagnostics into interaction export paths (full scan + live observation export), chunked diagnostics transport keys, schema metadata, sampling limits, and stats summaries.
+- Extended receiver normalization (`tools/receiver_generation_pipeline.py`) to parse/normalize:
+  - `inputGestureObservations`
+  - `inputIntent` on click target observations
+  - `inputIntent` and `inputGestureId` on click outcome relationships
+- Added spatial-quality metrics for gesture intent (`inputGestureIntent`) including likely-camera vs likely-gameplay counts and world-raycast-only signals.
+
+### Validation
+
+- `python3 -m pytest tests/test_inspector_ui.py tests/test_receiver_generation_pipeline.py tests/test_compile_scan.py` → **92 passed**
+- `python3 -m pytest` → **1658 passed, 17 skipped**
+- `python3 -m pytest tests/test_inspector_compiler_limits.py -q` → **2 passed (9 subtests)**
+- Luau compile matrix (`-O0..2`, `-g0..2`) via `build/luau-0.744/luau-compile --null` on `LycolesUniversalInspector.lua` → **all modes pass**
+- Luau AST root local pressure: **168** (budget **170**, Potassium hard cap **200**)
+
+### Version
+
+- Inspector version bumped: **v30.6.55**
+
+### Live status
+
+- Offline compiler/test validation complete.
+- **Potassium live verification still pending** for final confirmation that `loadstring(source)` succeeds and gesture intent separation behaves correctly in-executor.
+
+
 ## Update — 2026-11-06 — v30.6.54 GUI target repair, ambiguity handling, and provenance clarity
 
 ### Uploaded artifacts ingested

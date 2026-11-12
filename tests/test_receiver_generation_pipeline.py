@@ -1078,6 +1078,29 @@ def make_pickup_discovery_observation_export(path, scan_id="pickup-discovery-sca
                 "sessionElapsedSeconds": 8.1,
                 "mouseButton": "MouseButton1",
                 "inputType": "MouseButton1",
+                "inputGestureId": "gesture-pickup-click-1",
+                "inputIntent": {
+                    "schemaVersion": "30.6.input-gesture-intent.1",
+                    "primaryIntent": "likely-gameplay-interaction",
+                    "clickCandidate": True,
+                    "cameraDragCandidate": False,
+                    "heldInputCandidate": False,
+                    "guiInteractionCandidate": False,
+                    "worldInteractionCandidate": True,
+                    "ambiguousInput": False,
+                    "likelyCameraMovement": False,
+                    "likelyGameplayInteraction": True,
+                    "targetAndOutcomeSignals": {
+                        "guiTargetConfirmed": False,
+                        "worldTargetConfirmed": True,
+                        "worldRaycastOnly": False,
+                        "callbackObserved": True,
+                        "stateChangeTemporallyAssociated": True,
+                        "meaningfulGameplayOutcomeObserved": True,
+                        "outcomeCorroborated": True,
+                        "targetAmbiguous": False,
+                    },
+                },
                 "inspectorOwnedTarget": False,
                 "targetScope": "world",
                 "cursor": {
@@ -1108,6 +1131,29 @@ def make_pickup_discovery_observation_export(path, scan_id="pickup-discovery-sca
             {
                 "id": "click-outcome-click_pickup_1",
                 "clickObservationId": "click_pickup_1",
+                "inputGestureId": "gesture-pickup-click-1",
+                "inputIntent": {
+                    "schemaVersion": "30.6.input-gesture-intent.1",
+                    "primaryIntent": "likely-gameplay-interaction",
+                    "clickCandidate": True,
+                    "cameraDragCandidate": False,
+                    "heldInputCandidate": False,
+                    "guiInteractionCandidate": False,
+                    "worldInteractionCandidate": True,
+                    "ambiguousInput": False,
+                    "likelyCameraMovement": False,
+                    "likelyGameplayInteraction": True,
+                    "targetAndOutcomeSignals": {
+                        "guiTargetConfirmed": False,
+                        "worldTargetConfirmed": True,
+                        "worldRaycastOnly": False,
+                        "callbackObserved": True,
+                        "stateChangeTemporallyAssociated": True,
+                        "meaningfulGameplayOutcomeObserved": True,
+                        "outcomeCorroborated": True,
+                        "targetAmbiguous": False,
+                    },
+                },
                 "clickObserved": True,
                 "targetIdentified": True,
                 "interactionCallbackObserved": True,
@@ -1138,6 +1184,102 @@ def make_pickup_discovery_observation_export(path, scan_id="pickup-discovery-sca
                 "linkedInteractionSequences": [1],
                 "linkedTransactionIds": ["pickup-tx-1"],
             }
+        ],
+        "inputGestureObservations": [
+            {
+                "id": "gesture-pickup-click-1",
+                "observedAt": "2026-11-06T12:00:08Z",
+                "startedAt": "2026-11-06T12:00:08Z",
+                "endedAt": "2026-11-06T12:00:08Z",
+                "startSessionElapsedSeconds": 8.05,
+                "endSessionElapsedSeconds": 8.1,
+                "mouseButton": "MouseButton1",
+                "inputType": "MouseButton1",
+                "clickObservationId": "click_pickup_1",
+                "completionReason": "click-observed",
+                "interrupted": False,
+                "startScreen": {"x": 938, "y": 518},
+                "endScreen": {"x": 940, "y": 520},
+                "metrics": {
+                    "durationSeconds": 0.05,
+                    "cursorDisplacementPixels": 2.8,
+                    "cumulativeCursorTravelPixels": 3.1,
+                    "maxCursorDeltaPixels": 2.2,
+                    "movementSamples": 1,
+                    "cameraHeadingDeltaDegrees": 1.2,
+                    "cameraCumulativeTurnDegrees": 1.2,
+                    "maxCameraTurnStepDegrees": 1.2,
+                },
+                "intent": {
+                    "schemaVersion": "30.6.input-gesture-intent.1",
+                    "primaryIntent": "likely-gameplay-interaction",
+                    "clickCandidate": True,
+                    "cameraDragCandidate": False,
+                    "heldInputCandidate": False,
+                    "guiInteractionCandidate": False,
+                    "worldInteractionCandidate": True,
+                    "ambiguousInput": False,
+                    "likelyCameraMovement": False,
+                    "likelyGameplayInteraction": True,
+                    "targetAndOutcomeSignals": {
+                        "guiTargetConfirmed": False,
+                        "worldTargetConfirmed": True,
+                        "worldRaycastOnly": False,
+                        "callbackObserved": True,
+                        "stateChangeTemporallyAssociated": True,
+                        "meaningfulGameplayOutcomeObserved": True,
+                        "outcomeCorroborated": True,
+                        "targetAmbiguous": False,
+                    },
+                },
+            },
+            {
+                "id": "gesture-camera-drag-1",
+                "observedAt": "2026-11-06T12:00:10Z",
+                "startedAt": "2026-11-06T12:00:09Z",
+                "endedAt": "2026-11-06T12:00:10Z",
+                "startSessionElapsedSeconds": 9.2,
+                "endSessionElapsedSeconds": 10.1,
+                "mouseButton": "MouseButton1",
+                "inputType": "MouseButton1",
+                "clickObservationId": None,
+                "completionReason": "input-ended",
+                "interrupted": False,
+                "startScreen": {"x": 950, "y": 500},
+                "endScreen": {"x": 1260, "y": 506},
+                "metrics": {
+                    "durationSeconds": 0.9,
+                    "cursorDisplacementPixels": 310.1,
+                    "cumulativeCursorTravelPixels": 335.4,
+                    "maxCursorDeltaPixels": 42.5,
+                    "movementSamples": 16,
+                    "cameraHeadingDeltaDegrees": 41.7,
+                    "cameraCumulativeTurnDegrees": 44.2,
+                    "maxCameraTurnStepDegrees": 6.8,
+                },
+                "intent": {
+                    "schemaVersion": "30.6.input-gesture-intent.1",
+                    "primaryIntent": "likely-camera-rotation",
+                    "clickCandidate": False,
+                    "cameraDragCandidate": True,
+                    "heldInputCandidate": True,
+                    "guiInteractionCandidate": False,
+                    "worldInteractionCandidate": True,
+                    "ambiguousInput": True,
+                    "likelyCameraMovement": True,
+                    "likelyGameplayInteraction": False,
+                    "targetAndOutcomeSignals": {
+                        "guiTargetConfirmed": False,
+                        "worldTargetConfirmed": False,
+                        "worldRaycastOnly": True,
+                        "callbackObserved": False,
+                        "stateChangeTemporallyAssociated": False,
+                        "meaningfulGameplayOutcomeObserved": False,
+                        "outcomeCorroborated": False,
+                        "targetAmbiguous": True,
+                    },
+                },
+            },
         ],
         "interactionDiagnostics": {
             "recentInteractions": [
@@ -1787,10 +1929,28 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertTrue(any((item.get("pipelineDiagnostics") or {}).get("captureAttempted") is True for item in click_targets if isinstance(item, dict)))
             self.assertTrue(any(item.get("targetScope") == "world" for item in click_targets if isinstance(item, dict)))
 
+            self.assertTrue(any(isinstance(item.get("inputGestureId"), str) for item in click_targets if isinstance(item, dict)))
+            self.assertTrue(any(isinstance(item.get("inputIntent"), dict) for item in click_targets if isinstance(item, dict)))
             click_outcomes = report.get("clickOutcomeRelationships") or []
             self.assertTrue(any(isinstance(item.get("verificationStages"), dict) for item in click_outcomes if isinstance(item, dict)))
             self.assertTrue(any(isinstance(item.get("clickLinkDiagnostics"), dict) for item in click_outcomes if isinstance(item, dict)))
             self.assertTrue(any(item.get("ambiguousAssociation") is True for item in click_outcomes if isinstance(item, dict)))
+            self.assertTrue(any(isinstance(item.get("inputGestureId"), str) for item in click_outcomes if isinstance(item, dict)))
+            self.assertTrue(any(isinstance(item.get("inputIntent"), dict) for item in click_outcomes if isinstance(item, dict)))
+
+
+            input_gestures = report.get("inputGestureObservations") or []
+            self.assertGreaterEqual(len(input_gestures), 2)
+            self.assertTrue(any(((item.get("intent") or {}).get("likelyCameraMovement") is True) for item in input_gestures if isinstance(item, dict)))
+            self.assertTrue(any(((item.get("intent") or {}).get("likelyGameplayInteraction") is True) for item in input_gestures if isinstance(item, dict)))
+            self.assertTrue(any(((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("worldRaycastOnly") is True for item in input_gestures if isinstance(item, dict)))
+
+            spatial_quality = ((report.get("qualityMetrics") or {}).get("spatialDiscovery") or {})
+            gesture_quality = spatial_quality.get("inputGestureIntent") or {}
+            self.assertGreaterEqual(gesture_quality.get("total", 0), 2)
+            self.assertGreaterEqual(gesture_quality.get("likelyCameraMovements", 0), 1)
+            self.assertGreaterEqual(gesture_quality.get("likelyGameplayInteractions", 0), 1)
+            self.assertGreaterEqual(gesture_quality.get("worldRaycastOnlySignals", 0), 1)
 
             pickup_quality = ((report.get("qualityMetrics") or {}).get("pickupDiscovery") or {})
             self.assertGreaterEqual((pickup_quality.get("pickupCandidates") or {}).get("total", 0), 2)

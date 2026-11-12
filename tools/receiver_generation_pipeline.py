@@ -1305,6 +1305,34 @@ def _build_universal_discovery_report(
             "coordinateSpace": value.get("coordinateSpace") if isinstance(value.get("coordinateSpace"), str) else None,
         }
 
+    def _normalize_input_gesture_intent(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        signals = value.get("targetAndOutcomeSignals") if isinstance(value.get("targetAndOutcomeSignals"), dict) else {}
+        return {
+            "schemaVersion": value.get("schemaVersion") if isinstance(value.get("schemaVersion"), str) else None,
+            "primaryIntent": value.get("primaryIntent") if isinstance(value.get("primaryIntent"), str) else None,
+            "clickCandidate": bool(value.get("clickCandidate") is True),
+            "cameraDragCandidate": bool(value.get("cameraDragCandidate") is True),
+            "heldInputCandidate": bool(value.get("heldInputCandidate") is True),
+            "guiInteractionCandidate": bool(value.get("guiInteractionCandidate") is True),
+            "worldInteractionCandidate": bool(value.get("worldInteractionCandidate") is True),
+            "ambiguousInput": bool(value.get("ambiguousInput") is True),
+            "likelyCameraMovement": bool(value.get("likelyCameraMovement") is True),
+            "likelyGameplayInteraction": bool(value.get("likelyGameplayInteraction") is True),
+            "targetAndOutcomeSignals": {
+                "guiTargetConfirmed": bool(signals.get("guiTargetConfirmed") is True),
+                "worldTargetConfirmed": bool(signals.get("worldTargetConfirmed") is True),
+                "worldRaycastOnly": bool(signals.get("worldRaycastOnly") is True),
+                "callbackObserved": bool(signals.get("callbackObserved") is True),
+                "stateChangeTemporallyAssociated": bool(signals.get("stateChangeTemporallyAssociated") is True),
+                "meaningfulGameplayOutcomeObserved": bool(signals.get("meaningfulGameplayOutcomeObserved") is True),
+                "outcomeCorroborated": bool(signals.get("outcomeCorroborated") is True),
+                "targetAmbiguous": bool(signals.get("targetAmbiguous") is True),
+            },
+            "note": value.get("note") if isinstance(value.get("note"), str) else None,
+        }
+
     def _normalize_click_target_observation(value: Any) -> Optional[dict[str, Any]]:
         if not isinstance(value, dict):
             return None
@@ -1337,6 +1365,8 @@ def _build_universal_discovery_report(
             "sessionElapsedSeconds": _numeric(value.get("sessionElapsedSeconds")),
             "mouseButton": value.get("mouseButton") if isinstance(value.get("mouseButton"), str) else None,
             "inputType": value.get("inputType") if isinstance(value.get("inputType"), str) else None,
+            "inputGestureId": value.get("inputGestureId") if isinstance(value.get("inputGestureId"), str) else None,
+            "inputIntent": _normalize_input_gesture_intent(value.get("inputIntent")),
             "cursorObservationId": value.get("cursorObservationId") if isinstance(value.get("cursorObservationId"), str) else None,
             "cursor": cursor,
             "guiCandidates": candidates,
@@ -1397,9 +1427,15 @@ def _build_universal_discovery_report(
         verification = value.get("verificationStages") if isinstance(value.get("verificationStages"), dict) else {}
         diagnostics = value.get("clickLinkDiagnostics") if isinstance(value.get("clickLinkDiagnostics"), dict) else {}
         ambiguous = [item for item in (value.get("ambiguousCandidateClickObservationIds") if isinstance(value.get("ambiguousCandidateClickObservationIds"), list) else []) if isinstance(item, str)]
+        provenance = value.get("provenance") if isinstance(value.get("provenance"), dict) else {}
+        input_gesture_id = value.get("inputGestureId") if isinstance(value.get("inputGestureId"), str) else None
+        if input_gesture_id is None and isinstance(provenance.get("inputGestureId"), str):
+            input_gesture_id = provenance.get("inputGestureId")
         return {
             "id": value.get("id") if isinstance(value.get("id"), str) else None,
             "clickObservationId": value.get("clickObservationId") if isinstance(value.get("clickObservationId"), str) else None,
+            "inputGestureId": input_gesture_id,
+            "inputIntent": _normalize_input_gesture_intent(value.get("inputIntent")),
             "clickObserved": bool(value.get("clickObserved") is True),
             "targetIdentified": bool(value.get("targetIdentified") is True),
             "interactionCallbackObserved": bool(value.get("interactionCallbackObserved") is True),
@@ -1430,6 +1466,59 @@ def _build_universal_discovery_report(
             "linkedInteractionSequences": linked_sequences[:32],
             "linkedTransactionIds": linked_transactions[:32],
             "missingEvidence": missing,
+        }
+
+    def _normalize_input_gesture_observation(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        metrics = value.get("metrics") if isinstance(value.get("metrics"), dict) else {}
+        start_screen = value.get("startScreen") if isinstance(value.get("startScreen"), dict) else {}
+        end_screen = value.get("endScreen") if isinstance(value.get("endScreen"), dict) else {}
+        start_orientation = value.get("startOrientation") if isinstance(value.get("startOrientation"), dict) else {}
+        end_orientation = value.get("endOrientation") if isinstance(value.get("endOrientation"), dict) else {}
+        return {
+            "id": value.get("id") if isinstance(value.get("id"), str) else None,
+            "observedAt": value.get("observedAt") if isinstance(value.get("observedAt"), str) else None,
+            "startedAt": value.get("startedAt") if isinstance(value.get("startedAt"), str) else None,
+            "endedAt": value.get("endedAt") if isinstance(value.get("endedAt"), str) else None,
+            "startSessionElapsedSeconds": _numeric(value.get("startSessionElapsedSeconds")),
+            "endSessionElapsedSeconds": _numeric(value.get("endSessionElapsedSeconds")),
+            "mouseButton": value.get("mouseButton") if isinstance(value.get("mouseButton"), str) else None,
+            "inputType": value.get("inputType") if isinstance(value.get("inputType"), str) else None,
+            "clickObservationId": value.get("clickObservationId") if isinstance(value.get("clickObservationId"), str) else None,
+            "startCursorObservationId": value.get("startCursorObservationId") if isinstance(value.get("startCursorObservationId"), str) else None,
+            "endCursorObservationId": value.get("endCursorObservationId") if isinstance(value.get("endCursorObservationId"), str) else None,
+            "completionReason": value.get("completionReason") if isinstance(value.get("completionReason"), str) else None,
+            "interrupted": bool(value.get("interrupted") is True),
+            "startScreen": {
+                "x": _numeric(start_screen.get("x")),
+                "y": _numeric(start_screen.get("y")),
+            } if isinstance(start_screen, dict) else None,
+            "endScreen": {
+                "x": _numeric(end_screen.get("x")),
+                "y": _numeric(end_screen.get("y")),
+            } if isinstance(end_screen, dict) else None,
+            "startOrientation": {
+                "cameraHeadingDegrees": _numeric(start_orientation.get("cameraHeadingDegrees")),
+                "characterHeadingDegrees": _numeric(start_orientation.get("characterHeadingDegrees")),
+                "cameraCharacterHeadingDeltaDegrees": _numeric(start_orientation.get("cameraCharacterHeadingDeltaDegrees")),
+            } if isinstance(start_orientation, dict) else None,
+            "endOrientation": {
+                "cameraHeadingDegrees": _numeric(end_orientation.get("cameraHeadingDegrees")),
+                "characterHeadingDegrees": _numeric(end_orientation.get("characterHeadingDegrees")),
+                "cameraCharacterHeadingDeltaDegrees": _numeric(end_orientation.get("cameraCharacterHeadingDeltaDegrees")),
+            } if isinstance(end_orientation, dict) else None,
+            "metrics": {
+                "durationSeconds": _numeric(metrics.get("durationSeconds")),
+                "cursorDisplacementPixels": _numeric(metrics.get("cursorDisplacementPixels")),
+                "cumulativeCursorTravelPixels": _numeric(metrics.get("cumulativeCursorTravelPixels")),
+                "maxCursorDeltaPixels": _numeric(metrics.get("maxCursorDeltaPixels")),
+                "movementSamples": int(metrics.get("movementSamples")) if isinstance(metrics.get("movementSamples"), int) else None,
+                "cameraHeadingDeltaDegrees": _numeric(metrics.get("cameraHeadingDeltaDegrees")),
+                "cameraCumulativeTurnDegrees": _numeric(metrics.get("cameraCumulativeTurnDegrees")),
+                "maxCameraTurnStepDegrees": _numeric(metrics.get("maxCameraTurnStepDegrees")),
+            },
+            "intent": _normalize_input_gesture_intent(value.get("intent")),
         }
 
     def _cluster_key(
@@ -1762,6 +1851,10 @@ def _build_universal_discovery_report(
     if not isinstance(raw_click_outcomes, list):
         raw_click_outcomes = payload.get("clickOutcomeRelationships") if isinstance(payload.get("clickOutcomeRelationships"), list) else []
 
+    raw_input_gestures = interaction_diagnostics.get("inputGestureObservations")
+    if not isinstance(raw_input_gestures, list):
+        raw_input_gestures = payload.get("inputGestureObservations") if isinstance(payload.get("inputGestureObservations"), list) else []
+
     raw_character_orientations = interaction_diagnostics.get("characterOrientationSamples")
     if not isinstance(raw_character_orientations, list):
         raw_character_orientations = payload.get("characterOrientationSamples") if isinstance(payload.get("characterOrientationSamples"), list) else []
@@ -1812,6 +1905,17 @@ def _build_universal_discovery_report(
             click_outcome_seen,
             _normalize_click_outcome_relationship(sample),
             fallback_prefix="click-outcome",
+            fallback_index=idx + 1,
+        )
+
+    input_gesture_observations: list[dict[str, Any]] = []
+    input_gesture_seen: set[str] = set()
+    for idx, sample in enumerate(raw_input_gestures[:1400]):
+        _append_unique_by_id(
+            input_gesture_observations,
+            input_gesture_seen,
+            _normalize_input_gesture_observation(sample),
+            fallback_prefix="input-gesture",
             fallback_index=idx + 1,
         )
 
@@ -3918,6 +4022,32 @@ def _build_universal_discovery_report(
                 "reasonCounts": input_observation_stats.get("clickLinkMissReasonCounts") if isinstance(input_observation_stats.get("clickLinkMissReasonCounts"), dict) else {},
             },
         },
+        "inputGestureIntent": {
+            "total": len(input_gesture_observations),
+            "clickCandidates": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("clickCandidate") is True)),
+            "cameraDragCandidates": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("cameraDragCandidate") is True)),
+            "heldInputCandidates": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("heldInputCandidate") is True)),
+            "guiInteractionCandidates": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("guiInteractionCandidate") is True)),
+            "worldInteractionCandidates": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("worldInteractionCandidate") is True)),
+            "ambiguousInputs": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("ambiguousInput") is True)),
+            "likelyCameraMovements": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("likelyCameraMovement") is True)),
+            "likelyGameplayInteractions": sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("likelyGameplayInteraction") is True)),
+            "worldRaycastOnlySignals": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("worldRaycastOnly")) is True)
+            ),
+            "cameraMovementToGameplayRatio": (
+                round(
+                    sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("likelyCameraMovement") is True))
+                    / max(1, sum(1 for item in input_gesture_observations if ((item.get("intent") or {}).get("likelyGameplayInteraction") is True))),
+                    4,
+                )
+                if len(input_gesture_observations) > 0
+                else None
+            ),
+        },
+
         "orientationTracking": {
             "characterSamples": len(character_orientation_samples),
             "cameraSamples": len(camera_orientation_samples),
@@ -4232,12 +4362,14 @@ def _build_universal_discovery_report(
         "cursorObservationHistory": cursor_observation_history[:1200],
         "clickTargetObservations": click_target_observations[:900],
         "clickOutcomeRelationships": click_outcome_relationships[:900],
+        "inputGestureObservations": input_gesture_observations[:900],
         "characterOrientationSamples": character_orientation_samples[:1400],
         "cameraOrientationSamples": camera_orientation_samples[:1400],
         "cursorClickOrientationSchemas": {
             "cursorObservation": "30.6.cursor-observation.1",
             "clickTargetObservation": "30.6.click-target-observation.1",
             "clickOutcomeRelationship": "30.6.click-outcome-relationship.1",
+            "inputGestureObservation": "30.6.input-gesture-observation.1",
             "characterOrientation": "30.6.character-orientation.1",
             "cameraOrientation": "30.6.camera-orientation.1",
         },
@@ -4348,6 +4480,9 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Cursor observations captured: {(spatial_metrics.get('cursorObservations') or {}).get('total') if isinstance(spatial_metrics, dict) else None}",
         f"- Click-target observations captured: {(spatial_metrics.get('clickTargetDiscovery') or {}).get('total') if isinstance(spatial_metrics, dict) else None}",
         f"- Click outcomes corroborated: {(spatial_metrics.get('clickOutcomeCorrelation') or {}).get('corroborated') if isinstance(spatial_metrics, dict) else None}",
+        f"- Input gestures captured: {(spatial_metrics.get('inputGestureIntent') or {}).get('total') if isinstance(spatial_metrics, dict) else None}",
+        f"- Likely camera-movement gestures: {(spatial_metrics.get('inputGestureIntent') or {}).get('likelyCameraMovements') if isinstance(spatial_metrics, dict) else None}",
+        f"- Likely gameplay-interaction gestures: {(spatial_metrics.get('inputGestureIntent') or {}).get('likelyGameplayInteractions') if isinstance(spatial_metrics, dict) else None}",
         f"- Character orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('characterSamples') if isinstance(spatial_metrics, dict) else None}",
         f"- Camera orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('cameraSamples') if isinstance(spatial_metrics, dict) else None}",
         f"- Pickup candidates discovered: {(pickup_metrics.get('pickupCandidates') or {}).get('total') if isinstance(pickup_metrics, dict) else None}",

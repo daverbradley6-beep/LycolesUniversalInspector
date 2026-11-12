@@ -26,6 +26,22 @@ Target experiences are third-party games that the user does not own and cannot o
 - Real legacy manifests may report callback/window diagnostics where callbacks fired but no baseline attribution was recorded at export time; compiler should surface this as explicit evidence-loss limitation rather than hard-failing parse.
 
 
+
+## Session notes — 2026-11-06 pointer gesture intent pass (v30.6.55)
+
+- Potassium-safe pointer classification now depends on **gesture lifecycle evidence** (start/move/end, duration, cursor travel, camera heading deltas), not single click events alone.
+- Click observations and click-outcome relationships should carry `inputGestureId` + `inputIntent` to preserve attribution provenance across inspector → receiver transforms.
+- World-raycast-only click evidence (without confirmed GUI/world targeting + corroborated outcomes) must remain non-confirmatory; classify as ambiguous/camera-leaning where indicated.
+- Export contract additions that should remain stable:
+  - `inputGestureObservations`
+  - `cursorClickOrientationSchemas.inputGestureObservation = "30.6.input-gesture-observation.1"`
+  - `interactionDiagnostics.inputGestureIntentDiagnostics`
+  - `qualityMetrics.spatialDiscovery.inputGestureIntent`
+- Current compiler safety telemetry after v30.6.55:
+  - Luau AST root local pressure: **168**
+  - Safety budget: **170**
+  - Potassium hard local-register cap: **200**
+
 ## Session notes — 2026-11-06 GUI hit-testing repair and ambiguity-safe attribution (v30.6.54)
 
 - `GetGuiObjectsAtPosition` must be called on `PlayerGui`, not `UserInputService`.

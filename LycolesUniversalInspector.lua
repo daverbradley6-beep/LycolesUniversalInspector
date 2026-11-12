@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.54
+-- Lycoles Universal Inspector v30.6.55
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.54"
+local VERSION = "30.6.55"
 
 local endpoint = ""
 local autoSend = true
@@ -125,10 +125,17 @@ local LIMITS = {
     maxCursorObservationHistory = 520,
     maxClickTargetObservations = 320,
     maxClickOutcomeRelationships = 320,
+    maxInputGestureObservations = 360,
     maxCharacterOrientationSamples = 900,
     maxCameraOrientationSamples = 900,
     cursorMovementSampleSeconds = 0.35,
     cursorMovementMinPixels = 6,
+    inputGestureCameraSampleSeconds = 0.12,
+    inputGestureClickMaxDurationSeconds = 0.34,
+    inputGestureHeldMinDurationSeconds = 0.3,
+    inputGestureDragMinDisplacementPixels = 18,
+    inputGestureCameraTurnMinDegrees = 8,
+    inputGestureCameraDragMinDegrees = 16,
     clickLinkMaxAgeSeconds = 0.9,
     clickRaycastDistanceStuds = 700,
     maxClickGuiCandidates = 8,
@@ -192,17 +199,21 @@ spatialLocationHistory = {}
 cursorObservationHistory = {}
 clickTargetObservations = {}
 clickOutcomeRelationships = {}
+inputGestureObservations = {}
 characterOrientationSamples = {}
 cameraOrientationSamples = {}
 spatialCharacterGeneration = 0
 spatialSampleSequence = 0
 cursorObservationSequence = 0
 clickObservationSequence = 0
+inputGestureSequence = 0
 orientationSampleSequence = 0
 spatialLastValidSample = nil
 spatialZoneContextCache = {updatedClock = 0, candidates = {}}
 clickOutcomeById = {}
 clickTargetById = {}
+inputGestureById = {}
+gestureByClickObservationId = {}
 spatialStats = {
     samplesCaptured = 0,
     samplesSkipped = 0,
@@ -215,6 +226,7 @@ spatialStats = {
     cursorSamplesCaptured = 0,
     clickTargetsCaptured = 0,
     clickOutcomeLinks = 0,
+    inputGesturesCaptured = 0,
     characterOrientationCaptured = 0,
     cameraOrientationCaptured = 0,
 }
@@ -339,6 +351,11 @@ local observerStats = {
     clickLinksAttempted=0,clickLinksMatched=0,clickLinksMissed=0,
     clickLinksAmbiguous=0,clickLinksExpired=0,clickLinksPruned=0,
     clickLinksMissedMissingSource=0,clickLinksMissedNoEligibleCandidate=0,
+    inputGesturesStarted=0,inputGesturesCompleted=0,inputGesturesInterrupted=0,
+    inputGestureClickCandidates=0,inputGestureCameraDragCandidates=0,
+    inputGestureHeldCandidates=0,inputGestureGuiInteractionCandidates=0,
+    inputGestureWorldInteractionCandidates=0,inputGestureAmbiguousInputs=0,
+    inputGestureLikelyCameraMovements=0,inputGestureLikelyGameplayInteractions=0,
     clickCaptureFailureStageCounts={},clickCaptureFailureReasonCounts={},
     clickCaptureFailureSamples={},clickCaptureComponentFailureSamples={},
     clickLinkMissReasonCounts={},clickLinkMissSamples={},
@@ -366,6 +383,7 @@ local inputObserverState = {
     pendingClicks = {},
     pendingClickHead = 1,
     pendingClickTail = 0,
+    activePointerGestures = {},
     lastCursorSampleClock = 0,
     lastCursorSamplePosition = nil,
 }
@@ -2243,6 +2261,7 @@ local function prepareParts(report)
         "cursorObservationHistory",
         "clickTargetObservations",
         "clickOutcomeRelationships",
+        "inputGestureObservations",
         "characterOrientationSamples",
         "cameraOrientationSamples",
         "playerPositionHistory",
@@ -2688,6 +2707,374 @@ function appendClickOutcome(entry)
     end
 end
 
+function headingDeltaMagnitude(fromHeading,toHeading)
+    if type(fromHeading)~="number" or type(toHeading)~="number" then return nil end
+    local delta=((toHeading-fromHeading+540)%360)-180
+    return math.abs(roundNumber(delta,2))
+end
+
+function appendInputGestureObservation(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    inputGestureObservations[#inputGestureObservations+1]=entry
+    inputGestureById[entry.id]=entry
+    if #inputGestureObservations>LIMITS.maxInputGestureObservations then
+        local removed=table.remove(inputGestureObservations,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            inputGestureById[removed.id]=nil
+            if type(removed.clickObservationId)=="string" then
+                gestureByClickObservationId[removed.clickObservationId]=nil
+            end
+        end
+    end
+end
+
+function gestureOrientationSnapshot(reason)
+    local elapsed=sessionElapsed(os.clock())
+    local _,rootPart,_=resolveCharacterSpatialContext()
+    local camera=workspace.CurrentCamera
+    local cameraHeading=nil
+    local characterHeading=nil
+    if camera and typeof(camera.CFrame)=="CFrame" then
+        cameraHeading=headingFromLookVector(camera.CFrame.LookVector)
+    end
+    if rootPart and typeof(rootPart.CFrame)=="CFrame" then
+        characterHeading=headingFromLookVector(rootPart.CFrame.LookVector)
+    end
+    return {
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=elapsed,
+        reason=tostring(reason or "gesture"):sub(1,80),
+        cameraHeadingDegrees=cameraHeading,
+        characterHeadingDegrees=characterHeading,
+        cameraCharacterHeadingDeltaDegrees=cameraCharacterHeadingDelta(cameraHeading,characterHeading),
+    }
+end
+
+function resolveClickOutcomeForObservation(clickObservationId)
+    if type(clickObservationId)~="string" then return nil end
+    return clickOutcomeById["click-outcome-"..clickObservationId]
+end
+
+function classifyInputGestureIntent(gesture,clickObservation,relation)
+    local metrics=(type(gesture)=="table" and type(gesture.metrics)=="table") and gesture.metrics or {}
+    local duration=type(metrics.durationSeconds)=="number" and metrics.durationSeconds or 0
+    local displacement=type(metrics.cursorDisplacementPixels)=="number" and metrics.cursorDisplacementPixels or 0
+    local cumulativeCursor=type(metrics.cumulativeCursorTravelPixels)=="number" and metrics.cumulativeCursorTravelPixels or 0
+    if cumulativeCursor>displacement then displacement=cumulativeCursor end
+    local cameraTurn=type(metrics.cameraHeadingDeltaDegrees)=="number" and metrics.cameraHeadingDeltaDegrees or 0
+    local cumulativeTurn=type(metrics.cameraCumulativeTurnDegrees)=="number" and metrics.cameraCumulativeTurnDegrees or 0
+    if cumulativeTurn>cameraTurn then cameraTurn=cumulativeTurn end
+
+    local clickCandidate=(duration<=LIMITS.inputGestureClickMaxDurationSeconds)
+        and displacement<(LIMITS.inputGestureDragMinDisplacementPixels*0.75)
+        and cameraTurn<LIMITS.inputGestureCameraTurnMinDegrees
+    local heldInputCandidate=duration>=LIMITS.inputGestureHeldMinDurationSeconds
+    local dragCandidate=displacement>=LIMITS.inputGestureDragMinDisplacementPixels
+        or cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees
+
+    local targetClassification=type(clickObservation)=="table" and clickObservation.targetClassification or nil
+    local guiTargetConfirmed=targetClassification=="confirmed-gui-target"
+    local worldTargetConfirmed=targetClassification=="confirmed-world-target"
+    local unresolvedTarget=targetClassification=="unresolved-target"
+    local ambiguousTarget=(targetClassification=="ambiguous-target")
+        or unresolvedTarget or targetClassification==nil
+
+    local callbackObserved=type(relation)=="table" and relation.interactionCallbackObserved==true
+    local stateAssociated=type(relation)=="table" and relation.stateChangeTemporallyAssociated==true
+    local meaningfulOutcome=type(relation)=="table" and relation.meaningfulGameplayOutcomeObserved==true
+    local corroborated=type(relation)=="table" and relation.outcomeCorroborated==true
+
+    local worldRaycastObserved=(type(clickObservation)=="table"
+        and type(clickObservation.raycastTarget)=="table"
+        and type(clickObservation.raycastTarget.path)=="string")
+    local worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved
+        and not callbackObserved and not stateAssociated
+        and not meaningfulOutcome and not corroborated
+
+    local guiInteractionCandidate=guiTargetConfirmed and (clickCandidate or heldInputCandidate
+        or dragCandidate or callbackObserved or stateAssociated)
+    local worldInteractionCandidate=worldTargetConfirmed and (clickCandidate
+        or heldInputCandidate or dragCandidate or callbackObserved or stateAssociated)
+
+    local cameraDragCandidate=dragCandidate
+        and cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees
+        and not guiInteractionCandidate
+        and not (callbackObserved or stateAssociated or meaningfulOutcome or corroborated)
+
+    local likelyGameplayInteraction=(guiInteractionCandidate or worldInteractionCandidate)
+        and not (cameraDragCandidate and not (callbackObserved or stateAssociated))
+    local likelyCameraMovement=cameraDragCandidate and not (callbackObserved
+        or stateAssociated or meaningfulOutcome or corroborated)
+
+    local ambiguousInput=ambiguousTarget
+        or (worldRaycastOnly and likelyCameraMovement)
+        or (not guiInteractionCandidate and not worldInteractionCandidate
+            and not clickCandidate and not heldInputCandidate and not cameraDragCandidate)
+
+    local primaryIntent="ambiguous-input"
+    if guiInteractionCandidate then
+        primaryIntent="gui-interaction-candidate"
+    elseif worldInteractionCandidate then
+        primaryIntent="world-interaction-candidate"
+    elseif likelyCameraMovement then
+        primaryIntent="camera-drag-candidate"
+    elseif heldInputCandidate then
+        primaryIntent="held-input-candidate"
+    elseif clickCandidate then
+        primaryIntent="click-candidate"
+    end
+
+    return {
+        schemaVersion="30.6.input-gesture-intent.1",
+        primaryIntent=primaryIntent,
+        clickCandidate=clickCandidate,
+        cameraDragCandidate=cameraDragCandidate,
+        heldInputCandidate=heldInputCandidate,
+        guiInteractionCandidate=guiInteractionCandidate,
+        worldInteractionCandidate=worldInteractionCandidate,
+        ambiguousInput=ambiguousInput,
+        likelyCameraMovement=likelyCameraMovement,
+        likelyGameplayInteraction=likelyGameplayInteraction,
+        targetAndOutcomeSignals={
+            guiTargetConfirmed=guiTargetConfirmed,
+            worldTargetConfirmed=worldTargetConfirmed,
+            worldRaycastOnly=worldRaycastOnly,
+            callbackObserved=callbackObserved,
+            stateChangeTemporallyAssociated=stateAssociated,
+            meaningfulGameplayOutcomeObserved=meaningfulOutcome,
+            outcomeCorroborated=corroborated,
+            targetAmbiguous=ambiguousTarget,
+        },
+        note="Intent categories are observational candidates and do not prove gameplay outcomes",
+    }
+end
+
+function applyInputGestureIntent(gesture,intent,clickObservation,relation)
+    if type(gesture)~="table" or type(intent)~="table" then return end
+    gesture.intent=intent
+    if type(clickObservation)=="table" then
+        clickObservation.inputGestureId=gesture.id
+        clickObservation.inputIntent=intent
+    end
+    if type(relation)=="table" then
+        relation.inputGestureId=gesture.id
+        relation.inputIntent=intent
+        relation.provenance=type(relation.provenance)=="table" and relation.provenance or {}
+        relation.provenance.inputGestureId=gesture.id
+        relation.provenance.inputGesturePrimaryIntent=intent.primaryIntent
+    end
+end
+
+function refreshGestureIntentForClick(clickObservationId)
+    if type(clickObservationId)~="string" then return end
+    local gestureId=gestureByClickObservationId[clickObservationId]
+    if type(gestureId)~="string" then return end
+    local gesture=inputGestureById[gestureId]
+    if type(gesture)~="table" then return end
+    local clickObservation=clickTargetById[clickObservationId]
+    local relation=resolveClickOutcomeForObservation(clickObservationId)
+    local intent=classifyInputGestureIntent(gesture,clickObservation,relation)
+    applyInputGestureIntent(gesture,intent,clickObservation,relation)
+end
+
+function summarizeInputGestureIntents()
+    local summary={
+        total=#inputGestureObservations,
+        clickCandidates=0,
+        cameraDragCandidates=0,
+        heldInputCandidates=0,
+        guiInteractionCandidates=0,
+        worldInteractionCandidates=0,
+        ambiguousInputs=0,
+        likelyCameraMovements=0,
+        likelyGameplayInteractions=0,
+        byPrimaryIntent={},
+        openGestures=0,
+    }
+    for _,gesture in ipairs(inputGestureObservations) do
+        local intent=(type(gesture)=="table" and type(gesture.intent)=="table") and gesture.intent or nil
+        if intent then
+            if intent.clickCandidate then summary.clickCandidates=summary.clickCandidates+1 end
+            if intent.cameraDragCandidate then summary.cameraDragCandidates=summary.cameraDragCandidates+1 end
+            if intent.heldInputCandidate then summary.heldInputCandidates=summary.heldInputCandidates+1 end
+            if intent.guiInteractionCandidate then summary.guiInteractionCandidates=summary.guiInteractionCandidates+1 end
+            if intent.worldInteractionCandidate then summary.worldInteractionCandidates=summary.worldInteractionCandidates+1 end
+            if intent.ambiguousInput then summary.ambiguousInputs=summary.ambiguousInputs+1 end
+            if intent.likelyCameraMovement then summary.likelyCameraMovements=summary.likelyCameraMovements+1 end
+            if intent.likelyGameplayInteraction then summary.likelyGameplayInteractions=summary.likelyGameplayInteractions+1 end
+            local primary=tostring(intent.primaryIntent or "unknown")
+            summary.byPrimaryIntent[primary]=(summary.byPrimaryIntent[primary] or 0)+1
+        end
+    end
+    for _,active in pairs(inputObserverState.activePointerGestures) do
+        if type(active)=="table" then summary.openGestures=summary.openGestures+1 end
+    end
+    return summary
+end
+
+function beginPointerGesture(buttonName,inputType)
+    local button=tostring(buttonName or "unknown"):sub(1,40)
+    local existing=inputObserverState.activePointerGestures[button]
+    if type(existing)=="table" then
+        observerStats.inputGesturesInterrupted=observerStats.inputGesturesInterrupted+1
+        existing.completionReason="restarted-before-release"
+        existing.interrupted=true
+        local interruptedNow=os.clock()
+        existing.endedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+        existing.endSessionElapsedSeconds=sessionElapsed(interruptedNow)
+        existing.metrics=existing.metrics or {}
+        existing.metrics.durationSeconds=roundNumber(math.max(0,(interruptedNow-(existing.startedClock or interruptedNow))),4)
+        local existingClick=(type(existing.clickObservationId)=="string") and clickTargetById[existing.clickObservationId] or nil
+        local existingRelation=resolveClickOutcomeForObservation(existing.clickObservationId)
+        local existingIntent=classifyInputGestureIntent(existing,existingClick,existingRelation)
+        applyInputGestureIntent(existing,existingIntent,existingClick,existingRelation)
+        appendInputGestureObservation(existing)
+        inputObserverState.activePointerGestures[button]=nil
+        spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
+    end
+
+    local nowClock=os.clock()
+    local inputLabel=tostring(inputType or buttonName or "unknown"):sub(1,60)
+    local cursorObservation=nil
+    local cursorOk,cursorValue=pcall(function()
+        return captureCursorObservation("gesture-start-"..button,inputLabel,true)
+    end)
+    if cursorOk and type(cursorValue)=="table" then cursorObservation=cursorValue end
+    local orientation=gestureOrientationSnapshot("gesture-start-"..button)
+
+    inputGestureSequence=inputGestureSequence+1
+    local gestureId="gesture_"..tostring(inputGestureSequence)
+    local startScreen=(cursorObservation and type(cursorObservation.screen)=="table") and cursorObservation.screen or nil
+    local gesture={
+        id=gestureId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        startedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        startedClock=nowClock,
+        startSessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=button,
+        inputType=inputLabel,
+        startCursorObservationId=cursorObservation and cursorObservation.id or nil,
+        clickObservationId=nil,
+        completionReason="in-progress",
+        interrupted=false,
+        startScreen=(type(startScreen)=="table") and {x=startScreen.x,y=startScreen.y} or nil,
+        endScreen=nil,
+        startOrientation=orientation,
+        endOrientation=nil,
+        metrics={
+            durationSeconds=0,
+            cursorDisplacementPixels=nil,
+            cumulativeCursorTravelPixels=0,
+            maxCursorDeltaPixels=0,
+            movementSamples=0,
+            cameraHeadingDeltaDegrees=nil,
+            cameraCumulativeTurnDegrees=0,
+            maxCameraTurnStepDegrees=0,
+            lastCameraHeadingDegrees=orientation and orientation.cameraHeadingDegrees or nil,
+            lastCameraSampleClock=nowClock,
+        },
+    }
+    observerStats.inputGesturesStarted=observerStats.inputGesturesStarted+1
+    inputObserverState.activePointerGestures[button]=gesture
+    inputGestureById[gestureId]=gesture
+    return gesture
+end
+
+function updateActivePointerGesturesFromMouseDelta(delta,nowClock)
+    if typeof(delta)~="Vector2" then return end
+    local now=type(nowClock)=="number" and nowClock or os.clock()
+    local magnitude=delta.Magnitude
+    for button,gesture in pairs(inputObserverState.activePointerGestures) do
+        if inputObserverState.buttonsDown[button] and type(gesture)=="table" then
+            gesture.metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+            local metrics=gesture.metrics
+            metrics.movementSamples=(metrics.movementSamples or 0)+1
+            metrics.cumulativeCursorTravelPixels=roundNumber((metrics.cumulativeCursorTravelPixels or 0)+magnitude,2)
+            if magnitude>(metrics.maxCursorDeltaPixels or 0) then
+                metrics.maxCursorDeltaPixels=roundNumber(magnitude,2)
+            end
+            if now-(metrics.lastCameraSampleClock or 0)>=LIMITS.inputGestureCameraSampleSeconds then
+                local orientation=gestureOrientationSnapshot("gesture-move-"..button)
+                local heading=orientation and orientation.cameraHeadingDegrees or nil
+                if type(heading)=="number" and type(metrics.lastCameraHeadingDegrees)=="number" then
+                    local step=headingDeltaMagnitude(metrics.lastCameraHeadingDegrees,heading) or 0
+                    metrics.cameraCumulativeTurnDegrees=roundNumber((metrics.cameraCumulativeTurnDegrees or 0)+step,2)
+                    if step>(metrics.maxCameraTurnStepDegrees or 0) then
+                        metrics.maxCameraTurnStepDegrees=roundNumber(step,2)
+                    end
+                end
+                if type(heading)=="number" then
+                    metrics.lastCameraHeadingDegrees=heading
+                end
+                metrics.lastCameraSampleClock=now
+            end
+        end
+    end
+end
+
+function finalizePointerGesture(buttonName,inputType,reason)
+    local button=tostring(buttonName or "unknown"):sub(1,40)
+    local gesture=inputObserverState.activePointerGestures[button]
+    if type(gesture)~="table" then return nil end
+    inputObserverState.activePointerGestures[button]=nil
+
+    local nowClock=os.clock()
+    local inputLabel=tostring(inputType or buttonName or "unknown"):sub(1,60)
+    local endCursor=nil
+    local cursorOk,cursorValue=pcall(function()
+        return captureCursorObservation("gesture-end-"..button,inputLabel,true)
+    end)
+    if cursorOk and type(cursorValue)=="table" then endCursor=cursorValue end
+    local endOrientation=gestureOrientationSnapshot("gesture-end-"..button)
+
+    gesture.endedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    gesture.endSessionElapsedSeconds=sessionElapsed(nowClock)
+    gesture.completionReason=tostring(reason or "input-ended"):sub(1,80)
+    gesture.endCursorObservationId=endCursor and endCursor.id or nil
+    gesture.endOrientation=endOrientation
+
+    local metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+    local startedClock=type(gesture.startedClock)=="number" and gesture.startedClock or nowClock
+    metrics.durationSeconds=roundNumber(math.max(0,nowClock-startedClock),4)
+
+    local endScreen=(endCursor and type(endCursor.screen)=="table") and endCursor.screen or nil
+    gesture.endScreen=(type(endScreen)=="table") and {x=endScreen.x,y=endScreen.y} or nil
+    local startScreen=(type(gesture.startScreen)=="table") and gesture.startScreen or nil
+    if type(startScreen)=="table" and type(endScreen)=="table"
+        and type(startScreen.x)=="number" and type(startScreen.y)=="number"
+        and type(endScreen.x)=="number" and type(endScreen.y)=="number" then
+        local dx=endScreen.x-startScreen.x
+        local dy=endScreen.y-startScreen.y
+        metrics.cursorDisplacementPixels=roundNumber(math.sqrt(dx*dx+dy*dy),2)
+    end
+
+    local startHeading=gesture.startOrientation and gesture.startOrientation.cameraHeadingDegrees or nil
+    local endHeading=endOrientation and endOrientation.cameraHeadingDegrees or nil
+    local headingDelta=headingDeltaMagnitude(startHeading,endHeading)
+    if type(headingDelta)=="number" then metrics.cameraHeadingDeltaDegrees=headingDelta end
+
+    gesture.metrics=metrics
+
+    local clickObservation=(type(gesture.clickObservationId)=="string")
+        and clickTargetById[gesture.clickObservationId] or nil
+    local relation=resolveClickOutcomeForObservation(gesture.clickObservationId)
+    local intent=classifyInputGestureIntent(gesture,clickObservation,relation)
+    applyInputGestureIntent(gesture,intent,clickObservation,relation)
+
+    appendInputGestureObservation(gesture)
+    observerStats.inputGesturesCompleted=observerStats.inputGesturesCompleted+1
+    spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
+    if intent.clickCandidate then observerStats.inputGestureClickCandidates=observerStats.inputGestureClickCandidates+1 end
+    if intent.cameraDragCandidate then observerStats.inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates+1 end
+    if intent.heldInputCandidate then observerStats.inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates+1 end
+    if intent.guiInteractionCandidate then observerStats.inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates+1 end
+    if intent.worldInteractionCandidate then observerStats.inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates+1 end
+    if intent.ambiguousInput then observerStats.inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs+1 end
+    if intent.likelyCameraMovement then observerStats.inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements+1 end
+    if intent.likelyGameplayInteraction then observerStats.inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions+1 end
+    return gesture
+end
+
 function appendClickTarget(entry)
     if type(entry)~="table" or type(entry.id)~="string" then return end
     clickTargetObservations[#clickTargetObservations+1]=entry
@@ -2935,7 +3322,7 @@ function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestRel
 end
 
 
-function createFallbackClickTargetObservation(buttonName,inputType,failureStage,failureReason)
+function createFallbackClickTargetObservation(buttonName,inputType,gestureId,failureStage,failureReason)
     local nowClock=os.clock()
     local buttonLabel=tostring(buttonName or "unknown"):sub(1,40)
     local inputLabel=tostring(inputType or "unknown"):sub(1,60)
@@ -2957,6 +3344,7 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
         sessionElapsedSeconds=sessionElapsed(nowClock),
         mouseButton=buttonLabel,
         inputType=inputLabel,
+        inputGestureId=type(gestureId)=="string" and gestureId or nil,
         cursorObservationId=cursorObservation.id,
         cursor=cursorObservation,
         guiCandidates={},
@@ -3026,6 +3414,7 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
         },
         provenance={
             cursorObservationId=cursorObservation.id,
+            inputGestureId=type(gestureId)=="string" and gestureId or nil,
             guiCandidateCount=0,
             confidence="unavailable",
             targetScope="unresolved",
@@ -3045,7 +3434,7 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
     return observation
 end
 
-function captureClickTargetObservation(buttonName,input)
+function captureClickTargetObservation(buttonName,input,gestureId)
     observerStats.clickCaptureAttempts=observerStats.clickCaptureAttempts+1
     local nowClock=os.clock()
     local inputType=tostring(input and input.UserInputType and input.UserInputType.Name or "unknown")
@@ -3264,6 +3653,7 @@ function captureClickTargetObservation(buttonName,input)
         sessionElapsedSeconds=sessionElapsed(nowClock),
         mouseButton=buttonLabel,
         inputType=inputType,
+        inputGestureId=type(gestureId)=="string" and gestureId or nil,
         cursorObservationId=cursorObservation.id,
         cursor=cursorObservation,
         guiCandidates=guiCandidates,
@@ -3356,6 +3746,7 @@ function captureClickTargetObservation(buttonName,input)
         },
         provenance={
             cursorObservationId=cursorObservation.id,
+            inputGestureId=type(gestureId)=="string" and gestureId or nil,
             guiCandidateCount=#guiCandidates,
             confidence=confidence,
             targetScope=targetScope,
@@ -3469,6 +3860,7 @@ function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)
         missing[#missing+1]="No controlled live validation proving reproducible outcome"
     end
     relation.missingEvidence=missing
+    refreshGestureIntentForClick(relation.clickObservationId)
     spatialStats.clickOutcomeLinks=spatialStats.clickOutcomeLinks+1
 end
 
@@ -5461,6 +5853,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
     local receiverDigestCount=(type(reportTransportSnapshot)=="table"
         and type(reportTransportSnapshot.acknowledgedDigestParts)=="number")
         and reportTransportSnapshot.acknowledgedDigestParts or 0
+    local gestureIntentSummary=summarizeInputGestureIntents()
     return {
         schemaVersion="30.6.live-observation-export.1",
         exportKind="dynamic-observations",
@@ -5537,6 +5930,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             cursorObservationHistory=cursorObservationHistory,
             clickTargetObservations=clickTargetObservations,
             clickOutcomeRelationships=clickOutcomeRelationships,
+            inputGestureObservations=inputGestureObservations,
             characterOrientationSamples=characterOrientationSamples,
             cameraOrientationSamples=cameraOrientationSamples,
             playerPositionHistory=playerPositionHistory,
@@ -5546,6 +5940,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 cursorObservation="30.6.cursor-observation.1",
                 clickTargetObservation="30.6.click-target-observation.1",
                 clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                inputGestureObservation="30.6.input-gesture-observation.1",
                 characterOrientation="30.6.character-orientation.1",
                 cameraOrientation="30.6.camera-orientation.1",
             },
@@ -5556,6 +5951,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
                 maxClickTargetObservations=LIMITS.maxClickTargetObservations,
                 maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                maxInputGestureObservations=LIMITS.maxInputGestureObservations,
                 maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
                 maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
                 nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
@@ -5572,12 +5968,14 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
                 clickTargetsCaptured=spatialStats.clickTargetsCaptured,
                 clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                inputGesturesCaptured=spatialStats.inputGesturesCaptured,
                 characterOrientationCaptured=spatialStats.characterOrientationCaptured,
                 cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
             },
             workflowStats=workflowStats,
             backfilledOutcomeCandidates=recoveredOutcomeCandidates,
             actionClassifications=actionClassifications,
+            inputGestureIntentDiagnostics=gestureIntentSummary,
             inputObservationStats={
                 captured=observerStats.inputEventsCaptured,
                 dropped=observerStats.inputEventsDropped,
@@ -5620,6 +6018,18 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
                 clickLinksExpired=observerStats.clickLinksExpired,
                 clickLinksPruned=observerStats.clickLinksPruned,
+                inputGesturesStarted=observerStats.inputGesturesStarted,
+                inputGesturesCompleted=observerStats.inputGesturesCompleted,
+                inputGesturesInterrupted=observerStats.inputGesturesInterrupted,
+                inputGestureClickCandidates=observerStats.inputGestureClickCandidates,
+                inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates,
+                inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates,
+                inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates,
+                inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates,
+                inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs,
+                inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements,
+                inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions,
+                gestureIntentSummary=gestureIntentSummary,
                 callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
                 phase=inputObserverState.phase,
                 phaseReason=inputObserverState.phaseReason,
@@ -5645,12 +6055,14 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
         cursorObservationHistory=cursorObservationHistory,
         clickTargetObservations=clickTargetObservations,
         clickOutcomeRelationships=clickOutcomeRelationships,
+        inputGestureObservations=inputGestureObservations,
         characterOrientationSamples=characterOrientationSamples,
         cameraOrientationSamples=cameraOrientationSamples,
         cursorClickOrientationSchemas={
             cursorObservation="30.6.cursor-observation.1",
             clickTargetObservation="30.6.click-target-observation.1",
             clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+            inputGestureObservation="30.6.input-gesture-observation.1",
             characterOrientation="30.6.character-orientation.1",
             cameraOrientation="30.6.camera-orientation.1",
         },
@@ -5664,6 +6076,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             cursorObservationCount=#cursorObservationHistory,
             clickTargetObservationCount=#clickTargetObservations,
             clickOutcomeRelationshipCount=#clickOutcomeRelationships,
+            inputGestureObservationCount=#inputGestureObservations,
             characterOrientationSampleCount=#characterOrientationSamples,
             cameraOrientationSampleCount=#cameraOrientationSamples,
             nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
@@ -6157,9 +6570,12 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
 
         local action=keyActions[keyName] or WORKFLOW_HELPERS.inferInputAction(keyCode,inputType,toolSnapshot)
         local clickObservation=nil
+        local pointerGesture=nil
         if isClickInput then
+            pointerGesture=beginPointerGesture(inputName,inputName)
+            local gestureId=pointerGesture and pointerGesture.id or nil
             local ok,captured=pcall(function()
-                return captureClickTargetObservation(inputName,input)
+                return captureClickTargetObservation(inputName,input,gestureId)
             end)
             if ok and type(captured)=="table" then
                 clickObservation=captured
@@ -6167,8 +6583,15 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
             else
                 local failureReason=ok and "capture-returned-non-table" or captured
                 recordClickCaptureFailure("capture-wrapper",failureReason,inputName,inputName)
-                clickObservation=createFallbackClickTargetObservation(inputName,inputName,"capture-wrapper",failureReason)
+                clickObservation=createFallbackClickTargetObservation(inputName,inputName,gestureId,"capture-wrapper",failureReason)
                 observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
+            end
+            if type(pointerGesture)=="table" and type(clickObservation)=="table" and type(clickObservation.id)=="string" then
+                pointerGesture.clickObservationId=clickObservation.id
+                gestureByClickObservationId[clickObservation.id]=pointerGesture.id
+                local relation=resolveClickOutcomeForObservation(clickObservation.id)
+                local initialIntent=classifyInputGestureIntent(pointerGesture,clickObservation,relation)
+                applyInputGestureIntent(pointerGesture,initialIntent,clickObservation,relation)
             end
         end
 
@@ -6201,6 +6624,14 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
             equippedTools=toolSnapshot.names,equippedToolCount=toolSnapshot.count,
             combatToolContext=toolSnapshot.hasCombatTool,
             clickObservationId=clickObservation and clickObservation.id or nil,
+            inputGestureId=clickObservation and clickObservation.inputGestureId or nil,
+            inputGestureIntent=clickObservation and clickObservation.inputIntent and {
+                primaryIntent=clickObservation.inputIntent.primaryIntent,
+                cameraDragCandidate=clickObservation.inputIntent.cameraDragCandidate,
+                guiInteractionCandidate=clickObservation.inputIntent.guiInteractionCandidate,
+                worldInteractionCandidate=clickObservation.inputIntent.worldInteractionCandidate,
+                ambiguousInput=clickObservation.inputIntent.ambiguousInput,
+            } or nil,
             clickTargetConfidence=clickObservation and clickObservation.targetIdentificationConfidence or nil,
             clickTargetSummary=clickObservation and {
                 topmostGuiPath=clickObservation.topmostGuiTarget and clickObservation.topmostGuiTarget.path or nil,
@@ -6217,6 +6648,9 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
 
     local endedConnection=UserInputService.InputEnded:Connect(function(input)
         local inputName=tostring(input.UserInputType and input.UserInputType.Name or "")
+        if inputName=="MouseButton1" or inputName=="MouseButton2" then
+            finalizePointerGesture(inputName,inputName,"input-ended")
+        end
         inputObserverState.buttonsDown[inputName]=nil
     end)
     table.insert(watchConnections,endedConnection)
@@ -6227,6 +6661,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         local now=os.clock()
         local delta=input.Delta
         local magnitude=math.floor(delta.Magnitude*10+0.5)/10
+        updateActivePointerGesturesFromMouseDelta(delta,now)
         local intervalOk=(now-inputObserverState.lastCursorSampleClock)>=LIMITS.cursorMovementSampleSeconds
         if intervalOk and magnitude>=LIMITS.cursorMovementMinPixels then
             captureCursorObservation("mouse-movement","MouseMovement",true)
@@ -7068,6 +7503,7 @@ local function inspect(requestType, featureRequest)
             report.featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(report.objects)
             report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
             local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
+            local gestureIntentSummary=summarizeInputGestureIntents()
             report.interactionDiagnostics = {
                 scanRequestType=observerStats.scanRequestType,
                 scanInvocationCount=observerStats.scanInvocationCount,
@@ -7103,6 +7539,7 @@ local function inspect(requestType, featureRequest)
                 cursorObservationHistory=cursorObservationHistory,
                 clickTargetObservations=clickTargetObservations,
                 clickOutcomeRelationships=clickOutcomeRelationships,
+                inputGestureObservations=inputGestureObservations,
                 characterOrientationSamples=characterOrientationSamples,
                 cameraOrientationSamples=cameraOrientationSamples,
                 playerPositionHistory=playerPositionHistory,
@@ -7112,6 +7549,7 @@ local function inspect(requestType, featureRequest)
                     cursorObservation="30.6.cursor-observation.1",
                     clickTargetObservation="30.6.click-target-observation.1",
                     clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                    inputGestureObservation="30.6.input-gesture-observation.1",
                     characterOrientation="30.6.character-orientation.1",
                     cameraOrientation="30.6.camera-orientation.1",
                 },
@@ -7122,6 +7560,7 @@ local function inspect(requestType, featureRequest)
                     maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
                     maxClickTargetObservations=LIMITS.maxClickTargetObservations,
                     maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                    maxInputGestureObservations=LIMITS.maxInputGestureObservations,
                     maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
                     maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
                     nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
@@ -7138,11 +7577,13 @@ local function inspect(requestType, featureRequest)
                     cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
                     clickTargetsCaptured=spatialStats.clickTargetsCaptured,
                     clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                    inputGesturesCaptured=spatialStats.inputGesturesCaptured,
                     characterOrientationCaptured=spatialStats.characterOrientationCaptured,
                     cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
                 },
                 workflowStats=workflowStats,
                 backfilledOutcomeCandidates=recoveredOutcomeCandidates,
+                inputGestureIntentDiagnostics=gestureIntentSummary,
                 workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
                     interactionEventCount, attributedInteractionCount, unattributedInteractionCount),
                 pendingWorkflowCount=#pendingActions,
@@ -7203,6 +7644,18 @@ local function inspect(requestType, featureRequest)
                     clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
                     clickLinksExpired=observerStats.clickLinksExpired,
                     clickLinksPruned=observerStats.clickLinksPruned,
+                    inputGesturesStarted=observerStats.inputGesturesStarted,
+                    inputGesturesCompleted=observerStats.inputGesturesCompleted,
+                    inputGesturesInterrupted=observerStats.inputGesturesInterrupted,
+                    inputGestureClickCandidates=observerStats.inputGestureClickCandidates,
+                    inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates,
+                    inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates,
+                    inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates,
+                    inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates,
+                    inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs,
+                    inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements,
+                    inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions,
+                    gestureIntentSummary=gestureIntentSummary,
                     callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
                     phase=inputObserverState.phase,
                     phaseReason=inputObserverState.phaseReason,
@@ -7238,12 +7691,14 @@ local function inspect(requestType, featureRequest)
             report.cursorObservationHistory = cursorObservationHistory
             report.clickTargetObservations = clickTargetObservations
             report.clickOutcomeRelationships = clickOutcomeRelationships
+            report.inputGestureObservations = inputGestureObservations
             report.characterOrientationSamples = characterOrientationSamples
             report.cameraOrientationSamples = cameraOrientationSamples
             report.cursorClickOrientationSchemas = {
                 cursorObservation = "30.6.cursor-observation.1",
                 clickTargetObservation = "30.6.click-target-observation.1",
                 clickOutcomeRelationship = "30.6.click-outcome-relationship.1",
+                inputGestureObservation = "30.6.input-gesture-observation.1",
                 characterOrientation = "30.6.character-orientation.1",
                 cameraOrientation = "30.6.camera-orientation.1",
             }
@@ -7257,6 +7712,7 @@ local function inspect(requestType, featureRequest)
                 cursorObservationCount = #cursorObservationHistory,
                 clickTargetObservationCount = #clickTargetObservations,
                 clickOutcomeRelationshipCount = #clickOutcomeRelationships,
+                inputGestureObservationCount = #inputGestureObservations,
                 characterOrientationSampleCount = #characterOrientationSamples,
                 cameraOrientationSampleCount = #cameraOrientationSamples,
                 nearbyWorldObjectRadiusStuds = LIMITS.nearbyWorldObjectRadiusStuds,
