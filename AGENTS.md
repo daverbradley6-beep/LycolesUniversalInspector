@@ -38,7 +38,12 @@ Target experiences are third-party games that the user does not own and cannot o
 - Validation completed:
   - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
   - `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_inspector_ui` (**63/63 passed**)
-  - `python3 -m unittest discover -s tests` (**1661 passed, 17 skipped, 0 failed**)
+  - `python3 -m unittest discover -s tests` (**1662 passed, 17 skipped, 0 failed**)
+- Dedicated generation service enhancement: `tools/lycoles_generation_service.py` now caches feature-analysis outputs by deterministic evidence signature (`scan/place/mode/readiness payload + route complexity`) to avoid re-running unchanged analysis in the same service lifetime.
+- Job provider diagnostics now expose `analysisCacheEnabled`, `analysisCacheHit`, and `analysisCacheKey`.
+- New regression coverage in `tests/test_lycoles_generation_service.py` validates cache reuse (`provider analysis called once across identical repeated jobs`).
+- Post-cache full-suite validation: `python3 -m unittest discover -s tests` (**1662 passed, 17 skipped, 0 failed**).
+
 
 
 ## Session notes — 2026-11-10 live-fix pass (Muscle Legends FA86)

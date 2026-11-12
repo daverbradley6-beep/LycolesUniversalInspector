@@ -334,6 +334,36 @@ def make_live_observation_export(path, scan_id="live-observation-service-1"):
 
     path.write_text(json.dumps(payload), encoding="utf-8")
 
+class CountingProvider(MODULE.BaseLLMProvider):
+    def __init__(self):
+        self.analysis_calls = 0
+        self._info = MODULE.ProviderInfo(provider="counting-test", enabled=True, reason="test counting provider")
+
+    def info(self):
+        return self._info
+
+    def analyze(self, bundle, model):
+        self.analysis_calls += 1
+        return {
+            "provider": "counting-test",
+            "model": model,
+            "summary": {
+                "mode": bundle.mode,
+                "placeId": bundle.place_id,
+                "scanId": bundle.scan_id,
+            },
+            "recommendedFeatures": [],
+            "explicitBlockers": [],
+            "analysisFallbackErrors": [],
+        }, {
+            "tokens": 256,
+            "costGbp": 0.00256,
+            "attempts": 1,
+            "retriesUsed": 0,
+        }
+
+
+
 class LycolesGenerationServiceTests(unittest.TestCase):
     def test_manifest_only_job_is_blocked_but_structured(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -619,6 +649,37 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertEqual(snapshot["status"], "succeeded")
             self.assertIsInstance(snapshot["result"], dict)
             self.assertEqual(snapshot["result"]["jobId"], job_id)
+
+    def test_identical_jobs_reuse_analysis_cache_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically hatch the selected egg")
+
+            provider = CountingProvider()
+            service = MODULE.LycolesGenerationService(
+                output_root=root / "jobs",
+                llm_provider=provider,
+                provider_info=provider.info(),
+            )
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically hatch the selected egg",
+            )
+
+            first = service.run_sync(request)
+            second = service.run_sync(request)
+
+            self.assertEqual(provider.analysis_calls, 1)
+            self.assertTrue(first["provider"]["analysisCacheEnabled"])
+            self.assertFalse(first["provider"]["analysisCacheHit"])
+            self.assertTrue(second["provider"]["analysisCacheHit"])
+            self.assertEqual(first["provider"]["analysisCacheKey"], second["provider"]["analysisCacheKey"])
+            self.assertGreater(first["usage"]["analysis"]["tokens"], 0)
+            self.assertEqual(second["usage"]["analysis"]["tokens"], 0)
+
 
 
 if __name__ == "__main__":

@@ -51,12 +51,23 @@
   - character/camera orientation samples,
   - report/metric/summary propagation of new evidence channels.
 
+### Additional generation-service progress (same cycle)
+
+- `tools/lycoles_generation_service.py` now uses deterministic evidence-signature analysis caching for repeated identical jobs in the same service process.
+- Provider diagnostics now expose:
+  - `analysisCacheEnabled`
+  - `analysisCacheHit`
+  - `analysisCacheKey`
+- Added cache reuse regression: `test_identical_jobs_reuse_analysis_cache_signature` in `tests/test_lycoles_generation_service.py`.
+
 ### Validation completed
 
 - `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py tests/test_inspector_ui.py`
+- `python3 -m py_compile tools/lycoles_generation_service.py tests/test_lycoles_generation_service.py tests/test_lycoles_generation_service_provider.py`
 - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
 - `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_inspector_ui` (**63/63 passed**)
-- `python3 -m unittest discover -s tests` (**1661 passed, 17 skipped, 0 failed**)
+- `python3 -m unittest tests.test_lycoles_generation_service tests.test_lycoles_generation_service_provider` (**14/14 passed**)
+- `python3 -m unittest discover -s tests` (**1662 passed, 17 skipped, 0 failed**)
 
 ### Version/state
 

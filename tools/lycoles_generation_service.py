@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -223,6 +224,25 @@ def _extract_first_json_object(text: str) -> Optional[dict[str, Any]]:
         if isinstance(value, dict):
             return value
     return None
+
+
+def _json_clone(value: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(value, sort_keys=True, ensure_ascii=False))
+
+
+def _analysis_cache_signature(bundle: "EvidenceBundle", route_plan: RoutePlan) -> str:
+    payload = {
+        "mode": bundle.mode,
+        "placeId": bundle.place_id,
+        "scanId": bundle.scan_id,
+        "complexity": route_plan.complexity,
+        "generationReadiness": bundle.generation_readiness,
+        "manifestReadiness": bundle.manifest_readiness,
+        "releaseManifest": bundle.release_manifest,
+    }
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 
 
 @dataclass(frozen=True)
@@ -1088,6 +1108,8 @@ class LycolesGenerationService:
         self.delivery = DeliveryEngine()
         self._jobs: dict[str, JobRecord] = {}
         self._jobs_lock = threading.Lock()
+        self._analysis_cache: dict[str, dict[str, Any]] = {}
+        self._analysis_cache_lock = threading.Lock()
 
     def _output_dir_for(self, job_id: str) -> Path:
         return self.output_root / job_id
@@ -1097,7 +1119,25 @@ class LycolesGenerationService:
         output_dir = self._output_dir_for(job_id)
         bundle = self.evidence_processor.process(request, output_dir)
         route_plan = _build_route_plan(bundle, self.model_routes)
-        analysis = self.feature_analysis.analyze(bundle, usage, route_plan)
+
+        analysis_cache_key = _analysis_cache_signature(bundle, route_plan)
+        analysis_cache_hit = False
+        with self._analysis_cache_lock:
+            cached_analysis = self._analysis_cache.get(analysis_cache_key)
+
+        if isinstance(cached_analysis, dict):
+            analysis = _json_clone(cached_analysis)
+            analysis_cache_hit = True
+        else:
+            analysis = self.feature_analysis.analyze(bundle, usage, route_plan)
+            with self._analysis_cache_lock:
+                self._analysis_cache[analysis_cache_key] = _json_clone(analysis)
+
+        analysis["analysisCache"] = {
+            "enabled": True,
+            "hit": analysis_cache_hit,
+            "key": analysis_cache_key,
+        }
         code, generation_source, generation_model_used, generation_errors = self.script_generation.generate(
             bundle, analysis, usage, route_plan)
         code, validation, repair_model_used, repair_errors = self.validation_repair.validate_and_repair(
@@ -1154,6 +1194,9 @@ class LycolesGenerationService:
                 "analysisFallbackErrors": analysis.get("analysisFallbackErrors") or [],
                 "generationFallbackErrors": generation_errors,
                 "repairFallbackErrors": repair_errors,
+                "analysisCacheEnabled": True,
+                "analysisCacheHit": analysis_cache_hit,
+                "analysisCacheKey": analysis_cache_key,
                 "aiInferencePerformed": ai_inference_performed,
             },
             "evidence": {
