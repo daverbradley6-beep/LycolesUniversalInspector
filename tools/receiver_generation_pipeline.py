@@ -1737,6 +1737,7 @@ def _build_universal_discovery_report(
         })
 
     interaction_diagnostics = payload.get("interactionDiagnostics") if isinstance(payload.get("interactionDiagnostics"), dict) else {}
+    input_observation_stats = interaction_diagnostics.get("inputObservationStats") if isinstance(interaction_diagnostics.get("inputObservationStats"), dict) else {}
     raw_position_history = interaction_diagnostics.get("playerPositionHistory")
     raw_cursor_history = interaction_diagnostics.get("cursorObservationHistory")
     if not isinstance(raw_cursor_history, list):
@@ -3837,6 +3838,19 @@ def _build_universal_discovery_report(
         },
     }
 
+    click_link_attempts = int(_numeric(input_observation_stats.get("clickLinksAttempted")) or 0)
+    click_link_matched = int(_numeric(input_observation_stats.get("clickLinksMatched")) or 0)
+    click_link_missed = int(_numeric(input_observation_stats.get("clickLinksMissed")) or 0)
+    click_link_missing_source = int(_numeric(input_observation_stats.get("clickLinksMissedMissingSource")) or 0)
+    click_link_no_eligible = int(_numeric(input_observation_stats.get("clickLinksMissedNoEligibleCandidate")) or 0)
+    if click_link_missed > 0 and click_link_missing_source == 0 and click_link_no_eligible == 0:
+        click_captures_recorded = int(_numeric(input_observation_stats.get("clickCapturesRecorded")) or 0)
+        click_capture_attempts = int(_numeric(input_observation_stats.get("clickCaptureAttempts")) or 0)
+        click_capture_failures = int(_numeric(input_observation_stats.get("clickCaptureFailures")) or 0)
+        if click_captures_recorded == 0 and (click_capture_attempts == 0 or click_capture_failures >= click_capture_attempts):
+            click_link_missing_source = click_link_missed
+
+
     spatial_quality_metrics = {
         "playerPositionSamples": {
             "total": len(position_history),
@@ -3884,6 +3898,14 @@ def _build_universal_discovery_report(
             "meaningfulOutcomeObserved": sum(1 for item in click_outcome_relationships if item.get("meaningfulGameplayOutcomeObserved") is True),
             "corroborated": sum(1 for item in click_outcome_relationships if item.get("outcomeCorroborated") is True),
             "liveValidated": sum(1 for item in click_outcome_relationships if item.get("reproduciblyLiveValidated") is True),
+            "missAttribution": {
+                "linkAttempts": click_link_attempts,
+                "linkMatched": click_link_matched,
+                "linkMissed": click_link_missed,
+                "missingSource": click_link_missing_source,
+                "noEligibleCandidate": click_link_no_eligible,
+                "reasonCounts": input_observation_stats.get("clickLinkMissReasonCounts") if isinstance(input_observation_stats.get("clickLinkMissReasonCounts"), dict) else {},
+            },
         },
         "orientationTracking": {
             "characterSamples": len(character_orientation_samples),

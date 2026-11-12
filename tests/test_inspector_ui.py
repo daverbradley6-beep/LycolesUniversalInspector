@@ -356,5 +356,33 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('local lowPath=path and string.lower(path) or nil', SRC)
         self.assertIn('if path and lowPath~="workspace" and pathDepth>1 and not dedupe[path] then', SRC)
 
+    def test_click_capture_failure_fallback_and_stage_reason_diagnostics(self):
+        self.assertIn('function createFallbackClickTargetObservation(buttonName,inputType,failureStage,failureReason)', SRC)
+        self.assertIn('recordClickCaptureFailure("capture-wrapper",failureReason,inputName,inputName)', SRC)
+        self.assertIn('clickObservation=createFallbackClickTargetObservation(inputName,inputName,"capture-wrapper",failureReason)', SRC)
+        self.assertIn('recordClickCaptureComponentFailure(stageLabel,reasonLabel,buttonLabel,inputType)', SRC)
+        self.assertIn('failureStage=(#componentFailures>0 and componentFailures[1].stage) or nil', SRC)
+        self.assertIn('failureReason=(#componentFailures>0 and componentFailures[1].reason) or nil', SRC)
+        self.assertIn('componentFailures=componentFailures', SRC)
+        self.assertIn('clickCaptureFailureStageCounts=observerStats.clickCaptureFailureStageCounts', SRC)
+        self.assertIn('clickCaptureFailureReasonCounts=observerStats.clickCaptureFailureReasonCounts', SRC)
+        self.assertIn('clickCaptureFailureSamples=observerStats.clickCaptureFailureSamples', SRC)
+        self.assertIn('clickCaptureComponentFailureSamples=observerStats.clickCaptureComponentFailureSamples', SRC)
+
+    def test_click_capture_subcomponent_isolation_and_missing_source_link_diagnostics(self):
+        self.assertIn('local ok,result=pcall(function()', SRC)
+        self.assertIn('return captureCursorObservation("click-"..buttonLabel,inputType,true)', SRC)
+        self.assertIn('return UserInputService:GetGuiObjectsAtPosition(x,y)', SRC)
+        self.assertIn('noteComponentFailure("world-raycast",hitErr)', SRC)
+        self.assertIn('noteComponentFailure("viewport-point-to-ray",ray)', SRC)
+        self.assertIn('noteComponentFailure("orientation-capture",ok and "orientation-sample-unavailable" or sampleOrErr)', SRC)
+        self.assertIn('recordClickLinkMiss(missReason,targetPath,button,pendingBefore,pendingAfter,#ranked)', SRC)
+        self.assertIn('clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource', SRC)
+        self.assertIn('clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate', SRC)
+        self.assertIn('clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts', SRC)
+        self.assertIn('clickLinkMissSamples=observerStats.clickLinkMissSamples', SRC)
+        self.assertNotIn('local x=_numeric(screen.x)', SRC)
+
+
 
 if __name__=="__main__":unittest.main()

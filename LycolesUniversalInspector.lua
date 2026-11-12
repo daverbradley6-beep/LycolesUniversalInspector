@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.51
+-- Lycoles Universal Inspector v30.6.52
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.51"
+local VERSION = "30.6.52"
 
 local endpoint = ""
 local autoSend = true
@@ -132,6 +132,7 @@ local LIMITS = {
     clickLinkMaxAgeSeconds = 0.9,
     clickRaycastDistanceStuds = 700,
     maxClickGuiCandidates = 8,
+    maxClickDiagnosticSamples = 18,
 }
 local alive = true
 local watchEnabled = true
@@ -315,8 +316,6 @@ local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds,s
     return result
 end
 
-local scanInvocationCount = 0
-local scanRequestType = "startup-baseline"
 local observerStats = {
     listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0,
     sweepCompleted=false, sweepScanned=0, lastEventPath=nil,
@@ -335,9 +334,15 @@ local observerStats = {
     stateSnapshotCalls=0,stateSnapshotSeconds=0,stateSnapshotPeakSeconds=0,
     clickInputsObserved=0,clickInputsProcessed=0,clickInputsGameProcessed=0,
     clickCaptureAttempts=0,clickCapturesRecorded=0,clickCaptureFailures=0,
-    clickTargetsResolved=0,clickTargetsUnresolved=0,clickInspectorOwned=0,
+    clickCaptureComponentFailures=0,clickTargetsResolved=0,clickTargetsUnresolved=0,
+    clickInspectorOwned=0,
     clickLinksAttempted=0,clickLinksMatched=0,clickLinksMissed=0,
-    clickLinksAmbiguous=0,clickLinksExpired=0,clickLinksPruned=0
+    clickLinksAmbiguous=0,clickLinksExpired=0,clickLinksPruned=0,
+    clickLinksMissedMissingSource=0,clickLinksMissedNoEligibleCandidate=0,
+    clickCaptureFailureStageCounts={},clickCaptureFailureReasonCounts={},
+    clickCaptureFailureSamples={},clickCaptureComponentFailureSamples={},
+    clickLinkMissReasonCounts={},clickLinkMissSamples={},
+    scanInvocationCount=0,scanRequestType="startup-baseline"
 }
 local snapshotId = nil
 local inputObserverState = {
@@ -2395,6 +2400,70 @@ function appendCapped(list,maxCount,item)
     end
 end
 
+function sanitizeDiagnosticText(value,maxLen)
+    local text=tostring(value or "unknown")
+    text=string.gsub(text,"[%c]+"," ")
+    text=string.gsub(text,"%s+"," ")
+    text=string.gsub(text,"%b<>","<value>")
+    local limit=maxLen or 180
+    if #text>limit then text=text:sub(1,limit) end
+    return text
+end
+
+function incrementDiagnosticCounter(counter,key)
+    if type(counter)~="table" then return end
+    local normalized=sanitizeDiagnosticText(key,72)
+    counter[normalized]=(counter[normalized] or 0)+1
+end
+
+function recordClickCaptureComponentFailure(stage,reason,buttonName,inputType)
+    observerStats.clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures+1
+    local stageLabel=sanitizeDiagnosticText(stage,40)
+    local reasonLabel=sanitizeDiagnosticText(reason,180)
+    appendCapped(observerStats.clickCaptureComponentFailureSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        stage=stageLabel,
+        reason=reasonLabel,
+        button=tostring(buttonName or "unknown"):sub(1,40),
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+    })
+end
+
+function recordClickCaptureFailure(stage,reason,buttonName,inputType)
+    observerStats.clickCaptureFailures=observerStats.clickCaptureFailures+1
+    local stageLabel=sanitizeDiagnosticText(stage,40)
+    local reasonLabel=sanitizeDiagnosticText(reason,180)
+    incrementDiagnosticCounter(observerStats.clickCaptureFailureStageCounts,stageLabel)
+    incrementDiagnosticCounter(observerStats.clickCaptureFailureReasonCounts,reasonLabel)
+    appendCapped(observerStats.clickCaptureFailureSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        stage=stageLabel,
+        reason=reasonLabel,
+        button=tostring(buttonName or "unknown"):sub(1,40),
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+    })
+end
+
+function recordClickLinkMiss(reason,targetPath,button,pendingBefore,pendingAfter,rankedCount)
+    observerStats.clickLinksMissed=observerStats.clickLinksMissed+1
+    local reasonLabel=sanitizeDiagnosticText(reason,72)
+    if reasonLabel=="no-pending-click-source" or reasonLabel=="pending-clicks-expired-or-pruned" then
+        observerStats.clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource+1
+    else
+        observerStats.clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate+1
+    end
+    incrementDiagnosticCounter(observerStats.clickLinkMissReasonCounts,reasonLabel)
+    appendCapped(observerStats.clickLinkMissSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        reason=reasonLabel,
+        targetPath=sanitizeDiagnosticText(targetPath or "",220),
+        button=tostring(button or "unknown"):sub(1,40),
+        pendingBefore=type(pendingBefore)=="number" and pendingBefore or 0,
+        pendingAfter=type(pendingAfter)=="number" and pendingAfter or 0,
+        rankedCandidates=type(rankedCount)=="number" and rankedCount or 0,
+    })
+end
+
 function sessionElapsed(nowClock)
     local value = (nowClock or os.clock()) - sessionStartedClock
     return roundNumber(value,3)
@@ -2598,7 +2667,9 @@ end
 function resolveRecentPendingClick(targetPath,button)
     local now=os.clock()
     observerStats.clickLinksAttempted=observerStats.clickLinksAttempted+1
+    local pendingBefore=math.max(0,inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1)
     prunePendingClicks(now)
+    local pendingAfter=math.max(0,inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1)
     local ranked={}
     local best=nil
     local bestIndex=nil
@@ -2652,7 +2723,13 @@ function resolveRecentPendingClick(targetPath,button)
         end
         return best.id
     end
-    observerStats.clickLinksMissed=observerStats.clickLinksMissed+1
+    local missReason="no-pending-click-source"
+    if pendingBefore>0 and pendingAfter==0 then
+        missReason="pending-clicks-expired-or-pruned"
+    elseif pendingAfter>0 then
+        missReason="no-eligible-pending-click-candidate"
+    end
+    recordClickLinkMiss(missReason,targetPath,button,pendingBefore,pendingAfter,#ranked)
     return nil
 end
 
@@ -2703,31 +2780,176 @@ function classifyClickTargetScope(topmostInteractive,raycastTarget)
     return "unresolved"
 end
 
+
+function createFallbackClickTargetObservation(buttonName,inputType,failureStage,failureReason)
+    local nowClock=os.clock()
+    local buttonLabel=tostring(buttonName or "unknown"):sub(1,40)
+    local inputLabel=tostring(inputType or "unknown"):sub(1,60)
+    local cursorObservation={id=nil,cursorAvailable=false,screen={x=nil,y=nil},normalizedViewport={x=nil,y=nil},viewportSize=nil}
+    local cursorOk,cursorResult=pcall(function()
+        return captureCursorObservation("click-fallback-"..buttonLabel,inputLabel,true)
+    end)
+    if cursorOk and type(cursorResult)=="table" then
+        cursorObservation=cursorResult
+    else
+        recordClickCaptureComponentFailure("cursor-capture-fallback",cursorOk and "cursor-observation-non-table" or cursorResult,buttonLabel,inputLabel)
+    end
+
+    clickObservationSequence=clickObservationSequence+1
+    local clickId="click_"..tostring(clickObservationSequence)
+    local observation={
+        id=clickId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=buttonLabel,
+        inputType=inputLabel,
+        cursorObservationId=cursorObservation.id,
+        cursor=cursorObservation,
+        guiCandidates={},
+        topmostGuiTarget=nil,
+        raycastTarget=nil,
+        inspectorOwnedTarget=false,
+        targetScope="unresolved",
+        targetResolution={status="unresolved",unresolved=true,inspectorOwnedTarget=false},
+        playerPositionAtClick=nil,
+        characterOrientationAtClick=nil,
+        cameraOrientationAtClick=nil,
+        cameraCharacterHeadingDeltaDegrees=nil,
+        pipelineDiagnostics={
+            captureAttempted=true,
+            fallbackUsed=true,
+            failureStage=sanitizeDiagnosticText(failureStage or "capture-wrapper",40),
+            failureReason=sanitizeDiagnosticText(failureReason or "unknown",180),
+            guiHitTestAttempted=false,
+            guiHitTestSucceeded=false,
+            raycastAttempted=false,
+            raycastSucceeded=false,
+            unresolvedTarget=true,
+            componentFailures={{
+                stage=sanitizeDiagnosticText(failureStage or "capture-wrapper",40),
+                reason=sanitizeDiagnosticText(failureReason or "unknown",180),
+            }},
+        },
+        targetIdentificationConfidence={
+            level="unavailable",score=0,overlapDetected=false,
+            cursorAvailable=cursorObservation.cursorAvailable==true,
+        },
+        missingEvidence={
+            "Target capture fallback used",
+            "No topmost interactive GUI target determined",
+            "No raycast world hit determined",
+            "Fallback reason: "..sanitizeDiagnosticText(failureReason or "unknown",180),
+        },
+    }
+    appendClickTarget(observation)
+    observerStats.clickCapturesRecorded=observerStats.clickCapturesRecorded+1
+    spatialStats.clickTargetsCaptured=spatialStats.clickTargetsCaptured+1
+    observerStats.clickTargetsUnresolved=observerStats.clickTargetsUnresolved+1
+
+    local relationship={
+        id="click-outcome-"..clickId,
+        clickObservationId=clickId,
+        clickObserved=true,
+        targetIdentified=false,
+        interactionCallbackObserved=false,
+        stateChangeTemporallyAssociated=false,
+        meaningfulGameplayOutcomeObserved=false,
+        outcomeCorroborated=false,
+        reproduciblyLiveValidated=false,
+        causalityProven=false,
+        stage="click-observed-unresolved",
+        status="pending-followup-observation",
+        missingEvidence={
+            "No interaction callback linked yet",
+            "No post-click state evidence linked yet",
+            "No controlled live validation proving reproducible outcome",
+            "Click target unresolved at capture time",
+        },
+        provenance={
+            cursorObservationId=cursorObservation.id,
+            guiCandidateCount=0,
+            confidence="unavailable",
+            targetScope="unresolved",
+        },
+        verificationStages={
+            clickObserved=true,targetIdentified=false,
+            interactionCallbackObserved=false,stateChangeObserved=false,
+            temporallyAssociated=false,multiSignalCorroborated=false,
+            reproduciblyValidated=false,causalityProven=false,
+        },
+        linkedInteractionSequences={},
+        linkedTransactionIds={},
+    }
+    appendClickOutcome(relationship)
+    enqueuePendingClick(clickId,nowClock,buttonLabel,nil)
+    return observation
+end
+
 function captureClickTargetObservation(buttonName,input)
     observerStats.clickCaptureAttempts=observerStats.clickCaptureAttempts+1
     local nowClock=os.clock()
     local inputType=tostring(input and input.UserInputType and input.UserInputType.Name or "unknown")
-    local cursorObservation=captureCursorObservation("click-"..tostring(buttonName or "unknown"),inputType,true)
-    local screen=cursorObservation.screen or {}
-    local x=_numeric(screen.x)
-    local y=_numeric(screen.y)
+    local buttonLabel=tostring(buttonName or "unknown"):sub(1,40)
+    local componentFailures={}
+    local function noteComponentFailure(stage,reason)
+        local stageLabel=sanitizeDiagnosticText(stage,40)
+        local reasonLabel=sanitizeDiagnosticText(reason,180)
+        if #componentFailures<LIMITS.maxClickDiagnosticSamples then
+            componentFailures[#componentFailures+1]={stage=stageLabel,reason=reasonLabel}
+        end
+        recordClickCaptureComponentFailure(stageLabel,reasonLabel,buttonLabel,inputType)
+    end
+
+    local cursorObservation=nil
+    local cursorCaptureSucceeded=false
+    do
+        local ok,result=pcall(function()
+            return captureCursorObservation("click-"..buttonLabel,inputType,true)
+        end)
+        if ok and type(result)=="table" then
+            cursorObservation=result
+            cursorCaptureSucceeded=true
+        else
+            noteComponentFailure("cursor-capture",ok and "cursor-observation-non-table" or result)
+            cursorObservation={
+                id=nil,cursorAvailable=false,
+                screen={x=nil,y=nil},normalizedViewport={x=nil,y=nil},viewportSize=nil,
+            }
+        end
+    end
+
+    local screen=(type(cursorObservation.screen)=="table") and cursorObservation.screen or {}
+    local x=type(screen.x)=="number" and screen.x or nil
+    local y=type(screen.y)=="number" and screen.y or nil
 
     local guiCandidates={}
     local guiHitTestAttempted=type(x)=="number" and type(y)=="number"
     local guiHitTestSucceeded=false
+    local guiHitTestFailure=nil
     if guiHitTestAttempted then
         local ok,guiObjects=pcall(function()
             return UserInputService:GetGuiObjectsAtPosition(x,y)
         end)
-        guiHitTestSucceeded=ok and type(guiObjects)=="table"
-        if guiHitTestSucceeded then
+        if ok and type(guiObjects)=="table" then
+            guiHitTestSucceeded=true
             for _,guiObject in ipairs(guiObjects) do
                 if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
-                local candidate=summarizeGuiHitCandidate(guiObject)
-                if candidate then guiCandidates[#guiCandidates+1]=candidate end
+                local candidateOk,candidateOrErr=pcall(function()
+                    return summarizeGuiHitCandidate(guiObject)
+                end)
+                if candidateOk and type(candidateOrErr)=="table" then
+                    guiCandidates[#guiCandidates+1]=candidateOrErr
+                elseif not candidateOk then
+                    guiHitTestFailure=guiHitTestFailure or candidateOrErr
+                end
             end
+        else
+            guiHitTestFailure=ok and "gui-hit-test-returned-non-table" or guiObjects
         end
+    elseif cursorCaptureSucceeded then
+        guiHitTestFailure="cursor-screen-unavailable"
     end
+    if guiHitTestFailure then noteComponentFailure("gui-hit-test",guiHitTestFailure) end
 
     local topmostInteractive=nil
     for _,candidate in ipairs(guiCandidates) do
@@ -2740,6 +2962,7 @@ function captureClickTargetObservation(buttonName,input)
     local raycastTarget=nil
     local raycastAttempted=false
     local raycastSucceeded=false
+    local raycastFailure=nil
     if type(x)=="number" and type(y)=="number" then
         local camera=workspace.CurrentCamera
         if camera then
@@ -2753,27 +2976,38 @@ function captureClickTargetObservation(buttonName,input)
                     clickRaycastParams.FilterDescendantsInstances=ignoreList
                 end
                 local result=nil
-                local hitOk=pcall(function()
+                local hitOk,hitErr=pcall(function()
                     if clickRaycastParams then
                         result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds,clickRaycastParams)
                     else
                         result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds)
                     end
                 end)
-                raycastSucceeded=hitOk and result and result.Instance~=nil
-                if raycastSucceeded then
-                    local anchor=result.Instance
-                    if anchor.Parent and anchor.Parent:IsA("Model") then anchor=anchor.Parent end
-                    local targetPath=watchPath(anchor,workspace,"Workspace")
-                        or watchPath(result.Instance,workspace,"Workspace")
-                    raycastTarget={
-                        path=targetPath,
-                        class=anchor.ClassName,
-                        hitPosition=watchVec(result.Position),
-                        hitNormal=watchVec(result.Normal),
-                    }
+                if hitOk then
+                    raycastSucceeded=result and result.Instance~=nil
+                    if raycastSucceeded then
+                        local anchor=result.Instance
+                        if anchor.Parent and anchor.Parent:IsA("Model") then anchor=anchor.Parent end
+                        local targetPath=watchPath(anchor,workspace,"Workspace")
+                            or watchPath(result.Instance,workspace,"Workspace")
+                        raycastTarget={
+                            path=targetPath,
+                            class=anchor and anchor.ClassName or nil,
+                            hitPosition=(result and result.Position and typeof(result.Position)=="Vector3") and watchVec(result.Position) or nil,
+                            hitNormal=(result and result.Normal and typeof(result.Normal)=="Vector3") and watchVec(result.Normal) or nil,
+                        }
+                    end
+                else
+                    raycastFailure=hitErr
+                    noteComponentFailure("world-raycast",hitErr)
                 end
+            else
+                raycastFailure=ray
+                noteComponentFailure("viewport-point-to-ray",ray)
             end
+        elseif cursorCaptureSucceeded then
+            raycastFailure="current-camera-unavailable"
+            noteComponentFailure("world-raycast-camera",raycastFailure)
         end
     end
 
@@ -2797,7 +3031,19 @@ function captureClickTargetObservation(buttonName,input)
 
     clickObservationSequence=clickObservationSequence+1
     local clickId="click_"..tostring(clickObservationSequence)
-    local clickPositionSample,_=capturePlayerPositionSample("click-observation",true)
+    local clickPositionSample=nil
+    do
+        local ok,sampleOrErr=pcall(function()
+            local sample,_=capturePlayerPositionSample("click-observation",true)
+            return sample
+        end)
+        if ok and type(sampleOrErr)=="table" then
+            clickPositionSample=sampleOrErr
+        else
+            noteComponentFailure("orientation-capture",ok and "orientation-sample-unavailable" or sampleOrErr)
+        end
+    end
+
     local missingEvidence={}
     if not cursorObservation.cursorAvailable then
         missingEvidence[#missingEvidence+1]="Cursor position unavailable"
@@ -2811,13 +3057,22 @@ function captureClickTargetObservation(buttonName,input)
     if inspectorOwnedTarget then
         missingEvidence[#missingEvidence+1]="Inspector-owned UI target; excluded from gameplay correlation"
     end
+    if #componentFailures>0 then
+        for idx,item in ipairs(componentFailures) do
+            if idx>4 then break end
+            if type(item)=="table" then
+                missingEvidence[#missingEvidence+1]=("Component failure [%s]: %s"):format(
+                    tostring(item.stage or "unknown"),tostring(item.reason or "unknown"))
+            end
+        end
+    end
 
     local targetIdentified=topmostInteractive~=nil or raycastTarget~=nil
     local observation={
         id=clickId,
         observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
         sessionElapsedSeconds=sessionElapsed(nowClock),
-        mouseButton=tostring(buttonName or "unknown"):sub(1,40),
+        mouseButton=buttonLabel,
         inputType=inputType,
         cursorObservationId=cursorObservation.id,
         cursor=cursorObservation,
@@ -2837,11 +3092,17 @@ function captureClickTargetObservation(buttonName,input)
         cameraCharacterHeadingDeltaDegrees=clickPositionSample and clickPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
         pipelineDiagnostics={
             captureAttempted=true,
+            cursorCaptureSucceeded=cursorCaptureSucceeded,
             guiHitTestAttempted=guiHitTestAttempted,
             guiHitTestSucceeded=guiHitTestSucceeded,
+            guiHitTestFailure=guiHitTestFailure and sanitizeDiagnosticText(guiHitTestFailure,180) or nil,
             raycastAttempted=raycastAttempted,
             raycastSucceeded=raycastSucceeded,
+            raycastFailure=raycastFailure and sanitizeDiagnosticText(raycastFailure,180) or nil,
             unresolvedTarget=not targetIdentified,
+            failureStage=(#componentFailures>0 and componentFailures[1].stage) or nil,
+            failureReason=(#componentFailures>0 and componentFailures[1].reason) or nil,
+            componentFailures=componentFailures,
         },
         targetIdentificationConfidence={
             level=confidence,
@@ -5116,12 +5377,21 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 clickCaptureAttempts=observerStats.clickCaptureAttempts,
                 clickCapturesRecorded=observerStats.clickCapturesRecorded,
                 clickCaptureFailures=observerStats.clickCaptureFailures,
+                clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures,
+                clickCaptureFailureStageCounts=observerStats.clickCaptureFailureStageCounts,
+                clickCaptureFailureReasonCounts=observerStats.clickCaptureFailureReasonCounts,
+                clickCaptureFailureSamples=observerStats.clickCaptureFailureSamples,
+                clickCaptureComponentFailureSamples=observerStats.clickCaptureComponentFailureSamples,
                 clickTargetsResolved=observerStats.clickTargetsResolved,
                 clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
                 clickInspectorOwned=observerStats.clickInspectorOwned,
                 clickLinksAttempted=observerStats.clickLinksAttempted,
                 clickLinksMatched=observerStats.clickLinksMatched,
                 clickLinksMissed=observerStats.clickLinksMissed,
+                clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource,
+                clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate,
+                clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts,
+                clickLinkMissSamples=observerStats.clickLinkMissSamples,
                 clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
                 clickLinksExpired=observerStats.clickLinksExpired,
                 clickLinksPruned=observerStats.clickLinksPruned,
@@ -5670,7 +5940,10 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
                 clickObservation=captured
                 observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
             else
-                observerStats.clickCaptureFailures=observerStats.clickCaptureFailures+1
+                local failureReason=ok and "capture-returned-non-table" or captured
+                recordClickCaptureFailure("capture-wrapper",failureReason,inputName,inputName)
+                clickObservation=createFallbackClickTargetObservation(inputName,inputName,"capture-wrapper",failureReason)
+                observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
             end
         end
 
@@ -6100,8 +6373,8 @@ local function inspect(requestType, featureRequest)
     end
 
     stopWorkflowRecording("scan-started")
-    scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline"
+    observerStats.scanInvocationCount = observerStats.scanInvocationCount + 1
+    observerStats.scanRequestType = requestType == "startup-baseline" and "startup-baseline"
         or (requestType == "auto-evidence" and "auto-evidence"
         or (requestType == "feature-request" and "feature-request" or "manual"))
     scanGeneration = scanGeneration + 1
@@ -6569,7 +6842,8 @@ local function inspect(requestType, featureRequest)
             report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
             local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             report.interactionDiagnostics = {
-                scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
+                scanRequestType=observerStats.scanRequestType,
+                scanInvocationCount=observerStats.scanInvocationCount,
                 scanProfile=activeScanProfileId, scanMode=profile.scanMode,
                 quickTargeted=profile.quickTargeted==true,
                 profileFilteredObjects=report.scanStats.omissions.profileFiltered,
@@ -6684,12 +6958,21 @@ local function inspect(requestType, featureRequest)
                     clickCaptureAttempts=observerStats.clickCaptureAttempts,
                     clickCapturesRecorded=observerStats.clickCapturesRecorded,
                     clickCaptureFailures=observerStats.clickCaptureFailures,
+                    clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures,
+                    clickCaptureFailureStageCounts=observerStats.clickCaptureFailureStageCounts,
+                    clickCaptureFailureReasonCounts=observerStats.clickCaptureFailureReasonCounts,
+                    clickCaptureFailureSamples=observerStats.clickCaptureFailureSamples,
+                    clickCaptureComponentFailureSamples=observerStats.clickCaptureComponentFailureSamples,
                     clickTargetsResolved=observerStats.clickTargetsResolved,
                     clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
                     clickInspectorOwned=observerStats.clickInspectorOwned,
                     clickLinksAttempted=observerStats.clickLinksAttempted,
                     clickLinksMatched=observerStats.clickLinksMatched,
                     clickLinksMissed=observerStats.clickLinksMissed,
+                    clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource,
+                    clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate,
+                    clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts,
+                    clickLinkMissSamples=observerStats.clickLinkMissSamples,
                     clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
                     clickLinksExpired=observerStats.clickLinksExpired,
                     clickLinksPruned=observerStats.clickLinksPruned,
@@ -6889,7 +7172,7 @@ local function inspect(requestType, featureRequest)
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
                 .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
                 .. "\\nObserver activations: " .. tostring(observerStats.activationCount)
-                .. "\\nScan type: " .. scanRequestType
+                .. "\\nScan type: " .. tostring(observerStats.scanRequestType)
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
             refreshGeneratedHandoff("Scan complete")

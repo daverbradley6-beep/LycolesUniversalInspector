@@ -1,3 +1,76 @@
+## Update — 2026-11-06 — v30.6.52 click-capture hardening for Bubble Gum 100% failure
+
+### Root cause confirmed from v30.6.51 live export + source
+
+- Reconstructed split live observation JSON (`F5BB8204-EE1D-4727-9AEC-D8048F0645EE`) and verified user metrics:
+  - `clickInputsObserved=27`
+  - `clickCaptureAttempts=27`
+  - `clickCaptureFailures=27`
+  - `clickCapturesRecorded=0`
+  - `clickLinksAttempted=14`
+  - `clickLinksMatched=0`
+  - `clickLinksMissed=14`
+- Inspected `eff78135` source and confirmed `captureClickTargetObservation` called `_numeric(screen.x/y)` even though no Lua `_numeric` helper exists in the inspector runtime.
+- This throws before observation append, causing wrapper-level hard failure for every click attempt and leaving no pending click records to correlate.
+
+### Implemented repair (`LycolesUniversalInspector.lua` → `v30.6.52`)
+
+- Replaced `_numeric(screen.x/y)` usage with strict Lua-safe number checks (`type(...)=="number"`).
+- Hardened click capture pipeline with staged component isolation and diagnostics:
+  - cursor-capture pcall,
+  - GUI hit-test pcall,
+  - viewport/raycast pcall,
+  - orientation capture pcall.
+- Added bounded, sanitized diagnostics for failures:
+  - `clickCaptureFailureStageCounts`
+  - `clickCaptureFailureReasonCounts`
+  - `clickCaptureFailureSamples`
+  - `clickCaptureComponentFailureSamples`
+- Added wrapper fallback persistence path:
+  - if capture throws/returns non-table, record sanitized failure + create unresolved fallback click observation,
+  - append click target + click outcome relationship,
+  - enqueue pending click for downstream correlation.
+- Added explicit link-miss attribution metrics to distinguish missing-source records from candidate matching failures:
+  - `clickLinksMissedMissingSource`
+  - `clickLinksMissedNoEligibleCandidate`
+  - `clickLinkMissReasonCounts`
+  - `clickLinkMissSamples`
+
+### Receiver/discovery diagnostics improvements
+
+- `tools/receiver_generation_pipeline.py` now publishes `spatialDiscoveryQualityMetrics.clickOutcomeCorrelation.missAttribution`.
+- Added backward-compatible inference for older exports without new miss fields:
+  - if link misses exist while click captures are fully absent/failed, classify misses as `missingSource`.
+
+### Regression coverage added
+
+- `tests/test_inspector_ui.py`:
+  - fallback capture path assertions,
+  - staged failure-reason export assertions,
+  - subcomponent isolation assertions,
+  - verifies `_numeric(screen.x)` is absent.
+- `tests/test_receiver_generation_pipeline.py`:
+  - asserts `missAttribution` exists,
+  - verifies missing-source inference from legacy counters.
+
+### Validation completed
+
+- `python3 -m unittest tests.test_inspector_ui tests.test_receiver_generation_pipeline tests.test_inspector_compiler_limits` → **71 passed**
+- `python3 -m unittest discover -s tests` → **1668 passed, 17 skipped, 0 failed**
+- `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua` → **PASS**
+- `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua` → **PASS**
+- `python3 -m unittest tests.test_inspector_compiler_limits` → **2 passed**
+- Luau text compile max register index (inspector): **R157**
+
+### Live verification status
+
+- Potassium live reload and in-game click capture revalidation are still pending user execution.
+- This cycle delivers structural runtime hardening plus miss-attribution diagnostics so the next live export will show exact failure stage/reason if any issue remains.
+
+
+
+
 ## Update — 2026-11-06 — v30.6.51 click capture repair + universal pickup discovery
 
 ### Acceptance status snapshot

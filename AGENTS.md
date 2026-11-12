@@ -16,6 +16,20 @@ Target experiences are third-party games that the user does not own and cannot o
 
 
 
+
+## Session notes — 2026-11-06 click failure hotfix (v30.6.52)
+
+- Confirmed root cause for Bubble Gum `27/27` click-capture failures in `v30.6.51`: `captureClickTargetObservation` called `_numeric(screen.x/y)` but no `_numeric` Lua helper existed in the inspector runtime, so each click capture attempt threw before append.
+- Required safety rule for click pipeline:
+  - never rely on non-local numeric helper symbols in executor runtime paths,
+  - perform staged pcall isolation for cursor capture, GUI hit-testing, raycast, and orientation capture,
+  - always persist a minimal unresolved click record when capture wrapper fails, so downstream click-link correlation can distinguish `missing source record` from `matching ambiguity`.
+- New exported diagnostics to preserve in future changes:
+  - `clickCaptureFailureStageCounts`, `clickCaptureFailureReasonCounts`, `clickCaptureFailureSamples`, `clickCaptureComponentFailureSamples`
+  - `clickLinksMissedMissingSource`, `clickLinksMissedNoEligibleCandidate`, `clickLinkMissReasonCounts`, `clickLinkMissSamples`
+- Receiver discovery now exposes `spatialDiscoveryQualityMetrics.clickOutcomeCorrelation.missAttribution` and infers `missingSource` for legacy exports when click captures are fully absent/failed.
+
+
 ## Session notes — 2026-11-06 click/pickup repair pass (v30.6.51)
 
 - Inspector advanced to `v30.6.51` with click-pipeline structural repairs aimed at Potassium/live evidence fidelity:

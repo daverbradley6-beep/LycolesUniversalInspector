@@ -1723,6 +1723,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("clickTargetDiscovery", spatial_quality)
             self.assertIn("clickOutcomeCorrelation", spatial_quality)
             self.assertIn("orientationTracking", spatial_quality)
+            self.assertIn("missAttribution", spatial_quality.get("clickOutcomeCorrelation") or {})
             self.assertGreaterEqual((spatial_quality.get("cursorObservations") or {}).get("total", 0), 1)
             self.assertGreaterEqual((spatial_quality.get("clickTargetDiscovery") or {}).get("total", 0), 1)
             self.assertGreaterEqual((spatial_quality.get("orientationTracking") or {}).get("characterSamples", 0), 1)
@@ -1846,6 +1847,67 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertGreaterEqual(len(actionable), 1)
             self.assertTrue(any(len(item.get("targetGuiPaths") or []) > 0 for item in actionable))
             self.assertTrue(all((item.get("evidenceStatus") or {}).get("liveValidatedDestination") is False for item in actionable))
+
+    def test_click_miss_attribution_uses_input_observation_stats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "click-miss-attribution.json"
+            payload = {
+                "schemaVersion": "30.6.live-observation-export.1",
+                "exportKind": "dynamic-observations",
+                "scanId": "click-miss-attribution-scan",
+                "baselineScanId": "click-miss-attribution-scan",
+                "placeId": 85896571713843,
+                "gameName": "Click Miss Attribution Fixture",
+                "interactionDiagnostics": {
+                    "inputObservationStats": {
+                        "clickLinksAttempted": 14,
+                        "clickLinksMatched": 0,
+                        "clickLinksMissed": 14,
+                        "clickCaptureAttempts": 27,
+                        "clickCaptureFailures": 27,
+                        "clickCapturesRecorded": 0,
+                        "clickLinkMissReasonCounts": {
+                            "no-pending-click-source": 14,
+                        },
+                    },
+                    "recentInteractions": [
+                        {
+                            "sequence": 1,
+                            "transactionId": "tx-1",
+                            "controlType": "GuiButton.Activated",
+                            "path": "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+                            "stateChanges": [
+                                {"key": "LocalPlayer.leaderstats.Coins", "before": 10, "after": 11}
+                            ],
+                            "actionPositionSample": {
+                                "interactionSequence": 1,
+                                "transactionId": "tx-1",
+                                "phase": "at-action",
+                                "sampled": True,
+                                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                                "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                            },
+                        }
+                    ],
+                },
+            }
+            overlay.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Diagnose click-link misses",
+                scenario_name="click-miss-attribution",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            miss_attr = (((report.get("spatialDiscoveryQualityMetrics") or {}).get("clickOutcomeCorrelation") or {}).get("missAttribution") or {})
+            self.assertEqual(miss_attr.get("linkAttempts"), 14)
+            self.assertEqual(miss_attr.get("linkMatched"), 0)
+            self.assertEqual(miss_attr.get("linkMissed"), 14)
+            self.assertEqual(miss_attr.get("missingSource"), 14)
+            self.assertEqual(miss_attr.get("noEligibleCandidate"), 0)
+            self.assertEqual((miss_attr.get("reasonCounts") or {}).get("no-pending-click-source"), 14)
 
     def test_multi_world_contexts_remain_separate_for_same_coordinates(self):
         with tempfile.TemporaryDirectory() as tmp:
