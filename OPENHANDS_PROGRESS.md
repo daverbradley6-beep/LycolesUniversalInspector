@@ -1,3 +1,71 @@
+## Update — 2026-11-12 — v30.6.50 universal cursor/click/orientation evidence integration
+
+
+### Acceptance status updates
+
+- **Inspector compile/load in Potassium:** previously user-verified at `v30.6.49`; this pass extends evidence streams and is **offline-verified only** until next user Potassium run.
+- Spatial and interaction evidence pipeline now includes cursor position, click-target discovery, click-outcome correlation stages, and orientation tracking.
+- Universal discovery report and summary now expose these evidence channels explicitly.
+
+### Implemented
+
+- Inspector (`LycolesUniversalInspector.lua`):
+  - Added bounded histories and schema tags for:
+    - `cursorObservationHistory`
+    - `clickTargetObservations`
+    - `clickOutcomeRelationships`
+    - `characterOrientationSamples`
+    - `cameraOrientationSamples`
+  - Added cursor sampling capture and normalized viewport/screen coordinate recording.
+  - Added click-target capture (GUI + raycast context) and confidence/missing-evidence metadata.
+  - Added click-to-outcome linkage through interaction callbacks and delayed observation-window updates.
+  - Added orientation-at-action propagation into interaction records and spatial snapshots.
+  - Live observation export now publishes the new evidence arrays at top-level with `cursorClickOrientationSchemas`.
+- Receiver pipeline (`tools/receiver_generation_pipeline.py`):
+  - Added normalization for cursor, click-target, click-outcome, and orientation records.
+  - Added fallback derivation from interaction events when explicit arrays are absent.
+  - Enriched `candidateActionOutcomeRelationships` and `spatialActionOutcomeRelationships` with click/orientation metadata.
+  - Added report sections:
+    - `cursorObservationHistory`
+    - `clickTargetObservations`
+    - `clickOutcomeRelationships`
+    - `characterOrientationSamples`
+    - `cameraOrientationSamples`
+    - `cursorClickOrientationSchemas`
+  - Extended `spatialDiscoveryQualityMetrics` with:
+    - `cursorObservations`
+    - `clickTargetDiscovery`
+    - `clickOutcomeCorrelation`
+    - `orientationTracking`
+  - Discovery summary text now reports cursor/click/orientation counts.
+
+### Regression coverage
+
+- Updated `tests/test_inspector_ui.py` with static-source assertions for:
+  - export presence of new evidence arrays,
+  - click/orientation helper functions,
+  - cursor movement throttling constants and call paths.
+- Updated `tests/test_receiver_generation_pipeline.py` fixtures/assertions for:
+  - click IDs and click-target payloads,
+  - click-outcome relationships,
+  - character/camera orientation samples,
+  - report/metric/summary propagation of new evidence channels.
+
+### Validation completed
+
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py tests/test_inspector_ui.py`
+- `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+- `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_inspector_ui` (**63/63 passed**)
+- `python3 -m unittest discover -s tests` (**1661 passed, 17 skipped, 0 failed**)
+
+### Version/state
+
+- Inspector version bumped: **`v30.6.50`** (`LycolesUniversalInspector.lua` + `version.txt`).
+- Branch remains: `openhands-development`.
+- `main` remains untouched.
+
+
+
 ## Update — 2026-11-12 — physical destination consolidation + outcome-verification separation
 
 ### Acceptance status updates

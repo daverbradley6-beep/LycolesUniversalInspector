@@ -15,6 +15,32 @@ Target experiences are third-party games that the user does not own and cannot o
 - Do not merge into `main` without explicit authorization. Develop and push verified work on `openhands-development`.
 
 
+## Session notes — 2026-11-12 cursor/click/orientation evidence pass (v30.6.50)
+
+- Inspector advanced to `v30.6.50` with bounded universal evidence streams for:
+  - `cursorObservationHistory`
+  - `clickTargetObservations`
+  - `clickOutcomeRelationships`
+  - `characterOrientationSamples`
+  - `cameraOrientationSamples`
+- Added click-to-outcome correlation progression in inspector event records:
+  - click observation IDs (`click_<sequence>`),
+  - interaction linkage from GUI callback/input paths,
+  - staged outcome updates (`interaction-callback-observed` -> `state-change-temporally-associated` -> `meaningful-outcome-observed` -> `outcome-corroborated`).
+- Added orientation-at-action propagation across interaction history, event snapshots, and spatial sample payloads.
+- `tools/receiver_generation_pipeline.py` now normalizes and preserves cursor/click/orientation evidence into universal discovery output, with fallback derivation from interaction events when explicit arrays are absent.
+- Discovery quality metrics now include:
+  - `cursorObservations`, `clickTargetDiscovery`, `clickOutcomeCorrelation`, `orientationTracking`.
+- Summary rendering now surfaces cursor/click/orientation counts for quick evidence health checks.
+- Regression coverage expanded in:
+  - `tests/test_inspector_ui.py`
+  - `tests/test_receiver_generation_pipeline.py`
+- Validation completed:
+  - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+  - `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_inspector_ui` (**63/63 passed**)
+  - `python3 -m unittest discover -s tests` (**1661 passed, 17 skipped, 0 failed**)
+
+
 ## Session notes — 2026-11-10 live-fix pass (Muscle Legends FA86)
 
 - `tools/observation_auto_train_template.lua` now includes a character lifecycle recovery state machine:

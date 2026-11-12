@@ -1179,6 +1179,158 @@ def _build_universal_discovery_report(
             "windowSeconds": _numeric(sample.get("windowSeconds")),
             "speedStudsPerSecond": _numeric(sample.get("speedStudsPerSecond")),
             "characterState": sample.get("characterState") if isinstance(sample.get("characterState"), str) else None,
+            "characterOrientation": _normalize_orientation(sample.get("characterOrientation")),
+            "cameraOrientation": _normalize_orientation(sample.get("cameraOrientation")),
+            "cameraCharacterHeadingDeltaDegrees": _numeric(sample.get("cameraCharacterHeadingDeltaDegrees")),
+        }
+
+
+    def _normalize_heading(value: Any) -> Optional[float]:
+        heading = _numeric(value)
+        if heading is None:
+            return None
+        heading = heading % 360.0
+        if heading < 0:
+            heading += 360.0
+        return round(heading, 2)
+
+    def _compass_from_heading(heading: Optional[float]) -> Optional[str]:
+        if heading is None:
+            return None
+        labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        index = int(((heading + 22.5) % 360.0) // 45.0)
+        return labels[index]
+
+    def _heading_from_forward(forward: Optional[dict[str, float]]) -> Optional[float]:
+        if not isinstance(forward, dict):
+            return None
+        x = _numeric(forward.get("x"))
+        z = _numeric(forward.get("z"))
+        if x is None or z is None:
+            return None
+        if abs(x) < 1e-6 and abs(z) < 1e-6:
+            return None
+        return _normalize_heading(math.degrees(math.atan2(x, -z)))
+
+    def _normalize_orientation(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        forward = _position_from_value(value.get("forward"))
+        heading = _normalize_heading(value.get("headingDegrees"))
+        if heading is None:
+            heading = _heading_from_forward(forward)
+        return {
+            "id": value.get("id") if isinstance(value.get("id"), str) else None,
+            "source": value.get("source") if isinstance(value.get("source"), str) else None,
+            "sampledAt": value.get("sampledAt") if isinstance(value.get("sampledAt"), str) else None,
+            "sessionElapsedSeconds": _numeric(value.get("sessionElapsedSeconds")),
+            "characterGeneration": value.get("characterGeneration") if isinstance(value.get("characterGeneration"), int) else None,
+            "characterId": value.get("characterId") if isinstance(value.get("characterId"), str) else None,
+            "worldPosition": _position_from_value(value.get("worldPosition")),
+            "forward": forward,
+            "headingDegrees": heading,
+            "compass": value.get("compass") if isinstance(value.get("compass"), str) else _compass_from_heading(heading),
+            "worldContext": value.get("worldContext") if isinstance(value.get("worldContext"), dict) else None,
+            "cameraToCharacterHeadingDeltaDegrees": _numeric(value.get("cameraToCharacterHeadingDeltaDegrees")),
+        }
+
+    def _normalize_cursor_observation(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        screen = value.get("screen") if isinstance(value.get("screen"), dict) else {}
+        normalized = value.get("normalizedViewport") if isinstance(value.get("normalizedViewport"), dict) else {}
+        viewport = value.get("viewportSize") if isinstance(value.get("viewportSize"), dict) else {}
+        return {
+            "id": value.get("id") if isinstance(value.get("id"), str) else None,
+            "observedAt": value.get("observedAt") if isinstance(value.get("observedAt"), str) else None,
+            "sessionElapsedSeconds": _numeric(value.get("sessionElapsedSeconds")),
+            "reason": value.get("reason") if isinstance(value.get("reason"), str) else None,
+            "cursorAvailable": bool(value.get("cursorAvailable") is True),
+            "inputType": value.get("inputType") if isinstance(value.get("inputType"), str) else None,
+            "screen": {"x": _numeric(screen.get("x")), "y": _numeric(screen.get("y"))} if isinstance(screen, dict) else None,
+            "normalizedViewport": {
+                "x": _numeric(normalized.get("x")),
+                "y": _numeric(normalized.get("y")),
+            } if isinstance(normalized, dict) else None,
+            "viewportSize": {
+                "width": _numeric(viewport.get("width")),
+                "height": _numeric(viewport.get("height")),
+            } if isinstance(viewport, dict) else None,
+            "coordinateSpace": value.get("coordinateSpace") if isinstance(value.get("coordinateSpace"), str) else None,
+        }
+
+    def _normalize_click_target_observation(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        cursor = _normalize_cursor_observation(value.get("cursor"))
+        topmost = value.get("topmostGuiTarget") if isinstance(value.get("topmostGuiTarget"), dict) else None
+        raycast = value.get("raycastTarget") if isinstance(value.get("raycastTarget"), dict) else None
+        confidence = value.get("targetIdentificationConfidence") if isinstance(value.get("targetIdentificationConfidence"), dict) else {}
+        candidates: list[dict[str, Any]] = []
+        for item in (value.get("guiCandidates") if isinstance(value.get("guiCandidates"), list) else [])[:12]:
+            if not isinstance(item, dict):
+                continue
+            candidates.append({
+                "path": item.get("path") if isinstance(item.get("path"), str) else None,
+                "class": item.get("class") if isinstance(item.get("class"), str) else None,
+                "name": item.get("name") if isinstance(item.get("name"), str) else None,
+                "visible": bool(item.get("visible") is True),
+                "active": bool(item.get("active") is True),
+                "interactable": bool(item.get("interactable") is True),
+                "zIndex": item.get("zIndex") if isinstance(item.get("zIndex"), int) else None,
+            })
+        missing = [
+            item for item in (value.get("missingEvidence") if isinstance(value.get("missingEvidence"), list) else [])
+            if isinstance(item, str)
+        ][:8]
+        return {
+            "id": value.get("id") if isinstance(value.get("id"), str) else None,
+            "observedAt": value.get("observedAt") if isinstance(value.get("observedAt"), str) else None,
+            "sessionElapsedSeconds": _numeric(value.get("sessionElapsedSeconds")),
+            "mouseButton": value.get("mouseButton") if isinstance(value.get("mouseButton"), str) else None,
+            "inputType": value.get("inputType") if isinstance(value.get("inputType"), str) else None,
+            "cursorObservationId": value.get("cursorObservationId") if isinstance(value.get("cursorObservationId"), str) else None,
+            "cursor": cursor,
+            "guiCandidates": candidates,
+            "topmostGuiTarget": {
+                "path": topmost.get("path") if topmost and isinstance(topmost.get("path"), str) else None,
+                "class": topmost.get("class") if topmost and isinstance(topmost.get("class"), str) else None,
+            } if topmost else None,
+            "raycastTarget": {
+                "path": raycast.get("path") if raycast and isinstance(raycast.get("path"), str) else None,
+                "class": raycast.get("class") if raycast and isinstance(raycast.get("class"), str) else None,
+                "hitPosition": _position_from_value(raycast.get("hitPosition")) if raycast else None,
+            } if raycast else None,
+            "targetIdentificationConfidence": {
+                "level": confidence.get("level") if isinstance(confidence.get("level"), str) else None,
+                "score": _numeric(confidence.get("score")),
+                "overlapDetected": bool(confidence.get("overlapDetected") is True),
+                "cursorAvailable": bool(confidence.get("cursorAvailable") is True),
+            },
+            "missingEvidence": missing,
+        }
+
+    def _normalize_click_outcome_relationship(value: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(value, dict):
+            return None
+        linked_sequences = [item for item in (value.get("linkedInteractionSequences") if isinstance(value.get("linkedInteractionSequences"), list) else []) if isinstance(item, int)]
+        linked_transactions = [item for item in (value.get("linkedTransactionIds") if isinstance(value.get("linkedTransactionIds"), list) else []) if isinstance(item, str)]
+        missing = [item for item in (value.get("missingEvidence") if isinstance(value.get("missingEvidence"), list) else []) if isinstance(item, str)][:10]
+        return {
+            "id": value.get("id") if isinstance(value.get("id"), str) else None,
+            "clickObservationId": value.get("clickObservationId") if isinstance(value.get("clickObservationId"), str) else None,
+            "clickObserved": bool(value.get("clickObserved") is True),
+            "targetIdentified": bool(value.get("targetIdentified") is True),
+            "interactionCallbackObserved": bool(value.get("interactionCallbackObserved") is True),
+            "stateChangeTemporallyAssociated": bool(value.get("stateChangeTemporallyAssociated") is True),
+            "meaningfulGameplayOutcomeObserved": bool(value.get("meaningfulGameplayOutcomeObserved") is True),
+            "outcomeCorroborated": bool(value.get("outcomeCorroborated") is True),
+            "reproduciblyLiveValidated": bool(value.get("reproduciblyLiveValidated") is True),
+            "stage": value.get("stage") if isinstance(value.get("stage"), str) else None,
+            "status": value.get("status") if isinstance(value.get("status"), str) else None,
+            "linkedInteractionSequences": linked_sequences[:32],
+            "linkedTransactionIds": linked_transactions[:32],
+            "missingEvidence": missing,
         }
 
     def _cluster_key(
@@ -1320,6 +1472,11 @@ def _build_universal_discovery_report(
                 "kind": action_kind,
                 "targetPath": path,
                 "featureCandidate": feature_candidate,
+                "clickObservationId": event.get("clickObservationId") if isinstance(event.get("clickObservationId"), str) else None,
+                "clickTargetObservation": _normalize_click_target_observation(event.get("clickTargetObservation")),
+                "characterOrientationAtAction": _normalize_orientation(event.get("characterOrientationAtAction")),
+                "cameraOrientationAtAction": _normalize_orientation(event.get("cameraOrientationAtAction")),
+                "cameraCharacterHeadingDeltaDegrees": _numeric(event.get("cameraCharacterHeadingDeltaDegrees")),
             },
             "objectIdentity": {
                 "pathIdentity": path_identity if isinstance(path_identity, list) else None,
@@ -1493,6 +1650,93 @@ def _build_universal_discovery_report(
 
     interaction_diagnostics = payload.get("interactionDiagnostics") if isinstance(payload.get("interactionDiagnostics"), dict) else {}
     raw_position_history = interaction_diagnostics.get("playerPositionHistory")
+    raw_cursor_history = interaction_diagnostics.get("cursorObservationHistory")
+    if not isinstance(raw_cursor_history, list):
+        raw_cursor_history = payload.get("cursorObservationHistory") if isinstance(payload.get("cursorObservationHistory"), list) else []
+
+    raw_click_targets = interaction_diagnostics.get("clickTargetObservations")
+    if not isinstance(raw_click_targets, list):
+        raw_click_targets = payload.get("clickTargetObservations") if isinstance(payload.get("clickTargetObservations"), list) else []
+
+    raw_click_outcomes = interaction_diagnostics.get("clickOutcomeRelationships")
+    if not isinstance(raw_click_outcomes, list):
+        raw_click_outcomes = payload.get("clickOutcomeRelationships") if isinstance(payload.get("clickOutcomeRelationships"), list) else []
+
+    raw_character_orientations = interaction_diagnostics.get("characterOrientationSamples")
+    if not isinstance(raw_character_orientations, list):
+        raw_character_orientations = payload.get("characterOrientationSamples") if isinstance(payload.get("characterOrientationSamples"), list) else []
+
+    raw_camera_orientations = interaction_diagnostics.get("cameraOrientationSamples")
+    if not isinstance(raw_camera_orientations, list):
+        raw_camera_orientations = payload.get("cameraOrientationSamples") if isinstance(payload.get("cameraOrientationSamples"), list) else []
+
+    def _append_unique_by_id(collection: list[dict[str, Any]], seen: set[str], item: Optional[dict[str, Any]], *, fallback_prefix: str, fallback_index: int) -> None:
+        if not isinstance(item, dict):
+            return
+        raw_id = item.get("id")
+        item_id = raw_id if isinstance(raw_id, str) and raw_id else f"{fallback_prefix}-{fallback_index}"
+        if item_id in seen:
+            return
+        normalized = dict(item)
+        normalized["id"] = item_id
+        seen.add(item_id)
+        collection.append(normalized)
+
+    cursor_observation_history: list[dict[str, Any]] = []
+    cursor_seen: set[str] = set()
+    for idx, sample in enumerate(raw_cursor_history[:1800]):
+        _append_unique_by_id(
+            cursor_observation_history,
+            cursor_seen,
+            _normalize_cursor_observation(sample),
+            fallback_prefix="cursor-observation",
+            fallback_index=idx + 1,
+        )
+
+    click_target_observations: list[dict[str, Any]] = []
+    click_target_seen: set[str] = set()
+    for idx, sample in enumerate(raw_click_targets[:1200]):
+        _append_unique_by_id(
+            click_target_observations,
+            click_target_seen,
+            _normalize_click_target_observation(sample),
+            fallback_prefix="click-target",
+            fallback_index=idx + 1,
+        )
+
+    click_outcome_relationships: list[dict[str, Any]] = []
+    click_outcome_seen: set[str] = set()
+    for idx, sample in enumerate(raw_click_outcomes[:1200]):
+        _append_unique_by_id(
+            click_outcome_relationships,
+            click_outcome_seen,
+            _normalize_click_outcome_relationship(sample),
+            fallback_prefix="click-outcome",
+            fallback_index=idx + 1,
+        )
+
+    character_orientation_samples: list[dict[str, Any]] = []
+    character_orientation_seen: set[str] = set()
+    for idx, sample in enumerate(raw_character_orientations[:2200]):
+        _append_unique_by_id(
+            character_orientation_samples,
+            character_orientation_seen,
+            _normalize_orientation(sample),
+            fallback_prefix="character-orientation",
+            fallback_index=idx + 1,
+        )
+
+    camera_orientation_samples: list[dict[str, Any]] = []
+    camera_orientation_seen: set[str] = set()
+    for idx, sample in enumerate(raw_camera_orientations[:2200]):
+        _append_unique_by_id(
+            camera_orientation_samples,
+            camera_orientation_seen,
+            _normalize_orientation(sample),
+            fallback_prefix="camera-orientation",
+            fallback_index=idx + 1,
+        )
+
     if not isinstance(raw_position_history, list):
         raw_position_history = payload.get("playerPositionHistory") if isinstance(payload.get("playerPositionHistory"), list) else []
 
@@ -1513,6 +1757,9 @@ def _build_universal_discovery_report(
             "directionUnit": sample.get("directionUnit") if isinstance(sample.get("directionUnit"), dict) else None,
             "characterState": sample.get("characterState") if isinstance(sample.get("characterState"), str) else None,
             "worldContext": sample.get("worldContext") if isinstance(sample.get("worldContext"), dict) else None,
+            "characterOrientation": _normalize_orientation(sample.get("characterOrientation")),
+            "cameraOrientation": _normalize_orientation(sample.get("cameraOrientation")),
+            "cameraCharacterHeadingDeltaDegrees": _numeric(sample.get("cameraCharacterHeadingDeltaDegrees")),
             "interpolated": bool(sample.get("interpolated") is True),
             "sampleKind": sample.get("sampleKind") if isinstance(sample.get("sampleKind"), str) else None,
             "discontinuity": sample.get("discontinuity") if isinstance(sample.get("discontinuity"), dict) else None,
@@ -1580,6 +1827,138 @@ def _build_universal_discovery_report(
                 seconds = _numeric(window.get("seconds"))
                 fallback_phase = f"observation-window-{seconds}" if seconds is not None else "observation-window"
                 _push_snapshot(sample, fallback_phase=fallback_phase, sequence=sequence, tx_id=tx_id)
+
+
+    click_target_by_id = {item.get("id"): item for item in click_target_observations if isinstance(item.get("id"), str)}
+    click_outcome_by_click_id = {
+        item.get("clickObservationId"): item
+        for item in click_outcome_relationships
+        if isinstance(item.get("clickObservationId"), str)
+    }
+
+    for idx, event in enumerate(events[:1600]):
+        click_ref = event.get("clickObservationId") if isinstance(event.get("clickObservationId"), str) else None
+        click_payload = _normalize_click_target_observation(event.get("clickTargetObservation"))
+        if click_payload is not None:
+            if click_ref and not click_payload.get("id"):
+                click_payload["id"] = click_ref
+            _append_unique_by_id(
+                click_target_observations,
+                click_target_seen,
+                click_payload,
+                fallback_prefix="event-click-target",
+                fallback_index=idx + 1,
+            )
+            if isinstance(click_payload.get("id"), str):
+                click_target_by_id[click_payload["id"]] = click_payload
+        if click_ref and click_ref not in click_target_by_id:
+            fallback_click = {
+                "id": click_ref,
+                "observedAt": event.get("observedAt") if isinstance(event.get("observedAt"), str) else None,
+                "sessionElapsedSeconds": _numeric(event.get("sessionElapsedSeconds")),
+                "mouseButton": "MouseButton1",
+                "inputType": "InputBegan.MouseButton1",
+                "guiCandidates": [],
+                "topmostGuiTarget": {"path": event.get("path"), "class": None} if isinstance(event.get("path"), str) else None,
+                "raycastTarget": None,
+                "targetIdentificationConfidence": {
+                    "level": "low",
+                    "score": 0.35,
+                    "overlapDetected": False,
+                    "cursorAvailable": False,
+                },
+                "missingEvidence": ["Derived from interaction event; no direct click-target payload available"],
+            }
+            _append_unique_by_id(
+                click_target_observations,
+                click_target_seen,
+                fallback_click,
+                fallback_prefix="event-click-target",
+                fallback_index=idx + 1,
+            )
+            click_target_by_id[click_ref] = fallback_click
+        if click_ref and click_ref not in click_outcome_by_click_id:
+            state_changes = event.get("stateChanges") if isinstance(event.get("stateChanges"), list) else []
+            meaningful_count = sum(
+                1
+                for item in state_changes
+                if isinstance(item, dict)
+                and isinstance(item.get("key"), str)
+                and _is_gameplay_outcome_key(item.get("key"))
+            )
+            derived_outcome = {
+                "id": f"derived-click-outcome-{idx + 1}",
+                "clickObservationId": click_ref,
+                "clickObserved": True,
+                "targetIdentified": click_ref in click_target_by_id,
+                "interactionCallbackObserved": True,
+                "stateChangeTemporallyAssociated": len(state_changes) > 0,
+                "meaningfulGameplayOutcomeObserved": meaningful_count > 0,
+                "outcomeCorroborated": meaningful_count >= 2 or bool(event.get("clientStateCorroborated") is True),
+                "reproduciblyLiveValidated": False,
+                "stage": "state-change-temporally-associated" if len(state_changes) > 0 else "interaction-callback-observed",
+                "status": "observational-only",
+                "linkedInteractionSequences": [event.get("sequence")] if isinstance(event.get("sequence"), int) else [],
+                "linkedTransactionIds": [event.get("transactionId")] if isinstance(event.get("transactionId"), str) else [],
+                "missingEvidence": [
+                    "No controlled live validation proving reproducible outcome",
+                ],
+            }
+            _append_unique_by_id(
+                click_outcome_relationships,
+                click_outcome_seen,
+                derived_outcome,
+                fallback_prefix="event-click-outcome",
+                fallback_index=idx + 1,
+            )
+            click_outcome_by_click_id[click_ref] = derived_outcome
+
+        _append_unique_by_id(
+            character_orientation_samples,
+            character_orientation_seen,
+            _normalize_orientation(event.get("characterOrientationAtAction")),
+            fallback_prefix="event-character-orientation",
+            fallback_index=idx + 1,
+        )
+        _append_unique_by_id(
+            camera_orientation_samples,
+            camera_orientation_seen,
+            _normalize_orientation(event.get("cameraOrientationAtAction")),
+            fallback_prefix="event-camera-orientation",
+            fallback_index=idx + 1,
+        )
+
+    for idx, sample in enumerate(position_history[:1800]):
+        _append_unique_by_id(
+            character_orientation_samples,
+            character_orientation_seen,
+            sample.get("characterOrientation") if isinstance(sample.get("characterOrientation"), dict) else None,
+            fallback_prefix="position-character-orientation",
+            fallback_index=idx + 1,
+        )
+        _append_unique_by_id(
+            camera_orientation_samples,
+            camera_orientation_seen,
+            sample.get("cameraOrientation") if isinstance(sample.get("cameraOrientation"), dict) else None,
+            fallback_prefix="position-camera-orientation",
+            fallback_index=idx + 1,
+        )
+
+    for idx, sample in enumerate(event_snapshots[:2200]):
+        _append_unique_by_id(
+            character_orientation_samples,
+            character_orientation_seen,
+            sample.get("characterOrientation") if isinstance(sample.get("characterOrientation"), dict) else None,
+            fallback_prefix="snapshot-character-orientation",
+            fallback_index=idx + 1,
+        )
+        _append_unique_by_id(
+            camera_orientation_samples,
+            camera_orientation_seen,
+            sample.get("cameraOrientation") if isinstance(sample.get("cameraOrientation"), dict) else None,
+            fallback_prefix="snapshot-camera-orientation",
+            fallback_index=idx + 1,
+        )
 
     snapshots_by_sequence: dict[int, list[dict[str, Any]]] = {}
     snapshots_by_transaction: dict[str, list[dict[str, Any]]] = {}
@@ -2010,6 +2389,13 @@ def _build_universal_discovery_report(
                 "post": post_snapshot.get("position") if isinstance(post_snapshot, dict) else None,
                 "observationWindows": event.get("observationWindows") if isinstance(event.get("observationWindows"), list) else [],
                 "attribution": event.get("attribution") if isinstance(event.get("attribution"), str) else "unknown",
+                "clickObservationId": event.get("clickObservationId") if isinstance(event.get("clickObservationId"), str) else None,
+                "characterOrientation": _normalize_orientation(event.get("characterOrientationAtAction"))
+                    or (action_snapshot.get("characterOrientation") if isinstance(action_snapshot, dict) else None),
+                "cameraOrientation": _normalize_orientation(event.get("cameraOrientationAtAction"))
+                    or (action_snapshot.get("cameraOrientation") if isinstance(action_snapshot, dict) else None),
+                "cameraCharacterHeadingDeltaDegrees": _numeric(event.get("cameraCharacterHeadingDeltaDegrees"))
+                    or (action_snapshot.get("cameraCharacterHeadingDeltaDegrees") if isinstance(action_snapshot, dict) else None),
             }
 
     location_registry: list[dict[str, Any]] = []
@@ -2164,6 +2550,23 @@ def _build_universal_discovery_report(
             "atActionPosition": positional.get("action") if isinstance(positional, dict) else None,
             "postActionPosition": positional.get("post") if isinstance(positional, dict) else None,
             "observationWindows": positional.get("observationWindows") if isinstance(positional, dict) else relation.get("observationWindows"),
+            "clickObservationId": (
+                action_payload.get("clickObservationId") if isinstance(action_payload.get("clickObservationId"), str)
+                else (positional.get("clickObservationId") if isinstance(positional, dict) and isinstance(positional.get("clickObservationId"), str) else None)
+            ),
+            "clickTargetObservation": _normalize_click_target_observation(action_payload.get("clickTargetObservation")),
+            "characterOrientationAtAction": (
+                _normalize_orientation(action_payload.get("characterOrientationAtAction"))
+                or (positional.get("characterOrientation") if isinstance(positional, dict) and isinstance(positional.get("characterOrientation"), dict) else None)
+            ),
+            "cameraOrientationAtAction": (
+                _normalize_orientation(action_payload.get("cameraOrientationAtAction"))
+                or (positional.get("cameraOrientation") if isinstance(positional, dict) and isinstance(positional.get("cameraOrientation"), dict) else None)
+            ),
+            "cameraCharacterHeadingDeltaDegrees": (
+                _numeric(action_payload.get("cameraCharacterHeadingDeltaDegrees"))
+                or (positional.get("cameraCharacterHeadingDeltaDegrees") if isinstance(positional, dict) else None)
+            ),
             "action": action_payload,
             "interactionType": action_type,
             "interactionMechanism": inferred_relationship_mechanism,
@@ -2850,6 +3253,51 @@ def _build_universal_discovery_report(
             "interpolated": sum(1 for item in event_snapshots if item.get("interpolated") is True),
             "linkedToInteractions": sum(1 for item in event_snapshots if isinstance(item.get("interactionSequence"), int)),
         },
+        "cursorObservations": {
+            "total": len(cursor_observation_history),
+            "withScreenCoordinates": sum(
+                1 for item in cursor_observation_history
+                if isinstance(item.get("screen"), dict)
+                and _numeric((item.get("screen") or {}).get("x")) is not None
+                and _numeric((item.get("screen") or {}).get("y")) is not None
+            ),
+            "withNormalizedViewport": sum(
+                1 for item in cursor_observation_history
+                if isinstance(item.get("normalizedViewport"), dict)
+                and _numeric((item.get("normalizedViewport") or {}).get("x")) is not None
+                and _numeric((item.get("normalizedViewport") or {}).get("y")) is not None
+            ),
+        },
+        "clickTargetDiscovery": {
+            "total": len(click_target_observations),
+            "withTopmostGuiTarget": sum(1 for item in click_target_observations if isinstance(item.get("topmostGuiTarget"), dict)),
+            "withRaycastTarget": sum(1 for item in click_target_observations if isinstance(item.get("raycastTarget"), dict)),
+            "highConfidence": sum(
+                1
+                for item in click_target_observations
+                if isinstance(item.get("targetIdentificationConfidence"), dict)
+                and (item.get("targetIdentificationConfidence") or {}).get("level") == "high"
+            ),
+        },
+        "clickOutcomeCorrelation": {
+            "total": len(click_outcome_relationships),
+            "callbackObserved": sum(1 for item in click_outcome_relationships if item.get("interactionCallbackObserved") is True),
+            "stateAssociated": sum(1 for item in click_outcome_relationships if item.get("stateChangeTemporallyAssociated") is True),
+            "meaningfulOutcomeObserved": sum(1 for item in click_outcome_relationships if item.get("meaningfulGameplayOutcomeObserved") is True),
+            "corroborated": sum(1 for item in click_outcome_relationships if item.get("outcomeCorroborated") is True),
+            "liveValidated": sum(1 for item in click_outcome_relationships if item.get("reproduciblyLiveValidated") is True),
+        },
+        "orientationTracking": {
+            "characterSamples": len(character_orientation_samples),
+            "cameraSamples": len(camera_orientation_samples),
+            "characterHeadingAvailable": sum(1 for item in character_orientation_samples if _numeric(item.get("headingDegrees")) is not None),
+            "cameraHeadingAvailable": sum(1 for item in camera_orientation_samples if _numeric(item.get("headingDegrees")) is not None),
+            "cameraCharacterHeadingDeltaAvailable": sum(
+                1
+                for item in camera_orientation_samples
+                if _numeric(item.get("cameraToCharacterHeadingDeltaDegrees")) is not None
+            ),
+        },
         "locationClustering": {
             "functionalLocationCount": len(location_registry),
             "physicalDestinationCount": len(physical_destination_registry),
@@ -2914,6 +3362,9 @@ def _build_universal_discovery_report(
             for warning in (
                 "No valid player position history available" if len(position_history) == 0 else None,
                 "No event-linked position snapshots with coordinates" if sum(1 for item in event_snapshots if isinstance(item.get("position"), dict)) == 0 else None,
+                "No cursor observations captured" if len(cursor_observation_history) == 0 else None,
+                "No click-target observations captured" if len(click_target_observations) == 0 else None,
+                "No orientation samples captured" if len(character_orientation_samples) == 0 and len(camera_orientation_samples) == 0 else None,
                 "No functional locations could be clustered from current evidence" if len(location_registry) == 0 else None,
             )
             if warning
@@ -3138,6 +3589,18 @@ def _build_universal_discovery_report(
         "candidateActionOutcomeRelationships": relationships[:240],
         "playerPositionHistory": position_history[:900],
         "eventPositionSnapshots": event_snapshots[:1400],
+        "cursorObservationHistory": cursor_observation_history[:1200],
+        "clickTargetObservations": click_target_observations[:900],
+        "clickOutcomeRelationships": click_outcome_relationships[:900],
+        "characterOrientationSamples": character_orientation_samples[:1400],
+        "cameraOrientationSamples": camera_orientation_samples[:1400],
+        "cursorClickOrientationSchemas": {
+            "cursorObservation": "30.6.cursor-observation.1",
+            "clickTargetObservation": "30.6.click-target-observation.1",
+            "clickOutcomeRelationship": "30.6.click-outcome-relationship.1",
+            "characterOrientation": "30.6.character-orientation.1",
+            "cameraOrientation": "30.6.camera-orientation.1",
+        },
         "functionalLocationRegistry": location_registry,
         "physicalDestinationRegistry": physical_destination_registry,
         "destinationWorkflows": destination_workflows[:260],
@@ -3235,6 +3698,11 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Live-validated destinations: {(spatial_metrics.get('locationClustering') or {}).get('liveValidatedDestinations') if isinstance(spatial_metrics, dict) else None}",
         f"- Gameplay-verified destinations: {(spatial_metrics.get('locationClustering') or {}).get('gameplayVerifiedDestinations') if isinstance(spatial_metrics, dict) else None}",
         f"- Event snapshots with coordinates: {(spatial_metrics.get('eventPositionSnapshots') or {}).get('withCoordinates') if isinstance(spatial_metrics, dict) else None}",
+        f"- Cursor observations captured: {(spatial_metrics.get('cursorObservations') or {}).get('total') if isinstance(spatial_metrics, dict) else None}",
+        f"- Click-target observations captured: {(spatial_metrics.get('clickTargetDiscovery') or {}).get('total') if isinstance(spatial_metrics, dict) else None}",
+        f"- Click outcomes corroborated: {(spatial_metrics.get('clickOutcomeCorrelation') or {}).get('corroborated') if isinstance(spatial_metrics, dict) else None}",
+        f"- Character orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('characterSamples') if isinstance(spatial_metrics, dict) else None}",
+        f"- Camera orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('cameraSamples') if isinstance(spatial_metrics, dict) else None}",
         f"- Interaction→location coverage: {(spatial_metrics.get('coverage') or {}).get('interactionToLocationCoverage') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",
         "",

@@ -460,6 +460,8 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
             "stateDeltaEvents": 317,
             "recentInteractions": [
                 {
+                    "sequence": 1,
+                    "transactionId": "tx-1",
                     "controlType": "Tool.Activated",
                     "path": "LocalPlayer.Backpack.Weight",
                     "controlMetadata": {
@@ -526,6 +528,48 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                             },
                         }
                     ],
+                    "clickObservationId": "click_1",
+                    "clickTargetObservation": {
+                        "id": "click_1",
+                        "observedAt": "2026-11-06T12:30:00Z",
+                        "sessionElapsedSeconds": 12.25,
+                        "mouseButton": "MouseButton1",
+                        "inputType": "MouseButton1",
+                        "cursorObservationId": "cursor_1",
+                        "cursor": {
+                            "id": "cursor_1",
+                            "sessionElapsedSeconds": 12.24,
+                            "cursorAvailable": True,
+                            "screen": {"x": 912, "y": 512},
+                            "normalizedViewport": {"x": 0.475, "y": 0.474},
+                            "viewportSize": {"width": 1920, "height": 1080}
+                        },
+                        "topmostGuiTarget": {
+                            "path": "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+                            "class": "TextButton"
+                        },
+                        "targetIdentificationConfidence": {
+                            "level": "high",
+                            "score": 0.91,
+                            "overlapDetected": False,
+                            "cursorAvailable": True
+                        },
+                        "missingEvidence": []
+                    },
+                    "characterOrientationAtAction": {
+                        "id": "character-orientation-1",
+                        "headingDegrees": 92.0,
+                        "compass": "E",
+                        "forward": {"x": 0.999, "y": 0.0, "z": -0.035}
+                    },
+                    "cameraOrientationAtAction": {
+                        "id": "camera-orientation-1",
+                        "headingDegrees": 118.0,
+                        "compass": "SE",
+                        "forward": {"x": 0.88, "y": -0.04, "z": -0.47},
+                        "cameraToCharacterHeadingDeltaDegrees": 26.0
+                    },
+                    "cameraCharacterHeadingDeltaDegrees": 26.0,
                 },
                 {
                     "controlType": "Tool.Activated",
@@ -639,6 +683,79 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                     ],
                     "sampled": True,
                     "interpolated": False,
+                }
+            ],
+            "cursorObservationHistory": [
+                {
+                    "id": "cursor_1",
+                    "observedAt": "2026-11-06T12:30:00Z",
+                    "sessionElapsedSeconds": 12.24,
+                    "reason": "click-MouseButton1",
+                    "cursorAvailable": True,
+                    "inputType": "MouseButton1",
+                    "screen": {"x": 912, "y": 512},
+                    "normalizedViewport": {"x": 0.475, "y": 0.474},
+                    "viewportSize": {"width": 1920, "height": 1080},
+                }
+            ],
+            "clickTargetObservations": [
+                {
+                    "id": "click_1",
+                    "observedAt": "2026-11-06T12:30:00Z",
+                    "sessionElapsedSeconds": 12.25,
+                    "mouseButton": "MouseButton1",
+                    "inputType": "MouseButton1",
+                    "cursorObservationId": "cursor_1",
+                    "topmostGuiTarget": {
+                        "path": "LocalPlayer.PlayerGui.gameGui.GroupRewardPrompt.ClaimButton",
+                        "class": "TextButton",
+                    },
+                    "targetIdentificationConfidence": {
+                        "level": "high",
+                        "score": 0.91,
+                        "overlapDetected": False,
+                        "cursorAvailable": True,
+                    },
+                    "missingEvidence": [],
+                }
+            ],
+            "clickOutcomeRelationships": [
+                {
+                    "id": "click-outcome-click_1",
+                    "clickObservationId": "click_1",
+                    "clickObserved": True,
+                    "targetIdentified": True,
+                    "interactionCallbackObserved": True,
+                    "stateChangeTemporallyAssociated": True,
+                    "meaningfulGameplayOutcomeObserved": True,
+                    "outcomeCorroborated": True,
+                    "reproduciblyLiveValidated": False,
+                    "stage": "outcome-corroborated",
+                    "status": "observational-only",
+                    "linkedInteractionSequences": [1],
+                    "linkedTransactionIds": ["tx-1"],
+                    "missingEvidence": ["No controlled live validation proving reproducible outcome"],
+                }
+            ],
+            "characterOrientationSamples": [
+                {
+                    "id": "character-orientation-1",
+                    "source": "character-root-forward",
+                    "sessionElapsedSeconds": 12.3,
+                    "headingDegrees": 92.0,
+                    "compass": "E",
+                    "forward": {"x": 0.999, "y": 0.0, "z": -0.035},
+                }
+            ],
+            "cameraOrientationSamples": [
+                {
+                    "id": "camera-orientation-1",
+                    "source": "camera-look-forward",
+                    "sessionElapsedSeconds": 12.3,
+                    "headingDegrees": 118.0,
+                    "compass": "SE",
+                    "forward": {"x": 0.88, "y": -0.04, "z": -0.47},
+                    "cameraToCharacterHeadingDeltaDegrees": 26.0,
                 }
             ],
         },
@@ -1289,6 +1406,13 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("candidateActionOutcomeRelationships", report)
             self.assertIn("playerPositionHistory", report)
             self.assertIn("eventPositionSnapshots", report)
+            self.assertIn("cursorObservationHistory", report)
+            self.assertIn("clickTargetObservations", report)
+            self.assertIn("clickOutcomeRelationships", report)
+            self.assertIn("characterOrientationSamples", report)
+            self.assertIn("cameraOrientationSamples", report)
+            self.assertIn("cursorClickOrientationSchemas", report)
+
             self.assertIn("functionalLocationRegistry", report)
             self.assertIn("physicalDestinationRegistry", report)
             self.assertIn("destinationWorkflows", report)
@@ -1338,6 +1462,21 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             spatial_quality = report["spatialDiscoveryQualityMetrics"]
             self.assertGreaterEqual((spatial_quality.get("eventPositionSnapshots") or {}).get("withCoordinates", 0), 1)
             self.assertIn("nearbyObjectRelevance", spatial_quality)
+            self.assertIn("cursorObservations", spatial_quality)
+            self.assertIn("clickTargetDiscovery", spatial_quality)
+            self.assertIn("clickOutcomeCorrelation", spatial_quality)
+            self.assertIn("orientationTracking", spatial_quality)
+            self.assertGreaterEqual((spatial_quality.get("cursorObservations") or {}).get("total", 0), 1)
+            self.assertGreaterEqual((spatial_quality.get("clickTargetDiscovery") or {}).get("total", 0), 1)
+            self.assertGreaterEqual((spatial_quality.get("orientationTracking") or {}).get("characterSamples", 0), 1)
+
+            relationships = report.get("candidateActionOutcomeRelationships") or []
+            self.assertTrue(any((item.get("action") or {}).get("clickObservationId") == "click_1" for item in relationships if isinstance(item, dict)))
+            self.assertTrue(any(isinstance((item.get("action") or {}).get("cameraOrientationAtAction"), dict) for item in relationships if isinstance(item, dict)))
+
+            spatial_relationships = report.get("spatialActionOutcomeRelationships") or []
+            self.assertTrue(any(item.get("clickObservationId") == "click_1" for item in spatial_relationships if isinstance(item, dict)))
+
             self.assertIn("coverage", spatial_quality)
             self.assertIn("missingLocationEvidence", spatial_quality)
 
@@ -1345,6 +1484,10 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("Lycoles Universal Discovery Summary", summary_text)
             self.assertIn("Top discovered systems", summary_text)
             self.assertIn("Baseline archive integrity", summary_text)
+            self.assertIn("Cursor observations captured", summary_text)
+            self.assertIn("Click-target observations captured", summary_text)
+            self.assertIn("Character orientation samples", summary_text)
+
 
 
     def test_navigation_readiness_rejects_pointer_only_location_without_targets(self):

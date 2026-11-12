@@ -248,6 +248,30 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('workflowStats.linkedFollowups=workflowStats.linkedFollowups+1',SRC)
         self.assertIn('confidence="context-followup-heuristic"',SRC)
         self.assertIn('workflow.phase=="followup-linked" and "observed-followup-link"',SRC)
+
+    def test_cursor_click_orientation_capture_exports_are_present(self):
+        self.assertIn('cursorObservationHistory=cursorObservationHistory',SRC)
+        self.assertIn('clickTargetObservations=clickTargetObservations',SRC)
+        self.assertIn('clickOutcomeRelationships=clickOutcomeRelationships',SRC)
+        self.assertIn('characterOrientationSamples=characterOrientationSamples',SRC)
+        self.assertIn('cameraOrientationSamples=cameraOrientationSamples',SRC)
+        self.assertIn('cursorClickOrientationSchemas={',SRC)
+        self.assertIn('clickTargetObservation="30.6.click-target-observation.1"',SRC)
+
+    def test_cursor_click_orientation_helpers_exist(self):
+        self.assertIn('function headingFromLookVector(lookVector)',SRC)
+        self.assertIn('function compassLabelForHeading(heading)',SRC)
+        self.assertIn('function captureClickTargetObservation(buttonName,input)',SRC)
+        self.assertIn('function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)',SRC)
+        self.assertIn('resolveRecentPendingClick(path,"MouseButton1")',SRC)
+        self.assertIn('cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil',SRC)
+
+    def test_mouse_movement_cursor_sampling_is_throttled(self):
+        self.assertIn('cursorMovementSampleSeconds = 0.35',SRC)
+        self.assertIn('cursorMovementMinPixels = 6',SRC)
+        self.assertIn('captureCursorObservation("mouse-movement","MouseMovement",true)',SRC)
+        self.assertIn('if intervalOk and magnitude>=LIMITS.cursorMovementMinPixels then',SRC)
+
     def test_simulator_actions_capture_progression_and_conversion(self):
         self.assertIn('progression={"progression","bubble","capacity","blow","farm"}',SRC)
         self.assertIn('shops={"shop","purchase","store","sell","upgrade"}',SRC)

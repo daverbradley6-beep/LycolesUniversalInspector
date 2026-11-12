@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.49
+-- Lycoles Universal Inspector v30.6.50
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.49"
+local VERSION = "30.6.50"
 
 local endpoint = ""
 local autoSend = true
@@ -122,6 +122,16 @@ local LIMITS = {
     maxAdaptivePositionSampleSeconds = 1.1,
     minAdaptivePositionDistanceStuds = 2.5,
     teleportDiscontinuityStuds = 120,
+    maxCursorObservationHistory = 520,
+    maxClickTargetObservations = 320,
+    maxClickOutcomeRelationships = 320,
+    maxCharacterOrientationSamples = 900,
+    maxCameraOrientationSamples = 900,
+    cursorMovementSampleSeconds = 0.35,
+    cursorMovementMinPixels = 6,
+    clickLinkMaxAgeSeconds = 0.9,
+    clickRaycastDistanceStuds = 700,
+    maxClickGuiCandidates = 8,
 }
 local alive = true
 local watchEnabled = true
@@ -178,10 +188,20 @@ local attributedInteractionCount = 0
 playerPositionHistory = {}
 eventPositionSnapshots = {}
 spatialLocationHistory = {}
+cursorObservationHistory = {}
+clickTargetObservations = {}
+clickOutcomeRelationships = {}
+characterOrientationSamples = {}
+cameraOrientationSamples = {}
 spatialCharacterGeneration = 0
 spatialSampleSequence = 0
+cursorObservationSequence = 0
+clickObservationSequence = 0
+orientationSampleSequence = 0
 spatialLastValidSample = nil
 spatialZoneContextCache = {updatedClock = 0, candidates = {}}
+clickOutcomeById = {}
+clickTargetById = {}
 spatialStats = {
     samplesCaptured = 0,
     samplesSkipped = 0,
@@ -191,6 +211,11 @@ spatialStats = {
     eventSnapshotsRecorded = 0,
     nearbyWorldObjectLookups = 0,
     nearbyWorldObjectFailures = 0,
+    cursorSamplesCaptured = 0,
+    clickTargetsCaptured = 0,
+    clickOutcomeLinks = 0,
+    characterOrientationCaptured = 0,
+    cameraOrientationCaptured = 0,
 }
 
 local unattributedInteractionCount = 0
@@ -328,6 +353,11 @@ local inputObserverState = {
     lastMeaningfulActionClock = 0,
     backpressureActive = false,
     backpressureCount = 0,
+    pendingClicks = {},
+    pendingClickHead = 1,
+    pendingClickTail = 0,
+    lastCursorSampleClock = 0,
+    lastCursorSamplePosition = nil,
 }
 
 local observationSequence = 0
@@ -1129,6 +1159,7 @@ local generatedScriptTab = create("TextButton", {
 
 -- Draggable panel and compact minimised launcher.
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local dragging = false
 local dragStart, panelStart
 local header = panel:FindFirstChildOfClass("TextLabel")
@@ -2334,6 +2365,13 @@ pcall(function()
     spatialOverlapParams.MaxParts = 64
 end)
 
+clickRaycastParams = nil
+pcall(function()
+    clickRaycastParams = RaycastParams.new()
+    clickRaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    clickRaycastParams.IgnoreWater = true
+end)
+
 function clampNumber(value,minValue,maxValue)
     if value<minValue then return minValue end
     if value>maxValue then return maxValue end
@@ -2356,6 +2394,468 @@ function sessionElapsed(nowClock)
     local value = (nowClock or os.clock()) - sessionStartedClock
     return roundNumber(value,3)
 end
+
+local transientOutcomeTokens = {
+    "humanoid.activeanimation","humanoid.activeanimations","humanoid.movedirection",
+    "humanoid.floormaterial","humanoid.walkspeed","humanoid.jumppower",
+    "velocitymagnitude","rootpart.velocity",".position",".cframe",
+}
+
+function isMeaningfulGameplayStateKey(key)
+    if type(key)~="string" or key=="" then return false end
+    local lower=string.lower(key)
+    for _,token in ipairs(transientOutcomeTokens) do
+        if string.find(lower,token,1,true) then return false end
+    end
+    if string.find(lower,"camera.",1,true)==1 then return false end
+    return true
+end
+
+function normalizeHeadingDegrees(value)
+    if type(value)~="number" or value~=value then return nil end
+    local heading=value % 360
+    if heading<0 then heading=heading+360 end
+    return roundNumber(heading,2)
+end
+
+function headingFromLookVector(lookVector)
+    if typeof(lookVector)~="Vector3" then return nil end
+    local horizontal=Vector3.new(lookVector.X,0,lookVector.Z)
+    local magnitude=horizontal.Magnitude
+    if magnitude<1e-5 then return nil end
+    local heading=math.deg(math.atan2(horizontal.X,-horizontal.Z))
+    return normalizeHeadingDegrees(heading)
+end
+
+function compassLabelForHeading(heading)
+    if type(heading)~="number" then return nil end
+    local labels={"N","NE","E","SE","S","SW","W","NW"}
+    local index=math.floor(((heading+22.5)%360)/45)+1
+    return labels[index]
+end
+
+function cameraCharacterHeadingDelta(cameraHeading,characterHeading)
+    if type(cameraHeading)~="number" or type(characterHeading)~="number" then return nil end
+    local delta=((cameraHeading-characterHeading+540)%360)-180
+    return roundNumber(delta,2)
+end
+
+function orientationSample(
+    source,position,lookVector,elapsed,characterGeneration,characterId,worldContext)
+    local heading=headingFromLookVector(lookVector)
+    local forward=nil
+    if typeof(lookVector)=="Vector3" then
+        local magnitude=lookVector.Magnitude
+        if magnitude>1e-5 then
+            forward={
+                x=roundNumber(lookVector.X/magnitude,4),
+                y=roundNumber(lookVector.Y/magnitude,4),
+                z=roundNumber(lookVector.Z/magnitude,4),
+            }
+        end
+    end
+    return {
+        id="orientation_"..tostring(orientationSampleSequence+1),
+        source=tostring(source or "unknown"):sub(1,80),
+        sampledAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=elapsed,
+        characterGeneration=characterGeneration,
+        characterId=characterId,
+        worldPosition=position and watchVec(position) or nil,
+        forward=forward,
+        headingDegrees=heading,
+        compass=compassLabelForHeading(heading),
+        worldContext=worldContext,
+    }
+end
+
+function cursorInset()
+    local ok,topLeft,bottomRight=pcall(function() return GuiService:GetGuiInset() end)
+    if not ok or typeof(topLeft)~="Vector2" or typeof(bottomRight)~="Vector2" then
+        return nil
+    end
+    return {
+        topLeft={x=roundNumber(topLeft.X,2),y=roundNumber(topLeft.Y,2)},
+        bottomRight={x=roundNumber(bottomRight.X,2),y=roundNumber(bottomRight.Y,2)},
+    }
+end
+
+function captureCursorObservation(reason,inputType,forceRecord)
+    local observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local elapsed=sessionElapsed(os.clock())
+    local camera=workspace.CurrentCamera
+    local viewportSize=(camera and camera.ViewportSize) or nil
+    local viewportX=viewportSize and viewportSize.X or nil
+    local viewportY=viewportSize and viewportSize.Y or nil
+    local available=false
+    local screenX=nil
+    local screenY=nil
+    local location=nil
+    local ok=pcall(function()
+        location=UserInputService:GetMouseLocation()
+    end)
+    if ok and typeof(location)=="Vector2" then
+        screenX=roundNumber(location.X,2)
+        screenY=roundNumber(location.Y,2)
+        available=true
+    end
+    local normalizedX=nil
+    local normalizedY=nil
+    if available and type(viewportX)=="number" and type(viewportY)=="number"
+        and viewportX>0 and viewportY>0 then
+        normalizedX=roundNumber(clampNumber(screenX/viewportX,0,1),4)
+        normalizedY=roundNumber(clampNumber(screenY/viewportY,0,1),4)
+    end
+    local observation={
+        id="cursor_"..tostring(cursorObservationSequence+1),
+        observedAt=observedAt,
+        sessionElapsedSeconds=elapsed,
+        reason=tostring(reason or "unspecified"):sub(1,80),
+        cursorAvailable=available,
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+        screen={x=screenX,y=screenY},
+        normalizedViewport={x=normalizedX,y=normalizedY},
+        viewportSize=(type(viewportX)=="number" and type(viewportY)=="number")
+            and {width=roundNumber(viewportX,2),height=roundNumber(viewportY,2)} or nil,
+        guiInset=cursorInset(),
+        coordinateSpace="absolute-screen-pixels-and-normalized-viewport",
+    }
+
+    if forceRecord then
+        cursorObservationSequence=cursorObservationSequence+1
+        observation.id="cursor_"..tostring(cursorObservationSequence)
+        appendCapped(cursorObservationHistory,LIMITS.maxCursorObservationHistory,observation)
+        spatialStats.cursorSamplesCaptured=spatialStats.cursorSamplesCaptured+1
+    end
+    return observation
+end
+
+function appendClickOutcome(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    clickOutcomeRelationships[#clickOutcomeRelationships+1]=entry
+    clickOutcomeById[entry.id]=entry
+    if #clickOutcomeRelationships>LIMITS.maxClickOutcomeRelationships then
+        local removed=table.remove(clickOutcomeRelationships,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            clickOutcomeById[removed.id]=nil
+        end
+    end
+end
+
+function appendClickTarget(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    clickTargetObservations[#clickTargetObservations+1]=entry
+    clickTargetById[entry.id]=entry
+    if #clickTargetObservations>LIMITS.maxClickTargetObservations then
+        local removed=table.remove(clickTargetObservations,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            clickTargetById[removed.id]=nil
+        end
+    end
+end
+
+function enqueuePendingClick(clickId,clock,button,targetPath)
+    local tail=inputObserverState.pendingClickTail+1
+    inputObserverState.pendingClickTail=tail
+    inputObserverState.pendingClicks[tail]={
+        id=clickId,clock=clock,button=button,targetPath=targetPath,consumed=false
+    }
+    while inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1>36 do
+        inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+        inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+    end
+end
+
+function prunePendingClicks(nowClock)
+    while inputObserverState.pendingClickHead<=inputObserverState.pendingClickTail do
+        local item=inputObserverState.pendingClicks[inputObserverState.pendingClickHead]
+        if not item then
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        elseif item.consumed or nowClock-item.clock>LIMITS.clickLinkMaxAgeSeconds then
+            inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        else
+            break
+        end
+    end
+    if inputObserverState.pendingClickHead>inputObserverState.pendingClickTail then
+        inputObserverState.pendingClickHead=1
+        inputObserverState.pendingClickTail=0
+    end
+end
+
+function resolveRecentPendingClick(targetPath,button)
+    local now=os.clock()
+    prunePendingClicks(now)
+    local best=nil
+    local bestIndex=nil
+    for index=inputObserverState.pendingClickTail,inputObserverState.pendingClickHead,-1 do
+        local item=inputObserverState.pendingClicks[index]
+        if item and not item.consumed and now-item.clock<=LIMITS.clickLinkMaxAgeSeconds then
+            local score=0
+            if type(button)=="string" and type(item.button)=="string" and button==item.button then
+                score=score+3
+            end
+            if type(targetPath)=="string" and type(item.targetPath)=="string" then
+                if targetPath==item.targetPath then
+                    score=score+5
+                elseif string.find(targetPath,item.targetPath,1,true)
+                    or string.find(item.targetPath,targetPath,1,true) then
+                    score=score+2
+                end
+            end
+            score=score-(now-item.clock)
+            if not best or score>best.score then
+                best={score=score,id=item.id}
+                bestIndex=index
+            end
+        end
+    end
+    if bestIndex then
+        inputObserverState.pendingClicks[bestIndex].consumed=true
+        prunePendingClicks(now)
+        return best.id
+    end
+    return nil
+end
+
+function summarizeGuiHitCandidate(guiObject)
+    if not guiObject or not guiObject:IsA("GuiObject") then return nil end
+    local playerGui=player:FindFirstChildOfClass("PlayerGui")
+    local path=playerGui and watchPath(guiObject,playerGui,"LocalPlayer.PlayerGui")
+    if not path then path=tostring(guiObject:GetFullName()):sub(1,380) end
+    local absolutePosition=guiObject.AbsolutePosition
+    local absoluteSize=guiObject.AbsoluteSize
+    return {
+        path=path,
+        class=guiObject.ClassName,
+        name=tostring(guiObject.Name):sub(1,80),
+        visible=guiObject.Visible,
+        active=guiObject.Active,
+        selectable=guiObject.Selectable,
+        interactable=(guiObject:IsA("GuiButton") and guiObject.Active)
+            or guiObject:IsA("GuiButton")
+            or guiObject.Selectable,
+        zIndex=guiObject.ZIndex,
+        absoluteRect={
+            x=roundNumber(absolutePosition.X,2),
+            y=roundNumber(absolutePosition.Y,2),
+            width=roundNumber(absoluteSize.X,2),
+            height=roundNumber(absoluteSize.Y,2),
+        },
+    }
+end
+
+function captureClickTargetObservation(buttonName,input)
+    local nowClock=os.clock()
+    local inputType=tostring(input and input.UserInputType and input.UserInputType.Name or "unknown")
+    local cursorObservation=captureCursorObservation("click-"..tostring(buttonName or "unknown"),inputType,true)
+    local screen=cursorObservation.screen or {}
+    local x=_numeric(screen.x)
+    local y=_numeric(screen.y)
+
+    local guiCandidates={}
+    if type(x)=="number" and type(y)=="number" then
+        local ok,guiObjects=pcall(function()
+            return UserInputService:GetGuiObjectsAtPosition(x,y)
+        end)
+        if ok and type(guiObjects)=="table" then
+            for _,guiObject in ipairs(guiObjects) do
+                if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
+                local candidate=summarizeGuiHitCandidate(guiObject)
+                if candidate then guiCandidates[#guiCandidates+1]=candidate end
+            end
+        end
+    end
+
+    local topmostInteractive=nil
+    for _,candidate in ipairs(guiCandidates) do
+        if candidate.interactable and candidate.visible~=false then
+            topmostInteractive=candidate
+            break
+        end
+    end
+
+    local raycastTarget=nil
+    if type(x)=="number" and type(y)=="number" then
+        local camera=workspace.CurrentCamera
+        if camera then
+            local ok,ray=pcall(function()
+                return camera:ViewportPointToRay(x,y)
+            end)
+            if ok and ray then
+                local ignoreList=player.Character and {player.Character} or {}
+                if clickRaycastParams then
+                    clickRaycastParams.FilterDescendantsInstances=ignoreList
+                end
+                local result=nil
+                local hitOk=pcall(function()
+                    if clickRaycastParams then
+                        result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds,clickRaycastParams)
+                    else
+                        result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds)
+                    end
+                end)
+                if hitOk and result and result.Instance then
+                    local anchor=result.Instance
+                    if anchor.Parent and anchor.Parent:IsA("Model") then anchor=anchor.Parent end
+                    local targetPath=watchPath(anchor,workspace,"Workspace")
+                        or watchPath(result.Instance,workspace,"Workspace")
+                    raycastTarget={
+                        path=targetPath,
+                        class=anchor.ClassName,
+                        hitPosition=watchVec(result.Position),
+                        hitNormal=watchVec(result.Normal),
+                    }
+                end
+            end
+        end
+    end
+
+    local confidence="low"
+    local score=0.22
+    if topmostInteractive then score=score+0.44 end
+    if #guiCandidates>1 then score=score-0.07 end
+    if raycastTarget then score=score+0.25 end
+    if not cursorObservation.cursorAvailable then score=score-0.2 end
+    score=clampNumber(score,0,0.98)
+    if score>=0.78 then confidence="high"
+    elseif score>=0.5 then confidence="medium"
+    elseif score<=0.2 then confidence="unavailable" end
+
+    clickObservationSequence=clickObservationSequence+1
+    local clickId="click_"..tostring(clickObservationSequence)
+    local missingEvidence={}
+    if not cursorObservation.cursorAvailable then
+        missingEvidence[#missingEvidence+1]="Cursor position unavailable"
+    end
+    if not topmostInteractive then
+        missingEvidence[#missingEvidence+1]="No topmost interactive GUI target determined"
+    end
+    if not raycastTarget then
+        missingEvidence[#missingEvidence+1]="No raycast world hit determined"
+    end
+    local observation={
+        id=clickId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=tostring(buttonName or "unknown"):sub(1,40),
+        inputType=inputType,
+        cursorObservationId=cursorObservation.id,
+        cursor=cursorObservation,
+        guiCandidates=guiCandidates,
+        topmostGuiTarget=topmostInteractive,
+        raycastTarget=raycastTarget,
+        targetIdentificationConfidence={
+            level=confidence,
+            score=roundNumber(score,3),
+            overlapDetected=#guiCandidates>1,
+            cursorAvailable=cursorObservation.cursorAvailable,
+        },
+        missingEvidence=missingEvidence,
+    }
+    appendClickTarget(observation)
+    spatialStats.clickTargetsCaptured=spatialStats.clickTargetsCaptured+1
+
+    local relationship={
+        id="click-outcome-"..clickId,
+        clickObservationId=clickId,
+        clickObserved=true,
+        targetIdentified=topmostInteractive~=nil or raycastTarget~=nil,
+        interactionCallbackObserved=false,
+        stateChangeTemporallyAssociated=false,
+        meaningfulGameplayOutcomeObserved=false,
+        outcomeCorroborated=false,
+        reproduciblyLiveValidated=false,
+        stage="click-observed",
+        status="pending-followup-observation",
+        missingEvidence={
+            "No interaction callback linked yet",
+            "No post-click state evidence linked yet",
+            "No controlled live validation proving reproducible outcome",
+        },
+        provenance={
+            cursorObservationId=cursorObservation.id,
+            guiCandidateCount=#guiCandidates,
+            confidence=confidence,
+        },
+        linkedInteractionSequences={},
+        linkedTransactionIds={},
+    }
+    appendClickOutcome(relationship)
+    enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),
+        topmostInteractive and topmostInteractive.path or nil)
+    return observation
+end
+
+function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)
+    if type(clickId)~="string" then return end
+    local relation=clickOutcomeById["click-outcome-"..clickId]
+    if type(relation)~="table" then return end
+    if callbackObserved then relation.interactionCallbackObserved=true end
+    if type(historyItem)=="table" then
+        if type(historyItem.sequence)=="number" then
+            local seen=false
+            for _,seq in ipairs(relation.linkedInteractionSequences) do
+                if seq==historyItem.sequence then seen=true break end
+            end
+            if not seen then
+                relation.linkedInteractionSequences[#relation.linkedInteractionSequences+1]=historyItem.sequence
+            end
+        end
+        if type(historyItem.transactionId)=="string" then
+            local txSeen=false
+            for _,tx in ipairs(relation.linkedTransactionIds) do
+                if tx==historyItem.transactionId then txSeen=true break end
+            end
+            if not txSeen then
+                relation.linkedTransactionIds[#relation.linkedTransactionIds+1]=historyItem.transactionId
+            end
+        end
+        local stateChanges=historyItem.stateChanges or {}
+        if type(stateChanges)=="table" and #stateChanges>0 then
+            relation.stateChangeTemporallyAssociated=true
+        end
+        local meaningful=0
+        for _,change in ipairs(stateChanges) do
+            if type(change)=="table" and isMeaningfulGameplayStateKey(change.key) then
+                meaningful=meaningful+1
+            end
+        end
+        if meaningful>0 then relation.meaningfulGameplayOutcomeObserved=true end
+        if (historyItem.clientStateCorroborated==true) or meaningful>=2 then
+            relation.outcomeCorroborated=true
+        end
+    end
+    local stage="click-observed"
+    if relation.targetIdentified then stage="target-identified" end
+    if relation.interactionCallbackObserved then stage="interaction-callback-observed" end
+    if relation.stateChangeTemporallyAssociated then stage="state-change-temporally-associated" end
+    if relation.meaningfulGameplayOutcomeObserved then stage="meaningful-gameplay-outcome-observed" end
+    if relation.outcomeCorroborated then stage="outcome-corroborated" end
+    if relation.reproduciblyLiveValidated then stage="outcome-reproducibly-live-validated" end
+    relation.stage=stage
+    relation.status=(stage=="outcome-reproducibly-live-validated") and "live-validated" or "observational-only"
+    local missing={}
+    if not relation.interactionCallbackObserved then
+        missing[#missing+1]="No interaction callback linked yet"
+    end
+    if not relation.stateChangeTemporallyAssociated then
+        missing[#missing+1]="No post-click state evidence linked yet"
+    end
+    if not relation.meaningfulGameplayOutcomeObserved then
+        missing[#missing+1]="No gameplay-relevant outcome signal observed"
+    end
+    if not relation.outcomeCorroborated then
+        missing[#missing+1]="Outcome corroboration threshold not reached"
+    end
+    if not relation.reproduciblyLiveValidated then
+        missing[#missing+1]="No controlled live validation proving reproducible outcome"
+    end
+    relation.missingEvidence=missing
+    spatialStats.clickOutcomeLinks=spatialStats.clickOutcomeLinks+1
+end
+
 
 function inferSpatialPurpose(featureCandidate,path,actionKind)
     local candidate = string.lower(tostring(featureCandidate or ""))
@@ -2545,6 +3045,21 @@ function capturePlayerPositionSample(reason,forceSample)
 
     sample.worldContext = resolveSpatialWorldContext(rawPosition,nowClock)
 
+    local characterOrientation=orientationSample(
+        "character-root-forward",rawPosition,rootPart.CFrame.LookVector,elapsed,
+        spatialCharacterGeneration,base.characterId,sample.worldContext)
+    local camera=workspace.CurrentCamera
+    local cameraPosition=(camera and camera.CFrame and camera.CFrame.Position) or nil
+    local cameraOrientation=orientationSample(
+        "camera-look-forward",cameraPosition,camera and camera.CFrame and camera.CFrame.LookVector or nil,
+        elapsed,spatialCharacterGeneration,base.characterId,sample.worldContext)
+    local headingDelta=cameraCharacterHeadingDelta(
+        cameraOrientation and cameraOrientation.headingDegrees or nil,
+        characterOrientation and characterOrientation.headingDegrees or nil)
+    sample.characterOrientation=characterOrientation
+    sample.cameraOrientation=cameraOrientation
+    sample.cameraCharacterHeadingDeltaDegrees=headingDelta
+
     if spatialLastValidSample and spatialLastValidSample.characterGeneration==spatialCharacterGeneration then
         local deltaSeconds = nowClock-spatialLastValidSample.clock
         local moved = (rawPosition-spatialLastValidSample.position).Magnitude
@@ -2560,7 +3075,19 @@ function capturePlayerPositionSample(reason,forceSample)
     end
 
     spatialSampleSequence = spatialSampleSequence + 1
+    orientationSampleSequence = orientationSampleSequence + 1
     sample.snapshotSequence = spatialSampleSequence
+    if sample.characterOrientation then
+        sample.characterOrientation.id="character-orientation-"..tostring(orientationSampleSequence)
+        appendCapped(characterOrientationSamples,LIMITS.maxCharacterOrientationSamples,sample.characterOrientation)
+        spatialStats.characterOrientationCaptured=spatialStats.characterOrientationCaptured+1
+    end
+    if sample.cameraOrientation then
+        sample.cameraOrientation.id="camera-orientation-"..tostring(orientationSampleSequence)
+        sample.cameraOrientation.cameraToCharacterHeadingDeltaDegrees=sample.cameraCharacterHeadingDeltaDegrees
+        appendCapped(cameraOrientationSamples,LIMITS.maxCameraOrientationSamples,sample.cameraOrientation)
+        spatialStats.cameraOrientationCaptured=spatialStats.cameraOrientationCaptured+1
+    end
     appendCapped(playerPositionHistory,LIMITS.maxPlayerPositionHistory,sample)
     spatialStats.samplesCaptured = spatialStats.samplesCaptured + 1
     spatialLastValidSample = {
@@ -2673,6 +3200,9 @@ function registerEventPositionSnapshot(historyItem,phase,sample,windowSeconds)
         directionUnit = sample and sample.directionUnit or nil,
         characterState = sample and sample.characterState or nil,
         discontinuity = sample and sample.discontinuity or nil,
+        characterOrientation = sample and sample.characterOrientation or nil,
+        cameraOrientation = sample and sample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees = sample and sample.cameraCharacterHeadingDeltaDegrees or nil,
         sampleKind = sample and sample.sampleKind or "unavailable",
         source = sample and sample.reason or "event-linked",
     }
@@ -2697,6 +3227,9 @@ function trackSpatialLocationEvent(historyItem,positionSample,featureCandidate,a
         position = positionSample.position,
         nearbyWorldObjects = nearbyObjects,
         worldContext = positionSample.worldContext,
+        characterOrientation = positionSample.characterOrientation,
+        cameraOrientation = positionSample.cameraOrientation,
+        cameraCharacterHeadingDeltaDegrees = positionSample.cameraCharacterHeadingDeltaDegrees,
         sampled = true,
         interpolated = false,
     }
@@ -3772,6 +4305,11 @@ local function observeInteractionObject(obj, root, label)
         end
         local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("interaction-activated",true)
         local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
+        local linkedClickObservationId=nil
+        if controlType=="GuiButton.Activated" or controlType=="ClickDetector.MouseClick" then
+            linkedClickObservationId=resolveRecentPendingClick(path,"MouseButton1")
+        end
+        local linkedClickObservation=linkedClickObservationId and clickTargetById[linkedClickObservationId] or nil
         local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)
         local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
             observationSequence+1,sessionElapsedSeconds)
@@ -3803,7 +4341,12 @@ local function observeInteractionObject(obj, root, label)
             characterGeneration=spatialCharacterGeneration,
             beforePositionSample=beforePositionSample,
             actionPositionSample=actionPositionSample,
+            characterOrientationAtAction=actionPositionSample and actionPositionSample.characterOrientation or nil,
+            cameraOrientationAtAction=actionPositionSample and actionPositionSample.cameraOrientation or nil,
+            cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
             nearbyWorldObjects=nearbyWorldObjects,
+            clickObservationId=linkedClickObservationId,
+            clickTargetObservation=linkedClickObservation,
             inferredLocationPurpose=inferSpatialPurpose(feature,path,workflow and workflow.action),
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
@@ -3813,6 +4356,10 @@ local function observeInteractionObject(obj, root, label)
         registerEventPositionSnapshot(historyItem,"at-action",actionPositionSample,nil)
         trackSpatialLocationEvent(historyItem,actionPositionSample,feature,
             (workflow and workflow.action) or "interact",path,nearbyWorldObjects)
+        if linkedClickObservationId then
+            updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,true)
+        end
+
 
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
@@ -4020,6 +4567,9 @@ local function observeInteractionObject(obj, root, label)
                     if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
                         historyItem.clientStateCorroborated=true
                         workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
+                    end
+                    if linkedClickObservationId then
+                        updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,true)
                     end
                     if #transactionFresh>0 or #freshGui>0 or (distance and distance>100 and feature=="travel") then
                         changeCount=changeCount+1
@@ -4350,13 +4900,30 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             unattributedEvents=unattributedInteractionCount,
             recentInteractions=interactionHistory,
             interactionHistoryLimit=LIMITS.maxInteractionHistory,
+            cursorObservationHistory=cursorObservationHistory,
+            clickTargetObservations=clickTargetObservations,
+            clickOutcomeRelationships=clickOutcomeRelationships,
+            characterOrientationSamples=characterOrientationSamples,
+            cameraOrientationSamples=cameraOrientationSamples,
             playerPositionHistory=playerPositionHistory,
             eventPositionSnapshots=eventPositionSnapshots,
             spatialLocationHistory=spatialLocationHistory,
+            cursorClickOrientationSchemas={
+                cursorObservation="30.6.cursor-observation.1",
+                clickTargetObservation="30.6.click-target-observation.1",
+                clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                characterOrientation="30.6.character-orientation.1",
+                cameraOrientation="30.6.camera-orientation.1",
+            },
             spatialSamplingLimits={
                 maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
                 maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
                 maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
+                maxClickTargetObservations=LIMITS.maxClickTargetObservations,
+                maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
+                maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
                 nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
             },
             spatialStats={
@@ -4368,6 +4935,11 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
                 nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
                 nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+                cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
+                clickTargetsCaptured=spatialStats.clickTargetsCaptured,
+                clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                characterOrientationCaptured=spatialStats.characterOrientationCaptured,
+                cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
             },
             workflowStats=workflowStats,
             backfilledOutcomeCandidates=recoveredOutcomeCandidates,
@@ -4412,6 +4984,18 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
         playerPositionHistory=playerPositionHistory,
         eventPositionSnapshots=eventPositionSnapshots,
         spatialLocationHistory=spatialLocationHistory,
+        cursorObservationHistory=cursorObservationHistory,
+        clickTargetObservations=clickTargetObservations,
+        clickOutcomeRelationships=clickOutcomeRelationships,
+        characterOrientationSamples=characterOrientationSamples,
+        cameraOrientationSamples=cameraOrientationSamples,
+        cursorClickOrientationSchemas={
+            cursorObservation="30.6.cursor-observation.1",
+            clickTargetObservation="30.6.click-target-observation.1",
+            clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+            characterOrientation="30.6.character-orientation.1",
+            cameraOrientation="30.6.camera-orientation.1",
+        },
         spatialDiscovery={
             status=(#playerPositionHistory>0 or #eventPositionSnapshots>0)
                 and "captured" or "not-captured",
@@ -4419,6 +5003,11 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             sampleCount=#playerPositionHistory,
             eventSnapshotCount=#eventPositionSnapshots,
             locationEventCount=#spatialLocationHistory,
+            cursorObservationCount=#cursorObservationHistory,
+            clickTargetObservationCount=#clickTargetObservations,
+            clickOutcomeRelationshipCount=#clickOutcomeRelationships,
+            characterOrientationSampleCount=#characterOrientationSamples,
+            cameraOrientationSampleCount=#cameraOrientationSamples,
             nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
             activeWorkspaceOnly=true,
             replicatedStorageTemplatesExcluded=true,
@@ -4526,6 +5115,9 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
     if not beforePosition and rootPart then beforePosition=rootPart.Position end
     local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("input-action",true)
     local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
+    local linkedClickObservationId=(metadata and type(metadata.clickObservationId)=="string")
+        and metadata.clickObservationId or nil
+    local linkedClickObservation=linkedClickObservationId and clickTargetById[linkedClickObservationId] or nil
     local explicitRecording=(priority>=2) and recordWorkflowInteraction(
         activationClock,sessionElapsedSeconds,"automatic-activity-window") or nil
     local transactionId=explicitRecording and explicitRecording.recordingId or (observationSequence+1)
@@ -4552,7 +5144,12 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
         characterGeneration=spatialCharacterGeneration,
         beforePositionSample=beforePositionSample,
         actionPositionSample=actionPositionSample,
+        characterOrientationAtAction=actionPositionSample and actionPositionSample.characterOrientation or nil,
+        cameraOrientationAtAction=actionPositionSample and actionPositionSample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
         nearbyWorldObjects=nearbyWorldObjects,
+        clickObservationId=linkedClickObservationId,
+        clickTargetObservation=linkedClickObservation,
         inferredLocationPurpose=inferSpatialPurpose(featureCandidate,path,actionKind),
         evidenceLevel="interaction-observed", outcomeVerified=false,
         observedInput=true,
@@ -4570,6 +5167,10 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
         actionKind,path,nearbyWorldObjects)
 
     observationSequence=observationSequence+1
+    if linkedClickObservationId then
+        updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,false)
+    end
+
     changeCount=changeCount+1
     changeQueue[#changeQueue+1]={
         path=path:sub(1,400),pathIdentity=nil,class="InputEvent",
@@ -4707,6 +5308,9 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
                 if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
                     historyItem.clientStateCorroborated=true
                     workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
+                end
+                if linkedClickObservationId then
+                    updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,false)
                 end
                 if #transactionFresh>0 or #freshGui>0 then
                     changeCount=changeCount+1
@@ -4895,12 +5499,22 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         local controlKey=("input:%s:%s"):format(inputName,keyName)
         if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.12) then return end
         inputObserverState.buttonsDown[inputName]=true
+        local clickObservation=nil
+        if inputName=="MouseButton1" or inputName=="MouseButton2" then
+            clickObservation=captureClickTargetObservation(inputName,input)
+        end
         local feature=WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
         local path=("LocalPlayer.Input.%s.%s"):format(inputName,keyName):sub(1,220)
         WORKFLOW_HELPERS.recordUniversalInputInteraction(path,"InputBegan."..inputName,action,{
             keyCode=keyName,inputType=inputName,gameProcessed=gameProcessed,
             equippedTools=toolSnapshot.names,equippedToolCount=toolSnapshot.count,
             combatToolContext=toolSnapshot.hasCombatTool,
+            clickObservationId=clickObservation and clickObservation.id or nil,
+            clickTargetConfidence=clickObservation and clickObservation.targetIdentificationConfidence or nil,
+            clickTargetSummary=clickObservation and {
+                topmostGuiPath=clickObservation.topmostGuiTarget and clickObservation.topmostGuiTarget.path or nil,
+                raycastPath=clickObservation.raycastTarget and clickObservation.raycastTarget.path or nil,
+            } or nil,
             userInputState=tostring(input.UserInputState),source="UserInputService.InputBegan"
         },feature,nil)
     end)
@@ -4916,11 +5530,17 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         if not alive or not interactionObserveEnabled then return end
         if input.UserInputType~=Enum.UserInputType.MouseMovement then return end
         local now=os.clock()
+        local delta=input.Delta
+        local magnitude=math.floor(delta.Magnitude*10+0.5)/10
+        local intervalOk=(now-inputObserverState.lastCursorSampleClock)>=LIMITS.cursorMovementSampleSeconds
+        if intervalOk and magnitude>=LIMITS.cursorMovementMinPixels then
+            captureCursorObservation("mouse-movement","MouseMovement",true)
+            inputObserverState.lastCursorSampleClock=now
+            inputObserverState.lastCursorSamplePosition={x=delta.X,y=delta.Y,magnitude=magnitude}
+        end
         local pointerDown=inputObserverState.buttonsDown.MouseButton1
             or inputObserverState.buttonsDown.MouseButton2
         if not pointerDown or now-inputObserverState.lastMovementCapture<0.9 then return end
-        local delta=input.Delta
-        local magnitude=math.floor(delta.Magnitude*10+0.5)/10
         if magnitude<18 then return end
         inputObserverState.lastMovementCapture=now
         local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
@@ -5784,13 +6404,30 @@ local function inspect(requestType, featureRequest)
                 cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=LIMITS.maxInteractionHistory,
+                cursorObservationHistory=cursorObservationHistory,
+                clickTargetObservations=clickTargetObservations,
+                clickOutcomeRelationships=clickOutcomeRelationships,
+                characterOrientationSamples=characterOrientationSamples,
+                cameraOrientationSamples=cameraOrientationSamples,
                 playerPositionHistory=playerPositionHistory,
                 eventPositionSnapshots=eventPositionSnapshots,
                 spatialLocationHistory=spatialLocationHistory,
+                cursorClickOrientationSchemas={
+                    cursorObservation="30.6.cursor-observation.1",
+                    clickTargetObservation="30.6.click-target-observation.1",
+                    clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                    characterOrientation="30.6.character-orientation.1",
+                    cameraOrientation="30.6.camera-orientation.1",
+                },
                 spatialSamplingLimits={
                     maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
                     maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
                     maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                    maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
+                    maxClickTargetObservations=LIMITS.maxClickTargetObservations,
+                    maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                    maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
+                    maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
                     nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
                 },
                 spatialStats={
@@ -5802,6 +6439,11 @@ local function inspect(requestType, featureRequest)
                     eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
                     nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
                     nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+                    cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
+                    clickTargetsCaptured=spatialStats.clickTargetsCaptured,
+                    clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                    characterOrientationCaptured=spatialStats.characterOrientationCaptured,
+                    cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
                 },
                 workflowStats=workflowStats,
                 backfilledOutcomeCandidates=recoveredOutcomeCandidates,
@@ -5873,6 +6515,18 @@ local function inspect(requestType, featureRequest)
             report.playerPositionHistory = playerPositionHistory
             report.eventPositionSnapshots = eventPositionSnapshots
             report.spatialLocationHistory = spatialLocationHistory
+            report.cursorObservationHistory = cursorObservationHistory
+            report.clickTargetObservations = clickTargetObservations
+            report.clickOutcomeRelationships = clickOutcomeRelationships
+            report.characterOrientationSamples = characterOrientationSamples
+            report.cameraOrientationSamples = cameraOrientationSamples
+            report.cursorClickOrientationSchemas = {
+                cursorObservation = "30.6.cursor-observation.1",
+                clickTargetObservation = "30.6.click-target-observation.1",
+                clickOutcomeRelationship = "30.6.click-outcome-relationship.1",
+                characterOrientation = "30.6.character-orientation.1",
+                cameraOrientation = "30.6.camera-orientation.1",
+            }
             report.spatialDiscovery = {
                 status = (#playerPositionHistory>0 or #eventPositionSnapshots>0)
                     and "captured" or "not-captured",
@@ -5880,6 +6534,11 @@ local function inspect(requestType, featureRequest)
                 sampleCount = #playerPositionHistory,
                 eventSnapshotCount = #eventPositionSnapshots,
                 locationEventCount = #spatialLocationHistory,
+                cursorObservationCount = #cursorObservationHistory,
+                clickTargetObservationCount = #clickTargetObservations,
+                clickOutcomeRelationshipCount = #clickOutcomeRelationships,
+                characterOrientationSampleCount = #characterOrientationSamples,
+                cameraOrientationSampleCount = #cameraOrientationSamples,
                 nearbyWorldObjectRadiusStuds = LIMITS.nearbyWorldObjectRadiusStuds,
                 activeWorkspaceOnly = true,
                 replicatedStorageTemplatesExcluded = true,
