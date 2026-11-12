@@ -60,7 +60,7 @@ def _correlation_evidence(event):
     return {"candidate":True,"state":"state-change" in kinds,"gui":"gui-change" in kinds}
 
 _BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
-    "Tool.Equipped","activation-callback-fallback"}
+    "Tool.Equipped","activation-callback-fallback","input-event-callback"}
 
 
 def _baseline_evidence(event):
@@ -70,13 +70,21 @@ def _baseline_evidence(event):
         return {"timing":"unknown","preActivationBaselineAvailable":False}
     source=event.get("baselineSource");timing=event.get("baselineTiming")
     available=event.get("preActivationBaselineAvailable");age=event.get("baselineAgeSeconds")
-    expected_timing="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    if source=="activation-callback-fallback":
+        expected_timing="activation-callback";expected_available=False
+    elif source=="input-event-callback":
+        expected_timing="input-event-callback";expected_available=False
+    else:
+        expected_timing="pre-activation";expected_available=True
     if (source not in _BASELINE_SOURCES or timing!=expected_timing
-            or type(available) is not bool or available!=(timing=="pre-activation")
+            or type(available) is not bool or available is not expected_available
             or (age is not None and (type(age) not in (int,float) or type(age) is bool
                 or not 0<=age<=3600))):
         fail("Malformed interaction baseline timing")
-    return {"timing":timing,"preActivationBaselineAvailable":available}
+    normalized_timing=("activation-callback"
+        if source in {"activation-callback-fallback","input-event-callback"}
+        else "pre-activation")
+    return {"timing":normalized_timing,"preActivationBaselineAvailable":available}
 
 def _session_timing(event,expected_session):
     fields=("sessionId","sessionElapsedSeconds")
@@ -114,24 +122,41 @@ def _interaction_observation_summary(diagnostics):
     accounted=diagnostics["observationWindowsCompleted"]+diagnostics[
         "observationWindowsFailed"]+diagnostics["pendingObservationEvents"]
     actual_accounting=accounted==expected
+    unattributed_callbacks=(diagnostics["callbacksFired"]
+        -(diagnostics["preActivationBaselinesUsed"]+diagnostics["callbackBaselinesUsed"]))
     actual_loss=(diagnostics["pendingObservationEvents"]>0
         or diagnostics["observationWindowsFailed"]>0
         or diagnostics["preActivationCaptureFailures"]>0
-        or diagnostics["callbackBaselinesUsed"]>0)
-    if (diagnostics["preActivationBaselinesUsed"]+diagnostics["callbackBaselinesUsed"]
-            !=diagnostics["callbacksFired"]
+        or diagnostics["callbackBaselinesUsed"]>0
+        or unattributed_callbacks>0)
+    legacy_unattributed_callbacks=(unattributed_callbacks>0
+        and diagnostics["preActivationCaptures"]==0
+        and diagnostics["preActivationBaselinesUsed"]==0
+        and diagnostics["callbackBaselinesUsed"]==0
+        and diagnostics["observationWindowsCompleted"]<expected
+        and diagnostics["observationWindowsFailed"]==0
+        and diagnostics["pendingObservationEvents"]==0
+        and diagnostics.get("observationWindowAccountingValid") is False)
+    baseline_usage_consistent=(diagnostics["preActivationBaselinesUsed"]
+        +diagnostics["callbackBaselinesUsed"]==diagnostics["callbacksFired"]
+        or legacy_unattributed_callbacks)
+    evidence_loss_flag_consistent=(diagnostics.get("evidenceLossPossible") is actual_loss
+        or (legacy_unattributed_callbacks and diagnostics.get("evidenceLossPossible") is False))
+    if (not baseline_usage_consistent
             or diagnostics["preActivationBaselinesUsed"]>diagnostics["preActivationCaptures"]
             or diagnostics["stalePreActivationCaptures"]>diagnostics["callbackBaselinesUsed"]
             or (diagnostics["preActivationCaptures"]>0
                 and diagnostics["preActivationListenersAttached"]==0)
             or diagnostics.get("observationWindowAccountingValid") is not actual_accounting
-            or diagnostics.get("evidenceLossPossible") is not actual_loss
+            or not evidence_loss_flag_consistent
             or diagnostics.get("baselineTimingPolicy")!=
                 "pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback"):
         fail("Inconsistent interaction observation diagnostics")
     limitations=[]
     if diagnostics["callbackBaselinesUsed"]:limitations.append(
         "callback-time baselines may miss synchronous activation changes")
+    if unattributed_callbacks>0:limitations.append(
+        "one or more callbacks had no attributed baseline at export time")
     if diagnostics["preActivationCaptureFailures"]:limitations.append(
         "one or more pre-activation captures failed")
     if diagnostics["observationWindowsFailed"]:limitations.append(

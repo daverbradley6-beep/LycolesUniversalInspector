@@ -1,4 +1,50 @@
+## Update — 2026-11-12 — Uploaded v30.6.53 replay compatibility and evidence confirmation
 ## Update — 2026-11-06 — v30.6.54 GUI target repair, ambiguity handling, and provenance clarity
+
+### Uploaded artifacts ingested
+
+- `Lycoles_v30.6.53_Observation_Part_1_of_3.txt`
+- `Lycoles_v30.6.53_Observation_Part_2_of_3.txt`
+- `Lycoles_v30.6.53_Observation_Part_3_of_3.txt`
+- `Lycoles_v30.6.53_Baseline_Part_1_of_2.zip`
+- `Lycoles_v30.6.53_Baseline_Part_2_of_2.zip`
+
+### Reconstruction and findings
+
+- Reconstructed observation payload (`~7.57M chars`) and replayed through receiver pipeline tooling.
+- Confirmed uploaded observation characteristics match reported live behavior:
+  - 44 click target observations
+  - 44 click outcome relationships
+  - 29 callback-linked correlations
+  - all targets classified as `world` in v30.6.53 export
+  - 44/44 GUI hit-test component failures due to legacy call path:
+    `GetGuiObjectsAtPosition is not a valid member of UserInputService`
+- Merged baseline zips into a complete 985-part set (`scanId 2AC14D1B-8D22-46FB-B163-2E5091C67422`).
+
+### Compiler compatibility fix
+
+- `tools/compile_scan.py` updated to accept legacy baseline metadata patterns seen in uploaded v30.6.53 data:
+  1. Legacy source token `baselineSource="input-event-callback"` with `baselineTiming="input-event-callback"`
+     now normalizes to `activation-callback` for downstream counters.
+  2. Legacy callback-attribution gap case tolerated when diagnostics show incomplete window accounting
+     and no attributed baselines, with explicit limitation:
+     `one or more callbacks had no attributed baseline at export time`.
+- Result: uploaded baseline now compiles successfully (`PASS: 11 feature candidates, 98994 objects`).
+
+### Test coverage added
+
+- `tests/test_compile_scan.py`
+  - `test_input_event_callback_baseline_source_is_accepted`
+  - `test_legacy_unattributed_callback_baseline_is_tolerated_with_loss_flag`
+
+### Validation
+
+- `python3 -m unittest tests.test_compile_scan` → **21 passed**
+- `python3 -m unittest tests.test_compile_scan tests.test_generation_readiness tests.test_generated_result` → **54 passed**
+- `python3 -m unittest discover -s tests` → **1675 passed, 17 skipped**
+
+
+
 
 ### Live issue addressed
 

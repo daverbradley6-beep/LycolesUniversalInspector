@@ -17,6 +17,15 @@ Target experiences are third-party games that the user does not own and cannot o
 
 
 
+
+## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
+
+- Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.
+- Uploaded baseline zips `Lycoles_v30.6.53_Baseline_Part_1_of_2.zip` + `Part_2_of_2.zip` are **overlapping zip subsets**, not byte-concatenation segments. Correct reconstruction is union extraction (not `cat`), yielding complete `part-0001..part-0985` plus manifest.
+- Real legacy interaction history may include `baselineSource="input-event-callback"` and `baselineTiming="input-event-callback"`; compile tooling must normalize this to activation-callback semantics instead of rejecting the scan.
+- Real legacy manifests may report callback/window diagnostics where callbacks fired but no baseline attribution was recorded at export time; compiler should surface this as explicit evidence-loss limitation rather than hard-failing parse.
+
+
 ## Session notes — 2026-11-06 GUI hit-testing repair and ambiguity-safe attribution (v30.6.54)
 
 - `GetGuiObjectsAtPosition` must be called on `PlayerGui`, not `UserInputService`.

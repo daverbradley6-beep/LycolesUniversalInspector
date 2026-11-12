@@ -145,6 +145,20 @@ class ScanCompilerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"observation diagnostics"):
                 compiler.compile_scan(path)
 
+
+    def test_input_event_callback_baseline_source_is_accepted(self):
+        event={"path":"PlayerGui.Shop.Buy","controlType":"InputBegan.MouseButton1",
+            "featureCandidate":"shops","evidenceLevel":"interaction-observed",
+            "outcomeVerified":False,"baselineSource":"input-event-callback",
+            "baselineTiming":"input-event-callback","baselineAgeSeconds":None,
+            "preActivationBaselineAvailable":False}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp);self.parts(path,event=event)
+            result=compiler.compile_scan(path)
+            feature=next(item for item in result["features"] if item["feature"]=="shops")
+            self.assertEqual(feature["activationCallbackBaselineEvents"],1)
+            self.assertEqual(feature["preActivationBaselineEvents"],0)
+
     def test_session_relative_interaction_timing_is_validated(self):
         event={"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated",
             "featureCandidate":"shops","evidenceLevel":"interaction-observed",
@@ -185,6 +199,22 @@ class ScanCompilerTests(unittest.TestCase):
         self.assertEqual(summary["preActivationCaptureFailures"],1)
         self.assertTrue(summary["evidenceLossPossible"])
         self.assertIn("one or more pre-activation captures failed",summary["limitations"])
+
+
+    def test_legacy_unattributed_callback_baseline_is_tolerated_with_loss_flag(self):
+        diagnostics={"callbacksFired":1,"preActivationListenersAttached":2329,
+            "preActivationCaptures":0,"preActivationBaselinesUsed":0,
+            "callbackBaselinesUsed":0,"stalePreActivationCaptures":0,
+            "preActivationCaptureFailures":0,"pendingObservationEvents":0,
+            "observationWindowsExpected":3,"observationWindowsCompleted":2,
+            "observationWindowsFailed":0,"observationWindowAccountingValid":False,
+            "evidenceLossPossible":False,"observationWindowsSeconds":[0.35,1.25,3.0],
+            "baselineTimingPolicy":"pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback"}
+        summary=compiler._interaction_observation_summary(diagnostics)
+        self.assertTrue(summary["evidenceLossPossible"])
+        self.assertFalse(summary["observationWindowAccountingValid"])
+        self.assertIn("one or more callbacks had no attributed baseline at export time",
+            summary["limitations"])
 
 
 
