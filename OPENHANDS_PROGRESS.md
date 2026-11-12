@@ -1,3 +1,59 @@
+## Update — 2026-11-12 — location-readiness root-cause fix + staged navigation evidence model
+
+### Acceptance status updates
+
+- **Potassium compile/load:** **LIVE VERIFIED** for inspector `v30.6.49` (user-confirmed).
+- Spatial evidence capture: confirmed from Bubble Gum export (`400` position samples, `216` event snapshots linked to interactions).
+- Navigation readiness: improved discovery-side classification and readiness gating; live destination validation still pending.
+- Gameplay outcome verification: still unverified in live game (claims remain false by design).
+
+### Implemented
+
+- Reworked navigation readiness logic in `tools/receiver_generation_pipeline.py` from a single strict gate to staged evidence states:
+  1. observed-position
+  2. interaction-position
+  3. outcome-associated-position
+  4. actionable-navigation-candidate (or partial)
+  5. live-validated-destination
+- Added explicit `readinessBlockers` per candidate and richer `evidenceStatus` booleans (`actionableNavigationCandidate`, `readyForLiveValidation`, `liveValidatedDestination`).
+- Added `actionableNavigationCandidates` and `liveValidatedDestinations` metrics to `spatialDiscoveryQualityMetrics.locationClustering`.
+- Added gameplay-outcome filtering for location evidence:
+  - marks transient movement/animation-only keys as non-gameplay outcomes,
+  - preserves full observed outcomes while emitting `meaningfulOutcomeKeys`.
+- Added mechanism derivation from control/event evidence (`GuiButton`, keyboard, prompt, tool, pointer) so GUI-driven interaction sites are not blocked solely by missing world-object mechanisms.
+- Added contextual baseline linkage for nearby objects using **descendant actionable index** from split baseline archives, enabling stronger object-to-location relationships without game-specific hardcoding.
+- Added universal context-based purpose refinement (`_infer_location_purpose_from_context`) using feature candidates, object/context paths, GUI controls, and outcome keys.
+- Enriched `spatialActionOutcomeRelationships` with inferred interaction mechanism/type and candidate GUI targets.
+
+### New regression coverage
+
+- `test_navigation_readiness_rejects_pointer_only_location_without_targets`
+- `test_navigation_readiness_promotes_repeat_gui_flow_candidates`
+- `test_multi_world_contexts_remain_separate_for_same_coordinates`
+- Added fixture helpers for pointer-only, repeat-GUI, and multi-world overlays.
+
+### Bubble Gum before/after (same evidence)
+
+- **Before** (`6996e12` logic):
+  - `navigationCandidatesReady = 0`
+  - `actionableNavigationCandidates` metric unavailable
+- **After** (current):
+  - `actionableNavigationCandidates = 5`
+  - `navigationCandidatesReady = 2`
+  - `liveValidatedDestinations = 0`
+- Detailed per-location analysis artifact:
+  - `build/live-observation-discovery/bubblegum-spatial-discovery/location-readiness-analysis.md`
+
+### Validation completed
+
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py`
+- Targeted discovery/readiness regressions: **4/4 passed**
+- Full receiver pipeline module: `python3 -m unittest tests.test_receiver_generation_pipeline` (**26/26 passed**)
+- Inspector compiler-limit regressions: `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+- Full suite run executed; two existing `tests/test_inspector_ui.py` assertion failures remain unrelated to this pipeline-only change set.
+
+
+
 ## Update — 2026-11-12 — split baseline archives + enriched spatial discovery interpretation
 
 ### Implemented

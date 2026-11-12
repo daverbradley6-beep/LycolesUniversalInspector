@@ -484,3 +484,26 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `coverage.interactionToLocationCoverage` and bounded `coverage.coordinateCoverage`
   - `missingLocationEvidence` examples.
 - Regression coverage added for split-archive ingestion and baseline-aware universal discovery output in `tests/test_receiver_generation_pipeline.py`.
+
+## Update — 2026-11-12 — staged navigation readiness + blocker diagnostics
+
+- Bubble Gum live confirmation: inspector `v30.6.49` compiled/loaded successfully in Potassium (no runtime changes required for this stage).
+- Universal discovery navigation logic in `tools/receiver_generation_pipeline.py` now uses staged evidence states instead of a single strict `validated_destination` gate:
+  - `observed-position`
+  - `interaction-position`
+  - `outcome-associated-position`
+  - `actionable-navigation-candidate` (or `...-partial`)
+  - `live-validated-destination`
+- Candidate evidence now includes explicit blocker diagnostics (`readinessBlockers`) and stage booleans:
+  - `observedPosition`, `interactionPosition`, `outcomeAssociatedPosition`,
+  - `actionableNavigationCandidate`, `readyForLiveValidation`, `liveValidatedDestination`.
+- Nearby world-object relevance now supports baseline descendant-actionability matching (ancestor path in observation, actionable descendant path in baseline), improving object-to-location linkage without hardcoded game rules.
+- Location outcome handling now distinguishes gameplay-relevant outcomes from transient animation/movement noise via `meaningfulOutcomeKeys` while preserving full `observedOutcomes`.
+- Spatial quality metrics now track:
+  - `actionableNavigationCandidates`
+  - `navigationCandidatesReady`
+  - `liveValidatedDestinations`.
+- New regressions added:
+  - pointer-only false-positive rejection,
+  - repeat GUI flow readiness promotion,
+  - multi-world separation at identical coordinates.

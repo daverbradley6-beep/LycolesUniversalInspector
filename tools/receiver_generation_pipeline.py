@@ -1622,6 +1622,133 @@ def _build_universal_discovery_report(
                 best = sample
         return best
 
+
+    baseline_actionable_descendant_index: dict[str, dict[str, Any]] = {}
+    for actionable_path, entry in baseline_actionable_index.items():
+        if not isinstance(actionable_path, str):
+            continue
+        segments = [segment for segment in actionable_path.split(".") if segment]
+        if len(segments) < 2:
+            continue
+        mechanisms = entry.get("mechanisms") if isinstance(entry, dict) and isinstance(entry.get("mechanisms"), dict) else {}
+        interaction_score = float(_numeric(entry.get("interactionScore")) or 0.0) if isinstance(entry, dict) else 0.0
+        for idx in range(1, len(segments)):
+            ancestor_path = ".".join(segments[:idx])
+            if not ancestor_path.lower().startswith("workspace."):
+                continue
+            bucket = baseline_actionable_descendant_index.setdefault(ancestor_path, {
+                "descendantCount": 0,
+                "interactionScore": 0.0,
+                "mechanisms": {},
+            })
+            bucket["descendantCount"] += 1
+            bucket["interactionScore"] += interaction_score
+            for mechanism, count in mechanisms.items():
+                if isinstance(mechanism, str) and type(count) is int and count > 0:
+                    bucket["mechanisms"][mechanism] = bucket["mechanisms"].get(mechanism, 0) + count
+
+    transient_outcome_tokens = (
+        "humanoid.activeanimation",
+        "humanoid.activeanimations",
+        "humanoid.movedirection",
+        "humanoid.floormaterial",
+        "humanoid.walkspeed",
+        "humanoid.jumppower",
+        "velocitymagnitude",
+        "rootpart.velocity",
+        ".position",
+        ".cframe",
+    )
+
+    def _is_gameplay_outcome_key(key: str) -> bool:
+        lower = key.lower()
+        if any(token in lower for token in transient_outcome_tokens):
+            return False
+        if lower.startswith("camera."):
+            return False
+        return True
+
+    def _derived_mechanisms(control_types: Sequence[str], likely_paths: Sequence[str], nearby_mechanisms: Sequence[str]) -> list[str]:
+        out: set[str] = {item for item in nearby_mechanisms if isinstance(item, str)}
+        for control_type in control_types:
+            if not isinstance(control_type, str):
+                continue
+            if control_type.startswith("GuiButton."):
+                out.add("gui-button")
+            elif control_type.startswith("InputBegan.Keyboard"):
+                out.add("keybind")
+            elif control_type.startswith("InputBegan.MouseButton"):
+                out.add("pointer-input")
+            elif control_type.startswith("ProximityPrompt."):
+                out.add("prompt")
+            elif control_type.startswith("Tool."):
+                out.add("tool")
+        for path in likely_paths:
+            if isinstance(path, str) and path.lower().startswith("localplayer.playergui."):
+                out.add("gui-button")
+        return sorted(out)
+
+    def _infer_location_purpose_from_context(
+        *,
+        existing_purpose: Optional[str],
+        feature_candidates: Sequence[str],
+        likely_paths: Sequence[str],
+        workspace_paths: Sequence[str],
+        gui_controls: Sequence[str],
+        outcome_keys: Sequence[str],
+    ) -> str:
+        if isinstance(existing_purpose, str) and existing_purpose and existing_purpose != "uncategorized":
+            return existing_purpose
+
+        scores: dict[str, float] = {
+            "shops-or-upgrades": 0.0,
+            "eggs-or-hatching": 0.0,
+            "travel-or-teleport": 0.0,
+            "rewards-or-claims": 0.0,
+            "quests-and-objectives": 0.0,
+            "progression-or-training": 0.0,
+        }
+
+        for candidate in feature_candidates:
+            low = candidate.lower()
+            if "shop" in low or "upgrade" in low or "purchase" in low:
+                scores["shops-or-upgrades"] += 2.0
+            if "egg" in low or "hatch" in low or "pet" in low:
+                scores["eggs-or-hatching"] += 2.0
+            if "reward" in low or "claim" in low:
+                scores["rewards-or-claims"] += 2.0
+            if "quest" in low:
+                scores["quests-and-objectives"] += 2.0
+            if "travel" in low or "portal" in low:
+                scores["travel-or-teleport"] += 2.0
+
+        context_paths = [
+            item.lower()
+            for item in list(likely_paths) + list(workspace_paths) + list(gui_controls)
+            if isinstance(item, str)
+        ]
+        for low in context_paths:
+            if any(token in low for token in ("shop", "vendor", "merchant", "upgrade", "buy", "purchase")):
+                scores["shops-or-upgrades"] += 1.0
+            if any(token in low for token in ("egg", "hatch", "pet", "incubator")):
+                scores["eggs-or-hatching"] += 1.0
+            if any(token in low for token in ("reward", "claim", "chest", "prize", "gift")):
+                scores["rewards-or-claims"] += 1.0
+            if any(token in low for token in ("quest", "mission", "objective")):
+                scores["quests-and-objectives"] += 1.0
+            if any(token in low for token in ("travel", "portal", "spawn", "teleport", "gate", "island")):
+                scores["travel-or-teleport"] += 1.0
+
+        for key in outcome_keys:
+            low = key.lower()
+            if any(token in low for token in ("coin", "gem", "currency", "leaderstats")):
+                scores["progression-or-training"] += 0.8
+            if any(token in low for token in ("bubble", "strength", "hatch", "xp", "level")):
+                scores["progression-or-training"] += 1.0
+
+        best = max(scores.items(), key=lambda item: item[1])
+        return best[0] if best[1] >= 1.5 else "uncategorized"
+
     clusters: dict[tuple[Any, ...], dict[str, Any]] = {}
     sequence_to_location: dict[int, str] = {}
     transaction_to_location: dict[str, str] = {}
@@ -1669,13 +1796,26 @@ def _build_universal_discovery_report(
                 continue
             mechanisms = [item for item in (obj.get("interactionMechanisms") if isinstance(obj.get("interactionMechanisms"), list) else []) if isinstance(item, str)]
             baseline_entry = baseline_actionable_index.get(normalized_path)
+            baseline_descendant_entry = baseline_actionable_descendant_index.get(normalized_path)
             if isinstance(baseline_entry, dict):
                 for mechanism, count in (baseline_entry.get("mechanisms") if isinstance(baseline_entry.get("mechanisms"), dict) else {}).items():
                     if isinstance(mechanism, str) and type(count) is int and count > 0 and mechanism not in mechanisms:
                         mechanisms.append(mechanism)
+            if isinstance(baseline_descendant_entry, dict):
+                for mechanism, count in (baseline_descendant_entry.get("mechanisms") if isinstance(baseline_descendant_entry.get("mechanisms"), dict) else {}).items():
+                    if isinstance(mechanism, str) and type(count) is int and count > 0 and mechanism not in mechanisms:
+                        mechanisms.append(mechanism)
+
             score = float(_numeric(obj.get("actionableScore")) or 0.0)
             if isinstance(baseline_entry, dict):
                 score += float(_numeric(baseline_entry.get("interactionScore")) or 0.0)
+            if isinstance(baseline_descendant_entry, dict):
+                score += min(
+                    4.0,
+                    float(_numeric(baseline_descendant_entry.get("interactionScore")) or 0.0) * 0.15
+                    + float(baseline_descendant_entry.get("descendantCount") or 0) * 0.4,
+                )
+
             decorative = any(token in low_path for token in ("decoration", "foliage", "mountain", "tree", "rock", "mesh", "terrain", "barrier"))
             if mechanisms:
                 tier = "actionable"
@@ -1689,11 +1829,13 @@ def _build_universal_discovery_report(
             else:
                 tier = "uncertain"
                 uncertain_nearby_candidates += 1
+
             filtered_nearby.append({
                 "path": normalized_path,
                 "tier": tier,
                 "mechanisms": mechanisms,
                 "distanceStuds": _numeric(obj.get("distanceStuds")),
+                "derivedFromBaseline": isinstance(baseline_entry, dict) or isinstance(baseline_descendant_entry, dict),
             })
 
         object_anchor = None
@@ -1763,7 +1905,7 @@ def _build_universal_discovery_report(
         control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else "unknown"
         action_kind = event.get("actionKind") if isinstance(event.get("actionKind"), str) else "unknown"
         feature_candidate = event.get("featureCandidate") if isinstance(event.get("featureCandidate"), str) else None
-        purpose = event.get("inferredLocationPurpose") if isinstance(event.get("inferredLocationPurpose"), str) else _system_bucket_from_event(feature_candidate, path, action_kind)
+        purpose = event.get("inferredLocationPurpose") if isinstance(event.get("inferredLocationPurpose"), str) else _infer_system_category(path, feature_candidate, action_kind)
 
         if path:
             cluster["paths"][path] = cluster["paths"].get(path, 0) + 1
@@ -1837,17 +1979,10 @@ def _build_universal_discovery_report(
 
     location_registry: list[dict[str, Any]] = []
     for cluster in sorted(clusters.values(), key=lambda value: (-value["count"], value["id"]))[:140]:
-        purpose = sorted(cluster["purposes"].items(), key=lambda item: (-item[1], item[0]))[0][0] if cluster["purposes"] else "uncategorized"
-        confidence_score = min(1.0, 0.2 + (cluster["count"] / 10.0) + (len(cluster["transactions"]) / 10.0))
-        representative = {
-            "x": round(cluster["sumX"] / cluster["count"], 4),
-            "y": round(cluster["sumY"] / cluster["count"], 4),
-            "z": round(cluster["sumZ"] / cluster["count"], 4),
-        }
-        range_box = {
-            "min": {"x": round(cluster["minX"], 4), "y": round(cluster["minY"], 4), "z": round(cluster["minZ"], 4)},
-            "max": {"x": round(cluster["maxX"], 4), "y": round(cluster["maxY"], 4), "z": round(cluster["maxZ"], 4)},
-        }
+        control_types = [item[0] for item in sorted(cluster["controlTypes"].items(), key=lambda item: (-item[1], item[0]))]
+        action_kinds = [item[0] for item in sorted(cluster["actionKinds"].items(), key=lambda item: (-item[1], item[0]))]
+        feature_candidates = [item[0] for item in sorted(cluster["featureCandidates"].items(), key=lambda item: (-item[1], item[0]))]
+        likely_target_paths = [item[0] for item in sorted(cluster["paths"].items(), key=lambda item: (-item[1], item[0]))[:12]]
         actionable_world_paths = [
             item[0]
             for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))
@@ -1858,15 +1993,49 @@ def _build_universal_discovery_report(
             for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))
             if cluster["nearbyTier"].get(item[0]) != "actionable"
         ]
-        if cluster["outcomeStateKeys"]:
+        associated_gui_controls = [item[0] for item in sorted(cluster["guiControls"].items(), key=lambda item: (-item[1], item[0]))[:14]]
+        nearby_mechanisms = [item[0] for item in sorted(cluster["nearbyMechanisms"].items(), key=lambda item: (-item[1], item[0]))]
+        derived_mechanisms = _derived_mechanisms(control_types, likely_target_paths, nearby_mechanisms)
+
+        observed_outcomes = [
+            {"key": item[0], "occurrences": item[1], "gameplayRelevant": _is_gameplay_outcome_key(item[0])}
+            for item in sorted(cluster["outcomeStateKeys"].items(), key=lambda item: (-item[1], item[0]))[:20]
+        ]
+        meaningful_outcome_keys = [item["key"] for item in observed_outcomes if item["gameplayRelevant"]]
+
+        representative = {
+            "x": round(cluster["sumX"] / cluster["count"], 4),
+            "y": round(cluster["sumY"] / cluster["count"], 4),
+            "z": round(cluster["sumZ"] / cluster["count"], 4),
+        }
+        range_box = {
+            "min": {"x": round(cluster["minX"], 4), "y": round(cluster["minY"], 4), "z": round(cluster["minZ"], 4)},
+            "max": {"x": round(cluster["maxX"], 4), "y": round(cluster["maxY"], 4), "z": round(cluster["maxZ"], 4)},
+        }
+
+        confidence_score = min(1.0, 0.2 + (cluster["count"] / 10.0) + (len(cluster["transactions"]) / 10.0))
+        if meaningful_outcome_keys:
             confidence_score = min(1.0, confidence_score + 0.12)
-        if len(actionable_world_paths) == 0 and len(uncertain_world_paths) > 0:
+        elif len(associated_gui_controls) >= 2 and any(item.startswith("GuiButton.") for item in control_types):
+            confidence_score = min(1.0, confidence_score + 0.06)
+        if len(actionable_world_paths) == 0 and len(associated_gui_controls) == 0 and len(uncertain_world_paths) > 0:
             confidence_score = max(0.0, confidence_score - 0.08)
+
+        raw_purpose = sorted(cluster["purposes"].items(), key=lambda item: (-item[1], item[0]))[0][0] if cluster["purposes"] else "uncategorized"
+        purpose = _infer_location_purpose_from_context(
+            existing_purpose=raw_purpose,
+            feature_candidates=feature_candidates,
+            likely_paths=likely_target_paths,
+            workspace_paths=actionable_world_paths + uncertain_world_paths,
+            gui_controls=associated_gui_controls,
+            outcome_keys=meaningful_outcome_keys,
+        )
+
         missing_evidence = []
-        if len(actionable_world_paths) == 0:
-            missing_evidence.append("No actionable nearby world object observed")
-        if len(cluster["outcomeStateKeys"]) == 0:
-            missing_evidence.append("No outcome-linked state change observed")
+        if len(actionable_world_paths) == 0 and len(associated_gui_controls) == 0:
+            missing_evidence.append("No actionable world anchor or GUI target observed")
+        if len(meaningful_outcome_keys) == 0:
+            missing_evidence.append("No gameplay-linked outcome signal (state changes are transient or absent)")
         if len(cluster["transactions"]) <= 1:
             missing_evidence.append("Single-transaction evidence only")
 
@@ -1877,24 +2046,22 @@ def _build_universal_discovery_report(
             "positionBounds": range_box,
             "supportingInteractionCount": cluster["count"],
             "supportingTransactionCount": len(cluster["transactions"]),
-            "controlTypes": [item[0] for item in sorted(cluster["controlTypes"].items(), key=lambda item: (-item[1], item[0]))],
-            "actionKinds": [item[0] for item in sorted(cluster["actionKinds"].items(), key=lambda item: (-item[1], item[0]))],
-            "featureCandidates": [item[0] for item in sorted(cluster["featureCandidates"].items(), key=lambda item: (-item[1], item[0]))],
-            "likelyTargetPaths": [item[0] for item in sorted(cluster["paths"].items(), key=lambda item: (-item[1], item[0]))[:12]],
+            "controlTypes": control_types,
+            "actionKinds": action_kinds,
+            "featureCandidates": feature_candidates,
+            "likelyTargetPaths": likely_target_paths,
             "relevantWorkspaceObjectPaths": actionable_world_paths[:16],
             "nearbyWorldObjectPaths": (actionable_world_paths + uncertain_world_paths)[:16],
             "uncertainNearbyObjectPaths": uncertain_world_paths[:16],
-            "interactionMechanisms": [item[0] for item in sorted(cluster["nearbyMechanisms"].items(), key=lambda item: (-item[1], item[0]))],
-            "associatedGuiControls": [item[0] for item in sorted(cluster["guiControls"].items(), key=lambda item: (-item[1], item[0]))[:14]],
+            "interactionMechanisms": derived_mechanisms,
+            "associatedGuiControls": associated_gui_controls,
             "requiredActivationConditions": [item[0] for item in sorted(cluster["requiredConditions"].items(), key=lambda item: (-item[1], item[0]))[:16]],
-            "observedOutcomes": [
-                {"key": item[0], "occurrences": item[1]}
-                for item in sorted(cluster["outcomeStateKeys"].items(), key=lambda item: (-item[1], item[0]))[:20]
-            ],
+            "observedOutcomes": observed_outcomes,
+            "meaningfulOutcomeKeys": meaningful_outcome_keys[:20],
             "worldContexts": [item[0] for item in sorted(cluster["worldContexts"].items(), key=lambda item: (-item[1], item[0]))[:8]],
             "characterGenerations": sorted(cluster["characterGenerations"]),
             "revisited": len(cluster["transactions"]) > 1,
-            "outcomeLinked": len(cluster["outcomeStateKeys"]) > 0,
+            "outcomeLinked": len(meaningful_outcome_keys) > 0,
             "proximityEvidenceOnly": True,
             "confidence": {
                 "score": round(confidence_score, 3),
@@ -1912,7 +2079,7 @@ def _build_universal_discovery_report(
                 item
                 for item in (
                     "Validate deterministic navigation path" if len(cluster["beforePositions"]) == 0 else None,
-                    "Collect repeat run with explicit outcome evidence" if len(cluster["outcomeStateKeys"]) == 0 else None,
+                    "Collect repeat run with explicit gameplay-linked outcomes" if len(meaningful_outcome_keys) == 0 else None,
                 )
                 if item
             ],
@@ -1936,6 +2103,21 @@ def _build_universal_discovery_report(
         if location_id is None:
             continue
         positional = row_by_sequence.get(seq) if isinstance(seq, int) else {}
+        action_payload = relation.get("action") if isinstance(relation.get("action"), dict) else {}
+        action_type = action_payload.get("type") if isinstance(action_payload.get("type"), str) else None
+        inferred_relationship_mechanism = None
+        if isinstance(action_type, str):
+            if action_type.startswith("GuiButton."):
+                inferred_relationship_mechanism = "gui-button"
+            elif action_type.startswith("InputBegan.Keyboard"):
+                inferred_relationship_mechanism = "keybind"
+            elif action_type.startswith("InputBegan.MouseButton"):
+                inferred_relationship_mechanism = "pointer-input"
+            elif action_type.startswith("ProximityPrompt."):
+                inferred_relationship_mechanism = "prompt"
+            elif action_type.startswith("Tool."):
+                inferred_relationship_mechanism = "tool"
+
         spatial_relationships.append({
             "id": "spatial_" + str(relation.get("id") or "unknown"),
             "relationshipId": relation.get("id"),
@@ -1947,10 +2129,13 @@ def _build_universal_discovery_report(
             "atActionPosition": positional.get("action") if isinstance(positional, dict) else None,
             "postActionPosition": positional.get("post") if isinstance(positional, dict) else None,
             "observationWindows": positional.get("observationWindows") if isinstance(positional, dict) else relation.get("observationWindows"),
-            "action": relation.get("action") if isinstance(relation.get("action"), dict) else {},
+            "action": action_payload,
+            "interactionType": action_type,
+            "interactionMechanism": inferred_relationship_mechanism,
             "objectIdentity": {
-                "targetPath": (relation.get("action") or {}).get("targetPath") if isinstance(relation.get("action"), dict) else None,
+                "targetPath": action_payload.get("targetPath") if isinstance(action_payload.get("targetPath"), str) else None,
                 "candidateWorldObjects": (location_by_id.get(location_id) or {}).get("relevantWorkspaceObjectPaths", [])[:8],
+                "candidateGuiTargets": (location_by_id.get(location_id) or {}).get("associatedGuiControls", [])[:8],
             },
             "stateSignalCount": len(relation.get("stateBeforeAfter") or []),
             "stateBeforeAfter": relation.get("stateBeforeAfter") if isinstance(relation.get("stateBeforeAfter"), list) else [],
@@ -1971,23 +2156,92 @@ def _build_universal_discovery_report(
             },
         })
 
+    source_provenance = payload.get("sourceProvenance") if isinstance(payload.get("sourceProvenance"), dict) else {}
+    runtime_verified = bool(payload.get("runtimeVerified") is True or source_provenance.get("runtimeVerified") is True)
+    gameplay_verified = bool(payload.get("gameplayVerified") is True or source_provenance.get("gameplayVerified") is True)
+
     navigation_candidates: list[dict[str, Any]] = []
+    actionable_navigation_candidates = 0
     ready_navigation_candidates = 0
+    live_validated_destinations = 0
+
     for location in location_registry[:120]:
         before_positions = location.get("beforePositions") if isinstance(location.get("beforePositions"), list) else []
         approach_position = before_positions[0] if before_positions else None
+
         observed_location = isinstance(location.get("representativePosition"), dict)
         interaction_associated = (location.get("supportingInteractionCount") or 0) > 0
         outcome_associated = bool(location.get("outcomeLinked"))
-        validated_destination = (
+
+        world_targets = location.get("relevantWorkspaceObjectPaths") or []
+        gui_targets = location.get("associatedGuiControls") or []
+        has_world_target = len(world_targets) > 0
+        has_gui_target = len(gui_targets) > 0
+        has_action_target = has_world_target or has_gui_target
+
+        mechanisms = [item for item in (location.get("interactionMechanisms") or []) if isinstance(item, str)]
+        has_mechanism = len(mechanisms) > 0
+        pointer_only = has_mechanism and set(mechanisms) == {"pointer-input"}
+        if pointer_only and not has_world_target and not has_gui_target:
+            has_mechanism = False
+
+        gui_flow_evidence = has_gui_target and (
+            len(gui_targets) >= 2
+            or any(isinstance(item, str) and item.startswith("GuiButton.") for item in (location.get("controlTypes") or []))
+        )
+
+        actionable_candidate = (
             observed_location
             and interaction_associated
-            and outcome_associated
-            and len(location.get("relevantWorkspaceObjectPaths") or []) > 0
-            and (location.get("confidence") or {}).get("score", 0) >= 0.78
+            and has_action_target
+            and has_mechanism
+            and (outcome_associated or gui_flow_evidence)
         )
-        if validated_destination:
+        if actionable_candidate:
+            actionable_navigation_candidates += 1
+
+        repeated_support = (location.get("supportingTransactionCount") or 0) >= 2 or (location.get("supportingInteractionCount") or 0) >= 3
+        ready_for_live_validation = (
+            actionable_candidate
+            and (location.get("confidence") or {}).get("score", 0) >= 0.72
+            and repeated_support
+        )
+        if ready_for_live_validation:
             ready_navigation_candidates += 1
+
+        live_validated = ready_for_live_validation and runtime_verified and gameplay_verified
+        if live_validated:
+            live_validated_destinations += 1
+
+        readiness_blockers: list[str] = []
+        if not has_action_target:
+            readiness_blockers.append("No actionable target path (world anchor or GUI control)")
+        if not has_mechanism:
+            readiness_blockers.append("No reliable interaction mechanism evidence")
+        if not (outcome_associated or gui_flow_evidence):
+            readiness_blockers.append("No gameplay-linked outcome or repeatable GUI flow evidence")
+        if actionable_candidate and not repeated_support:
+            readiness_blockers.append("Insufficient repeat observations (single transaction and low interaction count)")
+        if actionable_candidate and (location.get("confidence") or {}).get("score", 0) < 0.72:
+            readiness_blockers.append("Location confidence below live-validation-ready threshold")
+        if ready_for_live_validation and not live_validated:
+            readiness_blockers.append("Live gameplay validation not yet performed")
+
+        if live_validated:
+            validation_status = "live-validated-destination"
+        elif ready_for_live_validation:
+            validation_status = "actionable-navigation-candidate"
+        elif actionable_candidate:
+            validation_status = "actionable-navigation-candidate-partial"
+        elif outcome_associated:
+            validation_status = "outcome-associated-position"
+        elif interaction_associated:
+            validation_status = "interaction-position"
+        elif observed_location:
+            validation_status = "observed-position"
+        else:
+            validation_status = "insufficient-evidence"
+
         navigation_candidates.append({
             "destinationId": location.get("id"),
             "candidatePurpose": location.get("candidatePurpose"),
@@ -1995,22 +2249,27 @@ def _build_universal_discovery_report(
             "observedPlayerInteractionCoordinates": location.get("representativePosition"),
             "suggestedApproachPosition": approach_position,
             "interactionRadiusStuds": None,
-            "requiredActionMechanisms": location.get("interactionMechanisms") or location.get("controlTypes") or [],
+            "requiredActionMechanisms": mechanisms,
             "prerequisites": location.get("requiredActivationConditions") or [],
             "worldAreaIdentity": (location.get("worldContexts") or [None])[0],
             "confidence": location.get("confidence"),
-            "validationStatus": (
-                "validated-destination"
-                if validated_destination
-                else ("outcome-associated-location" if outcome_associated else "interaction-associated-location")
-            ),
+            "validationStatus": validation_status,
             "evidenceStatus": {
-                "observedLocation": observed_location,
-                "interactionAssociatedLocation": interaction_associated,
-                "outcomeAssociatedLocation": outcome_associated,
-                "validatedDestination": validated_destination,
+                "observedPosition": observed_location,
+                "interactionPosition": interaction_associated,
+                "outcomeAssociatedPosition": outcome_associated,
+                "actionableNavigationCandidate": actionable_candidate,
+                "readyForLiveValidation": ready_for_live_validation,
+                "liveValidatedDestination": live_validated,
             },
-            "targetObjectPaths": location.get("relevantWorkspaceObjectPaths") or location.get("nearbyWorldObjectPaths") or location.get("likelyTargetPaths") or [],
+            "targetObjectPaths": world_targets,
+            "targetGuiPaths": gui_targets,
+            "supportingEvidence": {
+                "supportingInteractionCount": location.get("supportingInteractionCount"),
+                "supportingTransactionCount": location.get("supportingTransactionCount"),
+                "meaningfulOutcomeKeys": location.get("meaningfulOutcomeKeys") or [],
+            },
+            "readinessBlockers": readiness_blockers,
             "limitations": [
                 "Approach positions are observational, not guaranteed valid navigation meshes",
                 "Server-side interaction acceptance must be validated in controlled runs",
@@ -2038,7 +2297,9 @@ def _build_universal_discovery_report(
             "outcomeLinkedLocations": sum(1 for item in location_registry if item.get("outcomeLinked") is True),
             "spatialActionOutcomeRelationshipCount": len(spatial_relationships),
             "navigationCandidateCount": len(navigation_candidates),
+            "actionableNavigationCandidates": actionable_navigation_candidates,
             "navigationCandidatesReady": ready_navigation_candidates,
+            "liveValidatedDestinations": live_validated_destinations,
         },
         "nearbyObjectRelevance": {
             "actionableCandidateCount": actionable_nearby_candidates,
@@ -2398,7 +2659,9 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Workflow transactions: {((metrics.get('workflowCompleteness') or {}).get('transactionCount') if isinstance(metrics, dict) else None)}",
         f"- Functional locations clustered: {(spatial_metrics.get('locationClustering') or {}).get('functionalLocationCount') if isinstance(spatial_metrics, dict) else None}",
         f"- Duplicate observations merged: {(spatial_metrics.get('locationClustering') or {}).get('duplicateObservationsMerged') if isinstance(spatial_metrics, dict) else None}",
+        f"- Actionable navigation candidates: {(spatial_metrics.get('locationClustering') or {}).get('actionableNavigationCandidates') if isinstance(spatial_metrics, dict) else None}",
         f"- Navigation candidates ready: {(spatial_metrics.get('locationClustering') or {}).get('navigationCandidatesReady') if isinstance(spatial_metrics, dict) else None}",
+        f"- Live-validated destinations: {(spatial_metrics.get('locationClustering') or {}).get('liveValidatedDestinations') if isinstance(spatial_metrics, dict) else None}",
         f"- Event snapshots with coordinates: {(spatial_metrics.get('eventPositionSnapshots') or {}).get('withCoordinates') if isinstance(spatial_metrics, dict) else None}",
         f"- Interaction→location coverage: {(spatial_metrics.get('coverage') or {}).get('interactionToLocationCoverage') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",

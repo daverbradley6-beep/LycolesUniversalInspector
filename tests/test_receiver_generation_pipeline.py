@@ -646,6 +646,168 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+
+
+def make_pointer_only_observation_export(path, scan_id="pointer-only-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 111,
+        "gameName": "Pointer Only Test",
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "tx-1",
+                    "controlType": "InputBegan.MouseButton2",
+                    "actionKind": "interact",
+                    "path": "LocalPlayer.Input.MouseButton2.None",
+                    "stateChanges": [
+                        {"key": "Character.Humanoid.ActiveAnimations", "before": 1, "after": 2},
+                    ],
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "tx-1",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 10, "y": 4, "z": 15},
+                        "worldContext": {"path": "Workspace.World.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Foliage.TreeA", "class": "Part", "distanceStuds": 3.4}
+                    ],
+                }
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def make_gui_repeat_observation_export(path, scan_id="gui-repeat-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 222,
+        "gameName": "GUI Repeat Test",
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "tx-1",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.Shop.Frame.Items.A.Button",
+                    "stateChanges": [{"key": "Character.Humanoid.ActiveAnimations", "before": 1, "after": 2}],
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "tx-1",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 30.1, "y": 9.0, "z": -102.4},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.ShopKeeper", "class": "Model", "distanceStuds": 5.0}
+                    ],
+                },
+                {
+                    "sequence": 2,
+                    "transactionId": "tx-1",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.Shop.Frame.Items.B.Button",
+                    "stateChanges": [{"key": "Character.Humanoid.ActiveAnimationCount", "before": 3, "after": 4}],
+                    "actionPositionSample": {
+                        "interactionSequence": 2,
+                        "transactionId": "tx-1",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 30.2, "y": 9.0, "z": -102.2},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.ShopKeeper", "class": "Model", "distanceStuds": 5.2}
+                    ],
+                },
+                {
+                    "sequence": 3,
+                    "transactionId": "tx-2",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "shops",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.Shop.Frame.Close",
+                    "stateChanges": [{"key": "Character.Humanoid.MoveDirectionMagnitude", "before": 0, "after": 1}],
+                    "actionPositionSample": {
+                        "interactionSequence": 3,
+                        "transactionId": "tx-2",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 30.0, "y": 9.0, "z": -102.0},
+                        "worldContext": {"path": "Workspace.Worlds.Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {"path": "Workspace.Worlds.Overworld.ShopKeeper", "class": "Model", "distanceStuds": 5.1}
+                    ],
+                },
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def make_multi_world_observation_export(path, scan_id="multi-world-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 333,
+        "gameName": "Multi World Test",
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "tx-a",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "travel",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.FastTravel.A.Button",
+                    "stateChanges": [{"key": "leaderstats.Coins", "before": 10, "after": 11}],
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "tx-a",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 0, "y": 5, "z": 0},
+                        "worldContext": {"path": "Workspace.Worlds.Alpha"},
+                    },
+                    "nearbyWorldObjects": [{"path": "Workspace.Worlds.Alpha.FastTravel", "class": "Model", "distanceStuds": 4.0}],
+                },
+                {
+                    "sequence": 2,
+                    "transactionId": "tx-b",
+                    "controlType": "GuiButton.Activated",
+                    "featureCandidate": "travel",
+                    "path": "LocalPlayer.PlayerGui.ScreenGui.FastTravel.B.Button",
+                    "stateChanges": [{"key": "leaderstats.Coins", "before": 11, "after": 12}],
+                    "actionPositionSample": {
+                        "interactionSequence": 2,
+                        "transactionId": "tx-b",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 0, "y": 5, "z": 0},
+                        "worldContext": {"path": "Workspace.Worlds.Beta"},
+                    },
+                    "nearbyWorldObjects": [{"path": "Workspace.Worlds.Beta.FastTravel", "class": "Model", "distanceStuds": 4.2}],
+                },
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 class ReceiverGenerationPipelineTests(unittest.TestCase):
     def test_generate_from_parts_runs_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1055,6 +1217,82 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("Lycoles Universal Discovery Summary", summary_text)
             self.assertIn("Top discovered systems", summary_text)
             self.assertIn("Baseline archive integrity", summary_text)
+
+
+    def test_navigation_readiness_rejects_pointer_only_location_without_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "pointer-only.json"
+            make_pointer_only_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover location purpose",
+                scenario_name="pointer-only",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            navigation = report.get("navigationCandidates") or []
+            self.assertGreaterEqual(len(navigation), 1)
+            first = navigation[0]
+            self.assertFalse((first.get("evidenceStatus") or {}).get("actionableNavigationCandidate"))
+            self.assertIn(first.get("validationStatus"), {"interaction-position", "observed-position", "outcome-associated-position"})
+            blockers = first.get("readinessBlockers") or []
+            self.assertTrue(any("No actionable target path" in item for item in blockers))
+
+            clustering = (report.get("spatialDiscoveryQualityMetrics") or {}).get("locationClustering") or {}
+            self.assertEqual(clustering.get("actionableNavigationCandidates"), 0)
+            self.assertEqual(clustering.get("navigationCandidatesReady"), 0)
+
+    def test_navigation_readiness_promotes_repeat_gui_flow_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "gui-repeat.json"
+            make_gui_repeat_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover interaction destinations",
+                scenario_name="gui-repeat",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            clustering = (report.get("spatialDiscoveryQualityMetrics") or {}).get("locationClustering") or {}
+            self.assertGreaterEqual(clustering.get("actionableNavigationCandidates", 0), 1)
+            self.assertGreaterEqual(clustering.get("navigationCandidatesReady", 0), 1)
+
+            actionable = [
+                item
+                for item in (report.get("navigationCandidates") or [])
+                if (item.get("validationStatus") or "").startswith("actionable-navigation-candidate")
+            ]
+            self.assertGreaterEqual(len(actionable), 1)
+            self.assertTrue(any(len(item.get("targetGuiPaths") or []) > 0 for item in actionable))
+            self.assertTrue(all((item.get("evidenceStatus") or {}).get("liveValidatedDestination") is False for item in actionable))
+
+    def test_multi_world_contexts_remain_separate_for_same_coordinates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "multi-world.json"
+            make_multi_world_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover travel destinations",
+                scenario_name="multi-world",
+            )
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            locations = report.get("functionalLocationRegistry") or []
+            self.assertEqual(len(locations), 2)
+
+            world_identities = set()
+            for location in locations:
+                worlds = location.get("worldContexts") or []
+                self.assertGreaterEqual(len(worlds), 1)
+                world_identities.add(worlds[0])
+            self.assertEqual(len(world_identities), 2)
+            self.assertTrue(any((location.get("candidatePurpose") or "") in {"movement-and-navigation", "travel-or-teleport"} for location in locations))
 
 
     def test_run_live_observation_scenario_succeeds_for_matching_automatic_workflow(self):
