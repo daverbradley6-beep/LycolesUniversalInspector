@@ -442,7 +442,58 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                         {"key": "LocalPlayer.Quests.Daily Quests.Devoted Gains.requirements.Minutes.progress", "before": 1.5, "after": 1.6},
                         {"key": "Character.Humanoid.Health", "before": 95, "after": 100},
                     ],
-                    "observationWindows": [{"seconds": 0.3}],
+                    "beforePositionSample": {
+                        "sessionElapsedSeconds": 12.2,
+                        "characterGeneration": 1,
+                        "positionValid": True,
+                        "position": {"x": 35.2, "y": 4.1, "z": -12.8},
+                        "sampled": True,
+                        "interpolated": False,
+                    },
+                    "actionPositionSample": {
+                        "sessionElapsedSeconds": 12.3,
+                        "characterGeneration": 1,
+                        "positionValid": True,
+                        "position": {"x": 35.9, "y": 4.1, "z": -12.1},
+                        "sampled": True,
+                        "interpolated": False,
+                    },
+                    "nearbyWorldObjects": [
+                        {
+                            "path": "Workspace.Decoration.Rock01",
+                            "class": "Part",
+                            "sourceScope": "workspace-active",
+                            "distanceStuds": 4.5,
+                            "position": {"x": 37.0, "y": 4.0, "z": -10.0},
+                            "interactionMechanisms": ["touch"],
+                        }
+                    ],
+                    "inferredLocationPurpose": "training-or-progression",
+                    "eventPositionSnapshots": [
+                        {
+                            "interactionSequence": 1,
+                            "transactionId": "tx-1",
+                            "phase": "at-action",
+                            "sampled": True,
+                            "interpolated": False,
+                            "sessionElapsedSeconds": 12.3,
+                            "characterGeneration": 1,
+                            "position": {"x": 35.9, "y": 4.1, "z": -12.1},
+                        }
+                    ],
+                    "observationWindows": [
+                        {
+                            "seconds": 0.3,
+                            "positionSample": {
+                                "sessionElapsedSeconds": 12.6,
+                                "characterGeneration": 1,
+                                "positionValid": True,
+                                "position": {"x": 36.6, "y": 4.2, "z": -11.3},
+                                "sampled": True,
+                                "interpolated": False,
+                            },
+                        }
+                    ],
                 },
                 {
                     "controlType": "Tool.Activated",
@@ -497,6 +548,66 @@ def make_live_observation_tool_export(path, baseline_scan_id="receiver_pipeline_
                     "observationWindows": [{"seconds": 0.5}],
                 },
 
+            ],
+            "playerPositionHistory": [
+                {
+                    "snapshotSequence": 1,
+                    "sampledAt": "2026-11-06T12:30:00Z",
+                    "sessionElapsedSeconds": 12.2,
+                    "reason": "pre-activation",
+                    "characterGeneration": 1,
+                    "positionValid": True,
+                    "position": {"x": 35.2, "y": 4.1, "z": -12.8},
+                    "sampled": True,
+                    "interpolated": False,
+                },
+                {
+                    "snapshotSequence": 2,
+                    "sampledAt": "2026-11-06T12:30:01Z",
+                    "sessionElapsedSeconds": 12.6,
+                    "reason": "observation-window-0.3",
+                    "characterGeneration": 1,
+                    "positionValid": True,
+                    "position": {"x": 36.6, "y": 4.2, "z": -11.3},
+                    "sampled": True,
+                    "interpolated": False,
+                },
+            ],
+            "eventPositionSnapshots": [
+                {
+                    "interactionSequence": 1,
+                    "transactionId": "tx-1",
+                    "phase": "at-action",
+                    "sampled": True,
+                    "interpolated": False,
+                    "sessionElapsedSeconds": 12.3,
+                    "characterGeneration": 1,
+                    "position": {"x": 35.9, "y": 4.1, "z": -12.1},
+                }
+            ],
+            "spatialLocationHistory": [
+                {
+                    "interactionSequence": 1,
+                    "transactionId": "tx-1",
+                    "featureCandidate": "training",
+                    "actionKind": "fire",
+                    "controlType": "Tool.Activated",
+                    "path": "LocalPlayer.Backpack.Weight",
+                    "purpose": "training-or-progression",
+                    "sessionElapsedSeconds": 12.3,
+                    "characterGeneration": 1,
+                    "position": {"x": 35.9, "y": 4.1, "z": -12.1},
+                    "nearbyWorldObjects": [
+                        {
+                            "path": "Workspace.Decoration.Rock01",
+                            "class": "Part",
+                            "distanceStuds": 4.5,
+                            "position": {"x": 37.0, "y": 4.0, "z": -10.0},
+                        }
+                    ],
+                    "sampled": True,
+                    "interpolated": False,
+                }
             ],
         },
     }
@@ -826,18 +937,30 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("playerProgressionRegistry", report)
             self.assertIn("discoveredGameplaySystems", report)
             self.assertIn("candidateActionOutcomeRelationships", report)
+            self.assertIn("playerPositionHistory", report)
+            self.assertIn("eventPositionSnapshots", report)
+            self.assertIn("functionalLocationRegistry", report)
+            self.assertIn("spatialActionOutcomeRelationships", report)
+            self.assertIn("navigationCandidates", report)
+            self.assertIn("spatialDiscovery", report)
+            self.assertIn("spatialDiscoveryQualityMetrics", report)
             self.assertIn("guiWorkflowGraph", report)
             self.assertIn("knownExecutableInteractionMechanisms", report)
             self.assertIn("uncertaintiesAndValidation", report)
             self.assertIn("qualityMetrics", report)
             self.assertIn("crossGameIsolation", report)
             self.assertGreater(len(report.get("candidateActionOutcomeRelationships") or []), 0)
+            self.assertGreater(len(report.get("functionalLocationRegistry") or []), 0)
+            self.assertGreater(len(report.get("eventPositionSnapshots") or []), 0)
 
             quality = report["qualityMetrics"]
             self.assertIn("distinctMechanicsIdentified", quality)
             self.assertIn("interactionCoverage", quality)
             self.assertIn("actionOutcomeRelationships", quality)
             self.assertIn("workflowCompleteness", quality)
+            self.assertIn("spatialDiscovery", quality)
+            spatial_quality = report["spatialDiscoveryQualityMetrics"]
+            self.assertGreaterEqual((spatial_quality.get("eventPositionSnapshots") or {}).get("withCoordinates", 0), 1)
 
             summary_text = summary_path.read_text(encoding="utf-8")
             self.assertIn("Lycoles Universal Discovery Summary", summary_text)

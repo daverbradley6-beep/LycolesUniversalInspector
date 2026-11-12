@@ -38,6 +38,12 @@ Target experiences are third-party games that the user does not own and cannot o
 - Observation recovery summary schema upgraded to `117.observation-recovery-summary.6` to include discovery artifact paths/metrics.
 - Added Potassium universal inspector loader template at `potassium_artifacts/universal_discovery_live_package/PotassiumInspectorLoader.template.lua` pointing to commit-pinned `LycolesUniversalInspector.lua` raw URL.
 
+- Spatial discovery extension (2026-11-12): inspector now emits bounded universal spatial evidence (`playerPositionHistory`, `eventPositionSnapshots`, `spatialLocationHistory`) in both scan reports and live-observation exports.
+- Spatial samples are explicitly `sampled`/`interpolated` (currently sampled-only), character-generation-scoped across respawns, and include discontinuity flags for large displacement events.
+- Interaction records now carry event-linked spatial snapshots (`before-action`, `at-action`, per-window) and bounded nearby workspace object context (`workspace-active` only).
+- `tools/receiver_generation_pipeline.py` now derives and emits: `functionalLocationRegistry`, `spatialActionOutcomeRelationships`, `navigationCandidates`, and `spatialDiscoveryQualityMetrics`.
+- Legacy observation exports without spatial fields remain supported; discovery reports emit explicit spatial warnings and keep location/actionability sections empty instead of fabricating data.
+
 ## Evidence architecture
 
 Prioritize, in order:

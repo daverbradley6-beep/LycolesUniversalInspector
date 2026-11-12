@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.48"
+local VERSION = "30.6.49"
 
 local endpoint = ""
 local autoSend = true
@@ -112,6 +112,16 @@ local LIMITS = {
     inputQueueCriticalWatermark = 80,
     inputObservationIdleSeconds = 1.2,
     stateSnapshotDefaultCandidateBudget = 260,
+    maxPlayerPositionHistory = 720,
+    maxEventPositionSnapshots = 1400,
+    maxNearbyWorldObjects = 16,
+    nearbyWorldObjectRadiusStuds = 42,
+    spatialZoneCandidateLimit = 80,
+    spatialZoneRefreshSeconds = 6,
+    minAdaptivePositionSampleSeconds = 0.15,
+    maxAdaptivePositionSampleSeconds = 1.1,
+    minAdaptivePositionDistanceStuds = 2.5,
+    teleportDiscontinuityStuds = 120,
 }
 local alive = true
 local watchEnabled = true
@@ -165,6 +175,24 @@ local universalInputObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
 local attributedInteractionCount = 0
+playerPositionHistory = {}
+eventPositionSnapshots = {}
+spatialLocationHistory = {}
+spatialCharacterGeneration = 0
+spatialSampleSequence = 0
+spatialLastValidSample = nil
+spatialZoneContextCache = {updatedClock = 0, candidates = {}}
+spatialStats = {
+    samplesCaptured = 0,
+    samplesSkipped = 0,
+    invalidSamples = 0,
+    teleportsDetected = 0,
+    respawnGenerations = 0,
+    eventSnapshotsRecorded = 0,
+    nearbyWorldObjectLookups = 0,
+    nearbyWorldObjectFailures = 0,
+}
+
 local unattributedInteractionCount = 0
 local interactionHistory = {}
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
@@ -2283,7 +2311,7 @@ end
 
 -- Dynamic discovery records newly replicated instances without accessing script source.
 -- Changes are uploaded as independent, searchable delta scans.
-local function watchPath(obj, root, label)
+function watchPath(obj, root, label)
     local names, current = {}, obj
     while current and current ~= root do
         table.insert(names, 1, current.Name)
@@ -2293,11 +2321,388 @@ local function watchPath(obj, root, label)
     return label .. "." .. table.concat(names, ".")
 end
 
-local function watchVec(v)
+function watchVec(v)
     return {x = math.floor(v.X * 100) / 100,
         y = math.floor(v.Y * 100) / 100,
         z = math.floor(v.Z * 100) / 100}
 end
+
+spatialOverlapParams = nil
+pcall(function()
+    spatialOverlapParams = OverlapParams.new()
+    spatialOverlapParams.FilterType = Enum.RaycastFilterType.Blacklist
+    spatialOverlapParams.MaxParts = 64
+end)
+
+function clampNumber(value,minValue,maxValue)
+    if value<minValue then return minValue end
+    if value>maxValue then return maxValue end
+    return value
+end
+
+function roundNumber(value,precision)
+    local scale = 10 ^ (precision or 3)
+    return math.floor(value * scale + 0.5) / scale
+end
+
+function appendCapped(list,maxCount,item)
+    list[#list+1] = item
+    if #list > maxCount then
+        table.remove(list,1)
+    end
+end
+
+function sessionElapsed(nowClock)
+    local value = (nowClock or os.clock()) - sessionStartedClock
+    return roundNumber(value,3)
+end
+
+function inferSpatialPurpose(featureCandidate,path,actionKind)
+    local candidate = string.lower(tostring(featureCandidate or ""))
+    local lowPath = string.lower(tostring(path or ""))
+    local lowAction = string.lower(tostring(actionKind or ""))
+    local combined = candidate .. "|" .. lowPath .. "|" .. lowAction
+    if string.find(combined,"sell",1,true) or string.find(combined,"convert",1,true)
+        or string.find(combined,"trade",1,true) then
+        return "selling-or-conversion"
+    end
+    if string.find(combined,"egg",1,true) or string.find(combined,"hatch",1,true) then
+        return "egg-hatching-or-purchase"
+    end
+    if string.find(combined,"pet",1,true) or string.find(combined,"companion",1,true)
+        or string.find(combined,"equip",1,true) then
+        return "pets-or-equipment"
+    end
+    if string.find(combined,"shop",1,true) or string.find(combined,"upgrade",1,true)
+        or string.find(combined,"buy",1,true) then
+        return "shops-or-upgrades"
+    end
+    if string.find(combined,"reward",1,true) or string.find(combined,"claim",1,true)
+        or string.find(combined,"quest",1,true) then
+        return "rewards-or-quests"
+    end
+    if string.find(combined,"train",1,true) or string.find(combined,"strength",1,true)
+        or string.find(combined,"progress",1,true) then
+        return "training-or-progression"
+    end
+    if string.find(combined,"teleport",1,true) or string.find(combined,"portal",1,true)
+        or string.find(combined,"travel",1,true) then
+        return "teleport-or-travel"
+    end
+    return "uncategorized"
+end
+
+function resolveCharacterSpatialContext()
+    local character = player.Character
+    if not character then return nil,nil,nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        local primaryPart = character.PrimaryPart
+        if primaryPart and primaryPart:IsA("BasePart") then
+            rootPart = primaryPart
+        else
+            rootPart = character:FindFirstChildWhichIsA("BasePart")
+        end
+    end
+    return character,rootPart,humanoid
+end
+
+function refreshSpatialZoneCandidates(nowClock)
+    if nowClock-spatialZoneContextCache.updatedClock < LIMITS.spatialZoneRefreshSeconds then return end
+    spatialZoneContextCache.updatedClock = nowClock
+    spatialZoneContextCache.candidates = {}
+    local roots = workspace:GetChildren()
+    local limit = LIMITS.spatialZoneCandidateLimit
+    for _,obj in ipairs(roots) do
+        if #spatialZoneContextCache.candidates >= limit then break end
+        local className = obj.ClassName
+        if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart") then
+            local nameLower = string.lower(obj.Name)
+            if string.find(nameLower,"world",1,true) or string.find(nameLower,"zone",1,true)
+                or string.find(nameLower,"area",1,true) or string.find(nameLower,"island",1,true)
+                or string.find(nameLower,"portal",1,true) or string.find(nameLower,"shop",1,true)
+                or string.find(nameLower,"reward",1,true) or string.find(nameLower,"egg",1,true)
+                or string.find(nameLower,"quest",1,true) then
+                local anchorPosition = nil
+                if obj:IsA("BasePart") then
+                    anchorPosition = obj.Position
+                elseif obj:IsA("Model") then
+                    local okPivot,pivot = pcall(function() return obj:GetPivot() end)
+                    if okPivot then anchorPosition = pivot.Position end
+                end
+                if anchorPosition then
+                    spatialZoneContextCache.candidates[#spatialZoneContextCache.candidates+1] = {
+                        path = watchPath(obj,workspace,"Workspace") or ("Workspace."..obj.Name),
+                        className = className,
+                        name = obj.Name,
+                        position = anchorPosition,
+                    }
+                end
+            end
+        end
+    end
+end
+
+function resolveSpatialWorldContext(position,nowClock)
+    if not position then return nil end
+    refreshSpatialZoneCandidates(nowClock)
+    local nearest = nil
+    for _,candidate in ipairs(spatialZoneContextCache.candidates) do
+        local distance = (candidate.position-position).Magnitude
+        if not nearest or distance<nearest.distance then
+            nearest = {
+                path = candidate.path,
+                className = candidate.className,
+                name = candidate.name,
+                distance = distance,
+            }
+        end
+    end
+    if nearest and nearest.distance <= 320 then
+        return {
+            path = string.sub(nearest.path,1,320),
+            className = nearest.className,
+            name = string.sub(nearest.name,1,80),
+            distanceStuds = roundNumber(nearest.distance,2),
+        }
+    end
+    return nil
+end
+
+function capturePlayerPositionSample(reason,forceSample)
+    local nowClock = os.clock()
+    local character,rootPart,humanoid = resolveCharacterSpatialContext()
+    local elapsed = sessionElapsed(nowClock)
+    local base = {
+        sampledAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds = elapsed,
+        reason = tostring(reason or "unspecified"):sub(1,80),
+        snapshotSequence = spatialSampleSequence + 1,
+        characterGeneration = spatialCharacterGeneration,
+        characterId = character and (character.Name .. "#" .. tostring(spatialCharacterGeneration)) or nil,
+        interpolated = false,
+    }
+
+    if not rootPart then
+        spatialStats.invalidSamples = spatialStats.invalidSamples + 1
+        base.positionValid = false
+        base.invalidReason = character and "root-part-unavailable" or "character-unavailable"
+        if forceSample then
+            spatialSampleSequence = spatialSampleSequence + 1
+            base.snapshotSequence = spatialSampleSequence
+            appendCapped(playerPositionHistory,LIMITS.maxPlayerPositionHistory,base)
+            spatialStats.samplesCaptured = spatialStats.samplesCaptured + 1
+            return base,nil
+        end
+        return nil,nil
+    end
+
+    local rawPosition = rootPart.Position
+    local velocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
+    local speed = velocity and velocity.Magnitude or 0
+    local interval = LIMITS.maxAdaptivePositionSampleSeconds
+    if speed >= 80 then interval = 0.15
+    elseif speed >= 45 then interval = 0.22
+    elseif speed >= 22 then interval = 0.35
+    elseif speed >= 8 then interval = 0.55
+    else interval = 0.9 end
+    interval = clampNumber(interval,LIMITS.minAdaptivePositionSampleSeconds,LIMITS.maxAdaptivePositionSampleSeconds)
+
+    if not forceSample and spatialLastValidSample then
+        local deltaSeconds = nowClock-spatialLastValidSample.clock
+        local moved = (rawPosition-spatialLastValidSample.position).Magnitude
+        if spatialLastValidSample.characterGeneration==spatialCharacterGeneration
+            and deltaSeconds < interval
+            and moved < LIMITS.minAdaptivePositionDistanceStuds then
+            spatialStats.samplesSkipped = spatialStats.samplesSkipped + 1
+            return nil,nil
+        end
+    end
+
+    local sample = {
+        sampledAt = base.sampledAt,
+        sessionElapsedSeconds = elapsed,
+        reason = base.reason,
+        snapshotSequence = base.snapshotSequence,
+        characterGeneration = spatialCharacterGeneration,
+        characterId = base.characterId,
+        positionValid = true,
+        position = watchVec(rawPosition),
+        speedStudsPerSecond = roundNumber(speed,3),
+        characterState = humanoid and tostring(humanoid:GetState().Name) or "unknown",
+        interpolated = false,
+        sampleKind = "sampled",
+    }
+
+    if velocity and speed > 0.01 then
+        sample.directionUnit = {
+            x = roundNumber(velocity.X/speed,3),
+            y = roundNumber(velocity.Y/speed,3),
+            z = roundNumber(velocity.Z/speed,3),
+        }
+    end
+
+    sample.worldContext = resolveSpatialWorldContext(rawPosition,nowClock)
+
+    if spatialLastValidSample and spatialLastValidSample.characterGeneration==spatialCharacterGeneration then
+        local deltaSeconds = nowClock-spatialLastValidSample.clock
+        local moved = (rawPosition-spatialLastValidSample.position).Magnitude
+        if deltaSeconds <= 2.5 and moved >= LIMITS.teleportDiscontinuityStuds then
+            sample.discontinuity = {
+                deltaSeconds = roundNumber(deltaSeconds,3),
+                distanceStuds = roundNumber(moved,2),
+                likelyTeleport = true,
+                reason = "large-discontinuous-displacement",
+            }
+            spatialStats.teleportsDetected = spatialStats.teleportsDetected + 1
+        end
+    end
+
+    spatialSampleSequence = spatialSampleSequence + 1
+    sample.snapshotSequence = spatialSampleSequence
+    appendCapped(playerPositionHistory,LIMITS.maxPlayerPositionHistory,sample)
+    spatialStats.samplesCaptured = spatialStats.samplesCaptured + 1
+    spatialLastValidSample = {
+        clock = nowClock,
+        position = rawPosition,
+        characterGeneration = spatialCharacterGeneration,
+        sequence = spatialSampleSequence,
+    }
+    return sample,rawPosition
+end
+
+function captureNearbyWorldObjects(position)
+    if not position then return {} end
+    spatialStats.nearbyWorldObjectLookups = spatialStats.nearbyWorldObjectLookups + 1
+    local nearbyParts = nil
+    local ok = pcall(function()
+        if spatialOverlapParams then
+            spatialOverlapParams.FilterDescendantsInstances = player.Character and {player.Character} or {}
+            nearbyParts = workspace:GetPartBoundsInRadius(
+                position,
+                LIMITS.nearbyWorldObjectRadiusStuds,
+                spatialOverlapParams
+            )
+        else
+            nearbyParts = workspace:GetPartBoundsInRadius(position,LIMITS.nearbyWorldObjectRadiusStuds)
+        end
+    end)
+    if not ok or type(nearbyParts)~="table" then
+        spatialStats.nearbyWorldObjectFailures = spatialStats.nearbyWorldObjectFailures + 1
+        nearbyParts = {}
+    end
+
+    local dedupe = {}
+    local result = {}
+    for _,part in ipairs(nearbyParts) do
+        if #result >= LIMITS.maxNearbyWorldObjects then break end
+        if part and part:IsA("BasePart") and part:IsDescendantOf(workspace) then
+            local anchor = part
+            if part.Parent and part.Parent:IsA("Model") then anchor = part.Parent end
+            local path = watchPath(anchor,workspace,"Workspace") or watchPath(part,workspace,"Workspace")
+            if path and not dedupe[path] then
+                dedupe[path] = true
+                local low = string.lower(path)
+                local mechanisms = {}
+                local score = 0
+                local hasPrompt = false
+                local hasClick = false
+                if anchor:IsA("Model") or anchor:IsA("Folder") then
+                    local okPrompt,prompt = pcall(function() return anchor:FindFirstChildWhichIsA("ProximityPrompt",true) end)
+                    if okPrompt and prompt then hasPrompt = true end
+                    local okClick,click = pcall(function() return anchor:FindFirstChildWhichIsA("ClickDetector",true) end)
+                    if okClick and click then hasClick = true end
+                elseif anchor:IsA("BasePart") then
+                    hasPrompt = anchor:FindFirstChildOfClass("ProximityPrompt") ~= nil
+                    hasClick = anchor:FindFirstChildOfClass("ClickDetector") ~= nil
+                end
+                if hasPrompt then mechanisms[#mechanisms+1] = "prompt"; score = score + 6 end
+                if hasClick then mechanisms[#mechanisms+1] = "click"; score = score + 5 end
+                if part:FindFirstChildOfClass("TouchTransmitter") then
+                    mechanisms[#mechanisms+1] = "touch"; score = score + 4
+                end
+                if string.find(low,"shop",1,true) or string.find(low,"egg",1,true)
+                    or string.find(low,"reward",1,true) or string.find(low,"quest",1,true)
+                    or string.find(low,"sell",1,true) or string.find(low,"portal",1,true)
+                    or string.find(low,"train",1,true) then
+                    score = score + 2
+                end
+                local distance = (part.Position-position).Magnitude
+                result[#result+1] = {
+                    path = string.sub(path,1,400),
+                    class = anchor.ClassName,
+                    sourceScope = "workspace-active",
+                    distanceStuds = roundNumber(distance,2),
+                    position = watchVec(part.Position),
+                    interactionMechanisms = mechanisms,
+                    actionableScore = score,
+                }
+            end
+        end
+    end
+
+    table.sort(result,function(a,b)
+        if a.actionableScore ~= b.actionableScore then return a.actionableScore > b.actionableScore end
+        if a.distanceStuds ~= b.distanceStuds then return a.distanceStuds < b.distanceStuds end
+        return a.path < b.path
+    end)
+
+    if #result > LIMITS.maxNearbyWorldObjects then
+        while #result > LIMITS.maxNearbyWorldObjects do table.remove(result) end
+    end
+    return result
+end
+
+function registerEventPositionSnapshot(historyItem,phase,sample,windowSeconds)
+    if not historyItem or type(phase)~="string" then return end
+    local snapshot = {
+        interactionSequence = historyItem.sequence,
+        transactionId = historyItem.transactionId,
+        sessionId = sessionId,
+        phase = string.sub(phase,1,60),
+        windowSeconds = windowSeconds,
+        sampled = sample and sample.positionValid == true or false,
+        interpolated = false,
+        sessionElapsedSeconds = sample and sample.sessionElapsedSeconds or historyItem.sessionElapsedSeconds,
+        characterGeneration = sample and sample.characterGeneration or spatialCharacterGeneration,
+        characterId = sample and sample.characterId or nil,
+        worldContext = sample and sample.worldContext or nil,
+        position = sample and sample.position or nil,
+        speedStudsPerSecond = sample and sample.speedStudsPerSecond or nil,
+        directionUnit = sample and sample.directionUnit or nil,
+        characterState = sample and sample.characterState or nil,
+        discontinuity = sample and sample.discontinuity or nil,
+        sampleKind = sample and sample.sampleKind or "unavailable",
+        source = sample and sample.reason or "event-linked",
+    }
+    historyItem.eventPositionSnapshots = historyItem.eventPositionSnapshots or {}
+    historyItem.eventPositionSnapshots[#historyItem.eventPositionSnapshots+1] = snapshot
+    appendCapped(eventPositionSnapshots,LIMITS.maxEventPositionSnapshots,snapshot)
+    spatialStats.eventSnapshotsRecorded = spatialStats.eventSnapshotsRecorded + 1
+end
+
+function trackSpatialLocationEvent(historyItem,positionSample,featureCandidate,actionKind,path,nearbyObjects)
+    if not historyItem or not positionSample or not positionSample.positionValid then return end
+    local entry = {
+        interactionSequence = historyItem.sequence,
+        transactionId = historyItem.transactionId,
+        featureCandidate = featureCandidate,
+        actionKind = actionKind,
+        controlType = historyItem.controlType,
+        path = string.sub(tostring(path or ""),1,400),
+        purpose = inferSpatialPurpose(featureCandidate,path,actionKind),
+        sessionElapsedSeconds = historyItem.sessionElapsedSeconds,
+        characterGeneration = positionSample.characterGeneration,
+        position = positionSample.position,
+        nearbyWorldObjects = nearbyObjects,
+        worldContext = positionSample.worldContext,
+        sampled = true,
+        interpolated = false,
+    }
+    appendCapped(spatialLocationHistory,LIMITS.maxInteractionHistory,entry)
+end
+
 
 local function isCharacterDescendant(obj)
     local current = obj
@@ -3273,17 +3678,20 @@ local function observeInteractionObject(obj, root, label)
     observerStats.listenersAttached = observerStats.listenersAttached + 1
     local preActivationCapture=nil
     local function capturePreActivation(source,maxAge)
-        local ok,state,identities,guiState,position=pcall(function()
+        local ok,state,identities,guiState,position,positionSample=pcall(function()
             local values,valueIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            local sampled,rawPosition=capturePlayerPositionSample("pre-activation",true)
             local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            return values,valueIdentities,EVIDENCE_HELPERS.safeNearbyGuiState(obj),rootPart and rootPart.Position or nil
+            if not rawPosition and rootPart then rawPosition=rootPart.Position end
+            return values,valueIdentities,EVIDENCE_HELPERS.safeNearbyGuiState(obj),rawPosition,sampled
         end)
         if not ok then
             observerStats.preActivationCaptureFailures=observerStats.preActivationCaptureFailures+1
             return
         end
         preActivationCapture={clock=os.clock(),source=source,maxAge=maxAge,
-            state=state,stateIdentities=identities,guiState=guiState,position=position}
+            state=state,stateIdentities=identities,guiState=guiState,
+            position=position,positionSample=positionSample}
         observerStats.preActivationCaptures=observerStats.preActivationCaptures+1
     end
     local function registerPreActivation(preSignal,source,maxAge,filter)
@@ -3341,10 +3749,11 @@ local function observeInteractionObject(obj, root, label)
         local captured=preActivationCapture
         preActivationCapture=nil
         local captureAge=captured and activationClock-captured.clock or nil
-        local before,beforeStateIdentities,beforeGui,beforePosition,baselineSource
+        local before,beforeStateIdentities,beforeGui,beforePosition,beforePositionSample,baselineSource
         if captured and captureAge>=0 and captureAge<=captured.maxAge then
             before=captured.state;beforeStateIdentities=captured.stateIdentities
             beforeGui=captured.guiState;beforePosition=captured.position
+            beforePositionSample=captured.positionSample
             baselineSource=captured.source
             observerStats.preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed+1
         else
@@ -3353,11 +3762,16 @@ local function observeInteractionObject(obj, root, label)
             end
             before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
             beforeGui=EVIDENCE_HELPERS.safeNearbyGuiState(obj)
+            local fallbackSample,fallbackRaw=capturePlayerPositionSample("baseline-fallback",true)
+            beforePositionSample=fallbackSample
             local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            beforePosition=rootPart and rootPart.Position or nil
+            if not fallbackRaw and rootPart then fallbackRaw=rootPart.Position end
+            beforePosition=fallbackRaw
             baselineSource="activation-callback-fallback"
             observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
         end
+        local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("interaction-activated",true)
+        local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
         local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)
         local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
             observationSequence+1,sessionElapsedSeconds)
@@ -3372,6 +3786,7 @@ local function observeInteractionObject(obj, root, label)
         local historyItem = {
             path=path:sub(1,400), pathIdentity=targetPathIdentity,
             featureCandidate=feature, attribution=attributionSource, controlType=controlType,
+            actionKind=(workflow and workflow.action) or "interact",
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
             sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
             transactionId=transactionId,
@@ -3385,10 +3800,20 @@ local function observeInteractionObject(obj, root, label)
                 and "activation-callback" or "pre-activation",
             baselineAgeSeconds=captureAge and math.floor(captureAge*1000+0.5)/1000 or nil,
             preActivationBaselineAvailable=baselineSource~="activation-callback-fallback",
+            characterGeneration=spatialCharacterGeneration,
+            beforePositionSample=beforePositionSample,
+            actionPositionSample=actionPositionSample,
+            nearbyWorldObjects=nearbyWorldObjects,
+            inferredLocationPurpose=inferSpatialPurpose(feature,path,workflow and workflow.action),
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
         if #interactionHistory > LIMITS.maxInteractionHistory then table.remove(interactionHistory, 1) end
+        registerEventPositionSnapshot(historyItem,"before-action",beforePositionSample,nil)
+        registerEventPositionSnapshot(historyItem,"at-action",actionPositionSample,nil)
+        trackSpatialLocationEvent(historyItem,actionPositionSample,feature,
+            (workflow and workflow.action) or "interact",path,nearbyWorldObjects)
+
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
@@ -3461,10 +3886,13 @@ local function observeInteractionObject(obj, root, label)
                                 stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
+                    local windowPositionSample,windowPositionRaw=capturePlayerPositionSample(
+                        "observation-window-"..tostring(delaySeconds),true)
                     local distance=nil
                     local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if beforePosition and currentRoot then
-                        distance=(currentRoot.Position-beforePosition).Magnitude
+                    if not windowPositionRaw and currentRoot then windowPositionRaw=currentRoot.Position end
+                    if beforePosition and windowPositionRaw then
+                        distance=(windowPositionRaw-beforePosition).Magnitude
                         distance=math.floor(distance*10+0.5)/10
                     end
                     local evidence=relevantActionEvidence(feature,workflow,changes)
@@ -3534,9 +3962,12 @@ local function observeInteractionObject(obj, root, label)
                         baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
                         preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
                         featureStateEvidence=featureStateEvidence,
-                        featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
+                        featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence,
+                        positionSample=windowPositionSample}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                    registerEventPositionSnapshot(historyItem,
+                        "observation-window-"..tostring(delaySeconds),windowPositionSample,delaySeconds)
                     if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
                         local inventoryAfter=EVIDENCE_HELPERS.safeInventorySummary()
                         local guiEvidence=EVIDENCE_HELPERS.compareInventoryGuiSamples(
@@ -3919,6 +4350,25 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             unattributedEvents=unattributedInteractionCount,
             recentInteractions=interactionHistory,
             interactionHistoryLimit=LIMITS.maxInteractionHistory,
+            playerPositionHistory=playerPositionHistory,
+            eventPositionSnapshots=eventPositionSnapshots,
+            spatialLocationHistory=spatialLocationHistory,
+            spatialSamplingLimits={
+                maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
+                maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
+                maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+            },
+            spatialStats={
+                samplesCaptured=spatialStats.samplesCaptured,
+                samplesSkipped=spatialStats.samplesSkipped,
+                invalidSamples=spatialStats.invalidSamples,
+                teleportsDetected=spatialStats.teleportsDetected,
+                respawnGenerations=spatialStats.respawnGenerations,
+                eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
+                nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
+                nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+            },
             workflowStats=workflowStats,
             backfilledOutcomeCandidates=recoveredOutcomeCandidates,
             actionClassifications=actionClassifications,
@@ -3958,6 +4408,23 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates","character humanoid/equipment/animation snapshots","bounded HUD numeric signals"},
             actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
             gameplayOutcomesVerified=0
+        },
+        playerPositionHistory=playerPositionHistory,
+        eventPositionSnapshots=eventPositionSnapshots,
+        spatialLocationHistory=spatialLocationHistory,
+        spatialDiscovery={
+            status=(#playerPositionHistory>0 or #eventPositionSnapshots>0)
+                and "captured" or "not-captured",
+            characterGenerationsObserved=spatialCharacterGeneration,
+            sampleCount=#playerPositionHistory,
+            eventSnapshotCount=#eventPositionSnapshots,
+            locationEventCount=#spatialLocationHistory,
+            nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+            activeWorkspaceOnly=true,
+            replicatedStorageTemplatesExcluded=true,
+            interpolationPolicy="sampled-only-no-interpolated-positions",
+            continuityPolicy="character-generation-boundaries-preserved",
+            notes="Client-visible positional evidence only; no server authority or causality proof"
         },
         pipelineIngestion={
             supported=true,
@@ -4054,8 +4521,11 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
     local before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState(stateOptions)
     local beforeGui=(sourceObject and sourceObject:IsA("GuiObject"))
         and EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject) or {}
+    local beforePositionSample,beforePosition=capturePlayerPositionSample("input-baseline",true)
     local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    local beforePosition=rootPart and rootPart.Position or nil
+    if not beforePosition and rootPart then beforePosition=rootPart.Position end
+    local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("input-action",true)
+    local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
     local explicitRecording=(priority>=2) and recordWorkflowInteraction(
         activationClock,sessionElapsedSeconds,"automatic-activity-window") or nil
     local transactionId=explicitRecording and explicitRecording.recordingId or (observationSequence+1)
@@ -4079,6 +4549,11 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
         controlMetadata=metadata,baselineSource="input-event-callback",
         baselineTiming="input-event-callback",baselineAgeSeconds=nil,
         preActivationBaselineAvailable=false,
+        characterGeneration=spatialCharacterGeneration,
+        beforePositionSample=beforePositionSample,
+        actionPositionSample=actionPositionSample,
+        nearbyWorldObjects=nearbyWorldObjects,
+        inferredLocationPurpose=inferSpatialPurpose(featureCandidate,path,actionKind),
         evidenceLevel="interaction-observed", outcomeVerified=false,
         observedInput=true,
         inferredAction={kind=actionKind,
@@ -4088,6 +4563,11 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
     }
     interactionHistory[#interactionHistory+1]=historyItem
     if #interactionHistory>LIMITS.maxInteractionHistory then table.remove(interactionHistory,1) end
+
+    registerEventPositionSnapshot(historyItem,"before-action",beforePositionSample,nil)
+    registerEventPositionSnapshot(historyItem,"at-action",actionPositionSample,nil)
+    trackSpatialLocationEvent(historyItem,actionPositionSample,featureCandidate,
+        actionKind,path,nearbyWorldObjects)
 
     observationSequence=observationSequence+1
     changeCount=changeCount+1
@@ -4143,10 +4623,13 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
                             stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                     end
                 end
+                local windowPositionSample,windowPositionRaw=capturePlayerPositionSample(
+                    "input-observation-window-"..tostring(delaySeconds),true)
                 local distance=nil
                 local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if beforePosition and currentRoot then
-                    distance=(currentRoot.Position-beforePosition).Magnitude
+                if not windowPositionRaw and currentRoot then windowPositionRaw=currentRoot.Position end
+                if beforePosition and windowPositionRaw then
+                    distance=(windowPositionRaw-beforePosition).Magnitude
                     distance=math.floor(distance*10+0.5)/10
                 end
                 local evidence=relevantActionEvidence(featureCandidate,workflow,changes)
@@ -4203,9 +4686,12 @@ WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlTyp
                     baselineSource="input-event-callback",baselineTiming="input-event-callback",
                     preActivationBaselineAvailable=false,
                     featureStateEvidence=featureStateEvidence,
-                    featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence}
+                    featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence,
+                    positionSample=windowPositionSample}
                 historyItem.observationWindows=historyItem.observationWindows or {}
                 historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                registerEventPositionSnapshot(historyItem,
+                    "input-observation-window-"..tostring(delaySeconds),windowPositionSample,delaySeconds)
                 historyItem.guiStateChanges=historyItem.guiStateChanges or {}
                 for _,g in ipairs(freshGui) do historyItem.guiStateChanges[#historyItem.guiStateChanges+1]=g end
                 historyItem.guiStateChangeCount=#historyItem.guiStateChanges
@@ -4386,7 +4872,9 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
     observerStats.inputBindingReady=true
     WORKFLOW_HELPERS.setObservationPhase("idle","input-observation-started",os.clock())
     table.insert(watchConnections,game:GetService("RunService").Heartbeat:Connect(function()
-        if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+        if not alive then return end
+        capturePlayerPositionSample("heartbeat-adaptive",false)
+        if interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
     end))
     local keyActions={
         R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",
@@ -4587,6 +5075,16 @@ local function startWatching()
         {root = game:GetService("Teams"), label = "Teams"},
         {root = game:GetService("SoundService"), label = "SoundService"}
     }
+    if player.Character then
+        spatialCharacterGeneration = spatialCharacterGeneration + 1
+        spatialStats.respawnGenerations = spatialCharacterGeneration
+        capturePlayerPositionSample("watch-start-character",true)
+    end
+    table.insert(watchConnections, player.CharacterRemoving:Connect(function()
+        if not alive then return end
+        capturePlayerPositionSample("character-removing",true)
+        spatialLastValidSample = nil
+    end))
     for _, spec in ipairs(roots) do
         if spec.root then
             table.insert(watchConnections, spec.root.DescendantAdded:Connect(function(obj)
@@ -4634,6 +5132,10 @@ local function startWatching()
     -- Rebind the local-character observer after respawns without rescanning other players.
     table.insert(watchConnections, player.CharacterAdded:Connect(function(character)
         if not alive then return end
+        spatialCharacterGeneration = spatialCharacterGeneration + 1
+        spatialStats.respawnGenerations = spatialCharacterGeneration
+        spatialLastValidSample = nil
+        capturePlayerPositionSample("character-added",true)
         local label = "Character"
         task.defer(function()
             if not alive then return end
@@ -5282,6 +5784,25 @@ local function inspect(requestType, featureRequest)
                 cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
                 recentInteractions=interactionHistory, interactionHistoryLimit=LIMITS.maxInteractionHistory,
+                playerPositionHistory=playerPositionHistory,
+                eventPositionSnapshots=eventPositionSnapshots,
+                spatialLocationHistory=spatialLocationHistory,
+                spatialSamplingLimits={
+                    maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
+                    maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
+                    maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                    nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+                },
+                spatialStats={
+                    samplesCaptured=spatialStats.samplesCaptured,
+                    samplesSkipped=spatialStats.samplesSkipped,
+                    invalidSamples=spatialStats.invalidSamples,
+                    teleportsDetected=spatialStats.teleportsDetected,
+                    respawnGenerations=spatialStats.respawnGenerations,
+                    eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
+                    nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
+                    nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+                },
                 workflowStats=workflowStats,
                 backfilledOutcomeCandidates=recoveredOutcomeCandidates,
                 workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
@@ -5349,6 +5870,24 @@ local function inspect(requestType, featureRequest)
                 sweepStartedAt=observerStats.sweepStartedAt, sweepFinishedAt=observerStats.sweepFinishedAt,
                 lastSweepError=observerStats.lastSweepError
             }
+            report.playerPositionHistory = playerPositionHistory
+            report.eventPositionSnapshots = eventPositionSnapshots
+            report.spatialLocationHistory = spatialLocationHistory
+            report.spatialDiscovery = {
+                status = (#playerPositionHistory>0 or #eventPositionSnapshots>0)
+                    and "captured" or "not-captured",
+                characterGenerationsObserved = spatialCharacterGeneration,
+                sampleCount = #playerPositionHistory,
+                eventSnapshotCount = #eventPositionSnapshots,
+                locationEventCount = #spatialLocationHistory,
+                nearbyWorldObjectRadiusStuds = LIMITS.nearbyWorldObjectRadiusStuds,
+                activeWorkspaceOnly = true,
+                replicatedStorageTemplatesExcluded = true,
+                interpolationPolicy = "sampled-only-no-interpolated-positions",
+                continuityPolicy = "character-generation-boundaries-preserved",
+                notes = "Client-visible positional evidence only; no server authority or causality proof"
+            }
+
             report.featureSnapshotDelta = EVIDENCE_HELPERS.compareFeatureSnapshots(report.featureEvidence)
             report.automationDiagnostics = {
                 enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,

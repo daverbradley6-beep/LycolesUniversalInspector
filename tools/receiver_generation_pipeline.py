@@ -844,6 +844,50 @@ def _build_universal_discovery_report(
     path_identity_resolved = 0
     path_identity_total = 0
 
+
+    def _position_from_value(value: Any) -> Optional[dict[str, float]]:
+        if not isinstance(value, dict):
+            return None
+        x = _numeric(value.get("x"))
+        y = _numeric(value.get("y"))
+        z = _numeric(value.get("z"))
+        if x is None or y is None or z is None:
+            return None
+        return {"x": round(x, 4), "y": round(y, 4), "z": round(z, 4)}
+
+    def _normalize_snapshot(sample: dict[str, Any], *, fallback_phase: str) -> Optional[dict[str, Any]]:
+        if not isinstance(sample, dict):
+            return None
+        position = _position_from_value(sample.get("position"))
+        sampled = bool(sample.get("sampled", position is not None))
+        sequence = sample.get("interactionSequence") if isinstance(sample.get("interactionSequence"), int) else None
+        tx = sample.get("transactionId") if isinstance(sample.get("transactionId"), str) else None
+        phase = sample.get("phase") if isinstance(sample.get("phase"), str) and sample.get("phase") else fallback_phase
+        elapsed = _numeric(sample.get("sessionElapsedSeconds"))
+        return {
+            "interactionSequence": sequence,
+            "transactionId": tx,
+            "phase": phase,
+            "sampled": sampled,
+            "interpolated": bool(sample.get("interpolated") is True),
+            "position": position,
+            "sessionElapsedSeconds": round(elapsed, 4) if elapsed is not None else None,
+            "characterGeneration": sample.get("characterGeneration") if isinstance(sample.get("characterGeneration"), int) else None,
+            "worldContext": sample.get("worldContext") if isinstance(sample.get("worldContext"), dict) else None,
+            "source": sample.get("source") if isinstance(sample.get("source"), str) else None,
+            "sampleKind": sample.get("sampleKind") if isinstance(sample.get("sampleKind"), str) else None,
+            "windowSeconds": _numeric(sample.get("windowSeconds")),
+            "speedStudsPerSecond": _numeric(sample.get("speedStudsPerSecond")),
+            "characterState": sample.get("characterState") if isinstance(sample.get("characterState"), str) else None,
+        }
+
+    def _cluster_key(position: dict[str, float]) -> tuple[int, int, int]:
+        return (
+            int(round(position["x"] / 24.0)),
+            int(round(position["y"] / 12.0)),
+            int(round(position["z"] / 24.0)),
+        )
+
     for event in events:
         control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else "unknown"
         action_kind = event.get("actionKind") if isinstance(event.get("actionKind"), str) else "unknown"
@@ -959,6 +1003,9 @@ def _build_universal_discovery_report(
 
         relationships.append({
             "id": "rel_" + hashlib.sha256(f"{control_type}|{path}|{event.get('sequence')}|{event.get('sessionElapsedSeconds')}".encode("utf-8")).hexdigest()[:16],
+            "interactionSequence": event.get("sequence") if isinstance(event.get("sequence"), int) else None,
+            "transactionId": event.get("transactionId") if isinstance(event.get("transactionId"), str) else None,
+            "sessionElapsedSeconds": event.get("sessionElapsedSeconds") if isinstance(event.get("sessionElapsedSeconds"), (int, float)) else None,
             "action": {
                 "type": control_type,
                 "kind": action_kind,
@@ -1135,6 +1182,365 @@ def _build_universal_discovery_report(
             "additionalObservationNeeded": sorted(bucket["additionalObservationNeeded"]),
         })
 
+    interaction_diagnostics = payload.get("interactionDiagnostics") if isinstance(payload.get("interactionDiagnostics"), dict) else {}
+    raw_position_history = interaction_diagnostics.get("playerPositionHistory")
+    if not isinstance(raw_position_history, list):
+        raw_position_history = payload.get("playerPositionHistory") if isinstance(payload.get("playerPositionHistory"), list) else []
+
+    position_history: list[dict[str, Any]] = []
+    for idx, sample in enumerate(raw_position_history[:1200]):
+        if not isinstance(sample, dict):
+            continue
+        position_history.append({
+            "snapshotSequence": sample.get("snapshotSequence") if isinstance(sample.get("snapshotSequence"), int) else idx + 1,
+            "sampledAt": sample.get("sampledAt") if isinstance(sample.get("sampledAt"), str) else None,
+            "sessionElapsedSeconds": _numeric(sample.get("sessionElapsedSeconds")),
+            "reason": sample.get("reason") if isinstance(sample.get("reason"), str) else None,
+            "characterGeneration": sample.get("characterGeneration") if isinstance(sample.get("characterGeneration"), int) else None,
+            "characterId": sample.get("characterId") if isinstance(sample.get("characterId"), str) else None,
+            "positionValid": bool(sample.get("positionValid", _position_from_value(sample.get("position")) is not None)),
+            "position": _position_from_value(sample.get("position")),
+            "speedStudsPerSecond": _numeric(sample.get("speedStudsPerSecond")),
+            "directionUnit": sample.get("directionUnit") if isinstance(sample.get("directionUnit"), dict) else None,
+            "characterState": sample.get("characterState") if isinstance(sample.get("characterState"), str) else None,
+            "worldContext": sample.get("worldContext") if isinstance(sample.get("worldContext"), dict) else None,
+            "interpolated": bool(sample.get("interpolated") is True),
+            "sampleKind": sample.get("sampleKind") if isinstance(sample.get("sampleKind"), str) else None,
+            "discontinuity": sample.get("discontinuity") if isinstance(sample.get("discontinuity"), dict) else None,
+            "invalidReason": sample.get("invalidReason") if isinstance(sample.get("invalidReason"), str) else None,
+        })
+
+    event_snapshots: list[dict[str, Any]] = []
+    event_snapshot_seen: set[tuple[Any, ...]] = set()
+
+    def _push_snapshot(raw_sample: dict[str, Any], *, fallback_phase: str, sequence: Optional[int], tx_id: Optional[str]) -> None:
+        normalized = _normalize_snapshot(raw_sample, fallback_phase=fallback_phase)
+        if not normalized:
+            return
+        if normalized.get("interactionSequence") is None and sequence is not None:
+            normalized["interactionSequence"] = sequence
+        if not normalized.get("transactionId") and tx_id:
+            normalized["transactionId"] = tx_id
+        position = normalized.get("position")
+        pos_key = None if not isinstance(position, dict) else (
+            round(position.get("x", 0.0), 4),
+            round(position.get("y", 0.0), 4),
+            round(position.get("z", 0.0), 4),
+        )
+        dedupe_key = (
+            normalized.get("interactionSequence"),
+            normalized.get("transactionId"),
+            normalized.get("phase"),
+            normalized.get("sessionElapsedSeconds"),
+            pos_key,
+            normalized.get("source"),
+        )
+        if dedupe_key in event_snapshot_seen:
+            return
+        event_snapshot_seen.add(dedupe_key)
+        event_snapshots.append(normalized)
+
+    raw_event_snapshot_list = interaction_diagnostics.get("eventPositionSnapshots")
+    if not isinstance(raw_event_snapshot_list, list):
+        raw_event_snapshot_list = payload.get("eventPositionSnapshots") if isinstance(payload.get("eventPositionSnapshots"), list) else []
+    for sample in raw_event_snapshot_list[:2200]:
+        if isinstance(sample, dict):
+            _push_snapshot(sample, fallback_phase="event-snapshot", sequence=None, tx_id=None)
+
+    for event in events:
+        sequence = event.get("sequence") if isinstance(event.get("sequence"), int) else None
+        tx_id = event.get("transactionId") if isinstance(event.get("transactionId"), str) else None
+        for field_name, fallback_phase in (
+            ("beforePositionSample", "before-action"),
+            ("actionPositionSample", "at-action"),
+        ):
+            sample = event.get(field_name)
+            if isinstance(sample, dict):
+                _push_snapshot(sample, fallback_phase=fallback_phase, sequence=sequence, tx_id=tx_id)
+        nested = event.get("eventPositionSnapshots")
+        if isinstance(nested, list):
+            for sample in nested[:16]:
+                if isinstance(sample, dict):
+                    _push_snapshot(sample, fallback_phase="event-linked", sequence=sequence, tx_id=tx_id)
+        windows = event.get("observationWindows") if isinstance(event.get("observationWindows"), list) else []
+        for window in windows[:8]:
+            if not isinstance(window, dict):
+                continue
+            sample = window.get("positionSample")
+            if isinstance(sample, dict):
+                seconds = _numeric(window.get("seconds"))
+                fallback_phase = f"observation-window-{seconds}" if seconds is not None else "observation-window"
+                _push_snapshot(sample, fallback_phase=fallback_phase, sequence=sequence, tx_id=tx_id)
+
+    snapshots_by_sequence: dict[int, list[dict[str, Any]]] = {}
+    snapshots_by_transaction: dict[str, list[dict[str, Any]]] = {}
+    for sample in event_snapshots:
+        sequence = sample.get("interactionSequence")
+        tx_id = sample.get("transactionId")
+        if isinstance(sequence, int):
+            snapshots_by_sequence.setdefault(sequence, []).append(sample)
+        if isinstance(tx_id, str) and tx_id:
+            snapshots_by_transaction.setdefault(tx_id, []).append(sample)
+
+    def _choose_snapshot_for_event(event: dict[str, Any], *, phase_hint: str) -> Optional[dict[str, Any]]:
+        sequence = event.get("sequence") if isinstance(event.get("sequence"), int) else None
+        tx_id = event.get("transactionId") if isinstance(event.get("transactionId"), str) else None
+        pool: list[dict[str, Any]] = []
+        if sequence is not None:
+            pool.extend(snapshots_by_sequence.get(sequence, []))
+        if tx_id:
+            pool.extend(snapshots_by_transaction.get(tx_id, []))
+        if not pool:
+            return None
+        best: Optional[dict[str, Any]] = None
+        best_score = -1
+        for sample in pool:
+            position = sample.get("position")
+            if not isinstance(position, dict):
+                continue
+            phase = (sample.get("phase") or "").lower()
+            score = 1
+            if phase_hint in phase:
+                score += 4
+            if phase_hint == "at-action" and "action" in phase:
+                score += 2
+            if phase_hint == "before-action" and "before" in phase:
+                score += 2
+            if sample.get("sampled") is True:
+                score += 1
+            if score > best_score:
+                best_score = score
+                best = sample
+        return best
+
+    clusters: dict[tuple[int, int, int], dict[str, Any]] = {}
+    sequence_to_location: dict[int, str] = {}
+    transaction_to_location: dict[str, str] = {}
+
+    for event in events:
+        sequence = event.get("sequence") if isinstance(event.get("sequence"), int) else None
+        tx_id = event.get("transactionId") if isinstance(event.get("transactionId"), str) else None
+        action_snapshot = _choose_snapshot_for_event(event, phase_hint="at-action")
+        if not action_snapshot:
+            direct_sample = event.get("actionPositionSample")
+            if isinstance(direct_sample, dict):
+                action_snapshot = _normalize_snapshot(direct_sample, fallback_phase="at-action")
+                if isinstance(action_snapshot, dict):
+                    if action_snapshot.get("interactionSequence") is None and sequence is not None:
+                        action_snapshot["interactionSequence"] = sequence
+                    if not action_snapshot.get("transactionId") and tx_id:
+                        action_snapshot["transactionId"] = tx_id
+        if not action_snapshot:
+            continue
+        position = action_snapshot.get("position")
+        if not isinstance(position, dict):
+            continue
+        key = _cluster_key(position)
+        cluster = clusters.get(key)
+        if cluster is None:
+            cluster = {
+                "id": "loc_" + hashlib.sha256(f"{key[0]}|{key[1]}|{key[2]}".encode("utf-8")).hexdigest()[:14],
+                "count": 0,
+                "sumX": 0.0,
+                "sumY": 0.0,
+                "sumZ": 0.0,
+                "minX": position["x"],
+                "maxX": position["x"],
+                "minY": position["y"],
+                "maxY": position["y"],
+                "minZ": position["z"],
+                "maxZ": position["z"],
+                "paths": {},
+                "controlTypes": {},
+                "actionKinds": {},
+                "featureCandidates": {},
+                "purposes": {},
+                "transactions": set(),
+                "sequences": set(),
+                "nearby": {},
+                "worldContexts": {},
+                "beforePositions": [],
+            }
+            clusters[key] = cluster
+
+        cluster["count"] += 1
+        cluster["sumX"] += position["x"]
+        cluster["sumY"] += position["y"]
+        cluster["sumZ"] += position["z"]
+        cluster["minX"] = min(cluster["minX"], position["x"])
+        cluster["maxX"] = max(cluster["maxX"], position["x"])
+        cluster["minY"] = min(cluster["minY"], position["y"])
+        cluster["maxY"] = max(cluster["maxY"], position["y"])
+        cluster["minZ"] = min(cluster["minZ"], position["z"])
+        cluster["maxZ"] = max(cluster["maxZ"], position["z"])
+
+        path = event.get("path") if isinstance(event.get("path"), str) else None
+        control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else "unknown"
+        action_kind = event.get("actionKind") if isinstance(event.get("actionKind"), str) else "unknown"
+        feature_candidate = event.get("featureCandidate") if isinstance(event.get("featureCandidate"), str) else None
+        purpose = event.get("inferredLocationPurpose") if isinstance(event.get("inferredLocationPurpose"), str) else _system_bucket_from_event(feature_candidate, path, action_kind)
+
+        if path:
+            cluster["paths"][path] = cluster["paths"].get(path, 0) + 1
+        cluster["controlTypes"][control_type] = cluster["controlTypes"].get(control_type, 0) + 1
+        cluster["actionKinds"][action_kind] = cluster["actionKinds"].get(action_kind, 0) + 1
+        if feature_candidate:
+            cluster["featureCandidates"][feature_candidate] = cluster["featureCandidates"].get(feature_candidate, 0) + 1
+        if purpose:
+            cluster["purposes"][purpose] = cluster["purposes"].get(purpose, 0) + 1
+
+        if isinstance(sequence, int):
+            cluster["sequences"].add(sequence)
+            sequence_to_location.setdefault(sequence, cluster["id"])
+        if tx_id:
+            cluster["transactions"].add(tx_id)
+            transaction_to_location.setdefault(tx_id, cluster["id"])
+
+        world_context = action_snapshot.get("worldContext")
+        if isinstance(world_context, dict):
+            context_key = world_context.get("path") if isinstance(world_context.get("path"), str) else world_context.get("name")
+            if isinstance(context_key, str) and context_key:
+                cluster["worldContexts"][context_key] = cluster["worldContexts"].get(context_key, 0) + 1
+
+        before_snapshot = _choose_snapshot_for_event(event, phase_hint="before-action")
+        if before_snapshot and isinstance(before_snapshot.get("position"), dict):
+            cluster["beforePositions"].append(before_snapshot.get("position"))
+
+        nearby = event.get("nearbyWorldObjects") if isinstance(event.get("nearbyWorldObjects"), list) else []
+        for obj in nearby[:16]:
+            if not isinstance(obj, dict):
+                continue
+            nearby_path = obj.get("path") if isinstance(obj.get("path"), str) else None
+            if nearby_path:
+                cluster["nearby"][nearby_path] = cluster["nearby"].get(nearby_path, 0) + 1
+
+    location_registry: list[dict[str, Any]] = []
+    for cluster in sorted(clusters.values(), key=lambda value: (-value["count"], value["id"]))[:140]:
+        purpose = sorted(cluster["purposes"].items(), key=lambda item: (-item[1], item[0]))[0][0] if cluster["purposes"] else "uncategorized"
+        confidence_score = min(1.0, 0.2 + (cluster["count"] / 10.0) + (len(cluster["transactions"]) / 10.0))
+        representative = {
+            "x": round(cluster["sumX"] / cluster["count"], 4),
+            "y": round(cluster["sumY"] / cluster["count"], 4),
+            "z": round(cluster["sumZ"] / cluster["count"], 4),
+        }
+        range_box = {
+            "min": {"x": round(cluster["minX"], 4), "y": round(cluster["minY"], 4), "z": round(cluster["minZ"], 4)},
+            "max": {"x": round(cluster["maxX"], 4), "y": round(cluster["maxY"], 4), "z": round(cluster["maxZ"], 4)},
+        }
+        location_registry.append({
+            "id": cluster["id"],
+            "candidatePurpose": purpose,
+            "representativePosition": representative,
+            "positionBounds": range_box,
+            "supportingInteractionCount": cluster["count"],
+            "supportingTransactionCount": len(cluster["transactions"]),
+            "controlTypes": [item[0] for item in sorted(cluster["controlTypes"].items(), key=lambda item: (-item[1], item[0]))],
+            "actionKinds": [item[0] for item in sorted(cluster["actionKinds"].items(), key=lambda item: (-item[1], item[0]))],
+            "featureCandidates": [item[0] for item in sorted(cluster["featureCandidates"].items(), key=lambda item: (-item[1], item[0]))],
+            "likelyTargetPaths": [item[0] for item in sorted(cluster["paths"].items(), key=lambda item: (-item[1], item[0]))[:12]],
+            "nearbyWorldObjectPaths": [item[0] for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))[:12]],
+            "worldContexts": [item[0] for item in sorted(cluster["worldContexts"].items(), key=lambda item: (-item[1], item[0]))[:6]],
+            "revisited": len(cluster["transactions"]) > 1,
+            "proximityEvidenceOnly": True,
+            "confidence": {
+                "score": round(confidence_score, 3),
+                "level": _confidence_level(confidence_score),
+                "limitations": [
+                    "Observed client-visible positional proximity only",
+                    "No automatic server-side causality proof",
+                ],
+            },
+            "uncertaintyNotes": [
+                "Location clustering is spatially inferred from observed action positions",
+            ],
+            "sequences": sorted(cluster["sequences"])[:30],
+            "transactions": sorted(cluster["transactions"])[:30],
+            "beforePositions": cluster["beforePositions"][:8],
+        })
+
+    spatial_relationships: list[dict[str, Any]] = []
+    for relation in relationships[:400]:
+        if not isinstance(relation, dict):
+            continue
+        seq = relation.get("interactionSequence") if isinstance(relation.get("interactionSequence"), int) else None
+        tx_id = relation.get("transactionId") if isinstance(relation.get("transactionId"), str) else None
+        location_id = sequence_to_location.get(seq) if seq is not None else None
+        if location_id is None and tx_id:
+            location_id = transaction_to_location.get(tx_id)
+        if location_id is None:
+            continue
+        spatial_relationships.append({
+            "id": "spatial_" + str(relation.get("id") or "unknown"),
+            "relationshipId": relation.get("id"),
+            "locationId": location_id,
+            "interactionSequence": seq,
+            "transactionId": tx_id,
+            "action": relation.get("action") if isinstance(relation.get("action"), dict) else {},
+            "stateSignalCount": len(relation.get("stateBeforeAfter") or []),
+            "outcomeStateKeys": [
+                item.get("key")
+                for item in (relation.get("stateBeforeAfter") or [])
+                if isinstance(item, dict) and isinstance(item.get("key"), str)
+            ][:16],
+            "confidence": relation.get("confidence") if isinstance(relation.get("confidence"), dict) else {},
+            "causality": "not-proven-temporal-correlation-only",
+            "proximityObserved": True,
+        })
+
+    navigation_candidates: list[dict[str, Any]] = []
+    for location in location_registry[:120]:
+        before_positions = location.get("beforePositions") if isinstance(location.get("beforePositions"), list) else []
+        approach_position = before_positions[0] if before_positions else None
+        navigation_candidates.append({
+            "locationId": location.get("id"),
+            "candidatePurpose": location.get("candidatePurpose"),
+            "targetPosition": location.get("representativePosition"),
+            "suggestedApproachPosition": approach_position,
+            "targetObjectPaths": location.get("nearbyWorldObjectPaths") or location.get("likelyTargetPaths") or [],
+            "interactionMechanisms": location.get("controlTypes") or [],
+            "movementStatus": "unknown",
+            "confidence": location.get("confidence"),
+            "limitations": [
+                "Approach positions are observational, not guaranteed valid navigation meshes",
+            ],
+        })
+
+    spatial_quality_metrics = {
+        "playerPositionSamples": {
+            "total": len(position_history),
+            "withCoordinates": sum(1 for item in position_history if isinstance(item.get("position"), dict)),
+            "invalid": sum(1 for item in position_history if item.get("positionValid") is False),
+            "interpolated": sum(1 for item in position_history if item.get("interpolated") is True),
+        },
+        "eventPositionSnapshots": {
+            "total": len(event_snapshots),
+            "withCoordinates": sum(1 for item in event_snapshots if isinstance(item.get("position"), dict)),
+            "sampled": sum(1 for item in event_snapshots if item.get("sampled") is True),
+            "interpolated": sum(1 for item in event_snapshots if item.get("interpolated") is True),
+            "linkedToInteractions": sum(1 for item in event_snapshots if isinstance(item.get("interactionSequence"), int)),
+        },
+        "locationClustering": {
+            "functionalLocationCount": len(location_registry),
+            "spatialActionOutcomeRelationshipCount": len(spatial_relationships),
+            "navigationCandidateCount": len(navigation_candidates),
+        },
+        "evidenceBoundaries": {
+            "workspaceActiveObjectsOnly": True,
+            "replicatedStorageTemplatesExcluded": True,
+            "causalityProven": False,
+            "serverAuthorityVerified": False,
+        },
+        "warnings": [
+            warning
+            for warning in (
+                "No valid player position history available" if len(position_history) == 0 else None,
+                "No event-linked position snapshots with coordinates" if sum(1 for item in event_snapshots if isinstance(item.get("position"), dict)) == 0 else None,
+                "No functional locations could be clustered from current evidence" if len(location_registry) == 0 else None,
+            )
+            if warning
+        ],
+    }
+
     systems_list.sort(key=lambda item: (-item["confidence"]["score"], -item["observedInteractionEvents"], item["id"]))
 
     state_signals = []
@@ -1257,6 +1663,7 @@ def _build_universal_discovery_report(
             "systemsSufficientForGeneration": sum(1 for item in systems_list if item["evidenceSufficientForGeneration"]),
             "highConfidenceSystems": sum(1 for item in systems_list if item["confidence"]["level"] == "high"),
         },
+        "spatialDiscovery": spatial_quality_metrics,
         "unsupportedAssumptions": {
             "count": 0,
             "notes": ["No server-side capability inference is treated as proven"],
@@ -1328,6 +1735,23 @@ def _build_universal_discovery_report(
         },
         "discoveredGameplaySystems": systems_list,
         "candidateActionOutcomeRelationships": relationships[:240],
+        "playerPositionHistory": position_history[:900],
+        "eventPositionSnapshots": event_snapshots[:1400],
+        "functionalLocationRegistry": location_registry,
+        "spatialActionOutcomeRelationships": spatial_relationships[:260],
+        "navigationCandidates": navigation_candidates,
+        "spatialDiscovery": {
+            "status": "captured" if len(event_snapshots) > 0 or len(position_history) > 0 else "not-captured",
+            "workspaceActiveObjectsOnly": True,
+            "replicatedStorageTemplatesExcluded": True,
+            "interpolationPolicy": "sampled-only-no-interpolated-positions",
+            "continuityPolicy": "character-generation-boundaries-preserved",
+            "notes": [
+                "Spatial inference is evidence-driven and bounded to observed client-visible data",
+                "No server-authority assumptions are made from spatial proximity alone",
+            ],
+        },
+        "spatialDiscoveryQualityMetrics": spatial_quality_metrics,
         "guiWorkflowGraph": {
             "nodes": workflow_node_items,
             "edges": workflow_edge_items,
@@ -1369,6 +1793,7 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
     identity = report.get("gameIdentity") if isinstance(report.get("gameIdentity"), dict) else {}
     metrics = report.get("qualityMetrics") if isinstance(report.get("qualityMetrics"), dict) else {}
     systems = report.get("discoveredGameplaySystems") if isinstance(report.get("discoveredGameplaySystems"), list) else []
+    spatial_metrics = (metrics.get("spatialDiscovery") if isinstance(metrics, dict) and isinstance(metrics.get("spatialDiscovery"), dict) else {})
     uncertainties = ((report.get("uncertaintiesAndValidation") or {}).get("uncertainties") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
     steps = ((report.get("uncertaintiesAndValidation") or {}).get("recommendedValidationSteps") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
 
@@ -1393,6 +1818,8 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Observed interactions: {(((metrics.get('interactionCoverage') or {}).get('totalObservedInteractions')) if isinstance(metrics, dict) else None)}",
         f"- Relationships with outcome signals: {((metrics.get('actionOutcomeRelationships') or {}).get('relationshipsWithOutcomeSignals') if isinstance(metrics, dict) else None)}",
         f"- Workflow transactions: {((metrics.get('workflowCompleteness') or {}).get('transactionCount') if isinstance(metrics, dict) else None)}",
+        f"- Functional locations clustered: {(spatial_metrics.get('locationClustering') or {}).get('functionalLocationCount') if isinstance(spatial_metrics, dict) else None}",
+        f"- Event snapshots with coordinates: {(spatial_metrics.get('eventPositionSnapshots') or {}).get('withCoordinates') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",
         "",
         "Top discovered systems:",

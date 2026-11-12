@@ -1,3 +1,39 @@
+## Update — 2026-11-12 — Universal spatial discovery + location linkage integration
+
+### Implemented
+
+- Extended `LycolesUniversalInspector.lua` to emit bounded, game-agnostic spatial evidence during scan and live-observation export:
+  - `playerPositionHistory`
+  - `eventPositionSnapshots`
+  - `spatialLocationHistory`
+  - `spatialDiscovery` summary metadata with explicit evidence boundaries.
+- Added adaptive movement sampling and event-linked snapshot capture for interaction phases (`before-action`, `at-action`, observation windows) with respawn-generation continuity handling.
+- Added bounded nearby-world-object capture (workspace-active scope) and spatial diagnostic counters without upgrading causality/server-authority claims.
+- Extended `tools/receiver_generation_pipeline.py` universal discovery output with:
+  - `playerPositionHistory`
+  - `eventPositionSnapshots`
+  - `functionalLocationRegistry`
+  - `spatialActionOutcomeRelationships`
+  - `navigationCandidates`
+  - `spatialDiscoveryQualityMetrics`
+  - `qualityMetrics.spatialDiscovery`.
+- Added backward-compatible fallback behavior for legacy observation exports that do not yet include spatial fields; report emits explicit warnings and empty spatial registries (no fabricated capability inference).
+- Updated inspector version to `v30.6.49`.
+
+### Validation completed
+
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py`
+- `python3 -m unittest tests.test_receiver_generation_pipeline` (**22/22 passed**)
+- Discovery CLI run against Bubble Gum observation export:
+  - `python3 tools/receiver_generation_pipeline.py discover-observation --observation "/home/openhands/workspace/project/b45f0e606f7a4b9fb2ca4528ff4cee0a/Pasted text(20261112-120513).txt" ...` (PASS)
+  - Spatial sections present with explicit warnings when source export has no spatial samples.
+
+### Notes
+
+- Local sandbox currently lacks `luau-compile`; Potassium compile/load must still be live-verified by user after publishing commit-pinned script.
+
+
+
 ## Update — 2026-11-10 — Universal discovery architecture pivot (Bubble Gum validation prep)
 
 ### Implemented
