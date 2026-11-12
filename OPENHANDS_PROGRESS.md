@@ -1,3 +1,72 @@
+## Update — 2026-11-06 — v30.6.54 GUI target repair, ambiguity handling, and provenance clarity
+
+### Live issue addressed
+
+- Bubble Gum live click capture showed `GetGuiObjectsAtPosition is not a valid member of UserInputService` on every click.
+- Root cause: GUI hit testing incorrectly called `UserInputService:GetGuiObjectsAtPosition(...)`.
+- Consequence: GUI probe failures could still leave raycast data, risking accidental world-target over-attribution.
+
+### Fixes implemented
+
+- Replaced GUI hit testing with `PlayerGui:GetGuiObjectsAtPosition(...)` via new helper:
+  - `collectGuiHitCandidatesAtPosition(x, y)`
+  - Supports inset-aware coordinate variants (`raw-screen`, `minus-gui-inset`, `plus-gui-inset`)
+  - Captures API availability/failure diagnostics and matched coordinate variant.
+- Introduced explicit target classification layer:
+  - `confirmed-gui-target`
+  - `confirmed-world-target`
+  - `inspector-owned-target`
+  - `ambiguous-target`
+  - `unresolved-target`
+- Preserved existing `targetScope` while adding `targetClassification` and richer `targetResolution` booleans.
+- Critical safety change:
+  - When GUI hit testing is unavailable/failed and only raycast evidence exists, classification is now `ambiguous-target` (scope `ambiguous`) instead of implicitly confirmed world target.
+- Correlation safety:
+  - Pending click target path is now queued only for confirmed GUI/world classifications.
+  - Ambiguous/unresolved clicks do not inject world-path correlation anchors.
+
+### Receiver/export provenance clarifications
+
+- Live observation export now embeds `baselineReportTransport` and `baselineMultipartUploadCompleted` snapshot data.
+- `sourceProvenance` now includes:
+  - `receiverStoredPayloadDigestCount`
+  - `receiverIntegrityStatus`
+  - explicit note that live observation export does **not** cryptographically re-verify receiver integrity.
+- Interpretation of user-observed flags:
+  - `uploadInProgress=true` generally means export was captured while baseline upload state was still active.
+  - `receiverStoredPayloadDigestsVerified=false` / `receiverIntegrityVerified=false` are expected unless a separate authenticated integrity revalidation step is performed.
+
+### Multipart reconstruction validation
+
+- Added regressions for chunked diagnostics reconstruction completeness:
+  - multi-key reconstruction (`cursorObservationHistory` + `clickTargetObservations`)
+  - sequence mismatch fail-closed behavior.
+- Existing chunked diagnostics reconstruction remains fail-closed for malformed sequences/totals.
+
+### Universal pickup investigation (offline)
+
+- Checked local archived FA86 baseline artifacts available in workspace.
+- Available archive (`FA86...`) has complete local multipart set (651/651 parts), but contains no pickup candidate/collection evidence in derived universal gameplay intelligence outputs.
+- This indicates pickup flow validation still needs fresh live evidence from Bubble Gum scans (or supplied 985-part archive) before claiming collection readiness.
+
+### Validation
+
+- `python3 -m unittest tests.test_inspector_ui tests.test_compile_scan tests.test_receiver_generation_pipeline` → **90 passed**
+- `python3 -m unittest discover -s tests` → **1673 passed, 17 skipped, 0 failed**
+- `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- `python3 -m unittest tests.test_inspector_compiler_limits` → **2 passed**
+- `build/luau-0.744/luau-compile --null LycolesUniversalInspector.lua` → **PASS**
+- `build/luau-0.744/luau-compile --null tools/observation_auto_train_template.lua` → **PASS**
+- Luau max register index remains **R157**.
+
+### Remaining limitation
+
+- Potassium live verification is still required to confirm GUI hit-test API behavior and ambiguity rates in-executor.
+- The user-referenced 985-part baseline manifest was not present in this workspace, so that exact archive could not be replay-validated offline here.
+
+
+
+
 ## Update — 2026-11-06 — v30.6.53 shared-summary overflow fix (no-interaction FULL scans)
 
 ### Root cause (confirmed)

@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.53
+-- Lycoles Universal Inspector v30.6.54
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.53"
+local VERSION = "30.6.54"
 
 local endpoint = ""
 local autoSend = true
@@ -2832,24 +2832,106 @@ function summarizeGuiHitCandidate(guiObject)
     }
 end
 
+function collectGuiHitCandidatesAtPosition(x,y)
+    local playerGui=player and player:FindFirstChildOfClass("PlayerGui")
+    local inset=cursorInset()
+    local variants={{label="raw-screen",x=x,y=y}}
+    if type(inset)=="table" and type(inset.topLeft)=="table"
+        and type(inset.topLeft.x)=="number" and type(inset.topLeft.y)=="number" then
+        local insetX=inset.topLeft.x
+        local insetY=inset.topLeft.y
+        if math.abs(insetX)>0.01 or math.abs(insetY)>0.01 then
+            variants[#variants+1]={label="minus-gui-inset",x=x-insetX,y=y-insetY}
+            variants[#variants+1]={label="plus-gui-inset",x=x+insetX,y=y+insetY}
+        end
+    end
+
+    local seen={}
+    local candidates={}
+    local attemptCount=0
+    local firstFailure=nil
+    local apiAvailable=true
+    local firstMatchedVariant=nil
+
+    for _,variant in ipairs(variants) do
+        if type(variant.x)=="number" and type(variant.y)=="number" then
+            attemptCount=attemptCount+1
+            local ok,guiObjects=pcall(function()
+                if not playerGui or type(playerGui.GetGuiObjectsAtPosition)~="function" then
+                    error("PlayerGui.GetGuiObjectsAtPosition unavailable")
+                end
+                return playerGui:GetGuiObjectsAtPosition(variant.x,variant.y)
+            end)
+            if ok and type(guiObjects)=="table" then
+                if #guiObjects>0 and not firstMatchedVariant then
+                    firstMatchedVariant=variant.label
+                end
+                for _,guiObject in ipairs(guiObjects) do
+                    if typeof(guiObject)=="Instance" and guiObject:IsA("GuiObject") and not seen[guiObject] then
+                        seen[guiObject]=true
+                        candidates[#candidates+1]={instance=guiObject,hitVariant=variant.label}
+                    end
+                end
+            else
+                local reason=ok and "gui-hit-test-returned-non-table" or tostring(guiObjects)
+                if string.find(reason,"GetGuiObjectsAtPosition",1,true)
+                    and (string.find(reason,"not a valid member",1,true)
+                        or string.find(reason,"unavailable",1,true)) then
+                    apiAvailable=false
+                end
+                firstFailure=firstFailure or reason
+            end
+        end
+    end
+
+    local failed=(#candidates==0) and firstFailure~=nil
+    return {
+        attempted=attemptCount>0,
+        attempts=attemptCount,
+        candidates=candidates,
+        failed=failed,
+        failure=firstFailure,
+        apiAvailable=apiAvailable,
+        matchedVariant=firstMatchedVariant,
+        playerGuiAvailable=playerGui~=nil,
+        guiInset=inset,
+    }
+end
+
+
+
 
 function isInspectorOwnedPath(path)
     if type(path)~="string" then return false end
     return string.find(path,"LycolesUniversalInspector",1,true)~=nil
 end
 
-function classifyClickTargetScope(topmostInteractive,raycastTarget)
+function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)
     local topPath=topmostInteractive and topmostInteractive.path or nil
     local rayPath=raycastTarget and raycastTarget.path or nil
     local topInspector=isInspectorOwnedPath(topPath)
     local rayInspector=isInspectorOwnedPath(rayPath)
-    if topInspector and rayInspector then return "inspector-only" end
-    if topInspector and not rayPath then return "inspector-ui" end
-    if topInspector and rayPath and not rayInspector then return "mixed-inspector-and-world" end
-    if (not topInspector) and topPath then return "game-ui" end
-    if rayInspector then return "inspector-world" end
-    if rayPath then return "world" end
-    return "unresolved"
+
+    if topInspector then
+        if rayPath and not rayInspector then
+            return "mixed-inspector-and-world","inspector-owned-target"
+        end
+        return "inspector-ui","inspector-owned-target"
+    end
+    if rayInspector then
+        return "inspector-world","inspector-owned-target"
+    end
+
+    if topPath then
+        return "game-ui","confirmed-gui-target"
+    end
+    if rayPath then
+        if guiHitTestFailed or not guiHitTestReliable then
+            return "ambiguous","ambiguous-target"
+        end
+        return "world","confirmed-world-target"
+    end
+    return "unresolved","unresolved-target"
 end
 
 
@@ -2882,7 +2964,10 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
         raycastTarget=nil,
         inspectorOwnedTarget=false,
         targetScope="unresolved",
-        targetResolution={status="unresolved",unresolved=true,inspectorOwnedTarget=false},
+        targetClassification="unresolved-target",
+        targetResolution={status="unresolved",classification="unresolved-target",
+            unresolved=true,ambiguous=false,inspectorOwnedTarget=false,
+            confirmedGuiTarget=false,confirmedWorldTarget=false},
         playerPositionAtClick=nil,
         characterOrientationAtClick=nil,
         cameraOrientationAtClick=nil,
@@ -2896,6 +2981,8 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
             guiHitTestSucceeded=false,
             raycastAttempted=false,
             raycastSucceeded=false,
+            targetClassification="unresolved-target",
+            ambiguousTarget=false,
             unresolvedTarget=true,
             componentFailures={{
                 stage=sanitizeDiagnosticText(failureStage or "capture-wrapper",40),
@@ -2942,6 +3029,7 @@ function createFallbackClickTargetObservation(buttonName,inputType,failureStage,
             guiCandidateCount=0,
             confidence="unavailable",
             targetScope="unresolved",
+            targetClassification="unresolved-target",
         },
         verificationStages={
             clickObserved=true,targetIdentified=false,
@@ -2998,29 +3086,50 @@ function captureClickTargetObservation(buttonName,input)
     local guiHitTestAttempted=type(x)=="number" and type(y)=="number"
     local guiHitTestSucceeded=false
     local guiHitTestFailure=nil
+    local guiHitTestReliable=false
+    local guiHitTestApiAvailable=true
+    local guiHitTestCoordinateSpace=nil
+    local guiHitTestAttempts=0
     if guiHitTestAttempted then
-        local ok,guiObjects=pcall(function()
-            return UserInputService:GetGuiObjectsAtPosition(x,y)
+        local ok,hitResult=pcall(function()
+            return collectGuiHitCandidatesAtPosition(x,y)
         end)
-        if ok and type(guiObjects)=="table" then
-            guiHitTestSucceeded=true
-            for _,guiObject in ipairs(guiObjects) do
-                if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
-                local candidateOk,candidateOrErr=pcall(function()
-                    return summarizeGuiHitCandidate(guiObject)
-                end)
-                if candidateOk and type(candidateOrErr)=="table" then
-                    guiCandidates[#guiCandidates+1]=candidateOrErr
-                elseif not candidateOk then
-                    guiHitTestFailure=guiHitTestFailure or candidateOrErr
+        if ok and type(hitResult)=="table" then
+            guiHitTestApiAvailable=hitResult.apiAvailable~=false
+            guiHitTestCoordinateSpace=hitResult.matchedVariant
+            guiHitTestAttempts=type(hitResult.attempts)=="number" and hitResult.attempts or 0
+            local candidateEntries=type(hitResult.candidates)=="table" and hitResult.candidates or nil
+            if candidateEntries then
+                guiHitTestSucceeded=hitResult.failed~=true
+                for _,candidateEntry in ipairs(candidateEntries) do
+                    if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
+                    local guiObject=(type(candidateEntry)=="table") and candidateEntry.instance or candidateEntry
+                    local candidateOk,candidateOrErr=pcall(function()
+                        return summarizeGuiHitCandidate(guiObject)
+                    end)
+                    if candidateOk and type(candidateOrErr)=="table" then
+                        candidateOrErr.hitTestCoordinateSpace=(type(candidateEntry)=="table")
+                            and candidateEntry.hitVariant or nil
+                        guiCandidates[#guiCandidates+1]=candidateOrErr
+                    elseif not candidateOk then
+                        guiHitTestFailure=guiHitTestFailure or candidateOrErr
+                    end
                 end
+            else
+                guiHitTestFailure=guiHitTestFailure or "gui-hit-test-returned-non-table"
             end
+            if type(hitResult.failure)=="string" then
+                guiHitTestFailure=guiHitTestFailure or hitResult.failure
+            end
+            guiHitTestReliable=guiHitTestApiAvailable and not (hitResult.failed==true)
         else
-            guiHitTestFailure=ok and "gui-hit-test-returned-non-table" or guiObjects
+            guiHitTestFailure=ok and "gui-hit-test-helper-returned-non-table" or hitResult
+            guiHitTestReliable=false
         end
     elseif cursorCaptureSucceeded then
         guiHitTestFailure="cursor-screen-unavailable"
     end
+    local guiHitTestFailed=guiHitTestAttempted and not guiHitTestReliable
     if guiHitTestFailure then noteComponentFailure("gui-hit-test",guiHitTestFailure) end
 
     local topmostInteractive=nil
@@ -3083,11 +3192,13 @@ function captureClickTargetObservation(buttonName,input)
         end
     end
 
-    local targetScope=classifyClickTargetScope(topmostInteractive,raycastTarget)
-    local inspectorOwnedTarget=(targetScope=="inspector-only"
-        or targetScope=="inspector-ui"
-        or targetScope=="inspector-world"
-        or targetScope=="mixed-inspector-and-world")
+    local targetScope,targetClassification=classifyClickTargetScope(
+        topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)
+    local inspectorOwnedTarget=targetClassification=="inspector-owned-target"
+    local targetAmbiguous=targetClassification=="ambiguous-target"
+    local targetIdentified=(targetClassification=="confirmed-gui-target"
+        or targetClassification=="confirmed-world-target"
+        or inspectorOwnedTarget)
 
     local confidence="low"
     local score=0.22
@@ -3096,10 +3207,13 @@ function captureClickTargetObservation(buttonName,input)
     if raycastTarget then score=score+0.25 end
     if not cursorObservation.cursorAvailable then score=score-0.2 end
     if inspectorOwnedTarget then score=score-0.12 end
+    if not guiHitTestReliable then score=score-0.17 end
+    if targetAmbiguous then score=score-0.22 end
     score=clampNumber(score,0,0.98)
     if score>=0.78 then confidence="high"
     elseif score>=0.5 then confidence="medium"
     elseif score<=0.2 then confidence="unavailable" end
+    if targetAmbiguous and confidence=="high" then confidence="medium" end
 
     clickObservationSequence=clickObservationSequence+1
     local clickId="click_"..tostring(clickObservationSequence)
@@ -3126,6 +3240,12 @@ function captureClickTargetObservation(buttonName,input)
     if not raycastTarget then
         missingEvidence[#missingEvidence+1]="No raycast world hit determined"
     end
+    if guiHitTestAttempted and not guiHitTestReliable then
+        missingEvidence[#missingEvidence+1]="GUI hit testing unavailable or failed; world raycast is non-confirmatory"
+    end
+    if targetAmbiguous then
+        missingEvidence[#missingEvidence+1]="Target classification is ambiguous between GUI and world"
+    end
     if inspectorOwnedTarget then
         missingEvidence[#missingEvidence+1]="Inspector-owned UI target; excluded from gameplay correlation"
     end
@@ -3138,8 +3258,6 @@ function captureClickTargetObservation(buttonName,input)
             end
         end
     end
-
-    local targetIdentified=topmostInteractive~=nil or raycastTarget~=nil
     local observation={
         id=clickId,
         observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -3153,10 +3271,15 @@ function captureClickTargetObservation(buttonName,input)
         raycastTarget=raycastTarget,
         inspectorOwnedTarget=inspectorOwnedTarget,
         targetScope=targetScope,
+        targetClassification=targetClassification,
         targetResolution={
             status=targetIdentified and "identified" or "unresolved",
+            classification=targetClassification,
             unresolved=not targetIdentified,
+            ambiguous=targetAmbiguous,
             inspectorOwnedTarget=inspectorOwnedTarget,
+            confirmedGuiTarget=targetClassification=="confirmed-gui-target",
+            confirmedWorldTarget=targetClassification=="confirmed-world-target",
         },
         playerPositionAtClick=clickPositionSample and clickPositionSample.position or nil,
         characterOrientationAtClick=clickPositionSample and clickPositionSample.characterOrientation or nil,
@@ -3167,10 +3290,17 @@ function captureClickTargetObservation(buttonName,input)
             cursorCaptureSucceeded=cursorCaptureSucceeded,
             guiHitTestAttempted=guiHitTestAttempted,
             guiHitTestSucceeded=guiHitTestSucceeded,
+            guiHitTestReliable=guiHitTestReliable,
+            guiHitTestFailed=guiHitTestFailed,
+            guiHitTestApiAvailable=guiHitTestApiAvailable,
+            guiHitTestCoordinateSpace=guiHitTestCoordinateSpace,
+            guiHitTestAttempts=guiHitTestAttempts,
             guiHitTestFailure=guiHitTestFailure and sanitizeDiagnosticText(guiHitTestFailure,180) or nil,
             raycastAttempted=raycastAttempted,
             raycastSucceeded=raycastSucceeded,
             raycastFailure=raycastFailure and sanitizeDiagnosticText(raycastFailure,180) or nil,
+            targetClassification=targetClassification,
+            ambiguousTarget=targetAmbiguous,
             unresolvedTarget=not targetIdentified,
             failureStage=(#componentFailures>0 and componentFailures[1].stage) or nil,
             failureReason=(#componentFailures>0 and componentFailures[1].reason) or nil,
@@ -3198,8 +3328,13 @@ function captureClickTargetObservation(buttonName,input)
     end
 
     local stage="click-observed"
+    if targetAmbiguous then stage="target-ambiguous" end
     if targetIdentified then stage="target-identified" end
     if inspectorOwnedTarget then stage="target-identified-inspector-owned" end
+
+    local relationshipStatus="pending-followup-observation"
+    if targetAmbiguous then relationshipStatus="pending-ambiguous-target" end
+    if inspectorOwnedTarget then relationshipStatus="inspector-owned-non-gameplay" end
 
     local relationship={
         id="click-outcome-"..clickId,
@@ -3213,7 +3348,7 @@ function captureClickTargetObservation(buttonName,input)
         reproduciblyLiveValidated=false,
         causalityProven=false,
         stage=stage,
-        status=inspectorOwnedTarget and "inspector-owned-non-gameplay" or "pending-followup-observation",
+        status=relationshipStatus,
         missingEvidence={
             "No interaction callback linked yet",
             "No post-click state evidence linked yet",
@@ -3224,6 +3359,7 @@ function captureClickTargetObservation(buttonName,input)
             guiCandidateCount=#guiCandidates,
             confidence=confidence,
             targetScope=targetScope,
+            targetClassification=targetClassification,
         },
         verificationStages={
             clickObserved=true,
@@ -3240,9 +3376,13 @@ function captureClickTargetObservation(buttonName,input)
     }
     appendClickOutcome(relationship)
     if not inspectorOwnedTarget then
-        enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),
-            topmostInteractive and topmostInteractive.path
-                or (raycastTarget and raycastTarget.path) or nil)
+        local correlationTargetPath=nil
+        if targetClassification=="confirmed-gui-target" then
+            correlationTargetPath=topmostInteractive and topmostInteractive.path or nil
+        elseif targetClassification=="confirmed-world-target" then
+            correlationTargetPath=raycastTarget and raycastTarget.path or nil
+        end
+        enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),correlationTargetPath)
     end
     return observation
 end
@@ -5313,6 +5453,14 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             note="Observed interaction/state correlation only; causality, server authority, and gameplay remain unverified"
         }
     end
+    local reportTransportSnapshot=uploadSnapshot("live-observation-export")
+    local baselineMultipartUploadCompleted=(type(reportTransportSnapshot)=="table"
+        and type(reportTransportSnapshot.expectedParts)=="number"
+        and reportTransportSnapshot.expectedParts>0
+        and reportTransportSnapshot.acknowledgedParts==reportTransportSnapshot.expectedParts)
+    local receiverDigestCount=(type(reportTransportSnapshot)=="table"
+        and type(reportTransportSnapshot.acknowledgedDigestParts)=="number")
+        and reportTransportSnapshot.acknowledgedDigestParts or 0
     return {
         schemaVersion="30.6.live-observation-export.1",
         exportKind="dynamic-observations",
@@ -5332,7 +5480,9 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
             observerInputBindingReady=observerStats.inputBindingReady,
             uploadInProgress=uploading,
-            note="Post-scan live observations intended to overlay baseline evidence"
+            baselineMultipartUploadCompleted=baselineMultipartUploadCompleted,
+            baselineReportTransport=reportTransportSnapshot,
+            note="Post-scan live observations overlay baseline evidence; receiver integrity remains unverified unless separately authenticated"
         },
         integrity={
             scanComplete=true,
@@ -5352,9 +5502,11 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             scanId=observationScanId,
             placeId=game.PlaceId,
             partCount=baselinePartCount,
+            receiverStoredPayloadDigestCount=receiverDigestCount,
             receiverStoredPayloadDigestsVerified=false,
             receiverStoredPayloadDigestsRevalidatedThisRun=false,
-            receiverAcknowledgementDigestEquivalent=false,
+            receiverAcknowledgementDigestEquivalent=baselineMultipartUploadCompleted,
+            receiverIntegrityStatus=(reportTransportSnapshot and reportTransportSnapshot.receiverReportStatus) or "unavailable",
             receiverIntegrityVerified=false,
             resumeCheckpointAuthenticated=false,
             receiverResponseAuthenticityVerified=false,
@@ -5364,7 +5516,8 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             serverAuthorityVerified=false,
             replayable=false,
             gameplayVerified=false,
-            actionOutcomesVerified=false
+            actionOutcomesVerified=false,
+            note="Live observation export does not cryptographically re-verify receiver payload integrity"
         },
         features=features,
         featureReadiness=readiness,
@@ -6053,6 +6206,8 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
                 topmostGuiPath=clickObservation.topmostGuiTarget and clickObservation.topmostGuiTarget.path or nil,
                 raycastPath=clickObservation.raycastTarget and clickObservation.raycastTarget.path or nil,
                 scope=clickTargetScope,
+                classification=clickObservation.targetClassification,
+                ambiguous=clickObservation.targetResolution and clickObservation.targetResolution.ambiguous or nil,
                 inspectorOwnedTarget=clickInspectorOwned,
             } or nil,
             userInputState=tostring(input.UserInputState),source="UserInputService.InputBegan"

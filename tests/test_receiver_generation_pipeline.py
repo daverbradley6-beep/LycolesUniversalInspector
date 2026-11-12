@@ -1797,6 +1797,64 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertGreaterEqual((pickup_quality.get("pickupCollectionObservations") or {}).get("multiSignalCorroborated", 0), 1)
 
 
+
+    def test_ambiguous_click_target_attribution_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "ambiguous-click.json"
+            make_pickup_discovery_observation_export(overlay)
+
+            payload = json.loads(overlay.read_text(encoding="utf-8"))
+            click = (payload.get("clickTargetObservations") or [])[0]
+            click["targetScope"] = "ambiguous"
+            click["targetClassification"] = "ambiguous-target"
+            click["targetResolution"] = {
+                "status": "unresolved",
+                "classification": "ambiguous-target",
+                "unresolved": True,
+                "ambiguous": True,
+                "inspectorOwnedTarget": False,
+                "confirmedGuiTarget": False,
+                "confirmedWorldTarget": False,
+            }
+            click["pipelineDiagnostics"] = {
+                "captureAttempted": True,
+                "guiHitTestAttempted": True,
+                "guiHitTestSucceeded": False,
+                "guiHitTestReliable": False,
+                "guiHitTestFailed": True,
+                "guiHitTestApiAvailable": False,
+                "guiHitTestCoordinateSpace": "raw-screen",
+                "targetClassification": "ambiguous-target",
+                "ambiguousTarget": True,
+                "raycastAttempted": True,
+                "raycastSucceeded": True,
+                "unresolvedTarget": True,
+            }
+
+            interaction_item = ((payload.get("interactionDiagnostics") or {}).get("recentInteractions") or [])[0]
+            interaction_click = interaction_item.get("clickTargetObservation") if isinstance(interaction_item, dict) else None
+            if isinstance(interaction_click, dict):
+                interaction_click.update(click)
+
+            overlay.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Validate ambiguous click attribution handling",
+                scenario_name="ambiguous-click",
+            )
+            self.assertEqual(result["status"], "succeeded")
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+
+            click_targets = [item for item in (report.get("clickTargetObservations") or []) if isinstance(item, dict)]
+            self.assertTrue(any(item.get("targetScope") == "ambiguous" for item in click_targets))
+            self.assertTrue(any(item.get("targetClassification") == "ambiguous-target" for item in click_targets))
+            self.assertTrue(any(((item.get("targetResolution") or {}).get("ambiguous") is True) for item in click_targets))
+            self.assertTrue(any(((item.get("pipelineDiagnostics") or {}).get("ambiguousTarget") is True) for item in click_targets))
+
+
     def test_navigation_readiness_rejects_pointer_only_location_without_targets(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

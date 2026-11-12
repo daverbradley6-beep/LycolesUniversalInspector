@@ -312,6 +312,47 @@ class ScanCompilerTests(unittest.TestCase):
                 (path/f"{idx}.json").write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,"chunk sequence mismatch"):
                 compiler.compile_scan(path)
+
+    def test_chunked_interaction_diagnostics_multi_key_reconstruction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan125","placeId":3623096087,"partCount":5,
+                  "version":"30.6.53","objects":[]}
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":2,
+                    "clickTargetObservations":[],
+                    "clickTargetObservationsTotal":2,
+                })
+            cursor_chunk=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[
+                    {"sampleType":"mouse-movement"},
+                    {"sampleType":"mouse-click"},
+                ])
+            click_chunk_one=dict(base,partIndex=3,interactionDiagnosticsChunkKey="clickTargetObservations",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{"id":"click_1"}])
+            click_chunk_two=dict(base,partIndex=4,interactionDiagnosticsChunkKey="clickTargetObservations",
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{"id":"click_2"}])
+            objects=dict(base,partIndex=5,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,cursor_chunk,click_chunk_one,click_chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            plan=compiler.compile_scan(path)
+            diagnostics=plan.get("interactionDiagnostics") or {}
+            self.assertEqual(len(diagnostics.get("cursorObservationHistory") or []),2)
+            self.assertEqual(len(diagnostics.get("clickTargetObservations") or []),2)
+            self.assertEqual((diagnostics.get("clickTargetObservations") or [])[1].get("id"),"click_2")
+
     def test_local_manifest_must_match_multipart_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)

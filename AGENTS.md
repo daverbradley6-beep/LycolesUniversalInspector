@@ -17,6 +17,14 @@ Target experiences are third-party games that the user does not own and cannot o
 
 
 
+## Session notes — 2026-11-06 GUI hit-testing repair and ambiguity-safe attribution (v30.6.54)
+
+- `GetGuiObjectsAtPosition` must be called on `PlayerGui`, not `UserInputService`.
+- `UserInputService:GetMouseLocation()` + GUI inset differences can vary by executor/context; probing multiple coordinate variants (`raw-screen`, `minus-gui-inset`, `plus-gui-inset`) is safer than assuming one space.
+- If GUI hit testing is unavailable/failed, a successful world raycast is **non-confirmatory** for intended click target; classify as ambiguous rather than confirmed world.
+- Pending click correlation anchors should only use confirmed target classes. Ambiguous/unresolved clicks must avoid injecting world target paths.
+- Live observation exports intentionally keep `receiverIntegrityVerified=false` unless a separate authenticated integrity revalidation step is performed; expose baseline transport snapshot fields to avoid misinterpretation.
+
 ## Session notes — 2026-11-06 shared-summary overflow fix (v30.6.53)
 
 - Live error `JSON error: 2308: Shared scan summary exceeds receiver limit without interaction` is emitted from inspector `prepareParts` metadata size validation, before upload attempts.

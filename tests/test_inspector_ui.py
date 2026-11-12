@@ -336,6 +336,9 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('baselineScanId=baselineScanId',SRC)
         self.assertIn('sourceProvenance={',SRC)
         self.assertIn('receiverStoredPayloadDigestsVerified=false',SRC)
+        self.assertIn('baselineReportTransport=reportTransportSnapshot',SRC)
+        self.assertIn('receiverIntegrityStatus=(reportTransportSnapshot and reportTransportSnapshot.receiverReportStatus) or "unavailable"',SRC)
+        self.assertIn('receiverStoredPayloadDigestCount=receiverDigestCount',SRC)
 
     def test_upload_progress_does_not_disable_input_queue_processing(self):
         self.assertIn('uploading = true',SRC)
@@ -352,9 +355,12 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('action="inspector-ui-click"', SRC)
         self.assertIn('scope=clickTargetScope', SRC)
         self.assertIn('inspectorOwnedTarget=clickInspectorOwned', SRC)
-        self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget)', SRC)
+        self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)', SRC)
         self.assertIn('Inspector-owned UI target; excluded from gameplay correlation', SRC)
         self.assertIn('targetResolution={', SRC)
+        self.assertIn('classification=targetClassification', SRC)
+        self.assertIn('confirmedGuiTarget=targetClassification=="confirmed-gui-target"', SRC)
+        self.assertIn('confirmedWorldTarget=targetClassification=="confirmed-world-target"', SRC)
         self.assertIn('verificationStages={', SRC)
         self.assertIn('stage="multi-signal-corroborated"', SRC)
 
@@ -383,7 +389,10 @@ class InspectorUITests(unittest.TestCase):
     def test_click_capture_subcomponent_isolation_and_missing_source_link_diagnostics(self):
         self.assertIn('local ok,result=pcall(function()', SRC)
         self.assertIn('return captureCursorObservation("click-"..buttonLabel,inputType,true)', SRC)
-        self.assertIn('return UserInputService:GetGuiObjectsAtPosition(x,y)', SRC)
+        self.assertIn('function collectGuiHitCandidatesAtPosition(x,y)', SRC)
+        self.assertIn('return playerGui:GetGuiObjectsAtPosition(variant.x,variant.y)', SRC)
+        self.assertIn('GUI hit testing unavailable or failed; world raycast is non-confirmatory', SRC)
+        self.assertIn('return "ambiguous","ambiguous-target"', SRC)
         self.assertIn('noteComponentFailure("world-raycast",hitErr)', SRC)
         self.assertIn('noteComponentFailure("viewport-point-to-ray",ray)', SRC)
         self.assertIn('noteComponentFailure("orientation-capture",ok and "orientation-sample-unavailable" or sampleOrErr)', SRC)
