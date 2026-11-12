@@ -1040,6 +1040,256 @@ def make_nearby_unrelated_observation_export(path, scan_id="nearby-unrelated-sca
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def make_pickup_discovery_observation_export(path, scan_id="pickup-discovery-scan"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": scan_id,
+        "baselineScanId": scan_id,
+        "placeId": 85896571713843,
+        "gameName": "Pickup Discovery Fixture",
+        "objects": [
+            {
+                "path": "Workspace.Worlds.The Overworld.Collectibles.CoinOrb01",
+                "class": "Part",
+                "position": {"x": 14.0, "y": 5.0, "z": -7.0},
+                "interaction": {"touchInterest": True},
+            },
+            {
+                "path": "Workspace.Worlds.The Overworld.Collectibles.GemDropA",
+                "class": "Model",
+                "position": {"x": 18.0, "y": 5.2, "z": -9.5},
+                "interaction": {"hasPrompt": True, "actionText": "Collect"},
+            },
+            {
+                "path": "Workspace.Worlds.The Overworld.Decoration.Tree01",
+                "class": "Model",
+                "position": {"x": 60.0, "y": 8.0, "z": -42.0},
+            },
+            {
+                "path": "Workspace.",
+                "class": "Workspace",
+                "position": {"x": 0, "y": 0, "z": 0},
+            },
+        ],
+        "clickTargetObservations": [
+            {
+                "id": "click_pickup_1",
+                "sessionElapsedSeconds": 8.1,
+                "mouseButton": "MouseButton1",
+                "inputType": "MouseButton1",
+                "inspectorOwnedTarget": False,
+                "targetScope": "world",
+                "cursor": {
+                    "id": "cursor_pickup_1",
+                    "cursorAvailable": True,
+                    "screen": {"x": 940, "y": 520},
+                    "normalizedViewport": {"x": 0.49, "y": 0.48},
+                    "viewportSize": {"width": 1920, "height": 1080},
+                },
+                "raycastTarget": {
+                    "path": "Workspace.Worlds.The Overworld.Collectibles.CoinOrb01",
+                    "class": "Part",
+                    "hitPosition": {"x": 14.0, "y": 5.0, "z": -7.0},
+                },
+                "targetResolution": {"status": "identified", "unresolved": False, "inspectorOwnedTarget": False},
+                "pipelineDiagnostics": {
+                    "captureAttempted": True,
+                    "guiHitTestAttempted": True,
+                    "guiHitTestSucceeded": True,
+                    "raycastAttempted": True,
+                    "raycastSucceeded": True,
+                    "unresolvedTarget": False,
+                },
+                "targetIdentificationConfidence": {"level": "high", "score": 0.91, "overlapDetected": False, "cursorAvailable": True},
+            }
+        ],
+        "clickOutcomeRelationships": [
+            {
+                "id": "click-outcome-click_pickup_1",
+                "clickObservationId": "click_pickup_1",
+                "clickObserved": True,
+                "targetIdentified": True,
+                "interactionCallbackObserved": True,
+                "stateChangeTemporallyAssociated": True,
+                "meaningfulGameplayOutcomeObserved": True,
+                "outcomeCorroborated": True,
+                "reproduciblyLiveValidated": False,
+                "causalityProven": False,
+                "stage": "multi-signal-corroborated",
+                "status": "observational-only",
+                "verificationStages": {
+                    "clickObserved": True,
+                    "targetIdentified": True,
+                    "interactionCallbackObserved": True,
+                    "stateChangeObserved": True,
+                    "temporallyAssociated": True,
+                    "multiSignalCorroborated": True,
+                    "reproduciblyValidated": False,
+                    "causalityProven": False,
+                },
+                "clickLinkDiagnostics": {
+                    "linkMethod": "pending-window-score",
+                    "resolutionScore": 6.1,
+                    "evaluatedCandidates": 2,
+                },
+                "ambiguousAssociation": True,
+                "ambiguousCandidateClickObservationIds": ["click_old_a"],
+                "linkedInteractionSequences": [1],
+                "linkedTransactionIds": ["pickup-tx-1"],
+            }
+        ],
+        "interactionDiagnostics": {
+            "recentInteractions": [
+                {
+                    "sequence": 1,
+                    "transactionId": "pickup-tx-1",
+                    "sessionElapsedSeconds": 8.1,
+                    "controlType": "InputBegan.MouseButton1",
+                    "path": "LocalPlayer.Input.MouseButton1.None",
+                    "clickObservationId": "click_pickup_1",
+                    "clickTargetObservation": {
+                        "id": "click_pickup_1",
+                        "sessionElapsedSeconds": 8.1,
+                        "mouseButton": "MouseButton1",
+                        "inputType": "MouseButton1",
+                        "inspectorOwnedTarget": False,
+                        "targetScope": "world",
+                        "cursor": {
+                            "id": "cursor_pickup_1",
+                            "cursorAvailable": True,
+                            "screen": {"x": 940, "y": 520},
+                            "normalizedViewport": {"x": 0.49, "y": 0.48},
+                            "viewportSize": {"width": 1920, "height": 1080},
+                        },
+                        "raycastTarget": {
+                            "path": "Workspace.Worlds.The Overworld.Collectibles.CoinOrb01",
+                            "class": "Part",
+                            "hitPosition": {"x": 14.0, "y": 5.0, "z": -7.0},
+                        },
+                        "targetResolution": {"status": "identified", "unresolved": False, "inspectorOwnedTarget": False},
+                        "pipelineDiagnostics": {
+                            "captureAttempted": True,
+                            "guiHitTestAttempted": True,
+                            "guiHitTestSucceeded": True,
+                            "raycastAttempted": True,
+                            "raycastSucceeded": True,
+                            "unresolvedTarget": False,
+                        },
+                        "targetIdentificationConfidence": {"level": "high", "score": 0.91, "overlapDetected": False, "cursorAvailable": True},
+                    },
+                    "clickOutcomeRelationship": {
+                        "id": "click-outcome-click_pickup_1",
+                        "clickObservationId": "click_pickup_1",
+                        "clickObserved": True,
+                        "targetIdentified": True,
+                        "interactionCallbackObserved": True,
+                        "stateChangeTemporallyAssociated": True,
+                        "meaningfulGameplayOutcomeObserved": True,
+                        "outcomeCorroborated": True,
+                        "reproduciblyLiveValidated": False,
+                        "causalityProven": False,
+                        "stage": "multi-signal-corroborated",
+                        "status": "observational-only",
+                        "verificationStages": {
+                            "clickObserved": True,
+                            "targetIdentified": True,
+                            "interactionCallbackObserved": True,
+                            "stateChangeObserved": True,
+                            "temporallyAssociated": True,
+                            "multiSignalCorroborated": True,
+                            "reproduciblyValidated": False,
+                            "causalityProven": False,
+                        },
+                        "clickLinkDiagnostics": {
+                            "linkMethod": "pending-window-score",
+                            "resolutionScore": 6.1,
+                            "evaluatedCandidates": 2,
+                        },
+                        "ambiguousAssociation": True,
+                        "ambiguousCandidateClickObservationIds": ["click_old_a"],
+                        "linkedInteractionSequences": [1],
+                        "linkedTransactionIds": ["pickup-tx-1"],
+                    },
+                    "stateChanges": [
+                        {"key": "LocalPlayer.leaderstats.Coins", "before": 100.0, "after": 110.0},
+                        {"key": "LocalPlayer.Inventory.CoinOrb", "before": 0, "after": 1},
+                    ],
+                    "beforePositionSample": {
+                        "position": {"x": 11.5, "y": 5.0, "z": -8.1},
+                    },
+                    "actionPositionSample": {
+                        "interactionSequence": 1,
+                        "transactionId": "pickup-tx-1",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 12.9, "y": 5.0, "z": -7.3},
+                        "worldContext": {"path": "Workspace.Worlds.The Overworld"},
+                        "characterOrientation": {
+                            "id": "pickup-character-orientation-1",
+                            "headingDegrees": 95.0,
+                            "compass": "E",
+                            "forward": {"x": 0.996, "y": 0.0, "z": -0.089},
+                        },
+                        "cameraOrientation": {
+                            "id": "pickup-camera-orientation-1",
+                            "headingDegrees": 110.0,
+                            "compass": "E",
+                            "forward": {"x": 0.94, "y": -0.04, "z": -0.34},
+                        },
+                        "cameraCharacterHeadingDeltaDegrees": 15.0,
+                    },
+                    "nearbyWorldObjects": [
+                        {
+                            "path": "Workspace.Worlds.The Overworld.Collectibles.CoinOrb01",
+                            "class": "Part",
+                            "distanceStuds": 2.1,
+                            "position": {"x": 14.0, "y": 5.0, "z": -7.0},
+                            "interactionMechanisms": ["touch"],
+                        },
+                        {
+                            "path": "Workspace.",
+                            "class": "Workspace",
+                            "distanceStuds": 10.2,
+                            "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                            "interactionMechanisms": ["prompt"],
+                        },
+                    ],
+                },
+                {
+                    "sequence": 2,
+                    "transactionId": "pickup-tx-2",
+                    "sessionElapsedSeconds": 11.0,
+                    "controlType": "ProximityPrompt.Triggered",
+                    "path": "Workspace.Worlds.The Overworld.Collectibles.GemDropA.Prompt",
+                    "stateChanges": [
+                        {"key": "LocalPlayer.leaderstats.Gems", "before": 15.0, "after": 18.0},
+                    ],
+                    "actionPositionSample": {
+                        "interactionSequence": 2,
+                        "transactionId": "pickup-tx-2",
+                        "phase": "at-action",
+                        "sampled": True,
+                        "position": {"x": 17.2, "y": 5.1, "z": -9.3},
+                        "worldContext": {"path": "Workspace.Worlds.The Overworld"},
+                    },
+                    "nearbyWorldObjects": [
+                        {
+                            "path": "Workspace.Worlds.The Overworld.Collectibles.GemDropA",
+                            "class": "Model",
+                            "distanceStuds": 2.4,
+                            "position": {"x": 18.0, "y": 5.2, "z": -9.5},
+                            "interactionMechanisms": ["prompt"],
+                        }
+                    ],
+                },
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+
 class ReceiverGenerationPipelineTests(unittest.TestCase):
     def test_generate_from_parts_runs_end_to_end(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1419,6 +1669,12 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("spatialActionOutcomeRelationships", report)
             self.assertIn("locationNavigationCandidates", report)
             self.assertIn("navigationCandidates", report)
+            self.assertIn("pickupCandidateRegistry", report)
+            self.assertIn("pickupSpawnLocationRegistry", report)
+            self.assertIn("pickupCollectionObservations", report)
+            self.assertIn("pickupOutcomeRelationships", report)
+            self.assertIn("pickupNavigationCandidates", report)
+            self.assertIn("pickupDiscoveryQualityMetrics", report)
             self.assertIn("spatialDiscovery", report)
             self.assertIn("spatialDiscoveryQualityMetrics", report)
             self.assertIn("guiWorkflowGraph", report)
@@ -1459,6 +1715,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("actionOutcomeRelationships", quality)
             self.assertIn("workflowCompleteness", quality)
             self.assertIn("spatialDiscovery", quality)
+            self.assertIn("pickupDiscovery", quality)
             spatial_quality = report["spatialDiscoveryQualityMetrics"]
             self.assertGreaterEqual((spatial_quality.get("eventPositionSnapshots") or {}).get("withCoordinates", 0), 1)
             self.assertIn("nearbyObjectRelevance", spatial_quality)
@@ -1487,7 +1744,56 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("Cursor observations captured", summary_text)
             self.assertIn("Click-target observations captured", summary_text)
             self.assertIn("Character orientation samples", summary_text)
+            self.assertIn("Pickup candidates discovered", summary_text)
+            self.assertIn("Pickup navigation candidates ready", summary_text)
 
+
+
+    def test_pickup_discovery_registry_and_root_filtering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "pickup-discovery.json"
+            make_pickup_discovery_observation_export(overlay)
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Discover world pickups and correlate outcomes",
+                scenario_name="pickup-discovery",
+            )
+            self.assertEqual(result["status"], "succeeded")
+
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            pickup_candidates = report.get("pickupCandidateRegistry") or []
+            pickup_spawns = report.get("pickupSpawnLocationRegistry") or []
+            pickup_observations = report.get("pickupCollectionObservations") or []
+            pickup_outcomes = report.get("pickupOutcomeRelationships") or []
+            pickup_navigation = report.get("pickupNavigationCandidates") or []
+
+            self.assertGreaterEqual(len(pickup_candidates), 2)
+            self.assertGreaterEqual(len(pickup_spawns), 1)
+            self.assertGreaterEqual(len(pickup_observations), 2)
+            self.assertGreaterEqual(len(pickup_outcomes), 2)
+            self.assertGreaterEqual(len(pickup_navigation), 1)
+
+            self.assertFalse(any((item.get("instancePath") or "").rstrip(".").lower() == "workspace" for item in pickup_candidates if isinstance(item, dict)))
+            self.assertTrue(any((item.get("pickupCategory") in {"currency", "quest-or-progress", "unknown"}) for item in pickup_candidates if isinstance(item, dict)))
+            self.assertTrue(any(((item.get("candidateConfidence") or {}).get("score", 0) > 0) for item in pickup_candidates if isinstance(item, dict)))
+            self.assertTrue(any(item.get("spawnLocationId") for item in pickup_observations if isinstance(item, dict)))
+            self.assertTrue(any(((item.get("verification") or {}).get("multiSignalCorroborated") is True) for item in pickup_outcomes if isinstance(item, dict)))
+
+            click_targets = report.get("clickTargetObservations") or []
+            self.assertTrue(any((item.get("pipelineDiagnostics") or {}).get("captureAttempted") is True for item in click_targets if isinstance(item, dict)))
+            self.assertTrue(any(item.get("targetScope") == "world" for item in click_targets if isinstance(item, dict)))
+
+            click_outcomes = report.get("clickOutcomeRelationships") or []
+            self.assertTrue(any(isinstance(item.get("verificationStages"), dict) for item in click_outcomes if isinstance(item, dict)))
+            self.assertTrue(any(isinstance(item.get("clickLinkDiagnostics"), dict) for item in click_outcomes if isinstance(item, dict)))
+            self.assertTrue(any(item.get("ambiguousAssociation") is True for item in click_outcomes if isinstance(item, dict)))
+
+            pickup_quality = ((report.get("qualityMetrics") or {}).get("pickupDiscovery") or {})
+            self.assertGreaterEqual((pickup_quality.get("pickupCandidates") or {}).get("total", 0), 2)
+            self.assertGreaterEqual((pickup_quality.get("pickupCollectionObservations") or {}).get("multiSignalCorroborated", 0), 1)
 
 
     def test_navigation_readiness_rejects_pointer_only_location_without_targets(self):

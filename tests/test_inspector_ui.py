@@ -332,4 +332,29 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end',SRC)
         self.assertNotIn('and interactionObserveEnabled and not uploading',SRC)
 
+    def test_click_pipeline_processed_input_and_stage_diagnostics(self):
+        self.assertIn('local isClickInput=(inputName=="MouseButton1" or inputName=="MouseButton2")', SRC)
+        self.assertIn('if isClickInput then observerStats.clickInputsObserved=observerStats.clickInputsObserved+1 end', SRC)
+        self.assertIn('if gameProcessed and action~="fire" and action~="reload" and action~="switch" then', SRC)
+        self.assertIn('if isClickInput then observerStats.clickInputsGameProcessed=observerStats.clickInputsGameProcessed+1', SRC)
+        self.assertIn('if not action and isClickInput then action="pointer-activate" end', SRC)
+        self.assertIn('action="inspector-ui-click"', SRC)
+        self.assertIn('scope=clickTargetScope', SRC)
+        self.assertIn('inspectorOwnedTarget=clickInspectorOwned', SRC)
+        self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget)', SRC)
+        self.assertIn('Inspector-owned UI target; excluded from gameplay correlation', SRC)
+        self.assertIn('targetResolution={', SRC)
+        self.assertIn('verificationStages={', SRC)
+        self.assertIn('stage="multi-signal-corroborated"', SRC)
+
+    def test_click_diagnostics_export_and_workspace_root_filtering(self):
+        self.assertIn('clickInputsObserved=observerStats.clickInputsObserved', SRC)
+        self.assertIn('clickLinksAmbiguous=observerStats.clickLinksAmbiguous', SRC)
+        self.assertIn('clickLinksExpired=observerStats.clickLinksExpired', SRC)
+        self.assertIn('clickLinksPruned=observerStats.clickLinksPruned', SRC)
+        self.assertIn('path=tostring(path):gsub("%.$","")', SRC)
+        self.assertIn('local lowPath=path and string.lower(path) or nil', SRC)
+        self.assertIn('if path and lowPath~="workspace" and pathDepth>1 and not dedupe[path] then', SRC)
+
+
 if __name__=="__main__":unittest.main()

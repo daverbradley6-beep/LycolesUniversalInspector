@@ -1,5 +1,68 @@
-## Update — 2026-11-12 — v30.6.50 universal cursor/click/orientation evidence integration
+## Update — 2026-11-06 — v30.6.51 click capture repair + universal pickup discovery
 
+### Acceptance status snapshot
+
+1. Inspector compiles and loads in Potassium — **Partially verified** (offline compile/tests verified; live Potassium reload pending user run).
+2. Inspector captures relevant game evidence — **Partially verified** (click/cursor/orientation pipeline repaired; live confirmation pending).
+3. Complete inspection reports export reliably — **Partially verified** (existing behavior retained; no regressions in suite).
+4. Generation pipeline ingests reports — **Verified** (receiver pipeline regressions passing).
+5. Dedicated AI identifies feasible features — **Partially verified**.
+6. Dedicated AI generates executable game-specific scripts — **Partially verified**.
+7. Generated GUIs and controls function correctly — **Partially verified**.
+8. Generated workflow outcomes verified in-game — **Unverified**.
+9. End-to-end low-friction process — **Partially verified**.
+10. Public-distribution reliability — **Unverified**.
+
+### Implemented this cycle
+
+- Inspector (`LycolesUniversalInspector.lua`, now `v30.6.51`):
+  - Fixed click capture ordering so mouse clicks are captured before `gameProcessed` filtering drops non-combat actions.
+  - Added click pipeline stage diagnostics and export counters (`clickInputs*`, `clickCapture*`, `clickTargets*`, `clickLinks*`).
+  - Added target-scope classification (`targetScope`) and inspector-owned click separation (`inspectorOwnedTarget`), with inspector clicks excluded from gameplay correlation queueing.
+  - Added richer click payload diagnostics: `targetResolution`, `pipelineDiagnostics`, click-time position/orientation context.
+  - Strengthened pending-click linking with ambiguity diagnostics and score metadata.
+  - Filtered `Workspace.`/root container artifacts from nearby actionable world-object capture.
+- Receiver discovery (`tools/receiver_generation_pipeline.py`):
+  - Added universal pickup discovery and reporting layers:
+    - `pickupCandidateRegistry`
+    - `pickupSpawnLocationRegistry`
+    - `pickupCollectionObservations`
+    - `pickupOutcomeRelationships`
+    - `pickupNavigationCandidates`
+    - `pickupDiscoveryQualityMetrics`
+  - Added pickup metrics to `qualityMetrics.pickupDiscovery` and summary text output.
+  - Extended click normalization for new inspector fields (`targetScope`, `targetResolution`, `pipelineDiagnostics`, `verificationStages`, ambiguity/link diagnostics).
+  - Added centralized workspace-root filtering helper to suppress root false positives.
+- Tests:
+  - Extended `tests/test_inspector_ui.py` with click-pipeline and workspace-root static assertions.
+  - Extended `tests/test_receiver_generation_pipeline.py` with pickup registry/outcome/navigation regression fixture and assertions.
+
+### Validation completed
+
+- `python3 -m unittest tests.test_inspector_ui tests.test_receiver_generation_pipeline` → **66 passed**
+- `python3 -m unittest tests.test_inspector_compiler_limits` → **2 passed**
+- `python3 -m unittest discover -s tests` → **1665 passed, 17 skipped, 0 failed**
+- Root local pressure (`luau-ast`) = **170** (budget **170**, Potassium limit **200**)
+
+### Live evidence diagnostic replay (available artifact)
+
+- Processed available Bubble Gum artifact:
+  - `scanId`: `B8B193D3-AF22-406B-91B1-D4F3A5505A21`
+  - `build/live-observation-discovery/b8-live-click-diagnostics/universal-discovery-report.json`
+- Findings from that historical export:
+  - `cursorObservations.total = 0`
+  - `clickTargetDiscovery.total = 0`
+  - `clickOutcomeCorrelation.total = 0`
+  - Confirms upstream click-target capture was absent in that run; this cycle’s repair targets that exact gap.
+
+### Immediate blocker remaining
+
+- **Live Potassium confirmation required:** user must run new commit and confirm `loadstring(source)` succeeds and click-target arrays populate.
+
+
+
+
+## Update — 2026-11-12 — v30.6.50 universal cursor/click/orientation evidence integration
 
 ### Acceptance status updates
 

@@ -74,6 +74,52 @@ def _path_depth(path: str) -> int:
     return len([item for item in path.split(".") if item])
 
 
+
+def _workspace_root_like_path(path: Optional[str]) -> bool:
+    if not isinstance(path, str):
+        return False
+    low = path.strip().lower().rstrip(".")
+    if low in {"workspace", "workspace.rendered", "workspace.rendered.pets"}:
+        return True
+    return low.startswith("workspace.") and low.count(".") <= 1
+
+
+_PICKUP_NAME_CATEGORY_TOKENS: dict[str, tuple[str, ...]] = {
+    "currency": ("coin", "coins", "gem", "gems", "ticket", "tickets", "gold", "cash", "money", "token", "orb"),
+    "ammunition": ("ammo", "bullet", "shell", "mag", "magazine", "rocket"),
+    "health-or-armour": ("health", "heart", "med", "medkit", "armor", "armour", "shield"),
+    "resource": ("resource", "ore", "wood", "stone", "crystal", "material", "drop"),
+    "quest-or-progress": ("quest", "objective", "artifact", "collect", "pickup", "reward"),
+    "boost-or-status": ("boost", "buff", "multiplier", "xp", "exp"),
+}
+
+_DECORATIVE_PATH_TOKENS = (
+    "decoration", "decor", "foliage", "tree", "rock", "terrain", "mesh", "statue", "grass", "mountain",
+)
+
+
+def _pickup_category_from_path(path: str) -> str:
+    low = path.lower()
+    for category, tokens in _PICKUP_NAME_CATEGORY_TOKENS.items():
+        if any(token in low for token in tokens):
+            return category
+    return "unknown"
+
+
+def _pickup_like_name_score(path: str) -> float:
+    low = path.lower()
+    score = 0.0
+    for tokens in _PICKUP_NAME_CATEGORY_TOKENS.values():
+        if any(token in low for token in tokens):
+            score += 1.5
+            break
+    if "pickup" in low or "collect" in low:
+        score += 1.0
+    if any(token in low for token in _DECORATIVE_PATH_TOKENS):
+        score -= 1.4
+    return score
+
+
 def _validate_manifest_identity(manifest: dict[str, Any], *, scan_id: str, place_id: int, part_count: int, context: str) -> None:
     for key, expected in (("scanId", scan_id), ("placeId", place_id), ("partCount", part_count), ("expectedParts", part_count)):
         if key not in manifest:
@@ -1283,6 +1329,8 @@ def _build_universal_discovery_report(
             item for item in (value.get("missingEvidence") if isinstance(value.get("missingEvidence"), list) else [])
             if isinstance(item, str)
         ][:8]
+        diagnostics = value.get("pipelineDiagnostics") if isinstance(value.get("pipelineDiagnostics"), dict) else {}
+        resolution = value.get("targetResolution") if isinstance(value.get("targetResolution"), dict) else {}
         return {
             "id": value.get("id") if isinstance(value.get("id"), str) else None,
             "observedAt": value.get("observedAt") if isinstance(value.get("observedAt"), str) else None,
@@ -1301,6 +1349,25 @@ def _build_universal_discovery_report(
                 "class": raycast.get("class") if raycast and isinstance(raycast.get("class"), str) else None,
                 "hitPosition": _position_from_value(raycast.get("hitPosition")) if raycast else None,
             } if raycast else None,
+            "targetScope": value.get("targetScope") if isinstance(value.get("targetScope"), str) else None,
+            "inspectorOwnedTarget": bool(value.get("inspectorOwnedTarget") is True),
+            "targetResolution": {
+                "status": resolution.get("status") if isinstance(resolution.get("status"), str) else None,
+                "unresolved": bool(resolution.get("unresolved") is True),
+                "inspectorOwnedTarget": bool(resolution.get("inspectorOwnedTarget") is True),
+            },
+            "playerPositionAtClick": _position_from_value(value.get("playerPositionAtClick")),
+            "characterOrientationAtClick": _normalize_orientation(value.get("characterOrientationAtClick")),
+            "cameraOrientationAtClick": _normalize_orientation(value.get("cameraOrientationAtClick")),
+            "cameraCharacterHeadingDeltaDegrees": _numeric(value.get("cameraCharacterHeadingDeltaDegrees")),
+            "pipelineDiagnostics": {
+                "captureAttempted": bool(diagnostics.get("captureAttempted") is True),
+                "guiHitTestAttempted": bool(diagnostics.get("guiHitTestAttempted") is True),
+                "guiHitTestSucceeded": bool(diagnostics.get("guiHitTestSucceeded") is True),
+                "raycastAttempted": bool(diagnostics.get("raycastAttempted") is True),
+                "raycastSucceeded": bool(diagnostics.get("raycastSucceeded") is True),
+                "unresolvedTarget": bool(diagnostics.get("unresolvedTarget") is True),
+            },
             "targetIdentificationConfidence": {
                 "level": confidence.get("level") if isinstance(confidence.get("level"), str) else None,
                 "score": _numeric(confidence.get("score")),
@@ -1316,6 +1383,9 @@ def _build_universal_discovery_report(
         linked_sequences = [item for item in (value.get("linkedInteractionSequences") if isinstance(value.get("linkedInteractionSequences"), list) else []) if isinstance(item, int)]
         linked_transactions = [item for item in (value.get("linkedTransactionIds") if isinstance(value.get("linkedTransactionIds"), list) else []) if isinstance(item, str)]
         missing = [item for item in (value.get("missingEvidence") if isinstance(value.get("missingEvidence"), list) else []) if isinstance(item, str)][:10]
+        verification = value.get("verificationStages") if isinstance(value.get("verificationStages"), dict) else {}
+        diagnostics = value.get("clickLinkDiagnostics") if isinstance(value.get("clickLinkDiagnostics"), dict) else {}
+        ambiguous = [item for item in (value.get("ambiguousCandidateClickObservationIds") if isinstance(value.get("ambiguousCandidateClickObservationIds"), list) else []) if isinstance(item, str)]
         return {
             "id": value.get("id") if isinstance(value.get("id"), str) else None,
             "clickObservationId": value.get("clickObservationId") if isinstance(value.get("clickObservationId"), str) else None,
@@ -1326,8 +1396,26 @@ def _build_universal_discovery_report(
             "meaningfulGameplayOutcomeObserved": bool(value.get("meaningfulGameplayOutcomeObserved") is True),
             "outcomeCorroborated": bool(value.get("outcomeCorroborated") is True),
             "reproduciblyLiveValidated": bool(value.get("reproduciblyLiveValidated") is True),
+            "causalityProven": bool(value.get("causalityProven") is True),
             "stage": value.get("stage") if isinstance(value.get("stage"), str) else None,
             "status": value.get("status") if isinstance(value.get("status"), str) else None,
+            "verificationStages": {
+                "clickObserved": bool(verification.get("clickObserved") is True),
+                "targetIdentified": bool(verification.get("targetIdentified") is True),
+                "interactionCallbackObserved": bool(verification.get("interactionCallbackObserved") is True),
+                "stateChangeObserved": bool(verification.get("stateChangeObserved") is True),
+                "temporallyAssociated": bool(verification.get("temporallyAssociated") is True),
+                "multiSignalCorroborated": bool(verification.get("multiSignalCorroborated") is True),
+                "reproduciblyValidated": bool(verification.get("reproduciblyValidated") is True),
+                "causalityProven": bool(verification.get("causalityProven") is True),
+            },
+            "clickLinkDiagnostics": {
+                "linkMethod": diagnostics.get("linkMethod") if isinstance(diagnostics.get("linkMethod"), str) else None,
+                "resolutionScore": _numeric(diagnostics.get("resolutionScore")),
+                "evaluatedCandidates": int(diagnostics.get("evaluatedCandidates")) if isinstance(diagnostics.get("evaluatedCandidates"), int) else None,
+            },
+            "ambiguousAssociation": bool(value.get("ambiguousAssociation") is True),
+            "ambiguousCandidateClickObservationIds": ambiguous[:16],
             "linkedInteractionSequences": linked_sequences[:32],
             "linkedTransactionIds": linked_transactions[:32],
             "missingEvidence": missing,
@@ -1829,6 +1917,28 @@ def _build_universal_discovery_report(
                 _push_snapshot(sample, fallback_phase=fallback_phase, sequence=sequence, tx_id=tx_id)
 
 
+    transient_outcome_tokens = (
+        "humanoid.activeanimation",
+        "humanoid.activeanimations",
+        "humanoid.movedirection",
+        "humanoid.floormaterial",
+        "humanoid.walkspeed",
+        "humanoid.jumppower",
+        "velocitymagnitude",
+        "rootpart.velocity",
+        ".position",
+        ".cframe",
+    )
+
+    def _is_gameplay_outcome_key(key: str) -> bool:
+        lower = key.lower()
+        if any(token in lower for token in transient_outcome_tokens):
+            return False
+        if lower.startswith("camera."):
+            return False
+        return True
+
+
     click_target_by_id = {item.get("id"): item for item in click_target_observations if isinstance(item.get("id"), str)}
     click_outcome_by_click_id = {
         item.get("clickObservationId"): item
@@ -2026,27 +2136,6 @@ def _build_universal_discovery_report(
                 if isinstance(mechanism, str) and type(count) is int and count > 0:
                     bucket["mechanisms"][mechanism] = bucket["mechanisms"].get(mechanism, 0) + count
 
-    transient_outcome_tokens = (
-        "humanoid.activeanimation",
-        "humanoid.activeanimations",
-        "humanoid.movedirection",
-        "humanoid.floormaterial",
-        "humanoid.walkspeed",
-        "humanoid.jumppower",
-        "velocitymagnitude",
-        "rootpart.velocity",
-        ".position",
-        ".cframe",
-    )
-
-    def _is_gameplay_outcome_key(key: str) -> bool:
-        lower = key.lower()
-        if any(token in lower for token in transient_outcome_tokens):
-            return False
-        if lower.startswith("camera."):
-            return False
-        return True
-
     def _derived_mechanisms(control_types: Sequence[str], likely_paths: Sequence[str], nearby_mechanisms: Sequence[str]) -> list[str]:
         out: set[str] = {item for item in nearby_mechanisms if isinstance(item, str)}
         for control_type in control_types:
@@ -2202,7 +2291,7 @@ def _build_universal_discovery_report(
             if not normalized_path:
                 continue
             low_path = normalized_path.lower()
-            if low_path in {"workspace", "workspace."}:
+            if _workspace_root_like_path(normalized_path):
                 rejected_nearby_candidates += 1
                 continue
             if low_path.startswith("replicatedstorage."):
@@ -3239,6 +3328,515 @@ def _build_universal_discovery_report(
     live_validated_destinations = consolidated_live_validated_count
     gameplay_verified_destinations = consolidated_gameplay_verified_count
 
+    # Universal pickup/collectible discovery (evidence-driven, bounded, non-causal).
+    pickup_candidates_by_path: dict[str, dict[str, Any]] = {}
+    max_pickup_candidates = 5000
+
+    def _pickup_mechanisms_from_object(obj: dict[str, Any], class_name: str) -> list[str]:
+        interaction = obj.get("interaction") if isinstance(obj.get("interaction"), dict) else {}
+        out: set[str] = set()
+        if class_name == "ProximityPrompt" or interaction.get("hasPrompt") is True or "actionText" in interaction:
+            out.add("prompt")
+        if class_name == "ClickDetector" or interaction.get("hasClickDetector") is True:
+            out.add("click")
+        if interaction.get("touchInterest") is True:
+            out.add("touch")
+        gui_control = obj.get("guiControl") if isinstance(obj.get("guiControl"), dict) else {}
+        if bool(gui_control.get("interactable") is True or gui_control.get("active") is True):
+            out.add("gui")
+        return sorted(out)
+
+    def _pickup_state_delta_summary(state_changes: list[dict[str, Any]]) -> dict[str, Any]:
+        impacts: list[dict[str, Any]] = []
+        meaningful = 0
+        for change in state_changes[:24]:
+            if not isinstance(change, dict):
+                continue
+            key = change.get("key") if isinstance(change.get("key"), str) else None
+            if not key:
+                continue
+            if not _is_gameplay_outcome_key(key):
+                continue
+            meaningful += 1
+            before = _numeric(change.get("before"))
+            after = _numeric(change.get("after"))
+            delta = (after - before) if before is not None and after is not None else None
+            low = key.lower()
+            if any(token in low for token in ("coin", "cash", "money", "gold", "gem", "ticket", "token", "currency")):
+                category = "currency"
+            elif any(token in low for token in ("inventory", "item", "backpack", "pet", "equip")):
+                category = "inventory"
+            elif any(token in low for token in ("ammo", "bullet", "shell", "mag", "reload")):
+                category = "ammunition"
+            elif any(token in low for token in ("health", "armor", "armour", "shield")):
+                category = "health-or-armour"
+            elif any(token in low for token in ("quest", "objective", "mission", "progress")):
+                category = "quest-or-progress"
+            else:
+                category = "other"
+            impacts.append({
+                "key": key,
+                "category": category,
+                "before": before,
+                "after": after,
+                "delta": round(delta, 4) if isinstance(delta, float) else delta,
+            })
+        return {"meaningfulCount": meaningful, "impacts": impacts}
+
+    def _upsert_pickup_candidate(path: str, class_name: Optional[str], mechanisms: list[str],
+                                 position: Optional[dict[str, float]], source: str,
+                                 supporting_event: Optional[dict[str, Any]] = None) -> Optional[dict[str, Any]]:
+        if not path or _workspace_root_like_path(path):
+            return None
+        low = path.lower()
+        if not low.startswith("workspace."):
+            return None
+        candidate = pickup_candidates_by_path.get(path)
+        if candidate is None:
+            if len(pickup_candidates_by_path) >= max_pickup_candidates:
+                return None
+            name_score = _pickup_like_name_score(path)
+            category = _pickup_category_from_path(path)
+            decorative = any(token in low for token in _DECORATIVE_PATH_TOKENS)
+            candidate = {
+                "candidateId": "pickup_" + hashlib.sha256(path.encode("utf-8")).hexdigest()[:16],
+                "instancePath": path,
+                "class": class_name or "unknown",
+                "pickupCategory": category,
+                "candidateConfidence": {
+                    "score": 0.0,
+                    "level": "low",
+                    "supportingSignals": [],
+                    "decorativeRisk": decorative,
+                },
+                "collectionMechanisms": [],
+                "supportingEvidenceIds": [],
+                "worldContexts": set(),
+                "positions": [],
+                "firstObservedElapsed": None,
+                "lastObservedElapsed": None,
+                "appearanceCount": 0,
+                "nameScore": name_score,
+                "observedInteractions": 0,
+                "stateLinkedOutcomes": 0,
+                "availabilityStatus": "unknown",
+                "moving": False,
+            }
+            pickup_candidates_by_path[path] = candidate
+
+        candidate["appearanceCount"] += 1
+        for mechanism in mechanisms:
+            if isinstance(mechanism, str) and mechanism not in candidate["collectionMechanisms"]:
+                candidate["collectionMechanisms"].append(mechanism)
+        if position and isinstance(position, dict):
+            candidate["positions"].append(position)
+        if isinstance(supporting_event, dict):
+            elapsed = _numeric(supporting_event.get("sessionElapsedSeconds"))
+            if elapsed is not None:
+                if candidate["firstObservedElapsed"] is None or elapsed < candidate["firstObservedElapsed"]:
+                    candidate["firstObservedElapsed"] = elapsed
+                if candidate["lastObservedElapsed"] is None or elapsed > candidate["lastObservedElapsed"]:
+                    candidate["lastObservedElapsed"] = elapsed
+            world_ctx = supporting_event.get("worldContext") if isinstance(supporting_event.get("worldContext"), dict) else {}
+            world_path = world_ctx.get("path") if isinstance(world_ctx.get("path"), str) else world_ctx.get("name")
+            if isinstance(world_path, str) and world_path:
+                candidate["worldContexts"].add(world_path)
+            if isinstance(supporting_event.get("sequence"), int):
+                candidate["supportingEvidenceIds"].append(f"event-seq-{supporting_event.get('sequence')}")
+
+        return candidate
+
+    # Seed candidates from baseline actionable index.
+    for path, entry in list(baseline_actionable_index.items())[:12000]:
+        if not isinstance(path, str):
+            continue
+        if _workspace_root_like_path(path):
+            continue
+        mechanisms: list[str] = []
+        if isinstance(entry, dict):
+            for mechanism, count in (entry.get("mechanisms") if isinstance(entry.get("mechanisms"), dict) else {}).items():
+                if isinstance(mechanism, str) and type(count) is int and count > 0:
+                    mechanisms.append(mechanism)
+        _upsert_pickup_candidate(path, entry.get("class") if isinstance(entry, dict) and isinstance(entry.get("class"), str) else None, mechanisms, None, "baseline-index")
+
+    # Seed candidates from current observation object inventory.
+    for obj in objects[:14000]:
+        if not isinstance(obj, dict):
+            continue
+        path = _canonical_object_path(obj.get("path"))
+        if not isinstance(path, str):
+            continue
+        class_name = obj.get("class") if isinstance(obj.get("class"), str) else None
+        mechanisms = _pickup_mechanisms_from_object(obj, class_name or "unknown")
+        position = _position_from_value(obj.get("position"))
+        candidate = _upsert_pickup_candidate(path, class_name, mechanisms, position, "object-inventory")
+        if candidate is None:
+            continue
+        if position:
+            candidate["supportingEvidenceIds"].append(f"object:{path}")
+
+    pickup_collection_observations: list[dict[str, Any]] = []
+    pickup_outcome_relationships: list[dict[str, Any]] = []
+
+    # Event-linked candidate enrichment and collection observation capture.
+    for event in events[:4200]:
+        if not isinstance(event, dict):
+            continue
+        sequence = event.get("sequence") if isinstance(event.get("sequence"), int) else None
+        tx_id = event.get("transactionId") if isinstance(event.get("transactionId"), str) else None
+        elapsed = _numeric(event.get("sessionElapsedSeconds"))
+        control_type = event.get("controlType") if isinstance(event.get("controlType"), str) else "unknown"
+        state_changes = event.get("stateChanges") if isinstance(event.get("stateChanges"), list) else []
+        state_summary = _pickup_state_delta_summary(state_changes)
+        meaningful_count = int(state_summary.get("meaningfulCount") or 0)
+
+        nearby = event.get("nearbyWorldObjects") if isinstance(event.get("nearbyWorldObjects"), list) else []
+        for nearby_idx, nearby_obj in enumerate(nearby[:14]):
+            if not isinstance(nearby_obj, dict):
+                continue
+            path = _canonical_object_path(nearby_obj.get("path"))
+            if not isinstance(path, str) or _workspace_root_like_path(path):
+                continue
+            mechanisms = [item for item in (nearby_obj.get("interactionMechanisms") if isinstance(nearby_obj.get("interactionMechanisms"), list) else []) if isinstance(item, str)]
+            position = _position_from_value(nearby_obj.get("position"))
+            candidate = _upsert_pickup_candidate(path, nearby_obj.get("class") if isinstance(nearby_obj.get("class"), str) else None, mechanisms, position, "nearby-world", supporting_event=event)
+            if candidate is None:
+                continue
+
+            candidate["observedInteractions"] += 1
+            if meaningful_count > 0:
+                candidate["stateLinkedOutcomes"] += 1
+
+            before_position = _position_from_value((event.get("beforePositionSample") or {}).get("position") if isinstance(event.get("beforePositionSample"), dict) else None)
+            action_position = _position_from_value((event.get("actionPositionSample") or {}).get("position") if isinstance(event.get("actionPositionSample"), dict) else None)
+            distance = _numeric(nearby_obj.get("distanceStuds"))
+            if distance is None and action_position and position:
+                dx = action_position.get("x", 0.0) - position.get("x", 0.0)
+                dy = action_position.get("y", 0.0) - position.get("y", 0.0)
+                dz = action_position.get("z", 0.0) - position.get("z", 0.0)
+                distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+
+            approached = isinstance(distance, (int, float)) and float(distance) <= 24.0
+            interaction_observed = control_type.startswith("ProximityPrompt.") or control_type.startswith("ClickDetector.") or control_type.startswith("Tool.") or control_type.startswith("GuiButton.") or control_type.startswith("InputBegan.MouseButton")
+            gameplay_state_changed = meaningful_count > 0
+            correlated = approached and interaction_observed and gameplay_state_changed
+            corroborated = correlated and (len(state_summary.get("impacts") or []) >= 2 or bool(event.get("clientStateCorroborated") is True))
+
+            observation_id = "pickup-observation-" + hashlib.sha256(f"{path}|{sequence}|{nearby_idx}|{elapsed}".encode("utf-8")).hexdigest()[:14]
+            observation = {
+                "observationId": observation_id,
+                "candidateId": candidate["candidateId"],
+                "instancePath": path,
+                "sessionElapsedSeconds": round(float(elapsed), 4) if isinstance(elapsed, (int, float)) else None,
+                "interactionSequence": sequence,
+                "transactionId": tx_id,
+                "controlType": control_type,
+                "playerPositionBefore": before_position,
+                "playerPositionAtAction": action_position,
+                "candidatePosition": position,
+                "distanceStuds": round(float(distance), 4) if isinstance(distance, (int, float)) else None,
+                "characterOrientationAtAction": _normalize_orientation(event.get("characterOrientationAtAction")),
+                "cameraOrientationAtAction": _normalize_orientation(event.get("cameraOrientationAtAction")),
+                "cameraCharacterHeadingDeltaDegrees": _numeric(event.get("cameraCharacterHeadingDeltaDegrees")),
+                "relevantInputEvents": [control_type],
+                "collectionMechanismEvidence": sorted(set((mechanisms or []) + (["pointer-input"] if control_type.startswith("InputBegan.MouseButton") else []))),
+                "objectStateBeforeAfterObserved": False,
+                "approached": approached,
+                "interactionObserved": interaction_observed,
+                "gameplayStateChanged": gameplay_state_changed,
+                "stateDeltaImpacts": (state_summary.get("impacts") or [])[:12],
+                "temporallyCorrelated": correlated,
+                "multiSignalCorroborated": corroborated,
+                "verificationTier": (
+                    "multi-signal-corroborated" if corroborated
+                    else "temporally-correlated" if correlated
+                    else "interaction-or-approach-observed" if (approached or interaction_observed)
+                    else "candidate-only"
+                ),
+                "missingEvidence": [
+                    item
+                    for item in (
+                        "No approach proximity observed" if not approached else None,
+                        "No direct interaction callback observed" if not interaction_observed else None,
+                        "No gameplay-relevant state change observed" if not gameplay_state_changed else None,
+                        "No multi-signal corroboration yet" if not corroborated else None,
+                    )
+                    if item
+                ],
+            }
+            pickup_collection_observations.append(observation)
+
+            relationship = {
+                "relationshipId": "pickup-outcome-" + hashlib.sha256(f"{observation_id}|{candidate['candidateId']}".encode("utf-8")).hexdigest()[:14],
+                "candidateId": candidate["candidateId"],
+                "observationId": observation_id,
+                "interactionSequence": sequence,
+                "transactionId": tx_id,
+                "stateDeltaImpacts": (state_summary.get("impacts") or [])[:12],
+                "verification": {
+                    "candidateDiscovered": True,
+                    "playerApproached": approached,
+                    "contactOrInteractionObserved": interaction_observed,
+                    "objectStateChanged": False,
+                    "gameplayStateChanged": gameplay_state_changed,
+                    "stateChangeCorrelated": correlated,
+                    "multiSignalCorroborated": corroborated,
+                    "repeatedCollectionValidated": False,
+                    "causalityProven": False,
+                },
+                "status": (
+                    "corroborated" if corroborated
+                    else "temporally-correlated" if correlated
+                    else "observed-no-outcome"
+                ),
+                "missingEvidence": observation["missingEvidence"],
+            }
+            pickup_outcome_relationships.append(relationship)
+
+    # Candidate confidence scoring and registry finalization.
+    pickup_candidate_registry: list[dict[str, Any]] = []
+    for path, candidate in sorted(pickup_candidates_by_path.items(), key=lambda item: item[0])[:max_pickup_candidates]:
+        mechanisms = sorted(set(item for item in candidate.get("collectionMechanisms", []) if isinstance(item, str)))
+        positions = [item for item in candidate.get("positions", []) if isinstance(item, dict)]
+        representative_position = positions[-1] if positions else None
+
+        score = float(candidate.get("nameScore") or 0.0)
+        score += min(3.0, len(mechanisms) * 0.9)
+        score += min(2.0, float(candidate.get("observedInteractions") or 0) * 0.2)
+        score += min(2.5, float(candidate.get("stateLinkedOutcomes") or 0) * 0.45)
+        if any(token in path.lower() for token in _DECORATIVE_PATH_TOKENS):
+            score -= 1.8
+        if _workspace_root_like_path(path):
+            score -= 5.0
+        score = max(0.0, min(0.99, score / 6.5))
+
+        if score < 0.22 and len(mechanisms) == 0 and candidate.get("pickupCategory") == "unknown":
+            continue
+
+        if score >= 0.75:
+            level = "high"
+        elif score >= 0.45:
+            level = "medium"
+        else:
+            level = "low"
+
+        # Movement inference from position variance.
+        moving = False
+        if len(positions) >= 2:
+            xs = [_numeric(item.get("x")) for item in positions if _numeric(item.get("x")) is not None]
+            ys = [_numeric(item.get("y")) for item in positions if _numeric(item.get("y")) is not None]
+            zs = [_numeric(item.get("z")) for item in positions if _numeric(item.get("z")) is not None]
+            if xs and ys and zs:
+                spread = (max(xs) - min(xs)) + (max(ys) - min(ys)) + (max(zs) - min(zs))
+                moving = spread >= 3.2
+
+        pickup_candidate_registry.append({
+            "candidateId": candidate["candidateId"],
+            "instancePath": path,
+            "class": candidate.get("class"),
+            "pickupCategory": candidate.get("pickupCategory") or _pickup_category_from_path(path),
+            "worldContexts": sorted(item for item in candidate.get("worldContexts", set()) if isinstance(item, str))[:8],
+            "currentWorldCoordinates": representative_position,
+            "positionConfidence": "observed" if representative_position else "unknown",
+            "firstObservedSessionElapsedSeconds": round(float(candidate["firstObservedElapsed"]), 4) if isinstance(candidate.get("firstObservedElapsed"), (int, float)) else None,
+            "lastObservedSessionElapsedSeconds": round(float(candidate["lastObservedElapsed"]), 4) if isinstance(candidate.get("lastObservedElapsed"), (int, float)) else None,
+            "availabilityStatus": "observed" if isinstance(candidate.get("lastObservedElapsed"), (int, float)) else "unknown",
+            "moving": moving,
+            "appearsToRespawn": False,
+            "collectionMechanisms": mechanisms,
+            "candidateConfidence": {
+                "score": round(score, 4),
+                "level": level,
+                "supportingSignals": [
+                    "pickup-like-path-token" if float(candidate.get("nameScore") or 0.0) > 0 else "",
+                    "interaction-mechanism-observed" if len(mechanisms) > 0 else "",
+                    "state-outcome-linked" if (candidate.get("stateLinkedOutcomes") or 0) > 0 else "",
+                ],
+            },
+            "supportingEvidenceIds": sorted(set(candidate.get("supportingEvidenceIds", [])))[:40],
+            "uncertainty": [
+                item
+                for item in (
+                    "No direct interaction mechanism observed" if len(mechanisms) == 0 else None,
+                    "No gameplay state impact yet linked" if (candidate.get("stateLinkedOutcomes") or 0) <= 0 else None,
+                )
+                if item
+            ],
+        })
+
+    pickup_candidate_registry.sort(key=lambda item: (-(item.get("candidateConfidence") or {}).get("score", 0.0), item.get("instancePath") or ""))
+
+    # Spawn-location registry groups candidate positions into reusable location points.
+    spawn_registry_map: dict[str, dict[str, Any]] = {}
+    for candidate in pickup_candidate_registry[:4000]:
+        position = candidate.get("currentWorldCoordinates") if isinstance(candidate.get("currentWorldCoordinates"), dict) else None
+        if not position:
+            continue
+        world = (candidate.get("worldContexts") or [None])[0]
+        key = "|".join([
+            str(world or "world:unknown"),
+            candidate.get("pickupCategory") or "unknown",
+            str(round(float(position.get("x", 0.0)), 1)),
+            str(round(float(position.get("y", 0.0)), 1)),
+            str(round(float(position.get("z", 0.0)), 1)),
+        ])
+        location_id = "pickup-location-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:14]
+        bucket = spawn_registry_map.setdefault(location_id, {
+            "spawnLocationId": location_id,
+            "worldAreaIdentity": world,
+            "pickupCategory": candidate.get("pickupCategory"),
+            "representativeCoordinates": position,
+            "candidateIds": [],
+            "availabilityStatus": "unknown",
+            "spawnObservations": 0,
+            "despawnObservations": 0,
+            "reappearancesObserved": 0,
+            "respawnEvidence": {
+                "status": "insufficient-evidence",
+                "estimatedIntervalSeconds": None,
+            },
+        })
+        bucket["candidateIds"].append(candidate.get("candidateId"))
+        bucket["spawnObservations"] += 1
+        if candidate.get("availabilityStatus") == "observed":
+            bucket["availabilityStatus"] = "observed"
+
+    pickup_spawn_location_registry = list(spawn_registry_map.values())
+
+    candidate_to_spawn: dict[str, str] = {}
+    for item in pickup_spawn_location_registry:
+        for candidate_id in item.get("candidateIds") or []:
+            if isinstance(candidate_id, str):
+                candidate_to_spawn[candidate_id] = item.get("spawnLocationId")
+
+    for observation in pickup_collection_observations:
+        candidate_id = observation.get("candidateId")
+        if isinstance(candidate_id, str):
+            observation["spawnLocationId"] = candidate_to_spawn.get(candidate_id)
+
+    for relationship in pickup_outcome_relationships:
+        candidate_id = relationship.get("candidateId")
+        if isinstance(candidate_id, str):
+            relationship["spawnLocationId"] = candidate_to_spawn.get(candidate_id)
+
+    # Repeated-validation signal for same candidate with multiple corroborated outcomes.
+    corroborated_by_candidate: dict[str, int] = {}
+    for relationship in pickup_outcome_relationships:
+        candidate_id = relationship.get("candidateId")
+        verification = relationship.get("verification") if isinstance(relationship.get("verification"), dict) else {}
+        if isinstance(candidate_id, str) and verification.get("multiSignalCorroborated") is True:
+            corroborated_by_candidate[candidate_id] = corroborated_by_candidate.get(candidate_id, 0) + 1
+    for relationship in pickup_outcome_relationships:
+        candidate_id = relationship.get("candidateId")
+        verification = relationship.get("verification") if isinstance(relationship.get("verification"), dict) else {}
+        if isinstance(candidate_id, str) and corroborated_by_candidate.get(candidate_id, 0) >= 2:
+            verification["repeatedCollectionValidated"] = True
+            relationship["status"] = "repeatedly-validated-observational"
+
+    max_observed_elapsed = max(
+        [_numeric(item.get("sessionElapsedSeconds")) for item in pickup_collection_observations if _numeric(item.get("sessionElapsedSeconds")) is not None] or [0.0]
+    )
+
+    pickup_navigation_candidates: list[dict[str, Any]] = []
+    for location in pickup_spawn_location_registry[:3000]:
+        location_id = location.get("spawnLocationId") if isinstance(location.get("spawnLocationId"), str) else None
+        if not location_id:
+            continue
+        candidate_ids = [item for item in (location.get("candidateIds") or []) if isinstance(item, str)]
+        location_observations = [
+            item for item in pickup_collection_observations
+            if isinstance(item, dict) and item.get("spawnLocationId") == location_id
+        ]
+        location_outcomes = [
+            item for item in pickup_outcome_relationships
+            if isinstance(item, dict) and item.get("spawnLocationId") == location_id
+        ]
+
+        last_elapsed = max(
+            [_numeric(item.get("sessionElapsedSeconds")) for item in location_observations if _numeric(item.get("sessionElapsedSeconds")) is not None] or [None]
+        )
+        stale = isinstance(last_elapsed, (int, float)) and (max_observed_elapsed - float(last_elapsed) > 22.0)
+        corroborated = sum(
+            1 for item in location_outcomes
+            if ((item.get("verification") if isinstance(item.get("verification"), dict) else {}).get("multiSignalCorroborated") is True)
+        )
+        repeated_validated = sum(
+            1 for item in location_outcomes
+            if ((item.get("verification") if isinstance(item.get("verification"), dict) else {}).get("repeatedCollectionValidated") is True)
+        )
+
+        blockers = []
+        if len(location_observations) == 0:
+            blockers.append("No collection observation captured for this pickup location yet")
+        if corroborated <= 0:
+            blockers.append("No multi-signal pickup outcome corroboration yet")
+        if stale:
+            blockers.append("Pickup location may be stale relative to latest observations")
+
+        pickup_navigation_candidates.append({
+            "navigationCandidateId": "pickup-navigation-" + hashlib.sha256(location_id.encode("utf-8")).hexdigest()[:12],
+            "spawnLocationId": location_id,
+            "candidateIds": candidate_ids,
+            "pickupCategory": location.get("pickupCategory"),
+            "worldAreaIdentity": location.get("worldAreaIdentity"),
+            "targetCoordinates": location.get("representativeCoordinates"),
+            "locationFreshness": "stale" if stale else "current-or-recent",
+            "collectionMechanisms": sorted({
+                mechanism
+                for candidate in pickup_candidate_registry
+                if candidate.get("candidateId") in candidate_ids
+                for mechanism in (candidate.get("collectionMechanisms") or [])
+                if isinstance(mechanism, str)
+            }),
+            "observedOutcomeStatus": {
+                "observationCount": len(location_observations),
+                "corroboratedOutcomeCount": corroborated,
+                "repeatedValidationCount": repeated_validated,
+                "outcomeVerified": corroborated > 0,
+                "repeatedlyValidated": repeated_validated > 0,
+            },
+            "navigationReadiness": {
+                "status": "ready-with-observed-collection-corroboration" if corroborated > 0 and not stale else "observed-needs-validation",
+                "blockers": blockers,
+                "limitations": [
+                    "Coordinate evidence is client-observed and not guaranteed navigation mesh path",
+                    "Collection still requires live validation for current server state and availability",
+                ],
+            },
+        })
+
+    pickup_discovery_quality_metrics = {
+        "pickupCandidates": {
+            "total": len(pickup_candidate_registry),
+            "highConfidence": sum(1 for item in pickup_candidate_registry if ((item.get("candidateConfidence") or {}).get("level") == "high")),
+            "withMechanisms": sum(1 for item in pickup_candidate_registry if len(item.get("collectionMechanisms") or []) > 0),
+            "withObservedStateOutcomes": sum(1 for item in pickup_candidate_registry if "No gameplay state impact yet linked" not in (item.get("uncertainty") or [])),
+        },
+        "pickupSpawnLocations": {
+            "total": len(pickup_spawn_location_registry),
+            "observed": sum(1 for item in pickup_spawn_location_registry if item.get("availabilityStatus") == "observed"),
+        },
+        "pickupCollectionObservations": {
+            "total": len(pickup_collection_observations),
+            "approached": sum(1 for item in pickup_collection_observations if item.get("approached") is True),
+            "interactionObserved": sum(1 for item in pickup_collection_observations if item.get("interactionObserved") is True),
+            "gameplayStateChanged": sum(1 for item in pickup_collection_observations if item.get("gameplayStateChanged") is True),
+            "temporallyCorrelated": sum(1 for item in pickup_collection_observations if item.get("temporallyCorrelated") is True),
+            "multiSignalCorroborated": sum(1 for item in pickup_collection_observations if item.get("multiSignalCorroborated") is True),
+        },
+        "pickupOutcomes": {
+            "total": len(pickup_outcome_relationships),
+            "corroborated": sum(1 for item in pickup_outcome_relationships if ((item.get("verification") or {}).get("multiSignalCorroborated") is True)),
+            "repeatedValidation": sum(1 for item in pickup_outcome_relationships if ((item.get("verification") or {}).get("repeatedCollectionValidated") is True)),
+            "causalityProven": 0,
+        },
+        "pickupNavigation": {
+            "candidateCount": len(pickup_navigation_candidates),
+            "readyCount": sum(1 for item in pickup_navigation_candidates if ((item.get("navigationReadiness") or {}).get("status") == "ready-with-observed-collection-corroboration")),
+            "staleCount": sum(1 for item in pickup_navigation_candidates if item.get("locationFreshness") == "stale"),
+        },
+    }
+
     spatial_quality_metrics = {
         "playerPositionSamples": {
             "total": len(position_history),
@@ -3496,6 +4094,7 @@ def _build_universal_discovery_report(
             "highConfidenceSystems": sum(1 for item in systems_list if item["confidence"]["level"] == "high"),
         },
         "spatialDiscovery": spatial_quality_metrics,
+        "pickupDiscovery": pickup_discovery_quality_metrics,
         "unsupportedAssumptions": {
             "count": 0,
             "notes": ["No server-side capability inference is treated as proven"],
@@ -3528,6 +4127,14 @@ def _build_universal_discovery_report(
         recommended_steps.append("Capture additional runs with clear pre/post progression state changes")
     if workflow_complete_transactions == 0:
         recommended_steps.append("Capture complete multi-step GUI workflows using workflow recording")
+    if len(pickup_candidate_registry) == 0:
+        recommended_steps.append("Capture world-space movement near collectible candidates to seed pickup discovery")
+    if sum(
+        1
+        for item in pickup_outcome_relationships
+        if ((item.get("verification") or {}).get("multiSignalCorroborated") is True)
+    ) == 0:
+        recommended_steps.append("Perform repeated pickup interactions with clear pre/post currency or inventory deltas")
     if len(contamination_signals) > 0:
         recommended_steps.append("Review fixture-token overlap to rule out cross-game heuristic leakage")
 
@@ -3607,6 +4214,12 @@ def _build_universal_discovery_report(
         "spatialActionOutcomeRelationships": spatial_relationships[:260],
         "locationNavigationCandidates": location_navigation_candidates[:260],
         "navigationCandidates": navigation_candidates,
+        "pickupCandidateRegistry": pickup_candidate_registry[:3200],
+        "pickupSpawnLocationRegistry": pickup_spawn_location_registry[:3200],
+        "pickupCollectionObservations": pickup_collection_observations[:4200],
+        "pickupOutcomeRelationships": pickup_outcome_relationships[:4200],
+        "pickupNavigationCandidates": pickup_navigation_candidates[:3200],
+        "pickupDiscoveryQualityMetrics": pickup_discovery_quality_metrics,
         "spatialDiscovery": {
             "status": "captured" if len(event_snapshots) > 0 or len(position_history) > 0 else "not-captured",
             "workspaceActiveObjectsOnly": True,
@@ -3661,6 +4274,7 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
     metrics = report.get("qualityMetrics") if isinstance(report.get("qualityMetrics"), dict) else {}
     systems = report.get("discoveredGameplaySystems") if isinstance(report.get("discoveredGameplaySystems"), list) else []
     spatial_metrics = (metrics.get("spatialDiscovery") if isinstance(metrics, dict) and isinstance(metrics.get("spatialDiscovery"), dict) else {})
+    pickup_metrics = (metrics.get("pickupDiscovery") if isinstance(metrics, dict) and isinstance(metrics.get("pickupDiscovery"), dict) else {})
     uncertainties = ((report.get("uncertaintiesAndValidation") or {}).get("uncertainties") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
     steps = ((report.get("uncertaintiesAndValidation") or {}).get("recommendedValidationSteps") or []) if isinstance(report.get("uncertaintiesAndValidation"), dict) else []
 
@@ -3703,6 +4317,11 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Click outcomes corroborated: {(spatial_metrics.get('clickOutcomeCorrelation') or {}).get('corroborated') if isinstance(spatial_metrics, dict) else None}",
         f"- Character orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('characterSamples') if isinstance(spatial_metrics, dict) else None}",
         f"- Camera orientation samples: {(spatial_metrics.get('orientationTracking') or {}).get('cameraSamples') if isinstance(spatial_metrics, dict) else None}",
+        f"- Pickup candidates discovered: {(pickup_metrics.get('pickupCandidates') or {}).get('total') if isinstance(pickup_metrics, dict) else None}",
+        f"- Pickup spawn locations identified: {(pickup_metrics.get('pickupSpawnLocations') or {}).get('total') if isinstance(pickup_metrics, dict) else None}",
+        f"- Pickup collection observations: {(pickup_metrics.get('pickupCollectionObservations') or {}).get('total') if isinstance(pickup_metrics, dict) else None}",
+        f"- Pickup outcomes corroborated: {(pickup_metrics.get('pickupOutcomes') or {}).get('corroborated') if isinstance(pickup_metrics, dict) else None}",
+        f"- Pickup navigation candidates ready: {(pickup_metrics.get('pickupNavigation') or {}).get('readyCount') if isinstance(pickup_metrics, dict) else None}",
         f"- Interaction→location coverage: {(spatial_metrics.get('coverage') or {}).get('interactionToLocationCoverage') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",
         "",

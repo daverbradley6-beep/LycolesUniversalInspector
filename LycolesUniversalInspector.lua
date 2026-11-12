@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.50
+-- Lycoles Universal Inspector v30.6.51
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.50"
+local VERSION = "30.6.51"
 
 local endpoint = ""
 local autoSend = true
@@ -332,7 +332,12 @@ local observerStats = {
     inputQueueOverBudgetFrames=0,inputQueueBackpressureActivations=0,
     queueFrameCount=0,queueFrameSecondsTotal=0,queueFramePeakSeconds=0,
     callbacksThisSecond=0,callbacksPeakPerSecond=0,lastCallbackSecond=nil,
-    stateSnapshotCalls=0,stateSnapshotSeconds=0,stateSnapshotPeakSeconds=0
+    stateSnapshotCalls=0,stateSnapshotSeconds=0,stateSnapshotPeakSeconds=0,
+    clickInputsObserved=0,clickInputsProcessed=0,clickInputsGameProcessed=0,
+    clickCaptureAttempts=0,clickCapturesRecorded=0,clickCaptureFailures=0,
+    clickTargetsResolved=0,clickTargetsUnresolved=0,clickInspectorOwned=0,
+    clickLinksAttempted=0,clickLinksMatched=0,clickLinksMissed=0,
+    clickLinksAmbiguous=0,clickLinksExpired=0,clickLinksPruned=0
 }
 local snapshotId = nil
 local inputObserverState = {
@@ -2570,8 +2575,14 @@ function prunePendingClicks(nowClock)
     while inputObserverState.pendingClickHead<=inputObserverState.pendingClickTail do
         local item=inputObserverState.pendingClicks[inputObserverState.pendingClickHead]
         if not item then
+            observerStats.clickLinksPruned=observerStats.clickLinksPruned+1
             inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
-        elseif item.consumed or nowClock-item.clock>LIMITS.clickLinkMaxAgeSeconds then
+        elseif item.consumed then
+            observerStats.clickLinksPruned=observerStats.clickLinksPruned+1
+            inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        elseif nowClock-item.clock>LIMITS.clickLinkMaxAgeSeconds then
+            observerStats.clickLinksExpired=observerStats.clickLinksExpired+1
             inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
             inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
         else
@@ -2586,7 +2597,9 @@ end
 
 function resolveRecentPendingClick(targetPath,button)
     local now=os.clock()
+    observerStats.clickLinksAttempted=observerStats.clickLinksAttempted+1
     prunePendingClicks(now)
+    local ranked={}
     local best=nil
     local bestIndex=nil
     for index=inputObserverState.pendingClickTail,inputObserverState.pendingClickHead,-1 do
@@ -2605,6 +2618,7 @@ function resolveRecentPendingClick(targetPath,button)
                 end
             end
             score=score-(now-item.clock)
+            ranked[#ranked+1]={id=item.id,score=score,index=index}
             if not best or score>best.score then
                 best={score=score,id=item.id}
                 bestIndex=index
@@ -2614,8 +2628,31 @@ function resolveRecentPendingClick(targetPath,button)
     if bestIndex then
         inputObserverState.pendingClicks[bestIndex].consumed=true
         prunePendingClicks(now)
+        observerStats.clickLinksMatched=observerStats.clickLinksMatched+1
+        local ambiguous={}
+        for _,candidate in ipairs(ranked) do
+            if candidate.id~=best.id and (best.score-candidate.score)<=1.25 then
+                ambiguous[#ambiguous+1]=candidate.id
+            end
+        end
+        local relation=clickOutcomeById["click-outcome-"..best.id]
+        if type(relation)=="table" then
+            relation.clickLinkDiagnostics={
+                linkMethod="pending-window-score",
+                resolutionScore=roundNumber(best.score,4),
+                evaluatedCandidates=#ranked,
+            }
+        end
+        if #ambiguous>0 then
+            observerStats.clickLinksAmbiguous=observerStats.clickLinksAmbiguous+1
+            if type(relation)=="table" then
+                relation.ambiguousAssociation=true
+                relation.ambiguousCandidateClickObservationIds=ambiguous
+            end
+        end
         return best.id
     end
+    observerStats.clickLinksMissed=observerStats.clickLinksMissed+1
     return nil
 end
 
@@ -2646,7 +2683,28 @@ function summarizeGuiHitCandidate(guiObject)
     }
 end
 
+
+function isInspectorOwnedPath(path)
+    if type(path)~="string" then return false end
+    return string.find(path,"LycolesUniversalInspector",1,true)~=nil
+end
+
+function classifyClickTargetScope(topmostInteractive,raycastTarget)
+    local topPath=topmostInteractive and topmostInteractive.path or nil
+    local rayPath=raycastTarget and raycastTarget.path or nil
+    local topInspector=isInspectorOwnedPath(topPath)
+    local rayInspector=isInspectorOwnedPath(rayPath)
+    if topInspector and rayInspector then return "inspector-only" end
+    if topInspector and not rayPath then return "inspector-ui" end
+    if topInspector and rayPath and not rayInspector then return "mixed-inspector-and-world" end
+    if (not topInspector) and topPath then return "game-ui" end
+    if rayInspector then return "inspector-world" end
+    if rayPath then return "world" end
+    return "unresolved"
+end
+
 function captureClickTargetObservation(buttonName,input)
+    observerStats.clickCaptureAttempts=observerStats.clickCaptureAttempts+1
     local nowClock=os.clock()
     local inputType=tostring(input and input.UserInputType and input.UserInputType.Name or "unknown")
     local cursorObservation=captureCursorObservation("click-"..tostring(buttonName or "unknown"),inputType,true)
@@ -2655,11 +2713,14 @@ function captureClickTargetObservation(buttonName,input)
     local y=_numeric(screen.y)
 
     local guiCandidates={}
-    if type(x)=="number" and type(y)=="number" then
+    local guiHitTestAttempted=type(x)=="number" and type(y)=="number"
+    local guiHitTestSucceeded=false
+    if guiHitTestAttempted then
         local ok,guiObjects=pcall(function()
             return UserInputService:GetGuiObjectsAtPosition(x,y)
         end)
-        if ok and type(guiObjects)=="table" then
+        guiHitTestSucceeded=ok and type(guiObjects)=="table"
+        if guiHitTestSucceeded then
             for _,guiObject in ipairs(guiObjects) do
                 if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
                 local candidate=summarizeGuiHitCandidate(guiObject)
@@ -2677,6 +2738,8 @@ function captureClickTargetObservation(buttonName,input)
     end
 
     local raycastTarget=nil
+    local raycastAttempted=false
+    local raycastSucceeded=false
     if type(x)=="number" and type(y)=="number" then
         local camera=workspace.CurrentCamera
         if camera then
@@ -2684,6 +2747,7 @@ function captureClickTargetObservation(buttonName,input)
                 return camera:ViewportPointToRay(x,y)
             end)
             if ok and ray then
+                raycastAttempted=true
                 local ignoreList=player.Character and {player.Character} or {}
                 if clickRaycastParams then
                     clickRaycastParams.FilterDescendantsInstances=ignoreList
@@ -2696,7 +2760,8 @@ function captureClickTargetObservation(buttonName,input)
                         result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds)
                     end
                 end)
-                if hitOk and result and result.Instance then
+                raycastSucceeded=hitOk and result and result.Instance~=nil
+                if raycastSucceeded then
                     local anchor=result.Instance
                     if anchor.Parent and anchor.Parent:IsA("Model") then anchor=anchor.Parent end
                     local targetPath=watchPath(anchor,workspace,"Workspace")
@@ -2712,12 +2777,19 @@ function captureClickTargetObservation(buttonName,input)
         end
     end
 
+    local targetScope=classifyClickTargetScope(topmostInteractive,raycastTarget)
+    local inspectorOwnedTarget=(targetScope=="inspector-only"
+        or targetScope=="inspector-ui"
+        or targetScope=="inspector-world"
+        or targetScope=="mixed-inspector-and-world")
+
     local confidence="low"
     local score=0.22
     if topmostInteractive then score=score+0.44 end
     if #guiCandidates>1 then score=score-0.07 end
     if raycastTarget then score=score+0.25 end
     if not cursorObservation.cursorAvailable then score=score-0.2 end
+    if inspectorOwnedTarget then score=score-0.12 end
     score=clampNumber(score,0,0.98)
     if score>=0.78 then confidence="high"
     elseif score>=0.5 then confidence="medium"
@@ -2725,6 +2797,7 @@ function captureClickTargetObservation(buttonName,input)
 
     clickObservationSequence=clickObservationSequence+1
     local clickId="click_"..tostring(clickObservationSequence)
+    local clickPositionSample,_=capturePlayerPositionSample("click-observation",true)
     local missingEvidence={}
     if not cursorObservation.cursorAvailable then
         missingEvidence[#missingEvidence+1]="Cursor position unavailable"
@@ -2735,6 +2808,11 @@ function captureClickTargetObservation(buttonName,input)
     if not raycastTarget then
         missingEvidence[#missingEvidence+1]="No raycast world hit determined"
     end
+    if inspectorOwnedTarget then
+        missingEvidence[#missingEvidence+1]="Inspector-owned UI target; excluded from gameplay correlation"
+    end
+
+    local targetIdentified=topmostInteractive~=nil or raycastTarget~=nil
     local observation={
         id=clickId,
         observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -2746,6 +2824,25 @@ function captureClickTargetObservation(buttonName,input)
         guiCandidates=guiCandidates,
         topmostGuiTarget=topmostInteractive,
         raycastTarget=raycastTarget,
+        inspectorOwnedTarget=inspectorOwnedTarget,
+        targetScope=targetScope,
+        targetResolution={
+            status=targetIdentified and "identified" or "unresolved",
+            unresolved=not targetIdentified,
+            inspectorOwnedTarget=inspectorOwnedTarget,
+        },
+        playerPositionAtClick=clickPositionSample and clickPositionSample.position or nil,
+        characterOrientationAtClick=clickPositionSample and clickPositionSample.characterOrientation or nil,
+        cameraOrientationAtClick=clickPositionSample and clickPositionSample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees=clickPositionSample and clickPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
+        pipelineDiagnostics={
+            captureAttempted=true,
+            guiHitTestAttempted=guiHitTestAttempted,
+            guiHitTestSucceeded=guiHitTestSucceeded,
+            raycastAttempted=raycastAttempted,
+            raycastSucceeded=raycastSucceeded,
+            unresolvedTarget=not targetIdentified,
+        },
         targetIdentificationConfidence={
             level=confidence,
             score=roundNumber(score,3),
@@ -2755,20 +2852,35 @@ function captureClickTargetObservation(buttonName,input)
         missingEvidence=missingEvidence,
     }
     appendClickTarget(observation)
+    observerStats.clickCapturesRecorded=observerStats.clickCapturesRecorded+1
     spatialStats.clickTargetsCaptured=spatialStats.clickTargetsCaptured+1
+
+    if targetIdentified then
+        observerStats.clickTargetsResolved=observerStats.clickTargetsResolved+1
+    else
+        observerStats.clickTargetsUnresolved=observerStats.clickTargetsUnresolved+1
+    end
+    if inspectorOwnedTarget then
+        observerStats.clickInspectorOwned=observerStats.clickInspectorOwned+1
+    end
+
+    local stage="click-observed"
+    if targetIdentified then stage="target-identified" end
+    if inspectorOwnedTarget then stage="target-identified-inspector-owned" end
 
     local relationship={
         id="click-outcome-"..clickId,
         clickObservationId=clickId,
         clickObserved=true,
-        targetIdentified=topmostInteractive~=nil or raycastTarget~=nil,
+        targetIdentified=targetIdentified,
         interactionCallbackObserved=false,
         stateChangeTemporallyAssociated=false,
         meaningfulGameplayOutcomeObserved=false,
         outcomeCorroborated=false,
         reproduciblyLiveValidated=false,
-        stage="click-observed",
-        status="pending-followup-observation",
+        causalityProven=false,
+        stage=stage,
+        status=inspectorOwnedTarget and "inspector-owned-non-gameplay" or "pending-followup-observation",
         missingEvidence={
             "No interaction callback linked yet",
             "No post-click state evidence linked yet",
@@ -2778,13 +2890,27 @@ function captureClickTargetObservation(buttonName,input)
             cursorObservationId=cursorObservation.id,
             guiCandidateCount=#guiCandidates,
             confidence=confidence,
+            targetScope=targetScope,
+        },
+        verificationStages={
+            clickObserved=true,
+            targetIdentified=targetIdentified,
+            interactionCallbackObserved=false,
+            stateChangeObserved=false,
+            temporallyAssociated=false,
+            multiSignalCorroborated=false,
+            reproduciblyValidated=false,
+            causalityProven=false,
         },
         linkedInteractionSequences={},
         linkedTransactionIds={},
     }
     appendClickOutcome(relationship)
-    enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),
-        topmostInteractive and topmostInteractive.path or nil)
+    if not inspectorOwnedTarget then
+        enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),
+            topmostInteractive and topmostInteractive.path
+                or (raycastTarget and raycastTarget.path) or nil)
+    end
     return observation
 end
 
@@ -2827,15 +2953,32 @@ function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)
             relation.outcomeCorroborated=true
         end
     end
+    local stateChangeObserved=relation.stateChangeTemporallyAssociated
+    local temporallyAssociated=relation.stateChangeTemporallyAssociated
+    local multiSignalCorroborated=relation.outcomeCorroborated
+
     local stage="click-observed"
     if relation.targetIdentified then stage="target-identified" end
     if relation.interactionCallbackObserved then stage="interaction-callback-observed" end
-    if relation.stateChangeTemporallyAssociated then stage="state-change-temporally-associated" end
-    if relation.meaningfulGameplayOutcomeObserved then stage="meaningful-gameplay-outcome-observed" end
-    if relation.outcomeCorroborated then stage="outcome-corroborated" end
-    if relation.reproduciblyLiveValidated then stage="outcome-reproducibly-live-validated" end
+    if stateChangeObserved then stage="state-change-observed" end
+    if temporallyAssociated then stage="temporally-associated" end
+    if multiSignalCorroborated then stage="multi-signal-corroborated" end
+    if relation.reproduciblyLiveValidated then stage="reproducibly-validated" end
+    if relation.causalityProven then stage="causality-proven" end
+
     relation.stage=stage
-    relation.status=(stage=="outcome-reproducibly-live-validated") and "live-validated" or "observational-only"
+    relation.status=(stage=="reproducibly-validated" or stage=="causality-proven")
+        and "live-validated" or "observational-only"
+    relation.verificationStages={
+        clickObserved=true,
+        targetIdentified=relation.targetIdentified==true,
+        interactionCallbackObserved=relation.interactionCallbackObserved==true,
+        stateChangeObserved=stateChangeObserved==true,
+        temporallyAssociated=temporallyAssociated==true,
+        multiSignalCorroborated=multiSignalCorroborated==true,
+        reproduciblyValidated=relation.reproduciblyLiveValidated==true,
+        causalityProven=relation.causalityProven==true,
+    }
     local missing={}
     if not relation.interactionCallbackObserved then
         missing[#missing+1]="No interaction callback linked yet"
@@ -3128,7 +3271,12 @@ function captureNearbyWorldObjects(position)
             local anchor = part
             if part.Parent and part.Parent:IsA("Model") then anchor = part.Parent end
             local path = watchPath(anchor,workspace,"Workspace") or watchPath(part,workspace,"Workspace")
-            if path and not dedupe[path] then
+            if path then
+                path=tostring(path):gsub("%.$","")
+            end
+            local lowPath=path and string.lower(path) or nil
+            local pathDepth=path and select(2,string.gsub(path,"%.",""))+1 or 0
+            if path and lowPath~="workspace" and pathDepth>1 and not dedupe[path] then
                 dedupe[path] = true
                 local low = string.lower(path)
                 local mechanisms = {}
@@ -4962,6 +5110,21 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
                 queueLength=WORKFLOW_HELPERS.inputQueueLength(),
                 queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
                 queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                clickInputsObserved=observerStats.clickInputsObserved,
+                clickInputsProcessed=observerStats.clickInputsProcessed,
+                clickInputsGameProcessed=observerStats.clickInputsGameProcessed,
+                clickCaptureAttempts=observerStats.clickCaptureAttempts,
+                clickCapturesRecorded=observerStats.clickCapturesRecorded,
+                clickCaptureFailures=observerStats.clickCaptureFailures,
+                clickTargetsResolved=observerStats.clickTargetsResolved,
+                clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
+                clickInspectorOwned=observerStats.clickInspectorOwned,
+                clickLinksAttempted=observerStats.clickLinksAttempted,
+                clickLinksMatched=observerStats.clickLinksMatched,
+                clickLinksMissed=observerStats.clickLinksMissed,
+                clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
+                clickLinksExpired=observerStats.clickLinksExpired,
+                clickLinksPruned=observerStats.clickLinksPruned,
                 callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
                 phase=inputObserverState.phase,
                 phaseReason=inputObserverState.phaseReason,
@@ -5493,18 +5656,48 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         local keyCode=input.KeyCode
         local keyName=tostring(keyCode and keyCode.Name or "")
         local inputName=tostring(inputType and inputType.Name or "")
+        local isClickInput=(inputName=="MouseButton1" or inputName=="MouseButton2")
+
+        if isClickInput then observerStats.clickInputsObserved=observerStats.clickInputsObserved+1 end
+
         local action=keyActions[keyName] or WORKFLOW_HELPERS.inferInputAction(keyCode,inputType,toolSnapshot)
-        if not action then return end
-        if gameProcessed and action~="fire" and action~="reload" and action~="switch" then return end
+        local clickObservation=nil
+        if isClickInput then
+            local ok,captured=pcall(function()
+                return captureClickTargetObservation(inputName,input)
+            end)
+            if ok and type(captured)=="table" then
+                clickObservation=captured
+                observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
+            else
+                observerStats.clickCaptureFailures=observerStats.clickCaptureFailures+1
+            end
+        end
+
+        if gameProcessed and action~="fire" and action~="reload" and action~="switch" then
+            if isClickInput then observerStats.clickInputsGameProcessed=observerStats.clickInputsGameProcessed+1
+            elseif not action then
+                return
+            end
+        end
+
+        if not action and not isClickInput then return end
+        if not action and isClickInput then action="pointer-activate" end
+
         local controlKey=("input:%s:%s"):format(inputName,keyName)
         if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.12) then return end
         inputObserverState.buttonsDown[inputName]=true
-        local clickObservation=nil
-        if inputName=="MouseButton1" or inputName=="MouseButton2" then
-            clickObservation=captureClickTargetObservation(inputName,input)
+
+        local clickTargetScope=clickObservation and clickObservation.targetScope or nil
+        local clickInspectorOwned=clickObservation and clickObservation.inspectorOwnedTarget==true
+        if clickInspectorOwned then
+            action="inspector-ui-click"
         end
-        local feature=WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
-        local path=("LocalPlayer.Input.%s.%s"):format(inputName,keyName):sub(1,220)
+
+        local feature=clickInspectorOwned and nil or WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
+        local path=((clickInspectorOwned and "LocalPlayer.InspectorInput" or "LocalPlayer.Input")
+            .."."..inputName.."."..keyName):sub(1,220)
+
         WORKFLOW_HELPERS.recordUniversalInputInteraction(path,"InputBegan."..inputName,action,{
             keyCode=keyName,inputType=inputName,gameProcessed=gameProcessed,
             equippedTools=toolSnapshot.names,equippedToolCount=toolSnapshot.count,
@@ -5514,6 +5707,8 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
             clickTargetSummary=clickObservation and {
                 topmostGuiPath=clickObservation.topmostGuiTarget and clickObservation.topmostGuiTarget.path or nil,
                 raycastPath=clickObservation.raycastTarget and clickObservation.raycastTarget.path or nil,
+                scope=clickTargetScope,
+                inspectorOwnedTarget=clickInspectorOwned,
             } or nil,
             userInputState=tostring(input.UserInputState),source="UserInputService.InputBegan"
         },feature,nil)
@@ -6483,6 +6678,21 @@ local function inspect(requestType, featureRequest)
                     queueLength=WORKFLOW_HELPERS.inputQueueLength(),
                     queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
                     queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                    clickInputsObserved=observerStats.clickInputsObserved,
+                    clickInputsProcessed=observerStats.clickInputsProcessed,
+                    clickInputsGameProcessed=observerStats.clickInputsGameProcessed,
+                    clickCaptureAttempts=observerStats.clickCaptureAttempts,
+                    clickCapturesRecorded=observerStats.clickCapturesRecorded,
+                    clickCaptureFailures=observerStats.clickCaptureFailures,
+                    clickTargetsResolved=observerStats.clickTargetsResolved,
+                    clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
+                    clickInspectorOwned=observerStats.clickInspectorOwned,
+                    clickLinksAttempted=observerStats.clickLinksAttempted,
+                    clickLinksMatched=observerStats.clickLinksMatched,
+                    clickLinksMissed=observerStats.clickLinksMissed,
+                    clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
+                    clickLinksExpired=observerStats.clickLinksExpired,
+                    clickLinksPruned=observerStats.clickLinksPruned,
                     callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
                     phase=inputObserverState.phase,
                     phaseReason=inputObserverState.phaseReason,

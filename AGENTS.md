@@ -15,6 +15,34 @@ Target experiences are third-party games that the user does not own and cannot o
 - Do not merge into `main` without explicit authorization. Develop and push verified work on `openhands-development`.
 
 
+
+## Session notes — 2026-11-06 click/pickup repair pass (v30.6.51)
+
+- Inspector advanced to `v30.6.51` with click-pipeline structural repairs aimed at Potassium/live evidence fidelity:
+  - `InputBegan` now captures mouse click targets **before** processed-input filtering, preventing GUI clicks from being silently dropped when `gameProcessed=true`.
+  - Added explicit click stage diagnostics counters in `inputObservationStats` (`clickInputsObserved`, `clickCaptureAttempts`, `clickTargetsResolved`, `clickLinks*`, etc.).
+  - Added inspector-owned click disambiguation (`targetScope`, `inspectorOwnedTarget`) and excluded inspector UI clicks from gameplay correlation queues.
+  - Added richer click target payload diagnostics (`pipelineDiagnostics`, `targetResolution`, click-time player/camera orientation context).
+  - Strengthened pending-click correlation diagnostics with ambiguity tracking and link scoring metadata.
+- Nearby-world capture now rejects root-container artifacts (e.g. `Workspace.`), reducing false actionable object pollution.
+- Universal discovery pipeline (`tools/receiver_generation_pipeline.py`) now includes universal pickup discovery outputs:
+  - `pickupCandidateRegistry`
+  - `pickupSpawnLocationRegistry`
+  - `pickupCollectionObservations`
+  - `pickupOutcomeRelationships`
+  - `pickupNavigationCandidates`
+  - `pickupDiscoveryQualityMetrics`
+- Pickup discovery is evidence-driven and bounded (no server-side causality claims), with explicit uncertainty and readiness blockers.
+- Discovery summary now surfaces pickup candidate/outcome/navigation counts.
+- Live diagnostic replay run performed against available Bubble Gum export artifact:
+  - `scanId`: `B8B193D3-AF22-406B-91B1-D4F3A5505A21`
+  - observed click arrays in that export remained absent (`clickTargetObservations=0`, `clickOutcomeRelationships=0`) confirming upstream capture gap in that run.
+- Validation completed:
+  - `python3 -m unittest tests.test_inspector_ui tests.test_receiver_generation_pipeline` (**66/66 passed**)
+  - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+  - `python3 -m unittest discover -s tests` (**1665 passed, 17 skipped, 0 failed**)
+  - Root local pressure via `luau-ast`: **170** (budget: **170**, Potassium hard cap: **200**).
+
 ## Session notes — 2026-11-12 cursor/click/orientation evidence pass (v30.6.50)
 
 - Inspector advanced to `v30.6.50` with bounded universal evidence streams for:
