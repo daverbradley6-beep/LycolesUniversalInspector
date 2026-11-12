@@ -463,3 +463,24 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Muscle Legends feature-batch artifacts regenerated with the new schema and stat model under:
   - `potassium_artifacts/muscle_legends_feature_batch/`
   - top-level files now synced from scenario output and include `statTargets` + relationship diagnostics.
+
+## Update — 2026-11-12 — split-baseline archive ingestion + enriched spatial discovery
+
+- `tools/receiver_generation_pipeline.py` now supports split baseline multipart archives directly in discovery mode:
+  - new CLI flag (repeatable): `discover-observation --baseline-archive <path.zip>`
+  - archives are merged via `ingest_parts_archives(...)`, validated for scan/place/part identity, then converted into baseline context (`_build_baseline_parts_context`).
+- Discovery report metadata now includes:
+  - `scanMetadata.baselineContext` (scan/place/object counters + actionable-world-object index size)
+  - `scanMetadata.baselineArchiveValidation` (source archive count, manifest uploaded parts observed, acknowledgement gap, combined SHA256).
+- Spatial location interpretation now excludes non-actionable roots/templates (`Workspace` root and `ReplicatedStorage.*`), uses canonical path normalization, and emits richer location/navigation evidence:
+  - `functionalLocationRegistry[*].relevantWorkspaceObjectPaths`
+  - `requiredActivationConditions`
+  - `observedOutcomes`
+  - `missingEvidence` / `unresolvedRequirements`
+  - `navigationCandidates[*].evidenceStatus` + `validationStatus`.
+- `spatialDiscoveryQualityMetrics` now includes:
+  - `locationClustering.navigationCandidatesReady`
+  - `nearbyObjectRelevance`
+  - `coverage.interactionToLocationCoverage` and bounded `coverage.coordinateCoverage`
+  - `missingLocationEvidence` examples.
+- Regression coverage added for split-archive ingestion and baseline-aware universal discovery output in `tests/test_receiver_generation_pipeline.py`.

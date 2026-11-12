@@ -1,3 +1,40 @@
+## Update — 2026-11-12 — split baseline archives + enriched spatial discovery interpretation
+
+### Implemented
+
+- `tools/receiver_generation_pipeline.py` discovery path now accepts repeatable split baseline archives via `discover-observation --baseline-archive <zip>` and merges them with `ingest_parts_archives(...)`.
+- Added baseline archive integrity + context propagation into discovery outputs:
+  - `scanMetadata.baselineArchiveValidation`
+  - `scanMetadata.baselineContext`
+  - top-level `baselineArchiveValidation` and `baselineContext` in `run_universal_discovery_export(...)` result.
+- Added identity safety checks between observation and baseline archive context (scan/place mismatch fail-closed).
+- Strengthened universal spatial interpretation output:
+  - character/world/object-anchor-aware clustering keys,
+  - filtered nearby object relevance (exclude `Workspace` root and `ReplicatedStorage.*` templates),
+  - expanded `functionalLocationRegistry` fields (`relevantWorkspaceObjectPaths`, `requiredActivationConditions`, `observedOutcomes`, `missingEvidence`, `unresolvedRequirements`),
+  - enriched `spatialActionOutcomeRelationships` with before/at/post positions + confounding metadata,
+  - enriched `navigationCandidates` with `evidenceStatus` + `validationStatus`.
+- Extended `spatialDiscoveryQualityMetrics` with:
+  - `locationClustering.navigationCandidatesReady`,
+  - `nearbyObjectRelevance`,
+  - `coverage` and `missingLocationEvidence` sections.
+- Updated universal discovery summary output with baseline archive integrity lines.
+
+### Validation completed
+
+- `python3 -m py_compile tools/receiver_generation_pipeline.py tests/test_receiver_generation_pipeline.py`
+- `python3 -m unittest tests.test_receiver_generation_pipeline` (**23/23 passed**)
+- `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+- Real Bubble Gum discovery run with split archives:
+  - `python3 tools/receiver_generation_pipeline.py discover-observation --observation ...Pasted text(20261112-124139).txt --baseline-archive ...Part_1_of_2.zip --baseline-archive ...Part_2_of_2.zip --scenario-name bubblegum-spatial-discovery`
+  - PASS, with `localArchiveComplete=true`, `partCount=979`, `receiverAcknowledgementGap=716`, `coordinateCoverage=1.0`.
+
+### Notes
+
+- This update is pipeline/discovery-side; Potassium runtime compile/load verification still requires live user confirmation in executor.
+
+
+
 ## Update — 2026-11-12 — Universal spatial discovery + location linkage integration
 
 ### Implemented

@@ -57,6 +57,23 @@ def _parse_json_payload(raw: bytes, context: str) -> dict[str, Any]:
     return payload
 
 
+_OCCURRENCE_SUFFIX_RE = re.compile(r"\[occurrence:\d+\]$", re.IGNORECASE)
+
+
+def _canonical_object_path(path: Any) -> Optional[str]:
+    if not isinstance(path, str):
+        return None
+    value = path.strip()
+    if not value:
+        return None
+    value = _OCCURRENCE_SUFFIX_RE.sub("", value).rstrip(".")
+    return value or None
+
+
+def _path_depth(path: str) -> int:
+    return len([item for item in path.split(".") if item])
+
+
 def _validate_manifest_identity(manifest: dict[str, Any], *, scan_id: str, place_id: int, part_count: int, context: str) -> None:
     for key, expected in (("scanId", scan_id), ("placeId", place_id), ("partCount", part_count), ("expectedParts", part_count)):
         if key not in manifest:
@@ -222,6 +239,280 @@ def ingest_parts_archive(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
+
+def ingest_parts_archives(
+    archive_paths: Sequence[pathlib.Path],
+    extracted_root: pathlib.Path,
+    *,
+    expected_scan_id: Optional[str] = None,
+) -> dict[str, Any]:
+    archives = [pathlib.Path(item).resolve() for item in archive_paths]
+    if not archives:
+        raise ValueError("at least one parts archive is required")
+    if len(archives) == 1:
+        result = ingest_parts_archive(archives[0], extracted_root, expected_scan_id=expected_scan_id)
+        result["sourceArchiveCount"] = 1
+        result["sourceArchives"] = [str(archives[0])]
+        result["combinedArchiveSha256"] = result.get("archiveSha256")
+        return result
+
+    for archive in archives:
+        if not archive.is_file():
+            raise ValueError(f"parts archive not found: {archive}")
+        if archive.suffix.lower() != ".zip":
+            raise ValueError("parts archive must be a .zip file")
+
+    extracted_root = pathlib.Path(extracted_root).resolve()
+    extracted_root.mkdir(parents=True, exist_ok=True)
+
+    archive_sha256_map = {str(archive): _sha256_file(archive) for archive in archives}
+    combined_archive_sha256 = hashlib.sha256(
+        json.dumps(sorted(archive_sha256_map.items()), separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    part_records: dict[int, dict[str, Any]] = {}
+    manifest_records: list[dict[str, Any]] = []
+    name_digests: dict[str, str] = {}
+    duplicate_part_count = 0
+    extracted_json_count = 0
+
+    scan_id: Optional[str] = None
+    place_id: Optional[int] = None
+    part_count: Optional[int] = None
+
+    staging = pathlib.Path(tempfile.mkdtemp(prefix=".ingest-", dir=str(extracted_root)))
+    try:
+        for archive in archives:
+            with zipfile.ZipFile(archive) as bundle:
+                members = [entry for entry in bundle.infolist() if not entry.is_dir() and entry.filename.lower().endswith(".json")]
+                if not members:
+                    raise ValueError(f"archive has no JSON parts: {archive.name}")
+                for entry in members:
+                    if entry.file_size > 8_000_000:
+                        raise ValueError(f"archive member too large: {archive.name}:{entry.filename}")
+                    raw = bundle.read(entry)
+                    context = f"archive member {archive.name}:{entry.filename}"
+                    payload = _parse_json_payload(raw, context)
+                    safe_name = pathlib.PurePosixPath(entry.filename).name
+                    if not safe_name:
+                        raise ValueError(f"invalid archive member name: {entry.filename}")
+
+                    digest = _sha256_bytes(raw)
+                    previous_digest = name_digests.get(safe_name)
+                    if previous_digest is not None and previous_digest != digest:
+                        raise ValueError(f"conflicting duplicate filename across archives: {safe_name}")
+                    name_digests[safe_name] = digest
+
+                    if "partIndex" in payload:
+                        index = payload.get("partIndex")
+                        sid = payload.get("scanId")
+                        pid = payload.get("placeId")
+                        pcount = payload.get("partCount")
+                        if type(index) is not int or index <= 0:
+                            raise ValueError(f"{context} has invalid partIndex")
+                        if not isinstance(payload.get("objects"), list):
+                            raise ValueError(f"{context} missing objects[] payload")
+                        if not isinstance(sid, str) or not sid:
+                            raise ValueError(f"{context} missing scanId")
+                        if type(pid) is not int or pid <= 0:
+                            raise ValueError(f"{context} has invalid placeId")
+                        if type(pcount) is not int or pcount <= 0:
+                            raise ValueError(f"{context} has invalid partCount")
+                        if expected_scan_id is not None and sid != expected_scan_id:
+                            raise ValueError(
+                                f"archive scanId mismatch: expected {expected_scan_id}, got {sid}"
+                            )
+                        if scan_id is None:
+                            scan_id = sid
+                            place_id = pid
+                            part_count = pcount
+                        elif sid != scan_id or pid != place_id or pcount != part_count:
+                            raise ValueError("mixed scan identity across archive parts")
+
+                        existing = part_records.get(index)
+                        if existing is not None:
+                            duplicate_part_count += 1
+                            if existing["sha256"] != digest:
+                                raise ValueError(f"conflicting duplicate part content for index {index}")
+                        else:
+                            part_records[index] = {
+                                "index": index,
+                                "filename": safe_name,
+                                "sha256": digest,
+                            }
+                    else:
+                        manifest_records.append(payload)
+
+                    target_path = staging / safe_name
+                    if target_path.exists() and target_path.read_bytes() != raw:
+                        raise ValueError(f"conflicting duplicate archive payload for {safe_name}")
+                    if not target_path.exists():
+                        target_path.write_bytes(raw)
+                        extracted_json_count += 1
+
+        if not part_records:
+            raise ValueError("archives do not contain multipart scan parts")
+        assert scan_id is not None and place_id is not None and part_count is not None
+
+        missing_parts = [index for index in range(1, part_count + 1) if index not in part_records]
+        if missing_parts:
+            preview = missing_parts[:20]
+            raise ValueError(f"missing parts: {preview} (total {len(missing_parts)})")
+
+        for manifest in manifest_records:
+            _validate_manifest_identity(
+                manifest,
+                scan_id=scan_id,
+                place_id=place_id,
+                part_count=part_count,
+                context="archive manifest",
+            )
+
+        manifest_uploaded_parts = [
+            int(item.get("uploadedParts"))
+            for item in manifest_records
+            if type(item.get("uploadedParts")) is int and item.get("uploadedParts") >= 0
+        ]
+        uploaded_parts_observed = max(manifest_uploaded_parts) if manifest_uploaded_parts else None
+        upload_ack_gap = (
+            max(0, part_count - uploaded_parts_observed)
+            if uploaded_parts_observed is not None
+            else None
+        )
+
+        target = extracted_root / f"archive_{scan_id}"
+        metadata_path = target / ".archive-ingestion.meta"
+        if target.is_dir() and metadata_path.is_file():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                metadata = None
+            if isinstance(metadata, dict) and metadata.get("combinedArchiveSha256") == combined_archive_sha256:
+                shutil.rmtree(staging)
+                metadata["reusedExistingExtraction"] = True
+                metadata["outputDir"] = str(target)
+                return metadata
+        if target.exists():
+            shutil.rmtree(target)
+        staging.replace(target)
+
+        metadata = {
+            "scanId": scan_id,
+            "placeId": place_id,
+            "partCount": part_count,
+            "jsonFiles": extracted_json_count,
+            "manifestFiles": len(manifest_records),
+            "duplicatePartCount": duplicate_part_count,
+            "missingPartCount": 0,
+            "combinedArchiveSha256": combined_archive_sha256,
+            "archiveSha256": combined_archive_sha256,
+            "archiveSha256Map": archive_sha256_map,
+            "sourceArchiveCount": len(archives),
+            "sourceArchives": [str(item) for item in archives],
+            "manifestUploadedPartsObserved": uploaded_parts_observed,
+            "receiverAcknowledgementGap": upload_ack_gap,
+            "receiverAcknowledgementComplete": (
+                uploaded_parts_observed is not None and uploaded_parts_observed >= part_count
+            ),
+            "localArchiveComplete": True,
+            "reusedExistingExtraction": False,
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        metadata["outputDir"] = str(target)
+        return metadata
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def _build_baseline_parts_context(parts_dir: pathlib.Path) -> dict[str, Any]:
+    root = pathlib.Path(parts_dir).resolve()
+    if not root.is_dir():
+        raise ValueError(f"baseline parts directory not found: {root}")
+
+    part_files = sorted(root.glob("*_part-*.json"))
+    if not part_files:
+        part_files = sorted(path for path in root.glob("*.json") if path.name != "receiver-manifest.json")
+
+    object_count = 0
+    workspace_object_count = 0
+    replicated_storage_object_count = 0
+    actionable_world_index: dict[str, dict[str, Any]] = {}
+
+    scan_id: Optional[str] = None
+    place_id: Optional[int] = None
+    part_count: Optional[int] = None
+
+    for path in part_files:
+        try:
+            payload = _read_json_document(path)
+        except Exception:
+            continue
+        if scan_id is None and isinstance(payload.get("scanId"), str):
+            scan_id = payload.get("scanId")
+        if place_id is None and type(payload.get("placeId")) is int:
+            place_id = payload.get("placeId")
+        if part_count is None and type(payload.get("partCount")) is int:
+            part_count = payload.get("partCount")
+
+        objects = payload.get("objects") if isinstance(payload.get("objects"), list) else []
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            object_count += 1
+            raw_path = _canonical_object_path(obj.get("path"))
+            if not raw_path:
+                continue
+            low_path = raw_path.lower()
+            if low_path.startswith("replicatedstorage."):
+                replicated_storage_object_count += 1
+                continue
+            if low_path.startswith("workspace."):
+                workspace_object_count += 1
+
+            interaction = obj.get("interaction") if isinstance(obj.get("interaction"), dict) else {}
+            gui_control = obj.get("guiControl") if isinstance(obj.get("guiControl"), dict) else {}
+            class_name = obj.get("class") if isinstance(obj.get("class"), str) else "unknown"
+
+            mechanisms: list[str] = []
+            if class_name == "ProximityPrompt" or interaction.get("hasPrompt") is True or "actionText" in interaction:
+                mechanisms.append("prompt")
+            if class_name == "ClickDetector" or interaction.get("hasClickDetector") is True:
+                mechanisms.append("click")
+            if interaction.get("touchInterest") is True:
+                mechanisms.append("touch")
+
+            gui_actionable = bool(gui_control) and bool(gui_control.get("interactable") is True or gui_control.get("active") is True)
+            if not mechanisms and not gui_actionable:
+                continue
+            if not low_path.startswith("workspace."):
+                continue
+
+            bucket = actionable_world_index.setdefault(raw_path, {
+                "path": raw_path,
+                "class": class_name,
+                "count": 0,
+                "mechanisms": {},
+                "guiActionable": False,
+                "interactionScore": 0,
+            })
+            bucket["count"] += 1
+            if gui_actionable:
+                bucket["guiActionable"] = True
+                bucket["interactionScore"] += 1
+            for mechanism in mechanisms:
+                bucket["mechanisms"][mechanism] = bucket["mechanisms"].get(mechanism, 0) + 1
+                bucket["interactionScore"] += 2
+
+    return {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": part_count,
+        "objectCount": object_count,
+        "workspaceObjectCount": workspace_object_count,
+        "replicatedStorageObjectCount": replicated_storage_object_count,
+        "actionableWorldObjectIndex": actionable_world_index,
+    }
 
 def _resolve_parts_input(parts_input: pathlib.Path, output_root: pathlib.Path) -> tuple[pathlib.Path, Optional[dict[str, Any]]]:
     source = pathlib.Path(parts_input).resolve()
@@ -817,11 +1108,20 @@ def _build_universal_discovery_report(
     *,
     requested_capability: Optional[str] = None,
     generation_contract: Optional[dict[str, Any]] = None,
+    baseline_context: Optional[dict[str, Any]] = None,
+    baseline_archive_validation: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     events = _interaction_events_from_payload(payload)
     objects = payload.get("objects") if isinstance(payload.get("objects"), list) else []
     features = payload.get("features") if isinstance(payload.get("features"), list) else []
     readiness = payload.get("featureReadiness") if isinstance(payload.get("featureReadiness"), dict) else {}
+    baseline_context = baseline_context if isinstance(baseline_context, dict) else {}
+    baseline_archive_validation = baseline_archive_validation if isinstance(baseline_archive_validation, dict) else {}
+    baseline_actionable_index = (
+        baseline_context.get("actionableWorldObjectIndex")
+        if isinstance(baseline_context.get("actionableWorldObjectIndex"), dict)
+        else {}
+    )
 
     control_type_counts: dict[str, int] = {}
     action_kind_counts: dict[str, int] = {}
@@ -881,11 +1181,20 @@ def _build_universal_discovery_report(
             "characterState": sample.get("characterState") if isinstance(sample.get("characterState"), str) else None,
         }
 
-    def _cluster_key(position: dict[str, float]) -> tuple[int, int, int]:
+    def _cluster_key(
+        position: dict[str, float],
+        *,
+        character_generation: Optional[int],
+        world_context_key: Optional[str],
+        object_anchor: Optional[str],
+    ) -> tuple[Any, ...]:
         return (
-            int(round(position["x"] / 24.0)),
+            int(round(position["x"] / 22.0)),
             int(round(position["y"] / 12.0)),
-            int(round(position["z"] / 24.0)),
+            int(round(position["z"] / 22.0)),
+            character_generation if isinstance(character_generation, int) else -1,
+            (world_context_key or "height-band:" + str(int(round(position["y"] / 300.0))))[:80],
+            (object_anchor or "")[:96],
         )
 
     for event in events:
@@ -1313,9 +1622,13 @@ def _build_universal_discovery_report(
                 best = sample
         return best
 
-    clusters: dict[tuple[int, int, int], dict[str, Any]] = {}
+    clusters: dict[tuple[Any, ...], dict[str, Any]] = {}
     sequence_to_location: dict[int, str] = {}
     transaction_to_location: dict[str, str] = {}
+    row_by_sequence: dict[int, dict[str, Any]] = {}
+    actionable_nearby_candidates = 0
+    uncertain_nearby_candidates = 0
+    rejected_nearby_candidates = 0
 
     for event in events:
         sequence = event.get("sequence") if isinstance(event.get("sequence"), int) else None
@@ -1335,11 +1648,76 @@ def _build_universal_discovery_report(
         position = action_snapshot.get("position")
         if not isinstance(position, dict):
             continue
-        key = _cluster_key(position)
+
+        world_context = action_snapshot.get("worldContext") if isinstance(action_snapshot.get("worldContext"), dict) else {}
+        world_context_key = world_context.get("path") if isinstance(world_context.get("path"), str) else world_context.get("name")
+
+        nearby = event.get("nearbyWorldObjects") if isinstance(event.get("nearbyWorldObjects"), list) else []
+        filtered_nearby: list[dict[str, Any]] = []
+        for obj in nearby[:24]:
+            if not isinstance(obj, dict):
+                continue
+            normalized_path = _canonical_object_path(obj.get("path"))
+            if not normalized_path:
+                continue
+            low_path = normalized_path.lower()
+            if low_path in {"workspace", "workspace."}:
+                rejected_nearby_candidates += 1
+                continue
+            if low_path.startswith("replicatedstorage."):
+                rejected_nearby_candidates += 1
+                continue
+            mechanisms = [item for item in (obj.get("interactionMechanisms") if isinstance(obj.get("interactionMechanisms"), list) else []) if isinstance(item, str)]
+            baseline_entry = baseline_actionable_index.get(normalized_path)
+            if isinstance(baseline_entry, dict):
+                for mechanism, count in (baseline_entry.get("mechanisms") if isinstance(baseline_entry.get("mechanisms"), dict) else {}).items():
+                    if isinstance(mechanism, str) and type(count) is int and count > 0 and mechanism not in mechanisms:
+                        mechanisms.append(mechanism)
+            score = float(_numeric(obj.get("actionableScore")) or 0.0)
+            if isinstance(baseline_entry, dict):
+                score += float(_numeric(baseline_entry.get("interactionScore")) or 0.0)
+            decorative = any(token in low_path for token in ("decoration", "foliage", "mountain", "tree", "rock", "mesh", "terrain", "barrier"))
+            if mechanisms:
+                tier = "actionable"
+                actionable_nearby_candidates += 1
+            elif decorative and score < 6.0:
+                rejected_nearby_candidates += 1
+                continue
+            elif score >= 6.0:
+                tier = "actionable"
+                actionable_nearby_candidates += 1
+            else:
+                tier = "uncertain"
+                uncertain_nearby_candidates += 1
+            filtered_nearby.append({
+                "path": normalized_path,
+                "tier": tier,
+                "mechanisms": mechanisms,
+                "distanceStuds": _numeric(obj.get("distanceStuds")),
+            })
+
+        object_anchor = None
+        if filtered_nearby:
+            ranked = sorted(
+                filtered_nearby,
+                key=lambda item: (
+                    0 if item["tier"] == "actionable" else 1,
+                    item["distanceStuds"] if isinstance(item.get("distanceStuds"), (int, float)) else 1e9,
+                    item["path"],
+                ),
+            )
+            object_anchor = ranked[0]["path"]
+
+        key = _cluster_key(
+            position,
+            character_generation=action_snapshot.get("characterGeneration") if isinstance(action_snapshot.get("characterGeneration"), int) else None,
+            world_context_key=world_context_key if isinstance(world_context_key, str) and world_context_key else None,
+            object_anchor=object_anchor,
+        )
         cluster = clusters.get(key)
         if cluster is None:
             cluster = {
-                "id": "loc_" + hashlib.sha256(f"{key[0]}|{key[1]}|{key[2]}".encode("utf-8")).hexdigest()[:14],
+                "id": "loc_" + hashlib.sha256("|".join(str(item) for item in key).encode("utf-8")).hexdigest()[:14],
                 "count": 0,
                 "sumX": 0.0,
                 "sumY": 0.0,
@@ -1358,8 +1736,15 @@ def _build_universal_discovery_report(
                 "transactions": set(),
                 "sequences": set(),
                 "nearby": {},
+                "nearbyTier": {},
+                "nearbyMechanisms": {},
                 "worldContexts": {},
                 "beforePositions": [],
+                "postPositions": [],
+                "requiredConditions": {},
+                "outcomeStateKeys": {},
+                "guiControls": {},
+                "characterGenerations": set(),
             }
             clusters[key] = cluster
 
@@ -1396,23 +1781,59 @@ def _build_universal_discovery_report(
             cluster["transactions"].add(tx_id)
             transaction_to_location.setdefault(tx_id, cluster["id"])
 
-        world_context = action_snapshot.get("worldContext")
-        if isinstance(world_context, dict):
-            context_key = world_context.get("path") if isinstance(world_context.get("path"), str) else world_context.get("name")
-            if isinstance(context_key, str) and context_key:
-                cluster["worldContexts"][context_key] = cluster["worldContexts"].get(context_key, 0) + 1
+        if isinstance(world_context_key, str) and world_context_key:
+            cluster["worldContexts"][world_context_key] = cluster["worldContexts"].get(world_context_key, 0) + 1
 
         before_snapshot = _choose_snapshot_for_event(event, phase_hint="before-action")
         if before_snapshot and isinstance(before_snapshot.get("position"), dict):
             cluster["beforePositions"].append(before_snapshot.get("position"))
 
-        nearby = event.get("nearbyWorldObjects") if isinstance(event.get("nearbyWorldObjects"), list) else []
-        for obj in nearby[:16]:
-            if not isinstance(obj, dict):
+        post_snapshot = None
+        sequence_snapshots = snapshots_by_sequence.get(sequence, []) if isinstance(sequence, int) else []
+        tx_snapshots = snapshots_by_transaction.get(tx_id, []) if tx_id else []
+        for sample in sequence_snapshots + tx_snapshots:
+            if not isinstance(sample, dict) or not isinstance(sample.get("position"), dict):
                 continue
-            nearby_path = obj.get("path") if isinstance(obj.get("path"), str) else None
-            if nearby_path:
-                cluster["nearby"][nearby_path] = cluster["nearby"].get(nearby_path, 0) + 1
+            phase = (sample.get("phase") or "").lower()
+            if "observation-window" in phase or "after" in phase:
+                post_snapshot = sample
+                break
+        if post_snapshot and isinstance(post_snapshot.get("position"), dict):
+            cluster["postPositions"].append(post_snapshot.get("position"))
+
+        for item in filtered_nearby:
+            nearby_path = item["path"]
+            cluster["nearby"][nearby_path] = cluster["nearby"].get(nearby_path, 0) + 1
+            cluster["nearbyTier"][nearby_path] = item["tier"]
+            for mechanism in item["mechanisms"]:
+                cluster["nearbyMechanisms"][mechanism] = cluster["nearbyMechanisms"].get(mechanism, 0) + 1
+
+        metadata = event.get("controlMetadata") if isinstance(event.get("controlMetadata"), dict) else {}
+        for key_name in ("enabled", "active", "visible", "effectiveVisible", "interactable", "ancestorVisible", "screenEnabled", "requiresHandle"):
+            if key_name in metadata:
+                marker = f"{key_name}={metadata.get(key_name)}"
+                cluster["requiredConditions"][marker] = cluster["requiredConditions"].get(marker, 0) + 1
+
+        for change in event.get("stateChanges") if isinstance(event.get("stateChanges"), list) else []:
+            if isinstance(change, dict) and isinstance(change.get("key"), str):
+                change_key = change["key"]
+                cluster["outcomeStateKeys"][change_key] = cluster["outcomeStateKeys"].get(change_key, 0) + 1
+
+        generation = action_snapshot.get("characterGeneration")
+        if isinstance(generation, int):
+            cluster["characterGenerations"].add(generation)
+
+        if path and path.lower().startswith("localplayer.playergui."):
+            cluster["guiControls"][path] = cluster["guiControls"].get(path, 0) + 1
+
+        if isinstance(sequence, int) and sequence not in row_by_sequence:
+            row_by_sequence[sequence] = {
+                "before": before_snapshot.get("position") if isinstance(before_snapshot, dict) else None,
+                "action": position,
+                "post": post_snapshot.get("position") if isinstance(post_snapshot, dict) else None,
+                "observationWindows": event.get("observationWindows") if isinstance(event.get("observationWindows"), list) else [],
+                "attribution": event.get("attribution") if isinstance(event.get("attribution"), str) else "unknown",
+            }
 
     location_registry: list[dict[str, Any]] = []
     for cluster in sorted(clusters.values(), key=lambda value: (-value["count"], value["id"]))[:140]:
@@ -1427,6 +1848,28 @@ def _build_universal_discovery_report(
             "min": {"x": round(cluster["minX"], 4), "y": round(cluster["minY"], 4), "z": round(cluster["minZ"], 4)},
             "max": {"x": round(cluster["maxX"], 4), "y": round(cluster["maxY"], 4), "z": round(cluster["maxZ"], 4)},
         }
+        actionable_world_paths = [
+            item[0]
+            for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))
+            if cluster["nearbyTier"].get(item[0]) == "actionable"
+        ]
+        uncertain_world_paths = [
+            item[0]
+            for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))
+            if cluster["nearbyTier"].get(item[0]) != "actionable"
+        ]
+        if cluster["outcomeStateKeys"]:
+            confidence_score = min(1.0, confidence_score + 0.12)
+        if len(actionable_world_paths) == 0 and len(uncertain_world_paths) > 0:
+            confidence_score = max(0.0, confidence_score - 0.08)
+        missing_evidence = []
+        if len(actionable_world_paths) == 0:
+            missing_evidence.append("No actionable nearby world object observed")
+        if len(cluster["outcomeStateKeys"]) == 0:
+            missing_evidence.append("No outcome-linked state change observed")
+        if len(cluster["transactions"]) <= 1:
+            missing_evidence.append("Single-transaction evidence only")
+
         location_registry.append({
             "id": cluster["id"],
             "candidatePurpose": purpose,
@@ -1438,9 +1881,20 @@ def _build_universal_discovery_report(
             "actionKinds": [item[0] for item in sorted(cluster["actionKinds"].items(), key=lambda item: (-item[1], item[0]))],
             "featureCandidates": [item[0] for item in sorted(cluster["featureCandidates"].items(), key=lambda item: (-item[1], item[0]))],
             "likelyTargetPaths": [item[0] for item in sorted(cluster["paths"].items(), key=lambda item: (-item[1], item[0]))[:12]],
-            "nearbyWorldObjectPaths": [item[0] for item in sorted(cluster["nearby"].items(), key=lambda item: (-item[1], item[0]))[:12]],
-            "worldContexts": [item[0] for item in sorted(cluster["worldContexts"].items(), key=lambda item: (-item[1], item[0]))[:6]],
+            "relevantWorkspaceObjectPaths": actionable_world_paths[:16],
+            "nearbyWorldObjectPaths": (actionable_world_paths + uncertain_world_paths)[:16],
+            "uncertainNearbyObjectPaths": uncertain_world_paths[:16],
+            "interactionMechanisms": [item[0] for item in sorted(cluster["nearbyMechanisms"].items(), key=lambda item: (-item[1], item[0]))],
+            "associatedGuiControls": [item[0] for item in sorted(cluster["guiControls"].items(), key=lambda item: (-item[1], item[0]))[:14]],
+            "requiredActivationConditions": [item[0] for item in sorted(cluster["requiredConditions"].items(), key=lambda item: (-item[1], item[0]))[:16]],
+            "observedOutcomes": [
+                {"key": item[0], "occurrences": item[1]}
+                for item in sorted(cluster["outcomeStateKeys"].items(), key=lambda item: (-item[1], item[0]))[:20]
+            ],
+            "worldContexts": [item[0] for item in sorted(cluster["worldContexts"].items(), key=lambda item: (-item[1], item[0]))[:8]],
+            "characterGenerations": sorted(cluster["characterGenerations"]),
             "revisited": len(cluster["transactions"]) > 1,
+            "outcomeLinked": len(cluster["outcomeStateKeys"]) > 0,
             "proximityEvidenceOnly": True,
             "confidence": {
                 "score": round(confidence_score, 3),
@@ -1453,10 +1907,22 @@ def _build_universal_discovery_report(
             "uncertaintyNotes": [
                 "Location clustering is spatially inferred from observed action positions",
             ],
-            "sequences": sorted(cluster["sequences"])[:30],
-            "transactions": sorted(cluster["transactions"])[:30],
-            "beforePositions": cluster["beforePositions"][:8],
+            "missingEvidence": missing_evidence,
+            "unresolvedRequirements": [
+                item
+                for item in (
+                    "Validate deterministic navigation path" if len(cluster["beforePositions"]) == 0 else None,
+                    "Collect repeat run with explicit outcome evidence" if len(cluster["outcomeStateKeys"]) == 0 else None,
+                )
+                if item
+            ],
+            "sequences": sorted(cluster["sequences"])[:60],
+            "transactions": sorted(cluster["transactions"])[:60],
+            "beforePositions": cluster["beforePositions"][:10],
+            "postPositions": cluster["postPositions"][:10],
         })
+
+    location_by_id = {item["id"]: item for item in location_registry}
 
     spatial_relationships: list[dict[str, Any]] = []
     for relation in relationships[:400]:
@@ -1469,14 +1935,25 @@ def _build_universal_discovery_report(
             location_id = transaction_to_location.get(tx_id)
         if location_id is None:
             continue
+        positional = row_by_sequence.get(seq) if isinstance(seq, int) else {}
         spatial_relationships.append({
             "id": "spatial_" + str(relation.get("id") or "unknown"),
             "relationshipId": relation.get("id"),
             "locationId": location_id,
             "interactionSequence": seq,
             "transactionId": tx_id,
+            "timestamp": relation.get("sessionElapsedSeconds"),
+            "beforeActionPosition": positional.get("before") if isinstance(positional, dict) else None,
+            "atActionPosition": positional.get("action") if isinstance(positional, dict) else None,
+            "postActionPosition": positional.get("post") if isinstance(positional, dict) else None,
+            "observationWindows": positional.get("observationWindows") if isinstance(positional, dict) else relation.get("observationWindows"),
             "action": relation.get("action") if isinstance(relation.get("action"), dict) else {},
+            "objectIdentity": {
+                "targetPath": (relation.get("action") or {}).get("targetPath") if isinstance(relation.get("action"), dict) else None,
+                "candidateWorldObjects": (location_by_id.get(location_id) or {}).get("relevantWorkspaceObjectPaths", [])[:8],
+            },
             "stateSignalCount": len(relation.get("stateBeforeAfter") or []),
+            "stateBeforeAfter": relation.get("stateBeforeAfter") if isinstance(relation.get("stateBeforeAfter"), list) else [],
             "outcomeStateKeys": [
                 item.get("key")
                 for item in (relation.get("stateBeforeAfter") or [])
@@ -1484,24 +1961,59 @@ def _build_universal_discovery_report(
             ][:16],
             "confidence": relation.get("confidence") if isinstance(relation.get("confidence"), dict) else {},
             "causality": "not-proven-temporal-correlation-only",
-            "proximityObserved": True,
+            "potentialConfoundingInteractions": {
+                "attribution": positional.get("attribution") if isinstance(positional, dict) else (relation.get("conflictingActivity") or {}).get("attribution"),
+                "signals": (
+                    (relation.get("conflictingActivity") or {}).get("signals")
+                    if isinstance((relation.get("conflictingActivity") or {}).get("signals"), list)
+                    else []
+                ),
+            },
         })
 
     navigation_candidates: list[dict[str, Any]] = []
+    ready_navigation_candidates = 0
     for location in location_registry[:120]:
         before_positions = location.get("beforePositions") if isinstance(location.get("beforePositions"), list) else []
         approach_position = before_positions[0] if before_positions else None
+        observed_location = isinstance(location.get("representativePosition"), dict)
+        interaction_associated = (location.get("supportingInteractionCount") or 0) > 0
+        outcome_associated = bool(location.get("outcomeLinked"))
+        validated_destination = (
+            observed_location
+            and interaction_associated
+            and outcome_associated
+            and len(location.get("relevantWorkspaceObjectPaths") or []) > 0
+            and (location.get("confidence") or {}).get("score", 0) >= 0.78
+        )
+        if validated_destination:
+            ready_navigation_candidates += 1
         navigation_candidates.append({
-            "locationId": location.get("id"),
+            "destinationId": location.get("id"),
             "candidatePurpose": location.get("candidatePurpose"),
-            "targetPosition": location.get("representativePosition"),
+            "targetObjectCoordinates": None,
+            "observedPlayerInteractionCoordinates": location.get("representativePosition"),
             "suggestedApproachPosition": approach_position,
-            "targetObjectPaths": location.get("nearbyWorldObjectPaths") or location.get("likelyTargetPaths") or [],
-            "interactionMechanisms": location.get("controlTypes") or [],
-            "movementStatus": "unknown",
+            "interactionRadiusStuds": None,
+            "requiredActionMechanisms": location.get("interactionMechanisms") or location.get("controlTypes") or [],
+            "prerequisites": location.get("requiredActivationConditions") or [],
+            "worldAreaIdentity": (location.get("worldContexts") or [None])[0],
             "confidence": location.get("confidence"),
+            "validationStatus": (
+                "validated-destination"
+                if validated_destination
+                else ("outcome-associated-location" if outcome_associated else "interaction-associated-location")
+            ),
+            "evidenceStatus": {
+                "observedLocation": observed_location,
+                "interactionAssociatedLocation": interaction_associated,
+                "outcomeAssociatedLocation": outcome_associated,
+                "validatedDestination": validated_destination,
+            },
+            "targetObjectPaths": location.get("relevantWorkspaceObjectPaths") or location.get("nearbyWorldObjectPaths") or location.get("likelyTargetPaths") or [],
             "limitations": [
                 "Approach positions are observational, not guaranteed valid navigation meshes",
+                "Server-side interaction acceptance must be validated in controlled runs",
             ],
         })
 
@@ -1521,8 +2033,49 @@ def _build_universal_discovery_report(
         },
         "locationClustering": {
             "functionalLocationCount": len(location_registry),
+            "duplicateObservationsMerged": max(0, len([item for item in events if isinstance(item, dict)]) - len(location_registry)),
+            "interactionLinkedLocations": sum(1 for item in location_registry if (item.get("supportingInteractionCount") or 0) > 0),
+            "outcomeLinkedLocations": sum(1 for item in location_registry if item.get("outcomeLinked") is True),
             "spatialActionOutcomeRelationshipCount": len(spatial_relationships),
             "navigationCandidateCount": len(navigation_candidates),
+            "navigationCandidatesReady": ready_navigation_candidates,
+        },
+        "nearbyObjectRelevance": {
+            "actionableCandidateCount": actionable_nearby_candidates,
+            "uncertainCandidateCount": uncertain_nearby_candidates,
+            "rejectedCandidateCount": rejected_nearby_candidates,
+        },
+        "coverage": {
+            "interactionToLocationCoverage": (
+                round(
+                    len({item.get("interactionSequence") for item in spatial_relationships if isinstance(item.get("interactionSequence"), int)}) / len(events),
+                    4,
+                )
+                if len(events) > 0
+                else None
+            ),
+            "coordinateCoverage": (
+                round(
+                    min(
+                        1.0,
+                        sum(1 for item in spatial_relationships if isinstance(item.get("atActionPosition"), dict)) / len(events),
+                    ),
+                    4,
+                )
+                if len(events) > 0
+                else None
+            ),
+        },
+        "missingLocationEvidence": {
+            "count": sum(1 for item in location_registry if len(item.get("missingEvidence") or []) > 0),
+            "examples": [
+                {
+                    "locationId": item.get("id"),
+                    "missingEvidence": item.get("missingEvidence"),
+                }
+                for item in location_registry
+                if len(item.get("missingEvidence") or []) > 0
+            ][:12],
         },
         "evidenceBoundaries": {
             "workspaceActiveObjectsOnly": True,
@@ -1626,6 +2179,8 @@ def _build_universal_discovery_report(
 
     distinct_mechanics = len(systems_list)
     object_count = len(objects)
+    if object_count == 0 and type(baseline_context.get("objectCount")) is int:
+        object_count = int(baseline_context.get("objectCount"))
     interaction_target_count = len(unique_paths)
     actionable_systems = sum(1 for item in systems_list if item["actionableWorkflowDiscovered"])
 
@@ -1720,6 +2275,26 @@ def _build_universal_discovery_report(
             "sourceDiagnostics": payload.get("sourceDiagnostics") if isinstance(payload.get("sourceDiagnostics"), dict) else {},
             "sourceProvenance": payload.get("sourceProvenance") if isinstance(payload.get("sourceProvenance"), dict) else {},
             "requestedCapability": requested_capability,
+            "baselineContext": {
+                "scanId": baseline_context.get("scanId"),
+                "placeId": baseline_context.get("placeId"),
+                "partCount": baseline_context.get("partCount"),
+                "objectCount": baseline_context.get("objectCount"),
+                "workspaceObjectCount": baseline_context.get("workspaceObjectCount"),
+                "replicatedStorageObjectCount": baseline_context.get("replicatedStorageObjectCount"),
+                "actionableWorldObjectCount": len(baseline_actionable_index),
+            },
+            "baselineArchiveValidation": {
+                "sourceArchiveCount": baseline_archive_validation.get("sourceArchiveCount"),
+                "partCount": baseline_archive_validation.get("partCount"),
+                "jsonFiles": baseline_archive_validation.get("jsonFiles"),
+                "manifestFiles": baseline_archive_validation.get("manifestFiles"),
+                "localArchiveComplete": baseline_archive_validation.get("localArchiveComplete"),
+                "manifestUploadedPartsObserved": baseline_archive_validation.get("manifestUploadedPartsObserved"),
+                "receiverAcknowledgementGap": baseline_archive_validation.get("receiverAcknowledgementGap"),
+                "receiverAcknowledgementComplete": baseline_archive_validation.get("receiverAcknowledgementComplete"),
+                "combinedArchiveSha256": baseline_archive_validation.get("combinedArchiveSha256"),
+            },
         },
         "objectAndInteractionInventory": {
             "objectsObserved": object_count,
@@ -1805,6 +2380,9 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
             f"- {item.get('title')} | interactions={item.get('observedInteractionEvents')} | stateChanges={item.get('observedStateChanges')} | actionable={item.get('actionableWorkflowDiscovered')} | generationReady={item.get('evidenceSufficientForGeneration')} | confidence={((item.get('confidence') or {}).get('level'))}"
         )
 
+    scan_metadata = report.get("scanMetadata") if isinstance(report.get("scanMetadata"), dict) else {}
+    archive_validation = scan_metadata.get("baselineArchiveValidation") if isinstance(scan_metadata.get("baselineArchiveValidation"), dict) else {}
+
     lines = [
         "Lycoles Universal Discovery Summary",
         "",
@@ -1819,8 +2397,16 @@ def _render_universal_discovery_summary(report: dict[str, Any]) -> str:
         f"- Relationships with outcome signals: {((metrics.get('actionOutcomeRelationships') or {}).get('relationshipsWithOutcomeSignals') if isinstance(metrics, dict) else None)}",
         f"- Workflow transactions: {((metrics.get('workflowCompleteness') or {}).get('transactionCount') if isinstance(metrics, dict) else None)}",
         f"- Functional locations clustered: {(spatial_metrics.get('locationClustering') or {}).get('functionalLocationCount') if isinstance(spatial_metrics, dict) else None}",
+        f"- Duplicate observations merged: {(spatial_metrics.get('locationClustering') or {}).get('duplicateObservationsMerged') if isinstance(spatial_metrics, dict) else None}",
+        f"- Navigation candidates ready: {(spatial_metrics.get('locationClustering') or {}).get('navigationCandidatesReady') if isinstance(spatial_metrics, dict) else None}",
         f"- Event snapshots with coordinates: {(spatial_metrics.get('eventPositionSnapshots') or {}).get('withCoordinates') if isinstance(spatial_metrics, dict) else None}",
+        f"- Interaction→location coverage: {(spatial_metrics.get('coverage') or {}).get('interactionToLocationCoverage') if isinstance(spatial_metrics, dict) else None}",
         f"- Potential cross-game contamination signals: {((metrics.get('crossGameContamination') or {}).get('signalCount') if isinstance(metrics, dict) else None)}",
+        "",
+        "Baseline archive integrity:",
+        f"- Local archive complete: {archive_validation.get('localArchiveComplete')}",
+        f"- Manifest uploaded parts observed: {archive_validation.get('manifestUploadedPartsObserved')}",
+        f"- Receiver acknowledgement gap: {archive_validation.get('receiverAcknowledgementGap')}",
         "",
         "Top discovered systems:",
     ]
@@ -1844,6 +2430,8 @@ def _write_universal_discovery_artifacts(
     requested_capability: Optional[str],
     output_root: pathlib.Path,
     generation_contract: Optional[dict[str, Any]] = None,
+    baseline_context: Optional[dict[str, Any]] = None,
+    baseline_archive_validation: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     output_root = pathlib.Path(output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1852,6 +2440,8 @@ def _write_universal_discovery_artifacts(
         payload,
         requested_capability=requested_capability,
         generation_contract=generation_contract,
+        baseline_context=baseline_context,
+        baseline_archive_validation=baseline_archive_validation,
     )
     report_path = output_root / "universal-discovery-report.json"
     summary_path = output_root / "universal-discovery-summary.txt"
@@ -3322,18 +3912,49 @@ def run_universal_discovery_export(
     output_root: pathlib.Path,
     requested_capability: Optional[str] = None,
     scenario_name: str = "universal-discovery",
+    baseline_archives: Optional[Sequence[pathlib.Path]] = None,
 ) -> dict[str, Any]:
     observation = pathlib.Path(observation_path).resolve()
     if not observation.is_file():
         raise ValueError(f"observation file not found: {observation}")
     payload = _read_json_document(observation)
 
-    discovery_output_root = pathlib.Path(output_root).resolve() / scenario_name
+    output_root = pathlib.Path(output_root).resolve()
+    discovery_output_root = output_root / scenario_name
+
+    baseline_archive_validation: dict[str, Any] = {}
+    baseline_context: dict[str, Any] = {}
+    baseline_archive_paths = [pathlib.Path(item).resolve() for item in (baseline_archives or [])]
+    if baseline_archive_paths:
+        expected_scan_id = _observation_baseline_scan_id(payload) or (payload.get("scanId") if isinstance(payload.get("scanId"), str) else None)
+        ingestion_root = output_root / "ingested_parts_archives"
+        baseline_archive_validation = ingest_parts_archives(
+            baseline_archive_paths,
+            ingestion_root,
+            expected_scan_id=expected_scan_id,
+        )
+        baseline_parts_dir = pathlib.Path(baseline_archive_validation["outputDir"])
+        baseline_context = _build_baseline_parts_context(baseline_parts_dir)
+
+        if isinstance(payload.get("scanId"), str) and isinstance(baseline_context.get("scanId"), str):
+            payload_scan_id = payload.get("scanId")
+            if payload_scan_id != baseline_context.get("scanId"):
+                raise ValueError(
+                    f"observation/baseline scan mismatch: observation={payload_scan_id}, baseline={baseline_context.get('scanId')}"
+                )
+        if type(payload.get("placeId")) is int and type(baseline_context.get("placeId")) is int:
+            if payload.get("placeId") != baseline_context.get("placeId"):
+                raise ValueError(
+                    f"observation/baseline place mismatch: observation={payload.get('placeId')}, baseline={baseline_context.get('placeId')}"
+                )
+
     discovery = _write_universal_discovery_artifacts(
         payload,
         requested_capability=requested_capability,
         output_root=discovery_output_root,
         generation_contract=None,
+        baseline_context=baseline_context,
+        baseline_archive_validation=baseline_archive_validation,
     )
 
     return {
@@ -3345,6 +3966,18 @@ def run_universal_discovery_export(
         "placeId": payload.get("placeId"),
         "gameName": payload.get("gameName"),
         "requestedCapability": requested_capability,
+        "baselineArchiveValidation": baseline_archive_validation,
+        "baselineContext": {
+            "scanId": baseline_context.get("scanId"),
+            "placeId": baseline_context.get("placeId"),
+            "partCount": baseline_context.get("partCount"),
+            "objectCount": baseline_context.get("objectCount"),
+            "actionableWorldObjectCount": (
+                len(baseline_context.get("actionableWorldObjectIndex"))
+                if isinstance(baseline_context.get("actionableWorldObjectIndex"), dict)
+                else 0
+            ),
+        },
         "discovery": discovery,
         "claims": {
             "runtimeVerified": False,
@@ -3516,6 +4149,8 @@ def main() -> int:
     discovery_parser.add_argument("--output-root", default="build/live-observation-discovery")
     discovery_parser.add_argument("--scenario-name", default="universal-discovery")
     discovery_parser.add_argument("--requested-capability", default=None)
+    discovery_parser.add_argument("--baseline-archive", action="append", default=[],
+        help="Optional .zip archive(s) containing baseline multipart scan parts; repeatable")
 
     args = parser.parse_args()
     try:
@@ -3573,6 +4208,7 @@ def main() -> int:
                 output_root=output_root,
                 requested_capability=args.requested_capability,
                 scenario_name=args.scenario_name,
+                baseline_archives=[pathlib.Path(item).resolve() for item in (args.baseline_archive or [])],
             )
         print(json.dumps(result, sort_keys=True))
         return 0

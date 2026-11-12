@@ -91,6 +91,38 @@ def make_parts_archive(parts_dir, archive_path, scan_id="receiver_pipeline_scan"
         )
 
 
+
+
+def make_split_parts_archives(
+    parts_dir,
+    archive_one,
+    archive_two,
+    scan_id="receiver_pipeline_scan",
+    place_id=3623096087,
+    uploaded_parts=1,
+):
+    payload_one = json.loads((parts_dir / "1.json").read_text(encoding="utf-8"))
+    payload_two = json.loads((parts_dir / "2.json").read_text(encoding="utf-8"))
+    payload_one.update({"scanId": scan_id, "placeId": place_id, "partCount": 2, "partIndex": 1})
+    payload_two.update({"scanId": scan_id, "placeId": place_id, "partCount": 2, "partIndex": 2})
+
+    manifest = {
+        "scanId": scan_id,
+        "placeId": place_id,
+        "partCount": 2,
+        "expectedParts": 2,
+        "uploadedParts": uploaded_parts,
+        "version": "10.0",
+    }
+
+    with zipfile.ZipFile(archive_one, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_manifest.json", json.dumps(manifest).encode("utf-8"))
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0001.json", json.dumps(payload_one).encode("utf-8"))
+
+    with zipfile.ZipFile(archive_two, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(f"Lycoles_{place_id}_{scan_id}_part-0002.json", json.dumps(payload_two).encode("utf-8"))
+
+
 def make_broken_parts_archive_missing_part(archive_path, scan_id="receiver_pipeline_scan", place_id=3623096087):
     part = {
         "scanId": scan_id,
@@ -687,6 +719,29 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertEqual(ingestion["missingPartCount"], 0)
             self.assertTrue(pathlib.Path(ingestion["outputDir"]).is_dir())
 
+    def test_ingest_parts_archives_accepts_split_archives_and_reports_receiver_gap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts)
+            archive_one = root / "split-1.zip"
+            archive_two = root / "split-2.zip"
+            make_split_parts_archives(parts, archive_one, archive_two, uploaded_parts=1)
+
+            ingestion = MODULE.ingest_parts_archives(
+                [archive_one, archive_two],
+                root / "extracted",
+                expected_scan_id="receiver_pipeline_scan",
+            )
+            self.assertEqual(ingestion["partCount"], 2)
+            self.assertEqual(ingestion["missingPartCount"], 0)
+            self.assertEqual(ingestion["sourceArchiveCount"], 2)
+            self.assertEqual(ingestion["manifestUploadedPartsObserved"], 1)
+            self.assertEqual(ingestion["receiverAcknowledgementGap"], 1)
+            self.assertFalse(ingestion["receiverAcknowledgementComplete"])
+            self.assertTrue(pathlib.Path(ingestion["outputDir"]).is_dir())
+
     def test_ingest_parts_archive_rejects_missing_parts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -911,17 +966,35 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
     def test_run_universal_discovery_export_outputs_schema_and_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts)
+            archive_one = root / "split-1.zip"
+            archive_two = root / "split-2.zip"
+            make_split_parts_archives(parts, archive_one, archive_two, uploaded_parts=1)
+
             overlay = root / "live-observation.json"
             make_live_observation_tool_export(overlay, baseline_scan_id="receiver_pipeline_scan")
+            payload = json.loads(overlay.read_text(encoding="utf-8"))
+            recent = payload.get("interactionDiagnostics", {}).get("recentInteractions", [])
+            if isinstance(recent, list) and recent and isinstance(recent[0], dict):
+                nearby = recent[0].setdefault("nearbyWorldObjects", [])
+                if isinstance(nearby, list):
+                    nearby.append({"path": "Workspace.", "class": "Workspace"})
+                    nearby.append({"path": "ReplicatedStorage.Assets.EggTemplate", "class": "Model"})
+            overlay.write_text(json.dumps(payload), encoding="utf-8")
 
             result = MODULE.run_universal_discovery_export(
                 observation_path=overlay,
                 output_root=root / "out",
                 requested_capability="Identify mechanics and progression systems",
                 scenario_name="bubble-like-discovery",
+                baseline_archives=[archive_one, archive_two],
             )
             self.assertEqual(result["status"], "succeeded")
             self.assertEqual(result["schemaVersion"], "live-observation-discovery.1")
+            self.assertEqual(result["baselineArchiveValidation"]["sourceArchiveCount"], 2)
+            self.assertEqual(result["baselineArchiveValidation"]["receiverAcknowledgementGap"], 1)
 
             discovery = result["discovery"]
             report_path = pathlib.Path(discovery["reportPath"])
@@ -953,6 +1026,19 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertGreater(len(report.get("functionalLocationRegistry") or []), 0)
             self.assertGreater(len(report.get("eventPositionSnapshots") or []), 0)
 
+            metadata = report["scanMetadata"]
+            self.assertEqual((metadata.get("baselineArchiveValidation") or {}).get("receiverAcknowledgementGap"), 1)
+            self.assertGreaterEqual((metadata.get("baselineContext") or {}).get("objectCount", 0), 1)
+
+            locations = report.get("functionalLocationRegistry") or []
+            self.assertTrue(any("relevantWorkspaceObjectPaths" in item for item in locations if isinstance(item, dict)))
+            self.assertTrue(all("Workspace" not in set(item.get("relevantWorkspaceObjectPaths") or []) for item in locations if isinstance(item, dict)))
+            self.assertTrue(any("requiredActivationConditions" in item for item in locations if isinstance(item, dict)))
+
+            navigation = report.get("navigationCandidates") or []
+            self.assertTrue(any("evidenceStatus" in item for item in navigation if isinstance(item, dict)))
+            self.assertTrue(any("validationStatus" in item for item in navigation if isinstance(item, dict)))
+
             quality = report["qualityMetrics"]
             self.assertIn("distinctMechanicsIdentified", quality)
             self.assertIn("interactionCoverage", quality)
@@ -961,10 +1047,14 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertIn("spatialDiscovery", quality)
             spatial_quality = report["spatialDiscoveryQualityMetrics"]
             self.assertGreaterEqual((spatial_quality.get("eventPositionSnapshots") or {}).get("withCoordinates", 0), 1)
+            self.assertIn("nearbyObjectRelevance", spatial_quality)
+            self.assertIn("coverage", spatial_quality)
+            self.assertIn("missingLocationEvidence", spatial_quality)
 
             summary_text = summary_path.read_text(encoding="utf-8")
             self.assertIn("Lycoles Universal Discovery Summary", summary_text)
             self.assertIn("Top discovered systems", summary_text)
+            self.assertIn("Baseline archive integrity", summary_text)
 
 
     def test_run_live_observation_scenario_succeeds_for_matching_automatic_workflow(self):
