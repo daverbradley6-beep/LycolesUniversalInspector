@@ -67,6 +67,19 @@ Target experiences are third-party games that the user does not own and cannot o
 - For Bubble Gum replay in this workspace, merged evidence now processes without parser crashes, but current available package still lands in `observational-only-request-unmet` (no feasible evidence-backed strategy for requested auto reward pickup).
 
 
+## Session notes — 2026-11-13 evidence replay importer + semantic blocker diagnostics (v30.6.60)
+
+- New replay package schema: `30.6.evidence-replay-package.1` via `tools/evidence_replay_import.py`.
+- Replay importer supports baseline directories, multipart ZIPs, manifest JSON, observation exports, and replay-package reimport. It validates place/scan identity, part completeness, duplicate conflicts, manifest digest consistency (when provided), and observation baseline/place linkage.
+- Generation service now supports:
+  - `replay-import` command for package creation
+  - `run-job --evidence-kind replay_package` for deterministic replay execution
+- Planner now emits per-feature feasibility diagnostics (`missingDependencies`, `rejectionReasons`, `feasibilityClass`) and selection diagnostics (`highestRankedFeatureId`, `fallbackUsed`).
+- Selection now prefers strongest feasible feature; if none are feasible, it retains top-ranked and reports explicit blockers.
+- Malformed baseline timing fallback now degrades to manifest/synthetic readiness even without overlay files.
+- Requested Bubble IDs `144CF595...` + `live-observation-16FF57E3...` are still not present as local payloads in this workspace; strict replay import correctly fails closed on mismatch against available baseline `33E9EFC5...`.
+
+
 ## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
 
 - Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.

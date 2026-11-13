@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURE_MANIFEST = ROOT / "tests" / "fixtures" / "bubble_gum_infinity_manifest_v30_sanitized.json"
@@ -13,6 +14,12 @@ SPEC = importlib.util.spec_from_file_location("lycoles_generation_service", SOUR
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+REPLAY_SOURCE = ROOT / "tools" / "evidence_replay_import.py"
+REPLAY_SPEC = importlib.util.spec_from_file_location("evidence_replay_import", REPLAY_SOURCE)
+REPLAY_MODULE = importlib.util.module_from_spec(REPLAY_SPEC)
+REPLAY_SPEC.loader.exec_module(REPLAY_MODULE)
 
 
 def make_parts(directory, event=None, request=None, scan_id="service_scan_001"):
@@ -649,6 +656,151 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertEqual(snapshot["status"], "succeeded")
             self.assertIsInstance(snapshot["result"], dict)
             self.assertEqual(snapshot["result"]["jobId"], job_id)
+
+    def test_replay_package_import_runs_generation_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Track combat observations")
+            overlay = root / "live-observation.json"
+            make_live_observation_export(overlay)
+
+            replay_dir = root / "replay"
+            replay = REPLAY_MODULE.import_replay_package(
+                baseline_inputs=[parts],
+                observation_inputs=[overlay],
+                output_dir=replay_dir,
+                expected_place_id=3623096087,
+                expected_baseline_scan_id="service_scan_001",
+                expected_observation_scan_ids=["live-observation-service-1"],
+            )
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="replay_package",
+                evidence_path=pathlib.Path(replay["replayPackagePath"]),
+                requested_capability="Track combat observations",
+            )
+            result = service.run_sync(request)
+
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(result["evidence"]["evidenceKind"], "replay_package")
+            release_manifest_path = pathlib.Path(result["evidence"]["releaseManifestPath"])
+            release_manifest = json.loads(release_manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(release_manifest["evidenceOverlayProvenance"]["overlayCount"], 1)
+
+    def test_replay_package_preserves_legacy_timing_compatibility(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            legacy_event = {
+                "featureCandidate": "rewards",
+                "path": "LocalPlayer.Input.MouseButton1.None",
+                "controlType": "Input.MouseButton1",
+                "baselineSource": "input-event-callback",
+                "baselineTiming": "activation-callback",
+                "preActivationBaselineAvailable": False,
+                "stateChanges": [{"key": "leaderstats.Coins", "before": 1, "after": 2}],
+            }
+            make_parts(parts, event=legacy_event, request="Collect rewards")
+
+            replay_dir = root / "replay"
+            replay = REPLAY_MODULE.import_replay_package(
+                baseline_inputs=[parts],
+                observation_inputs=[],
+                output_dir=replay_dir,
+                expected_place_id=3623096087,
+                expected_baseline_scan_id="service_scan_001",
+            )
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="replay_package",
+                evidence_path=pathlib.Path(replay["replayPackagePath"]),
+                requested_capability="Collect rewards",
+            )
+            result = service.run_sync(request)
+            self.assertEqual(result["status"], "succeeded")
+            self.assertIn(result["generationStatus"], {"generated", "generated-with-blockers", "observational-only-request-unmet", "blocked"})
+
+    def test_autonomous_planner_fallback_selects_feasible_non_top_feature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            matched_id = MODULE._safe_feature_id("matched", "quests", "discovered")
+            bundle = MODULE.EvidenceBundle(
+                mode="multipart",
+                place_id=85896571713843,
+                scan_id="scan-fallback",
+                output_dir=root,
+                generation_readiness={
+                    "generatedCapabilities": [
+                        {
+                            "id": "cap-infeasible",
+                            "kind": "world-interaction",
+                            "targetFeature": "rewards",
+                            "targetPath": None,
+                        }
+                    ],
+                    "requestFeatureReadiness": {
+                        "featureEvidence": {
+                            "matchedFeatures": [
+                                {
+                                    "feature": "quests",
+                                    "status": "discovered",
+                                    "evidenceClassification": "discovered-no-interaction-evidence",
+                                }
+                            ]
+                        }
+                    },
+                },
+            )
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=root,
+                requested_capability="Collect rewards",
+            )
+
+            def fake_candidates(feature, _category, **_kwargs):
+                if feature.get("id") == "cap-infeasible":
+                    return [{
+                        "id": "strategy-a-bring-pickups-to-player",
+                        "label": "Strategy A",
+                        "summary": "infeasible",
+                        "feasible": False,
+                        "score": 0.95,
+                        "evidenceSignals": [],
+                        "assumptions": ["missing anchors"],
+                        "missingDependencies": ["workspace target path"],
+                        "rejectionReasons": ["insufficient-evidence"],
+                        "feasibilityClass": "insufficient-evidence",
+                        "priorFailureCount": 0,
+                    }]
+                if feature.get("id") == matched_id:
+                    return [{
+                        "id": "strategy-c-direct-interaction",
+                        "label": "Strategy C",
+                        "summary": "feasible",
+                        "feasible": True,
+                        "score": 0.4,
+                        "evidenceSignals": ["direct-control-signal-observed"],
+                        "assumptions": [],
+                        "missingDependencies": [],
+                        "rejectionReasons": [],
+                        "feasibilityClass": "supported",
+                        "priorFailureCount": 0,
+                    }]
+                return []
+
+            planner = MODULE.AutonomousPlanningEngine()
+            with mock.patch.object(MODULE.AutonomousPlanningEngine, "_strategy_candidates", side_effect=fake_candidates):
+                plan = planner.build_plan(bundle, request, analysis={}, feedback_penalties={})
+
+            self.assertEqual(plan["selectionDiagnostics"]["highestRankedFeatureId"], "cap-infeasible")
+            self.assertEqual(plan["selectedFeature"]["featureId"], matched_id)
+            self.assertTrue(plan["selectionDiagnostics"]["fallbackUsed"])
+            self.assertEqual(plan["selectedStrategy"]["id"], "strategy-c-direct-interaction")
 
     def test_malformed_overlay_timing_falls_back_to_baseline_without_crash(self):
         with tempfile.TemporaryDirectory() as tmp:

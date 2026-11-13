@@ -782,6 +782,7 @@ def _provider_from_environment() -> tuple[BaseLLMProvider, ProviderInfo]:
 class EvidenceProcessor:
     def __init__(self) -> None:
         self._build_release = _load_local_module("build_release.py", "lycoles_build_release")
+        self._replay_import = _load_local_module("evidence_replay_import.py", "lycoles_evidence_replay")
 
     @staticmethod
     def _scan_id_from_manifest(manifest: dict[str, Any]) -> Optional[str]:
@@ -833,98 +834,134 @@ class EvidenceProcessor:
             return candidate
         return path
 
-    def process(self, request: GenerationRequest, output_dir: Path) -> EvidenceBundle:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        if request.evidence_kind == "manifest":
-            manifest_path = self._resolve_manifest_input_path(request.evidence_path)
-            readiness = self._build_release.build_manifest_readiness(manifest_path, output_dir)
-            return EvidenceBundle(
-                mode="manifest-only",
-                place_id=readiness.get("placeId"),
-                scan_id=readiness.get("scanId"),
-                output_dir=output_dir,
-                manifest_readiness=readiness,
-            )
-
-        if request.evidence_kind != "parts_dir":
-            raise ValueError("Unsupported evidence kind")
-
+    @staticmethod
+    def _collect_observation_inputs(paths: tuple[Path, ...]) -> tuple[list[Path], list[Path]]:
         observation_dirs: list[Path] = []
         observation_files: list[Path] = []
-        for path in request.observation_paths:
+        for path in paths:
             if path.is_dir():
                 observation_dirs.append(path)
             elif path.is_file():
                 observation_files.append(path)
             else:
                 raise ValueError(f"Observation path not found: {path}")
+        return observation_dirs, observation_files
 
-        warnings: list[str] = []
+    def _build_multipart_bundle(
+        self,
+        *,
+        parts_path: Path,
+        output_dir: Path,
+        requested_capability: Optional[str],
+        observation_paths: tuple[Path, ...],
+        warnings: list[str],
+    ) -> EvidenceBundle:
+        observation_dirs, observation_files = self._collect_observation_inputs(observation_paths)
         try:
             manifest = self._build_release.build(
-                request.evidence_path,
+                parts_path,
                 output_dir,
-                requested_capability=request.requested_capability,
+                requested_capability=requested_capability,
                 observation_dirs=observation_dirs,
                 observation_files=observation_files,
             )
         except ValueError as exc:
             message = str(exc)
-            if (observation_dirs or observation_files) and "Malformed interaction baseline timing" in message:
+            if "Malformed interaction baseline timing" not in message:
+                raise
+
+            if observation_dirs or observation_files:
                 warnings.append(
                     "Observation overlay ignored due to malformed baseline timing; falling back to baseline-only generation."
                 )
                 try:
                     manifest = self._build_release.build(
-                        request.evidence_path,
+                        parts_path,
                         output_dir,
-                        requested_capability=request.requested_capability,
+                        requested_capability=requested_capability,
                         observation_dirs=[],
                         observation_files=[],
                     )
                 except ValueError as baseline_exc:
                     baseline_message = str(baseline_exc)
-                    if "Malformed interaction baseline timing" in baseline_message:
-                        warnings.append(
-                            "Baseline interactions include malformed timing; using manifest-readiness fallback with blocker reporting."
-                        )
-                        manifest_candidates = sorted(request.evidence_path.glob("*manifest*.json"))
-                        if not manifest_candidates:
-                            raise
-                        try:
-                            readiness = self._build_release.build_manifest_readiness(manifest_candidates[0], output_dir)
-                            place_id = readiness.get("placeId") if isinstance(readiness.get("placeId"), int) else None
-                            scan_id = readiness.get("scanId") if isinstance(readiness.get("scanId"), str) else None
-                        except Exception as manifest_exc:  # pylint: disable=broad-except
-                            place_id, scan_id = self._scan_metadata_from_parts_dir(request.evidence_path)
-                            warnings.append(
-                                f"Manifest-readiness parser rejected snapshot; synthesized fallback readiness ({manifest_exc})."
-                            )
-                            readiness = {
-                                "schemaVersion": "30.6.synthetic-manifest-readiness.1",
-                                "placeId": place_id,
-                                "scanId": scan_id,
-                                "generationReadiness": {
-                                    "status": "unsupported-by-current-evidence",
-                                    "blockers": [
-                                        "malformed_interaction_baseline_timing",
-                                        "full_multipart_report_unavailable",
-                                        "manifest_readiness_parser_rejected_snapshot",
-                                    ],
-                                },
-                                "claims": dict(FALSE_CLAIMS),
-                            }
-                        return EvidenceBundle(
-                            mode="manifest-only",
-                            place_id=place_id,
-                            scan_id=scan_id,
-                            output_dir=output_dir,
-                            manifest_readiness=readiness,
-                            warnings=warnings,
-                        )
-                    raise
-            else:
-                raise
+                    if "Malformed interaction baseline timing" not in baseline_message:
+                        raise
+                else:
+                    readiness_path = output_dir / "generation-readiness.json"
+                    script_path = output_dir / "LycolesGeneratedUtility.lua"
+                    generation_readiness = json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.exists() else None
+                    generated_script = script_path.read_text(encoding="utf-8") if script_path.exists() else None
+                    return EvidenceBundle(
+                        mode="multipart",
+                        place_id=manifest.get("placeId"),
+                        scan_id=self._scan_id_from_manifest(manifest),
+                        output_dir=output_dir,
+                        release_manifest=manifest,
+                        generation_readiness=generation_readiness,
+                        generated_script=generated_script,
+                        warnings=warnings,
+                    )
+
+            warnings.append(
+                "Baseline interactions include malformed timing; using manifest-readiness fallback with blocker reporting."
+            )
+            manifest_candidates = sorted(parts_path.glob("*manifest*.json"))
+            if not manifest_candidates:
+                place_id, scan_id = self._scan_metadata_from_parts_dir(parts_path)
+                readiness = {
+                    "schemaVersion": "30.6.synthetic-manifest-readiness.1",
+                    "placeId": place_id,
+                    "scanId": scan_id,
+                    "generationReadiness": {
+                        "status": "unsupported-by-current-evidence",
+                        "blockers": [
+                            "malformed_interaction_baseline_timing",
+                            "full_multipart_report_unavailable",
+                            "manifest_snapshot_missing",
+                        ],
+                    },
+                    "claims": dict(FALSE_CLAIMS),
+                }
+                return EvidenceBundle(
+                    mode="manifest-only",
+                    place_id=place_id,
+                    scan_id=scan_id,
+                    output_dir=output_dir,
+                    manifest_readiness=readiness,
+                    warnings=warnings,
+                )
+
+            try:
+                readiness = self._build_release.build_manifest_readiness(manifest_candidates[0], output_dir)
+                place_id = readiness.get("placeId") if isinstance(readiness.get("placeId"), int) else None
+                scan_id = readiness.get("scanId") if isinstance(readiness.get("scanId"), str) else None
+            except Exception as manifest_exc:  # pylint: disable=broad-except
+                place_id, scan_id = self._scan_metadata_from_parts_dir(parts_path)
+                warnings.append(
+                    f"Manifest-readiness parser rejected snapshot; synthesized fallback readiness ({manifest_exc})."
+                )
+                readiness = {
+                    "schemaVersion": "30.6.synthetic-manifest-readiness.1",
+                    "placeId": place_id,
+                    "scanId": scan_id,
+                    "generationReadiness": {
+                        "status": "unsupported-by-current-evidence",
+                        "blockers": [
+                            "malformed_interaction_baseline_timing",
+                            "full_multipart_report_unavailable",
+                            "manifest_readiness_parser_rejected_snapshot",
+                        ],
+                    },
+                    "claims": dict(FALSE_CLAIMS),
+                }
+            return EvidenceBundle(
+                mode="manifest-only",
+                place_id=place_id,
+                scan_id=scan_id,
+                output_dir=output_dir,
+                manifest_readiness=readiness,
+                warnings=warnings,
+            )
 
         readiness_path = output_dir / "generation-readiness.json"
         script_path = output_dir / "LycolesGeneratedUtility.lua"
@@ -940,6 +977,70 @@ class EvidenceProcessor:
             generated_script=generated_script,
             warnings=warnings,
         )
+
+
+    def process(self, request: GenerationRequest, output_dir: Path) -> EvidenceBundle:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if request.evidence_kind == "manifest":
+            manifest_path = self._resolve_manifest_input_path(request.evidence_path)
+            readiness = self._build_release.build_manifest_readiness(manifest_path, output_dir)
+            return EvidenceBundle(
+                mode="manifest-only",
+                place_id=readiness.get("placeId"),
+                scan_id=readiness.get("scanId"),
+                output_dir=output_dir,
+                manifest_readiness=readiness,
+            )
+
+        if request.evidence_kind == "parts_dir":
+            return self._build_multipart_bundle(
+                parts_path=request.evidence_path,
+                output_dir=output_dir,
+                requested_capability=request.requested_capability,
+                observation_paths=request.observation_paths,
+                warnings=[],
+            )
+
+        if request.evidence_kind == "replay_package":
+            replay = self._replay_import.load_replay_package(request.evidence_path)
+            replay_baseline = replay.get("baseline") if isinstance(replay.get("baseline"), dict) else {}
+            replay_warnings = [str(item) for item in (replay.get("warnings") or []) if isinstance(item, str)]
+            replay_observation_paths = tuple(
+                Path(item["resolvedPath"]).expanduser().resolve()
+                for item in (replay.get("observations") or [])
+                if isinstance(item, dict) and isinstance(item.get("resolvedPath"), str)
+            )
+            merged_observations = replay_observation_paths + tuple(request.observation_paths)
+
+            if replay_baseline.get("mode") == "manifest-only":
+                manifest_path_value = replay_baseline.get("manifestPath")
+                if not isinstance(manifest_path_value, str) or not manifest_path_value:
+                    raise ValueError("Replay package manifest-only baseline is missing manifestPath")
+                manifest_path = Path(manifest_path_value).expanduser().resolve()
+                readiness = self._build_release.build_manifest_readiness(manifest_path, output_dir)
+                return EvidenceBundle(
+                    mode="manifest-only",
+                    place_id=readiness.get("placeId"),
+                    scan_id=readiness.get("scanId"),
+                    output_dir=output_dir,
+                    manifest_readiness=readiness,
+                    warnings=replay_warnings,
+                )
+
+            parts_dir_value = replay_baseline.get("partsDir")
+            if not isinstance(parts_dir_value, str) or not parts_dir_value:
+                raise ValueError("Replay package multipart baseline is missing partsDir")
+            parts_path = Path(parts_dir_value).expanduser().resolve()
+            bundle = self._build_multipart_bundle(
+                parts_path=parts_path,
+                output_dir=output_dir,
+                requested_capability=request.requested_capability,
+                observation_paths=merged_observations,
+                warnings=list(replay_warnings),
+            )
+            return bundle
+
+        raise ValueError("Unsupported evidence kind")
 
 
 class FeatureAnalysisEngine:
@@ -1106,6 +1207,8 @@ class AutonomousPlanningEngine:
             score = 0.25
             evidence: list[str] = []
             assumptions: list[str] = []
+            missing_dependencies: list[str] = []
+            rejection_reasons: list[str] = []
 
             if strategy_id == "strategy-a-bring-pickups-to-player":
                 if has_world_path:
@@ -1113,6 +1216,7 @@ class AutonomousPlanningEngine:
                     evidence.append("workspace-target-path-observed")
                 else:
                     assumptions.append("No direct workspace target path observed for relocation")
+                    missing_dependencies.append("workspace target path for collectible relocation")
                 if request_requires_automatic:
                     score += 0.05
             elif strategy_id == "strategy-b-navigate-player-to-target":
@@ -1124,6 +1228,7 @@ class AutonomousPlanningEngine:
                     evidence.append("automatic-movement-capability-observed")
                 if not has_world_path and feature.get("automaticMovement") is not True:
                     assumptions.append("Navigation may require additional spatial anchors")
+                    missing_dependencies.append("world anchor or automatic movement signal")
             else:  # strategy-c-direct-interaction
                 if has_direct_control:
                     score += 0.38
@@ -1133,6 +1238,7 @@ class AutonomousPlanningEngine:
                     evidence.append("proximity-prompt-signal-observed")
                 if not has_direct_control:
                     assumptions.append("Direct interaction signals are weak or absent")
+                    missing_dependencies.append("observed GUI/prompt/tool control pathway")
 
             if feature.get("boundedRepeat") is True:
                 score += 0.07
@@ -1149,8 +1255,24 @@ class AutonomousPlanningEngine:
             if prior_failures >= 2:
                 score = min(score, 0.19)
                 assumptions.append("Strategy temporarily blocked due to repeated failures")
+                rejection_reasons.append("feedback-penalty-block")
 
-            feasible = score >= 0.38
+            threshold = 0.38
+            if score < threshold:
+                rejection_reasons.append(f"score-below-threshold:{round(score, 4)}<{threshold}")
+            if missing_dependencies:
+                rejection_reasons.append("insufficient-evidence")
+
+            feasible = score >= threshold and not missing_dependencies and prior_failures < 2
+            feasibility_class = (
+                "supported"
+                if feasible
+                else "insufficient-evidence"
+                if missing_dependencies
+                else "feedback-blocked"
+                if prior_failures >= 2
+                else "policy-threshold"
+            )
             strategies.append({
                 "id": strategy_id,
                 "label": _STRATEGY_LABELS[strategy_id],
@@ -1159,6 +1281,9 @@ class AutonomousPlanningEngine:
                 "score": round(max(0.0, min(1.0, score)), 4),
                 "evidenceSignals": sorted(set(evidence)),
                 "assumptions": assumptions[:6],
+                "missingDependencies": sorted(set(missing_dependencies)),
+                "rejectionReasons": sorted(set(rejection_reasons)),
+                "feasibilityClass": feasibility_class,
                 "priorFailureCount": prior_failures,
             })
 
@@ -1199,6 +1324,34 @@ class AutonomousPlanningEngine:
             if item.get("classification") == "ai-hypothesis":
                 rank -= 0.08
 
+            feasible_strategies = [entry for entry in strategies if entry.get("feasible") is True]
+            rejected_strategies = [entry for entry in strategies if entry.get("feasible") is not True]
+            missing_dependencies = sorted({
+                dependency
+                for strategy in rejected_strategies
+                for dependency in (strategy.get("missingDependencies") or [])
+                if isinstance(dependency, str)
+            })
+            rejection_reasons = sorted({
+                reason
+                for strategy in rejected_strategies
+                for reason in (strategy.get("rejectionReasons") or [])
+                if isinstance(reason, str)
+            })
+            available_evidence = sorted({
+                signal
+                for strategy in strategies
+                for signal in (strategy.get("evidenceSignals") or [])
+                if isinstance(signal, str)
+            })
+            if isinstance(item.get("targetPath"), str) and item.get("targetPath"):
+                available_evidence.append("target-path:" + item["targetPath"])
+            if isinstance(item.get("kind"), str) and item.get("kind"):
+                available_evidence.append("kind:" + item["kind"])
+            if item.get("commands"):
+                available_evidence.append("commands:" + str(len(item.get("commands"))))
+            available_evidence = sorted(set(available_evidence))
+
             ranked_features.append({
                 "featureId": item.get("id"),
                 "label": self._feature_label(item, category),
@@ -1210,17 +1363,41 @@ class AutonomousPlanningEngine:
                 "classification": item.get("classification"),
                 "commands": item.get("commands") or [],
                 "rankScore": round(max(0.0, min(1.0, rank)), 4),
+                "availableEvidence": available_evidence,
                 "strategies": strategies,
                 "generationReady": bool(top and top.get("feasible") is True),
+                "feasibility": {
+                    "feasibleStrategyCount": len(feasible_strategies),
+                    "rejectedStrategyCount": len(rejected_strategies),
+                    "missingDependencies": missing_dependencies,
+                    "rejectionReasons": rejection_reasons,
+                    "confidence": (
+                        "high" if len(feasible_strategies) >= 2 else
+                        "medium" if len(feasible_strategies) == 1 else
+                        "low"
+                    ),
+                    "verificationStatus": "partially-verified" if feasible_strategies else "unverified",
+                },
             })
 
         ranked_features.sort(key=lambda feature: feature.get("rankScore", 0.0), reverse=True)
-        selected_feature = ranked_features[0] if ranked_features else None
-        selected_strategy = (
-            ((selected_feature or {}).get("strategies") or [None])[0]
-            if selected_feature is not None
-            else None
+        highest_ranked_feature = ranked_features[0] if ranked_features else None
+        feasible_features = [
+            feature for feature in ranked_features
+            if isinstance(feature.get("feasibility"), dict)
+            and int(feature["feasibility"].get("feasibleStrategyCount") or 0) > 0
+        ]
+        selected_feature = feasible_features[0] if feasible_features else highest_ranked_feature
+        fallback_used = bool(
+            selected_feature and highest_ranked_feature
+            and selected_feature.get("featureId") != highest_ranked_feature.get("featureId")
         )
+        selected_strategy = None
+        if selected_feature is not None:
+            strategies = selected_feature.get("strategies") or []
+            selected_strategy = next((entry for entry in strategies if entry.get("feasible") is True), None)
+            if selected_strategy is None:
+                selected_strategy = strategies[0] if strategies else None
 
         blockers: list[str] = []
         if selected_feature is None:
@@ -1229,6 +1406,13 @@ class AutonomousPlanningEngine:
             blockers.append("no strategy candidates available for selected feature")
         elif selected_strategy.get("feasible") is not True:
             blockers.append("selected feature has no feasible strategy under current evidence")
+            for reason in (selected_strategy.get("rejectionReasons") or [])[:4]:
+                blockers.append(f"selected-strategy:{reason}")
+            for dependency in (selected_strategy.get("missingDependencies") or [])[:4]:
+                blockers.append(f"missing-dependency:{dependency}")
+
+        if selected_feature is not None and not feasible_features:
+            blockers.append("no feasible strategies across discovered features")
 
         status_map = {
             "discovered": bool(selected_feature),
@@ -1248,6 +1432,8 @@ class AutonomousPlanningEngine:
             "selectedStrategyLabel": selected_strategy.get("label") if selected_strategy else None,
             "selectedFeatureCategory": selected_feature.get("category") if selected_feature else None,
             "selectedFeaturePath": selected_feature.get("targetPath") if selected_feature else None,
+            "selectionUsedFeatureFallback": fallback_used,
+            "feasibleFeatureCount": len(feasible_features),
             "evidenceReferences": [
                 item for item in [
                     selected_feature.get("targetPath") if selected_feature else None,
@@ -1277,11 +1463,17 @@ class AutonomousPlanningEngine:
                 "count": len(ranked_features),
                 "ranked": ranked_features[:24],
             },
+            "selectionDiagnostics": {
+                "highestRankedFeatureId": highest_ranked_feature.get("featureId") if highest_ranked_feature else None,
+                "selectedFeatureId": selected_feature.get("featureId") if selected_feature else None,
+                "feasibleFeatureCount": len(feasible_features),
+                "fallbackUsed": fallback_used,
+            },
             "selectedFeature": selected_feature,
             "selectedStrategy": selected_strategy,
             "generationRequest": generation_request,
             "verificationStates": status_map,
-            "blockers": blockers,
+            "blockers": sorted(set(blockers)),
             "claims": dict(FALSE_CLAIMS),
         }
 
@@ -1986,6 +2178,74 @@ class LycolesGenerationService:
         else:
             generation_status = "generated"
 
+
+        if generation_status == "observational-only-request-unmet" and not delivery.get("blockerReportPath"):
+            workflow_blockers = [
+                str(item)
+                for item in (executable_workflow.get("blockers") or [])
+                if isinstance(item, str)
+            ]
+            selected_feature = autonomous_plan.get("selectedFeature") if isinstance(autonomous_plan.get("selectedFeature"), dict) else {}
+            selected_strategy = autonomous_plan.get("selectedStrategy") if isinstance(autonomous_plan.get("selectedStrategy"), dict) else {}
+            strategy_missing = [
+                str(item)
+                for item in (selected_strategy.get("missingDependencies") or [])
+                if isinstance(item, str)
+            ]
+
+            minimum_additional_evidence = [
+                "Observed interaction events directly attributed to the requested feature candidate",
+                "At least one execution-ready request-aligned workflow candidate in generation readiness",
+                "Evidence-backed control pathway (GUI/proximity/tool) with path identity and outcome correlation",
+            ]
+            if any("workspace target path" in item for item in strategy_missing):
+                minimum_additional_evidence.append(
+                    "Workspace target path(s) correlated with feature interactions for relocation/navigation strategies"
+                )
+            if any("GUI/prompt/tool" in item for item in strategy_missing):
+                minimum_additional_evidence.append(
+                    "Observed GUI/Prompt/Tool activation events for the selected feature"
+                )
+            if any("world anchor" in item for item in strategy_missing):
+                minimum_additional_evidence.append(
+                    "Observed world anchor or automatic movement evidence tied to target feature"
+                )
+
+            blocker_payload = {
+                "schemaVersion": "30.6.generation-blockers.2",
+                "requestedCapability": request.requested_capability,
+                "placeId": bundle.place_id,
+                "scanId": bundle.scan_id,
+                "generationStatus": generation_status,
+                "selectedFeature": {
+                    "featureId": selected_feature.get("featureId"),
+                    "label": selected_feature.get("label"),
+                    "category": selected_feature.get("category"),
+                    "classification": selected_feature.get("classification"),
+                },
+                "selectedStrategy": {
+                    "strategyId": selected_strategy.get("id"),
+                    "label": selected_strategy.get("label"),
+                    "feasible": selected_strategy.get("feasible"),
+                    "score": selected_strategy.get("score"),
+                    "missingDependencies": strategy_missing,
+                    "rejectionReasons": [
+                        str(item)
+                        for item in (selected_strategy.get("rejectionReasons") or [])
+                        if isinstance(item, str)
+                    ],
+                },
+                "blockers": sorted(set(blockers + workflow_blockers)),
+                "minimumAdditionalEvidence": sorted(set(minimum_additional_evidence)),
+                "claims": dict(FALSE_CLAIMS),
+            }
+            blocker_path = bundle.output_dir / "generation-blockers.json"
+            blocker_path.write_text(
+                json.dumps(blocker_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            delivery["blockerReportPath"] = str(blocker_path)
+
         if request.require_executable and request_provided and not request_executable_available:
             blocker_text = ", ".join(str(item) for item in executable_workflow.get("blockers", [])[:4])
             if not blocker_text:
@@ -2039,6 +2299,8 @@ class LycolesGenerationService:
                 "aiInferencePerformed": ai_inference_performed,
             },
             "evidence": {
+                "evidenceKind": request.evidence_kind,
+                "evidencePath": str(request.evidence_path),
                 "mode": bundle.mode,
                 "placeId": bundle.place_id,
                 "scanId": bundle.scan_id,
@@ -2199,7 +2461,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run-job", help="Run one generation job synchronously")
-    run_parser.add_argument("--evidence-kind", choices=("manifest", "parts_dir"), required=True)
+    run_parser.add_argument("--evidence-kind", choices=("manifest", "parts_dir", "replay_package"), required=True)
     run_parser.add_argument("--evidence-path", required=True)
     run_parser.add_argument("--requested-capability", default=None)
     run_parser.add_argument("--observation-path", action="append", default=[],
@@ -2218,7 +2480,60 @@ def main() -> int:
     feedback_parser.add_argument("--feedback-json", required=True,
                                  help="Path to JSON payload following the feedback contract")
 
+    replay_parser = subparsers.add_parser("replay-import", help="Import baseline/observation artifacts into a validated replay package")
+    replay_parser.add_argument("--baseline-input", action="append", required=True,
+                               help="Baseline source path (parts directory, multipart ZIP, manifest JSON, or replay package); repeatable")
+    replay_parser.add_argument("--observation-input", action="append", default=[],
+                               help="Observation JSON or directory containing dynamic observation exports; repeatable")
+    replay_parser.add_argument("--output-dir", required=True,
+                               help="Destination directory for the replay package")
+    replay_parser.add_argument("--expected-place-id", type=int, default=None,
+                               help="Optional expected place ID for strict identity validation")
+    replay_parser.add_argument("--expected-baseline-scan-id", default=None,
+                               help="Optional expected baseline scan ID for strict identity validation")
+    replay_parser.add_argument("--expected-observation-scan-id", action="append", default=[],
+                               help="Optional expected observation scan ID(s); repeatable")
+
     args = parser.parse_args()
+
+    if args.command == "replay-import":
+        replay_import = _load_local_module("evidence_replay_import.py", "lycoles_evidence_replay_cli")
+        result = replay_import.import_replay_package(
+            baseline_inputs=[Path(item).expanduser().resolve() for item in args.baseline_input],
+            observation_inputs=[Path(item).expanduser().resolve() for item in args.observation_input],
+            output_dir=Path(args.output_dir).expanduser().resolve(),
+            expected_place_id=args.expected_place_id,
+            expected_baseline_scan_id=args.expected_baseline_scan_id,
+            expected_observation_scan_ids=list(args.expected_observation_scan_id or []),
+        )
+        baseline = result.get("baseline") if isinstance(result.get("baseline"), dict) else {}
+        part_digests = baseline.get("partDigests") if isinstance(baseline.get("partDigests"), list) else []
+        compact = {
+            "schemaVersion": result.get("schemaVersion"),
+            "replayPackagePath": result.get("replayPackagePath"),
+            "outputDir": result.get("outputDir"),
+            "baseline": {
+                "mode": baseline.get("mode"),
+                "scanId": baseline.get("scanId"),
+                "placeId": baseline.get("placeId"),
+                "partCount": baseline.get("partCount"),
+                "partDigestCount": len(part_digests),
+                "manifestPath": baseline.get("manifestPath"),
+                "partsDir": baseline.get("partsDir"),
+                "partsComplete": baseline.get("partsComplete"),
+            },
+            "observationCount": len(result.get("observations") or []),
+            "observationScanIds": [
+                item.get("scanId")
+                for item in (result.get("observations") or [])
+                if isinstance(item, dict) and isinstance(item.get("scanId"), str)
+            ],
+            "validation": result.get("validation") if isinstance(result.get("validation"), dict) else {},
+            "warnings": result.get("warnings") if isinstance(result.get("warnings"), list) else [],
+        }
+        print(json.dumps(compact, sort_keys=True))
+        return 0
+
     service = LycolesGenerationService(
         output_root=Path(args.output_root),
         model_routes=_model_routes_from_environment(),

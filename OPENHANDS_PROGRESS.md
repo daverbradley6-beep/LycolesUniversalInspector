@@ -1,3 +1,79 @@
+## Update — 2026-11-13 — v30.6.60 evidence replay import, semantic blocker diagnostics, and fallback selection
+
+### Scope
+
+- Added reusable replay-import module: `tools/evidence_replay_import.py`.
+- Added generation-service replay command and evidence kind support:
+  - CLI: `replay-import`
+  - `run-job --evidence-kind replay_package --evidence-path <replay-package.json>`
+- Replay importer now supports:
+  - multipart baseline directories,
+  - multipart baseline ZIP archives,
+  - baseline manifests,
+  - live observation JSON exports,
+  - previously reconstructed replay packages as inputs.
+- Added strict validation and fail-closed behavior for replay:
+  - scan/place identity matching,
+  - part-count completeness,
+  - duplicate/conflict detection,
+  - manifest digest consistency checks when part digests are present,
+  - observation baseline/place consistency checks,
+  - expected observation-scan set validation.
+- Added provenance capture and claims separation (recorded provenance vs verified authenticity).
+- Added replay ingestion to `EvidenceProcessor` with packaged-observation overlay loading.
+
+### Semantic blocker diagnostics upgrades
+
+- Autonomous planning now emits per-feature feasibility diagnostics:
+  - `availableEvidence`
+  - strategy-level `missingDependencies`
+  - strategy-level `rejectionReasons`
+  - `feasibilityClass` (`supported` / `insufficient-evidence` / `feedback-blocked` / `policy-threshold`)
+  - aggregate feature feasibility metadata (counts, confidence, verificationStatus).
+- Blockers now include concrete selected-strategy rejection reason strings.
+- Added selection diagnostics payload:
+  - highest-ranked feature,
+  - selected feature,
+  - feasible feature count,
+  - whether feature fallback was used.
+
+### Autonomous feature fallback
+
+- Planner selection now prefers the strongest **feasible** feature candidate when any feasible candidate exists.
+- If no feasible candidate exists, planner retains highest-ranked candidate and emits explicit blockers.
+
+### Replay + timing resilience
+
+- Malformed baseline timing fallback now works even when no observation overlay is provided:
+  - manifest-readiness fallback when available,
+  - synthetic manifest-readiness fallback when manifest is unavailable.
+
+### Bubble Gum replay run status (current local evidence)
+
+- Implemented strict replay validation for target IDs:
+  - expected baseline `144CF595-C681-4A72-9E20-8759A7B3619B` correctly fail-closed against available local baseline `33E9EFC5-AAA5-4093-A65A-791C765CDDD7`.
+- Successfully imported available local Bubble package (`33E9...` + `live-observation-73131...`) with part completeness verified (`987/987`).
+- End-to-end generation runs complete deterministically but remain observational-only under current evidence:
+  - no feasible strategy for discovered request-matched features,
+  - blockers now reported with explicit missing dependencies and rejection reasons.
+
+### Validation
+
+- Focused regression suites:
+  - `tests/test_evidence_replay_import.py`
+  - `tests/test_lycoles_generation_service.py`
+  - `tests/test_generated_workflow_planning.py`
+  - `tests/test_compile_interaction_sequences.py`
+  - `tests/test_action_capability_discovery.py`
+  - Result: **87 passed, 5 subtests passed**.
+
+### Version
+
+- Repository/inspector version bumped: **v30.6.60**
+
+
+
+
 ## Update — 2026-11-06 — v30.6.59 legacy baseline/recording compatibility unblock for autonomous generation
 
 ### Scope
