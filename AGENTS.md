@@ -780,3 +780,34 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - claim path selected: `DailyRewards.Frame.Playtime.Main.1.Button`,
   - close path excluded from emitted targets.
 
+
+## Update — 2026-11-13 — Controlled rewards trial GUI safety hardening
+
+- Generator-level controlled claim trial now validates GUI targets before activation:
+  - resolves exact claim path and re-resolves after Lycoles UI suspension,
+  - enforces GuiButton type, ancestor visibility, ScreenGui enabled state,
+  - checks interactable/active flags where available,
+  - rejects invalid/zero bounds and stale GUI paths,
+  - verifies DailyRewards interface is open.
+- Added robust hit testing to avoid false world-target fallback behavior:
+  - chooses an unobstructed click point inside target bounds,
+  - uses `PlayerGui:GetGuiObjectsAtPosition` with raw/plus/minus GUI inset variants,
+  - stops safely with obstruction diagnostics when game-owned overlays cover target.
+- Prevents self-interception by Lycoles overlays:
+  - temporarily disables only Lycoles-owned `ScreenGui` instances (`name` prefix `lycoles`),
+  - waits one frame before point selection and dispatch,
+  - always restores prior `Enabled` states after success/failure/timeout/error.
+- Activation dispatch safety:
+  - `VirtualInputManager` availability checked before use,
+  - release event is always attempted and release failures are reported,
+  - no firesignal, no fabricated remotes, no uncontrolled retries.
+- Outcome semantics are explicitly separated:
+  - input dispatch != reward claim verification,
+  - success requires observed `Completed` transition,
+  - label hidden transition is supporting-only evidence,
+  - already completed reward exits without clicking.
+- Controlled request contract now includes configurable bounded completion timeout (`completionTimeoutSeconds`, default 2.5s).
+- Regenerated artifact from v30.6.61 replay package:
+  - `build/generation-jobs-v30.6.61-rewards/job-9cc84b4d2d584bb1/LycolesGeneratedUtility.lua`
+  - copied to `potassium_artifacts/LycolesGeneratedUtility.lua`.
+
