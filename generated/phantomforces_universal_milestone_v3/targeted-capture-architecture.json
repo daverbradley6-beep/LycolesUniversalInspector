@@ -1,0 +1,29 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false
+  },
+  "compatibility": {
+    "baselineMultipart": true,
+    "chunkedTimelineExport": true,
+    "dynamicObservationOverlay": true,
+    "targetedSessionEmbeddedInInteractionDiagnostics": true
+  },
+  "engine": {
+    "boundedSampling": "Heartbeat-driven capture with per-category caps and interval throttling",
+    "multiRequestSupport": true,
+    "requestLoading": "Structured JSON requests loaded at runtime with bounded normalization",
+    "requestSelection": "Preset-driven selection plus runtime request loading",
+    "resourceCleanup": "No persistent capture listeners; session stop releases active state",
+    "sessionLifecycle": "Start/Stop session with active progress tracking and duration limits"
+  },
+  "observationCategories": [
+    "character-entity-observation",
+    "combat-camera-weapon-correlation",
+    "match-objective-state-observation",
+    "loadout-runtime-observation"
+  ],
+  "schemaVersion": "122.targeted-capture-architecture.1"
+}

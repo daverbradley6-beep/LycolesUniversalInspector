@@ -338,7 +338,46 @@ def make_live_observation_export(path, scan_id="live-observation-service-1"):
         ],
     }
 
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
+
+
+
+
+def make_targeted_evidence_export(path):
+    payload = {
+        "schemaVersion": "31.0.targeted-evidence-session.1",
+        "exportKind": "targeted-evidence-session",
+        "sessionId": "targeted-service-1",
+        "placeId": 3623096087,
+        "baselineScanId": "service_scan_001",
+        "requestIds": [
+            "character-entity-observation",
+            "combat-camera-weapon-correlation",
+            "match-objective-state-observation",
+            "loadout-runtime-observation",
+        ],
+        "requestProgress": {},
+        "samples": {
+            "characterEntities": [
+                {"player": "Local", "isLocalPlayer": True, "team": "Blue"},
+                {"player": "Enemy", "isLocalPlayer": False, "team": "Red"},
+            ],
+            "entityEvents": [{"eventType": "character-present"}],
+            "cameraSamples": [{"lookVector": {"x": 0, "y": 0, "z": -1}}],
+            "cameraCorrelations": [{"mousePrimaryInputDelta": 2, "lookDeltaMagnitude": 0.13}],
+            "inputSamples": [{"mousePrimaryInputs": 4}],
+            "weaponSnapshots": [{"equippedTools": ["Rifle"]}],
+            "loadoutSnapshots": [{"equippedTools": ["Rifle"], "backpackTools": ["Knife"], "hudWeaponIndicators": [{"path": "HUD.Weapon", "text": "Rifle"}]}],
+            "matchStateSamples": [{"signals": {"HUD.Score": "1-0"}}],
+            "transitions": [{"path": "HUD.Score", "before": "0-0", "after": "1-0"}],
+            "timelineEvents": [{"category": "camera-sample"}],
+            "errors": [],
+            "progressLogs": [],
+        },
+        "collectionLimitations": ["Client-visible observations only"],
+        "errors": [],
+    }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 class CountingProvider(MODULE.BaseLLMProvider):
@@ -1021,6 +1060,33 @@ class LycolesGenerationServiceTests(unittest.TestCase):
 
 
 
+
+
+    def test_job_result_consumes_targeted_evidence_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Track movement and combat observations")
+            overlay = root / "live-observation.json"
+            targeted = root / "targeted-evidence.json"
+            make_live_observation_export(overlay)
+            make_targeted_evidence_export(targeted)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Track movement and combat observations",
+                observation_paths=(overlay, targeted),
+            )
+            result = service.run_sync(request)
+
+            self.assertEqual(result["status"], "succeeded")
+            reconciliation = result.get("evidenceReconciliation") or {}
+            self.assertTrue(reconciliation.get("generated"))
+            summary = reconciliation.get("summary") or {}
+            self.assertEqual(summary.get("targetedSessionsConsumed"), 1)
 
 if __name__ == "__main__":
     unittest.main()

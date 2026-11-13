@@ -1,0 +1,72 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "requests": [
+    {
+      "expectedOutputSchema": {
+        "cameraSamples": "[{timestamp, yaw, pitch}]",
+        "firingWindows": "[{start, end, inputSource}]",
+        "weaponStateTransitions": "[{timestamp, key, before, after}]"
+      },
+      "failureConditions": [
+        "Camera samples remain empty",
+        "No weapon-related state transitions during firing"
+      ],
+      "missingEvidence": [
+        "camera_movement_correlation"
+      ],
+      "requestId": "combat-camera-weapon-correlation",
+      "requiredObservationWindow": "Three burst sequences plus one non-firing camera pan sequence.",
+      "safeObservationMethod": "Read-only sampling of camera orientation, equipped tool identity, and HUD/state changes during controlled firing bursts.",
+      "serviceOrObjectCategory": "CurrentCamera / Tool / HUD weapon state",
+      "successCriteria": [
+        "Camera sample stream available during firing and non-firing windows",
+        "Weapon state transitions aligned to firing windows"
+      ],
+      "targetFeatures": [],
+      "whyNeeded": "Recoil and trigger capabilities require camera/weapon temporal evidence, not click-only signals."
+    },
+    {
+      "expectedOutputSchema": {
+        "equippedTools": "[{timestamp, toolPath, toolName}]",
+        "hudWeaponIndicators": "[{timestamp, path, text}]"
+      },
+      "failureConditions": [
+        "No tool identity changes detected",
+        "HUD indicators static across switches"
+      ],
+      "missingEvidence": [
+        "hud_weapon_indicators"
+      ],
+      "requestId": "loadout-runtime-observation",
+      "requiredObservationWindow": "At least two loadout switches and one in-match weapon swap.",
+      "safeObservationMethod": "Read-only capture while switching weapons/loadouts in menu and live state.",
+      "serviceOrObjectCategory": "Backpack/Character tools and loadout HUD widgets",
+      "successCriteria": [
+        "Tool identity changes captured during switches",
+        "HUD indicators update in sync with tool changes"
+      ],
+      "targetFeatures": [
+        "loadout_information_suite:loadout_information_suite.runtime_weapon_state"
+      ],
+      "whyNeeded": "Loadout runtime indicators require equipped-weapon and HUD linkage evidence."
+    }
+  ],
+  "scan": {
+    "interactionEvents": 73,
+    "objects": 92466,
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "schemaVersion": "121.targeted-inspection-plan.1",
+  "summary": {
+    "missingRequirementCount": 4,
+    "requestCount": 2
+  }
+}

@@ -849,6 +849,46 @@ class EvidenceProcessor:
                 raise ValueError(f"Observation path not found: {path}")
         return observation_dirs, observation_files
 
+    @staticmethod
+    def _partition_observation_overlay_files(
+        observation_files: list[Path],
+    ) -> tuple[list[Path], list[Path], list[str]]:
+        dynamic_files: list[Path] = []
+        targeted_files: list[Path] = []
+        warnings: list[str] = []
+        for path in observation_files:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, json.JSONDecodeError):
+                dynamic_files.append(path)
+                continue
+            if not isinstance(payload, dict):
+                dynamic_files.append(path)
+                continue
+
+            export_kind = payload.get("exportKind")
+            schema_version = payload.get("schemaVersion")
+            diagnostics = payload.get("sourceDiagnostics") if isinstance(payload.get("sourceDiagnostics"), dict) else {}
+            scan_mode = diagnostics.get("scanMode")
+
+            is_targeted = (
+                export_kind == "targeted-evidence-session"
+                or (isinstance(schema_version, str) and schema_version.startswith("31.0.targeted-evidence-session"))
+            )
+            if is_targeted:
+                targeted_files.append(path)
+                warnings.append(
+                    f"Targeted evidence session file excluded from build_release overlay parse and reserved for reconciliation: {path.name}"
+                )
+                continue
+
+            if scan_mode == "dynamic-observations" or export_kind == "dynamic-observations":
+                dynamic_files.append(path)
+            else:
+                dynamic_files.append(path)
+
+        return dynamic_files, targeted_files, warnings
+
     def _build_multipart_bundle(
         self,
         *,
@@ -859,13 +899,16 @@ class EvidenceProcessor:
         warnings: list[str],
     ) -> EvidenceBundle:
         observation_dirs, observation_files = self._collect_observation_inputs(observation_paths)
+        dynamic_observation_files, _targeted_observation_files, partition_warnings = self._partition_observation_overlay_files(observation_files)
+        if partition_warnings:
+            warnings.extend(partition_warnings)
         try:
             manifest = self._build_release.build(
                 parts_path,
                 output_dir,
                 requested_capability=requested_capability,
                 observation_dirs=observation_dirs,
-                observation_files=observation_files,
+                observation_files=dynamic_observation_files,
             )
         except ValueError as exc:
             message = str(exc)

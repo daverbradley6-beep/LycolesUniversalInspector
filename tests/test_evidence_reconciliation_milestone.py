@@ -157,6 +157,48 @@ def phantom_like_observation():
     }
 
 
+def targeted_session_payload():
+    return {
+        "schemaVersion": "31.0.targeted-evidence-session.1",
+        "exportKind": "targeted-evidence-session",
+        "sessionId": "targeted-session-1",
+        "baselineScanId": "scan-phantom",
+        "placeId": 292439477,
+        "samples": {
+            "characterEntities": [
+                {"player": "Local", "isLocalPlayer": True, "team": "Blue"},
+                {"player": "Opponent", "isLocalPlayer": False, "team": "Red"},
+            ],
+            "cameraSamples": [
+                {"timestamp": "2026-11-13T19:00:00Z"},
+                {"timestamp": "2026-11-13T19:00:01Z"},
+            ],
+            "cameraCorrelations": [
+                {"mousePrimaryInputs": 3, "cameraDeltaMagnitude": 2.1},
+            ],
+            "inputSamples": [
+                {"mousePrimaryInputs": 5},
+                {"mousePrimaryInputs": 2},
+            ],
+            "loadoutSnapshots": [
+                {
+                    "equippedTools": ["Rifle"],
+                    "backpackTools": ["Knife"],
+                    "hudWeaponIndicatorPaths": ["LocalPlayer.PlayerGui.HUD.WeaponLabel"],
+                    "hudWeaponIndicators": ["Rifle"],
+                }
+            ],
+            "weaponSnapshots": [{"tool": "Rifle"}],
+            "matchStateSamples": [
+                {"signals": {"LocalPlayer.PlayerGui.HUD.ScoreLabel": "3-2", "LocalPlayer.PlayerGui.HUD.Timer": "12:10"}},
+            ],
+            "transitions": [
+                {"path": "LocalPlayer.PlayerGui.HUD.ScoreLabel", "before": "2-2", "after": "3-2"},
+            ],
+        },
+    }
+
+
 def non_fps_plan():
     return {
         "schemaVersion": "20.0",
@@ -277,6 +319,50 @@ class EvidenceReconciliationMilestoneTests(unittest.TestCase):
             self.assertTrue((out / "generation-integration-report.json").is_file())
             summary = json.loads((out / "generation-integration-report.json").read_text(encoding="utf-8"))
             self.assertFalse(summary["claims"]["gameplayVerified"])
+
+
+    def test_targeted_session_payload_updates_signals_and_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            plan_path = root / "capability-plan.json"
+            observation_path = root / "live-observation.json"
+            targeted_path = root / "targeted-session.json"
+            out = root / "out"
+
+            plan_path.write_text(json.dumps(phantom_like_plan()), encoding="utf-8")
+            observation_path.write_text(json.dumps(phantom_like_observation()), encoding="utf-8")
+            targeted_path.write_text(json.dumps(targeted_session_payload()), encoding="utf-8")
+
+            result = MODULE.run_from_artifacts(
+                capability_plan_path=plan_path,
+                output_dir=out,
+                observation_files=(observation_path, targeted_path),
+            )
+
+            self.assertIsInstance(result, dict)
+            self.assertEqual(result["summary"]["targetedSessionsConsumed"], 1)
+
+            contracts = json.loads((out / "capability-evidence-contracts.json").read_text(encoding="utf-8"))
+            reqs = {item["requirementId"]: item for item in contracts["requirements"]}
+            self.assertEqual(reqs["camera_state_samples"]["status"], "available")
+            self.assertEqual(reqs["weapon_equipped_signal"]["status"], "available")
+            self.assertIn(reqs["objective_hud_signals"]["status"], {"available", "captured-not-classified"})
+
+    def test_movement_overlay_module_exposes_runtime_contract_methods(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp)
+            MODULE._run_with_plan(plan=phantom_like_plan(), observation=phantom_like_observation(), output_dir=out)
+            code = (out / "MovementTelemetryOverlay.lua").read_text(encoding="utf-8")
+
+            self.assertIn("function MovementTelemetry.new", code)
+            self.assertIn("function MovementTelemetry:Start", code)
+            self.assertIn("function MovementTelemetry:Stop", code)
+            self.assertIn("function MovementTelemetry:UpdateConfig", code)
+            self.assertIn("function MovementTelemetry:GetStatus", code)
+            self.assertIn("UpdateInterval", code)
+            self.assertIn("DisplayPosition", code)
+            self.assertIn("VisibleFields", code)
+
 
 
 if __name__ == "__main__":

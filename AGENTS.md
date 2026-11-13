@@ -398,6 +398,31 @@ Generate complete functional read-only/client-local behavior when evidence suppo
 
 Current v110 gameplay-understanding contract: `tools/understand_gameplay.py` composes concurrent systems, observable resources, action candidates, temporal relationships, loop/objective candidates, automation opportunities, structured evidence gaps, and request blockers. `profileIndex` is the versioned provider-independent reference inventory: unknown discovered feature categories receive deterministic generic system IDs, path-and-component-identity-bound resource IDs prevent equal terminal labels or duplicate flat paths from colliding, every relationship/loop/objective uses canonical IDs, and bounded system truncation is explicit. It must not assign one genre, infer causality from chronology, invent action mechanisms, promote user request text into evidence, or mark implementation/runtime/gameplay/action outcomes verified. Explicitly absent features stay excluded.
 
+
+## Session notes — 2026-11-13 Milestone 3 targeted capture runtime + ingestion
+
+- Inspector advanced to `v30.6.62` (`version.txt` synchronized).
+- Added bounded targeted capture runtime in `LycolesUniversalInspector.lua` with:
+  - runtime request loading (`_G.LycolesLoadTargetedRequests`),
+  - session lifecycle APIs (`_G.LycolesStartTargetedCapture`, `_G.LycolesStopTargetedCapture`, `_G.LycolesTargetedCaptureProgress`),
+  - heartbeat-driven bounded sampling across entity/camera/input/loadout/objective categories,
+  - request-progress evidence reconciliation and timeline capture,
+  - export integration (`targetedCaptureSession`, `targetedCaptureTimelineEvents`) into full scan + live observation diagnostics.
+- Potassium local-pressure safeguard restored by encapsulating targeted runtime in `initializeTargetedCaptureRuntime()` (register pressure regression fixed; compiler pressure test passing again).
+- UI gained targeted controls (`TARGET` preset cycle, `CAPTURE` start/stop, progress hint) and is wired through helper callbacks (`WORKFLOW_HELPERS.setTargetedCaptureUiRefresh`, `getTargetedCaptureUiState`) instead of direct state coupling.
+- Generation-service ingestion update: `tools/lycoles_generation_service.py` now partitions observation files so dynamic overlays continue through `build_release`, while `targeted-evidence-session` files bypass overlay parser and remain available for reconciliation.
+- Reconciliation improvements:
+  - `run_from_parts` now extracts targeted sessions from observation payload when present,
+  - targeted sessions are merged into evidence signals/capability contracts.
+- Added milestone orchestrator `tools/targeted_capture_milestone.py` to generate Milestone 3 deliverables and runtime-validation artifacts.
+- Added/updated tests:
+  - `tests/test_evidence_reconciliation_milestone.py` (targeted session ingestion + movement module contract checks),
+  - `tests/test_targeted_capture_milestone.py` (Milestone 3 artifact generation),
+  - `tests/test_lycoles_generation_service.py` (targeted evidence session ingestion path).
+- Validation status for this pass:
+  - `node --test tests/test_luau_syntax.mjs` ✅
+  - `python3 -m pytest -q` ✅ (`1695 passed, 17 skipped`)
+
 Current generated command contract: every complete generated utility and reviewed-actions GUI includes the same place-guarded Admin Commands framework. GUI and `;` command entry share one local state and cleanup path. Universal commands are client-local utilities, not server administrator privileges; game restrictions may override them. `stopall`/close must restore tracked collision and humanoid state. `systems` and `readiness` are informational only: release/standalone generation may embed bounded v110 candidate and blocker summaries, while absent evidence must remain explicit and every system stays unverified/implementation-not-ready. Game-specific action commands may be added only with sufficient observed capability evidence and explicit action contracts. Never add inferred remote calls.
 
 ## Validation without target-game Studio access

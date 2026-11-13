@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.60
+-- Lycoles Universal Inspector v30.6.62
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.60"
+local VERSION = "30.6.62"
 
 local endpoint = ""
 local autoSend = true
@@ -140,6 +140,20 @@ local LIMITS = {
     clickRaycastDistanceStuds = 700,
     maxClickGuiCandidates = 8,
     maxClickDiagnosticSamples = 18,
+    maxTargetedRequests = 12,
+    targetedCaptureTickSeconds = 0.35,
+    targetedCaptureDefaultDurationSeconds = 240,
+    maxTargetedEntitySnapshots = 420,
+    maxTargetedEntityEvents = 240,
+    maxTargetedCameraSamples = 900,
+    maxTargetedCameraCorrelations = 640,
+    maxTargetedInputSamples = 900,
+    maxTargetedWeaponSnapshots = 520,
+    maxTargetedLoadoutSnapshots = 420,
+    maxTargetedMatchStateSamples = 520,
+    maxTargetedTransitions = 420,
+    maxTargetedSessionErrors = 180,
+    maxTargetedProgressLogs = 240,
 }
 local alive = true
 local watchEnabled = true
@@ -202,6 +216,7 @@ clickOutcomeRelationships = {}
 inputGestureObservations = {}
 characterOrientationSamples = {}
 cameraOrientationSamples = {}
+
 spatialCharacterGeneration = 0
 spatialSampleSequence = 0
 cursorObservationSequence = 0
@@ -1957,6 +1972,9 @@ end
 
 _G.LycolesInspectorClose = function()
     stopWorkflowRecording("inspector-closed")
+    if type(_G.LycolesStopTargetedCapture)=="function" then
+        pcall(_G.LycolesStopTargetedCapture,"inspector-closed")
+    end
     alive = false
     uploadGeneration = uploadGeneration + 1
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
@@ -2271,6 +2289,7 @@ local function prepareParts(report)
         "playerPositionHistory",
         "eventPositionSnapshots",
         "spatialLocationHistory",
+        "targetedCaptureTimelineEvents",
     }
     local collectionChunkLookup = {}
     for _, key in ipairs(collectionChunkKeys) do collectionChunkLookup[key] = true end
@@ -5003,6 +5022,845 @@ local function contextTokenOverlap(left,right)
     for _,token in ipairs(right) do if seen[token] then score=score+1 end end
     return score
 end
+
+local function initializeTargetedCaptureRuntime()
+    local TARGETED_REQUEST_SCHEMA_VERSION = "31.0.targeted-inspection-requests.1"
+    local TARGETED_CAPTURE_SCHEMA_VERSION = "31.0.targeted-evidence-session.1"
+    local TARGETED_CAPTURE_EXPORT_KIND = "targeted-evidence-session"
+    local TARGETED_REQUEST_PRESETS = {
+        {
+            id = "all-requests",
+            label = "ALL",
+            requestIds = {
+                "character-entity-observation",
+                "combat-camera-weapon-correlation",
+                "match-objective-state-observation",
+                "loadout-runtime-observation",
+            },
+        },
+        {
+            id = "entity-and-match",
+            label = "ENTITY+MATCH",
+            requestIds = {
+                "character-entity-observation",
+                "match-objective-state-observation",
+            },
+        },
+        {
+            id = "combat-and-loadout",
+            label = "COMBAT+LOADOUT",
+            requestIds = {
+                "combat-camera-weapon-correlation",
+                "loadout-runtime-observation",
+            },
+        },
+    }
+
+    local targetedRequestCatalog = {}
+    local targetedRequestOrder = {}
+    local targetedRequestPresetIndex = 1
+    local targetedSelectedRequestIds = {}
+    local targetedCaptureSession = nil
+    local targetedCaptureLastSession = nil
+    local targetedCaptureLastTick = 0
+    local uiRefreshCallback = nil
+
+    local function utcNowIso()
+        return os.date("!%Y-%m-%dT%H:%M:%SZ")
+    end
+
+    local function cloneValue(value, depth)
+        local t = type(value)
+        if t ~= "table" then return value end
+        if depth and depth > 6 then return {} end
+        local out = {}
+        for k, v in pairs(value) do
+            out[k] = cloneValue(v, (depth or 0) + 1)
+        end
+        return out
+    end
+
+    local function buildDefaultTargetedRequestPayload()
+    return {
+        schemaVersion = TARGETED_REQUEST_SCHEMA_VERSION,
+        generatedAt = utcNowIso(),
+        placeId = game.PlaceId,
+        requests = {
+            {
+                requestId = "character-entity-observation",
+                featureIds = {"esp_player_overlay"},
+                capabilityIds = {
+                    "esp_player_overlay.basic_entity_boxes",
+                    "esp_player_overlay.team_and_health_enhancements",
+                },
+                requiredEvidence = {"player_entity_set", "team_relationship_signal", "character_spatial_positions", "health_signal_count"},
+                services = {"Players", "Teams", "Workspace"},
+                classes = {"Player", "Model", "Humanoid", "HumanoidRootPart"},
+                properties = {"Health", "MaxHealth", "Position", "Team", "TeamColor"},
+                events = {"PlayerAdded", "PlayerRemoving", "CharacterAdded", "CharacterRemoving"},
+                conditions = {"client-visible-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.5, maxSamples = LIMITS.maxTargetedEntitySnapshots},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.character-entities",
+                completionCriteria = {"non-local-player-entity-observed", "team-signal-observed", "health-and-position-samples-captured"},
+                failureConditions = {"no-character-entities", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "combat-camera-weapon-correlation",
+                featureIds = {"combat_recoil_assist", "combat_trigger_assist"},
+                capabilityIds = {
+                    "combat_recoil_assist.recoil_camera_compensation",
+                    "combat_trigger_assist.crosshair_fire_condition",
+                },
+                requiredEvidence = {"camera_state_samples", "camera_movement_correlation", "weapon_state_signal", "weapon_equipped_signal", "mouse_primary_input"},
+                services = {"Workspace", "UserInputService", "Players"},
+                classes = {"Camera", "Tool", "Humanoid", "Backpack"},
+                properties = {"CFrame", "LookVector", "MoveDirection", "Tool.Name"},
+                events = {"InputBegan", "InputEnded", "Tool.Equipped", "Tool.Unequipped"},
+                conditions = {"no-remote-invocation", "no-synthetic-fire-events", "bounded-correlation"},
+                sampling = {intervalSeconds = 0.2, maxSamples = LIMITS.maxTargetedCameraSamples},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.combat-camera",
+                completionCriteria = {"camera-samples-captured", "primary-input-observed", "equipped-tool-state-observed", "temporal-correlation-sampled"},
+                failureConditions = {"camera-unavailable", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "match-objective-state-observation",
+                featureIds = {"objective_status_dashboard"},
+                capabilityIds = {
+                    "objective_status_dashboard.match_state_signals",
+                },
+                requiredEvidence = {"objective_hud_signals", "state_change_signals"},
+                services = {"Players", "StarterGui"},
+                classes = {"ScreenGui", "TextLabel", "TextButton"},
+                properties = {"Text", "Visible", "Enabled"},
+                events = {"PropertyChangedSignal.Text", "PropertyChangedSignal.Visible"},
+                conditions = {"gui-state-observation-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.6, maxSamples = LIMITS.maxTargetedMatchStateSamples},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.match-state",
+                completionCriteria = {"objective-gui-signals-captured", "at-least-one-transition-observed"},
+                failureConditions = {"no-objective-gui-signals", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "loadout-runtime-observation",
+                featureIds = {"loadout_information_suite"},
+                capabilityIds = {
+                    "loadout_information_suite.loadout_gui_reader",
+                    "loadout_information_suite.runtime_weapon_state",
+                },
+                requiredEvidence = {"weapon_equipped_signal", "hud_weapon_indicators", "loadout_gui_structures"},
+                services = {"Players", "ReplicatedStorage"},
+                classes = {"Backpack", "Tool", "ScreenGui", "TextLabel"},
+                properties = {"Tool.Name", "Tool.Attributes", "Text", "Visible"},
+                events = {"Backpack.ChildAdded", "Backpack.ChildRemoved", "Tool.Equipped", "Tool.Unequipped"},
+                conditions = {"client-visible-loadout-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.45, maxSamples = LIMITS.maxTargetedLoadoutSnapshots},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.loadout-runtime",
+                completionCriteria = {"backpack-or-equipped-tools-observed", "hud-weapon-label-observed"},
+                failureConditions = {"no-tool-evidence", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+        }
+    }
+end
+
+local function normalizeTargetedRequest(raw, index)
+    if type(raw) ~= "table" then return nil end
+    local requestId = tostring(raw.requestId or ("request-" .. tostring(index))):gsub("[%s]+", "-"):gsub("[^%w%-%_]+", "")
+    if requestId == "" then requestId = "request-" .. tostring(index) end
+    local sampling = type(raw.sampling) == "table" and raw.sampling or {}
+    local interval = type(sampling.intervalSeconds) == "number" and sampling.intervalSeconds or LIMITS.targetedCaptureTickSeconds
+    local maxSamples = type(sampling.maxSamples) == "number" and sampling.maxSamples or 200
+    local duration = type(raw.maxDurationSeconds) == "number" and raw.maxDurationSeconds or LIMITS.targetedCaptureDefaultDurationSeconds
+    return {
+        requestId = requestId,
+        featureIds = type(raw.featureIds) == "table" and raw.featureIds or {},
+        capabilityIds = type(raw.capabilityIds) == "table" and raw.capabilityIds or {},
+        requiredEvidence = type(raw.requiredEvidence) == "table" and raw.requiredEvidence or {},
+        services = type(raw.services) == "table" and raw.services or {},
+        classes = type(raw.classes) == "table" and raw.classes or {},
+        properties = type(raw.properties) == "table" and raw.properties or {},
+        events = type(raw.events) == "table" and raw.events or {},
+        conditions = type(raw.conditions) == "table" and raw.conditions or {},
+        sampling = {
+            intervalSeconds = clampNumber(interval, 0.1, 3.0),
+            maxSamples = math.floor(clampNumber(maxSamples, 20, LIMITS.maxTargetedCameraSamples)),
+        },
+        maxDurationSeconds = clampNumber(duration, 15, 1200),
+        expectedOutputSchema = tostring(raw.expectedOutputSchema or "31.0.targeted-evidence-session.1.unknown"):sub(1,120),
+        completionCriteria = type(raw.completionCriteria) == "table" and raw.completionCriteria or {},
+        failureConditions = type(raw.failureConditions) == "table" and raw.failureConditions or {},
+        provenance = type(raw.provenance) == "table" and raw.provenance or {source = "client-observation", authority = "non-authoritative"},
+    }
+end
+
+local function loadTargetedCatalog(payload)
+    local requests = type(payload) == "table" and payload.requests or nil
+    if type(requests) ~= "table" then return false, "requests missing" end
+    local catalog, order = {}, {}
+    for i, raw in ipairs(requests) do
+        if #order >= LIMITS.maxTargetedRequests then break end
+        local request = normalizeTargetedRequest(raw, i)
+        if request and not catalog[request.requestId] then
+            catalog[request.requestId] = request
+            order[#order + 1] = request.requestId
+        end
+    end
+    if #order == 0 then return false, "no valid request definitions" end
+    targetedRequestCatalog = catalog
+    targetedRequestOrder = order
+    return true, nil
+end
+
+local function applyTargetedPreset(index)
+    if #TARGETED_REQUEST_PRESETS == 0 then return end
+    if index < 1 then index = #TARGETED_REQUEST_PRESETS end
+    if index > #TARGETED_REQUEST_PRESETS then index = 1 end
+    targetedRequestPresetIndex = index
+    targetedSelectedRequestIds = {}
+    local preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex]
+    for _, requestId in ipairs(preset.requestIds or {}) do
+        if targetedRequestCatalog[requestId] then
+            targetedSelectedRequestIds[requestId] = true
+        end
+    end
+    if next(targetedSelectedRequestIds) == nil then
+        for _, requestId in ipairs(targetedRequestOrder) do
+            targetedSelectedRequestIds[requestId] = true
+        end
+    end
+end
+
+local function selectedRequestIdsArray()
+    local list = {}
+    for _, requestId in ipairs(targetedRequestOrder) do
+        if targetedSelectedRequestIds[requestId] then
+            list[#list + 1] = requestId
+        end
+    end
+    return list
+end
+
+local function ensureTargetedCatalogLoaded()
+    if #targetedRequestOrder > 0 then return true end
+    local ok, err = loadTargetedCatalog(buildDefaultTargetedRequestPayload())
+    if not ok then return false, err end
+    applyTargetedPreset(targetedRequestPresetIndex)
+    return true
+end
+
+local function parseTargetedPayload(payload)
+    if type(payload) == "string" then
+        local ok, decoded = pcall(function() return HttpService:JSONDecode(payload) end)
+        if not ok or type(decoded) ~= "table" then return nil, "invalid JSON" end
+        return decoded, nil
+    end
+    if type(payload) ~= "table" then return nil, "request payload must be a table or JSON string" end
+    return payload, nil
+end
+
+local function appendTimelineEvent(session, category, event)
+    if type(session) ~= "table" or type(event) ~= "table" then return end
+    event.category = category
+    appendCapped(session.samples.timelineEvents, LIMITS.maxTargetedCameraSamples + LIMITS.maxTargetedLoadoutSnapshots, event)
+end
+
+local function captureGuiSignals(tokenSet, maxSignals)
+    local signals = {}
+    local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return signals end
+    local descendants = playerGui:GetDescendants()
+    local scanned = 0
+    for _, obj in ipairs(descendants) do
+        scanned = scanned + 1
+        if scanned > 700 then break end
+        local isText = obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")
+        if isText then
+            local ok, text = pcall(function() return obj.Text end)
+            if ok and type(text) == "string" and #text > 0 then
+                local lower = (obj.Name .. " " .. text):lower()
+                local matched = false
+                for _, token in ipairs(tokenSet) do
+                    if lower:find(token, 1, true) then matched = true break end
+                end
+                if matched then
+                    local path = watchPath(obj, playerGui, "LocalPlayer.PlayerGui")
+                    if path then
+                        signals[#signals + 1] = {path = path:sub(1,320), text = text:sub(1,120)}
+                        if #signals >= maxSignals then break end
+                    end
+                end
+            end
+        end
+    end
+    return signals
+end
+
+local function snapshotLoadout()
+    local equipped = WORKFLOW_HELPERS.equippedToolSnapshot()
+    local backpackTools = {}
+    local backpack = player and player:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then
+                backpackTools[#backpackTools + 1] = child.Name:sub(1,60)
+            end
+        end
+        table.sort(backpackTools)
+    end
+    local hud = captureGuiSignals({"weapon", "ammo", "loadout", "mag", "clip"}, 18)
+    local hudPaths = {}
+    for _, item in ipairs(hud) do hudPaths[#hudPaths + 1] = item.path end
+    return {
+        equippedTools = equipped.names,
+        backpackTools = backpackTools,
+        hudWeaponIndicators = hud,
+        hudWeaponIndicatorPaths = hudPaths,
+        hasCombatTool = equipped.hasCombatTool,
+        observedAt = utcNowIso(),
+        sessionElapsedSeconds = sessionElapsed(os.clock()),
+    }
+end
+
+local function snapshotCharacterEntities(session)
+    local samples, events = {}, {}
+    for _, other in ipairs(Players:GetPlayers()) do
+        local character = other.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid") or nil
+        local root = character and character:FindFirstChild("HumanoidRootPart") or nil
+        local teamName = other.Team and other.Team.Name or nil
+        local entry = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(os.clock()),
+            player = other.Name,
+            userId = other.UserId,
+            isLocalPlayer = other == player,
+            team = teamName,
+            hasCharacter = character ~= nil,
+            hasHumanoid = humanoid ~= nil,
+            hasRootPart = root ~= nil,
+            health = humanoid and roundNumber(humanoid.Health or 0, 2) or nil,
+            maxHealth = humanoid and roundNumber(humanoid.MaxHealth or 0, 2) or nil,
+            position = root and watchVec(root.Position) or nil,
+        }
+        samples[#samples + 1] = entry
+        local characterToken = "none"
+        if character then
+            local okDebug, debugId = pcall(function() return character:GetDebugId() end)
+            characterToken = okDebug and tostring(debugId) or tostring(character)
+        end
+        local key = tostring(other.UserId) .. "|" .. tostring(teamName or "none") .. "|" .. characterToken
+        if not session.stats.entitySeen[key] then
+            session.stats.entitySeen[key] = true
+            events[#events + 1] = {
+                observedAt = entry.observedAt,
+                player = entry.player,
+                eventType = entry.hasCharacter and "character-present" or "character-missing",
+                team = teamName,
+            }
+        end
+    end
+    return samples, events
+end
+
+local function summarizeTargetedProgress(session)
+    if type(session) ~= "table" then
+        return {completedRequests = 0, totalRequests = 0, unresolvedRequests = 0}
+    end
+    local completed, unresolved, total = 0, 0, 0
+    for _, requestId in ipairs(session.requestIds) do
+        total = total + 1
+        local progress = session.requestProgress[requestId]
+        if progress and progress.status == "satisfied" then
+            completed = completed + 1
+        else
+            unresolved = unresolved + 1
+        end
+    end
+    return {completedRequests = completed, totalRequests = total, unresolvedRequests = unresolved}
+end
+
+local function updateRequestProgress(session)
+    if type(session) ~= "table" then return end
+    local metrics = {
+        entitySnapshots = #session.samples.characterEntities,
+        entityEvents = #session.samples.entityEvents,
+        cameraSamples = #session.samples.cameraSamples,
+        cameraCorrelations = #session.samples.cameraCorrelations,
+        inputSamples = #session.samples.inputSamples,
+        weaponSnapshots = #session.samples.weaponSnapshots,
+        loadoutSnapshots = #session.samples.loadoutSnapshots,
+        matchStateSamples = #session.samples.matchStateSamples,
+        transitions = #session.samples.transitions,
+        nonLocalEntities = session.stats.nonLocalEntitiesSeen,
+        teamSignals = session.stats.teamSignalsSeen,
+        objectiveSignals = session.stats.objectiveSignalsSeen,
+        hudWeaponSignals = session.stats.hudWeaponSignals,
+        primaryInputs = session.stats.primaryInputsSeen,
+        loadoutChanges = session.stats.loadoutChanges,
+    }
+    for _, requestId in ipairs(session.requestIds) do
+        local progress = session.requestProgress[requestId]
+        if progress then
+            local satisfied = {}
+            local missing = {}
+            local function mark(name, ok)
+                if ok then satisfied[#satisfied + 1] = name else missing[#missing + 1] = name end
+            end
+            if requestId == "character-entity-observation" then
+                mark("player_entity_set", metrics.nonLocalEntities > 0)
+                mark("team_relationship_signal", metrics.teamSignals > 0)
+                mark("character_spatial_positions", metrics.entitySnapshots >= 2)
+                mark("health_signal_count", metrics.entitySnapshots >= 2)
+            elseif requestId == "combat-camera-weapon-correlation" then
+                mark("camera_state_samples", metrics.cameraSamples >= 4)
+                mark("camera_movement_correlation", metrics.cameraCorrelations > 0)
+                mark("weapon_equipped_signal", metrics.weaponSnapshots > 0 or metrics.loadoutSnapshots > 0)
+                mark("weapon_state_signal", metrics.loadoutChanges > 0)
+                mark("mouse_primary_input", metrics.primaryInputs > 0)
+            elseif requestId == "match-objective-state-observation" then
+                mark("objective_hud_signals", metrics.objectiveSignals > 0 and metrics.matchStateSamples > 0)
+                mark("state_change_signals", metrics.transitions > 0)
+            elseif requestId == "loadout-runtime-observation" then
+                mark("weapon_equipped_signal", metrics.weaponSnapshots > 0)
+                mark("hud_weapon_indicators", metrics.hudWeaponSignals > 0)
+                mark("loadout_gui_structures", metrics.loadoutSnapshots > 0)
+            end
+            progress.observedCounts = cloneValue(metrics)
+            progress.satisfiedEvidence = satisfied
+            progress.missingEvidence = missing
+            progress.lastUpdatedAt = utcNowIso()
+            progress.status = (#missing == 0) and "satisfied" or "collecting"
+            appendCapped(session.samples.progressLogs, LIMITS.maxTargetedProgressLogs, {
+                observedAt = progress.lastUpdatedAt,
+                requestId = requestId,
+                status = progress.status,
+                missingEvidence = cloneValue(missing),
+            })
+        end
+    end
+end
+
+WORKFLOW_HELPERS.getDefaultTargetedInspectionRequests = function()
+    return cloneValue(buildDefaultTargetedRequestPayload())
+end
+
+WORKFLOW_HELPERS.loadTargetedInspectionRequests = function(payload)
+    local decoded, decodeErr = parseTargetedPayload(payload)
+    if not decoded then return false, decodeErr end
+    local ok, err = loadTargetedCatalog(decoded)
+    if not ok then return false, err end
+    applyTargetedPreset(targetedRequestPresetIndex)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("requests-loaded") end
+    return true, {
+        requestCount = #targetedRequestOrder,
+        selectedRequestIds = selectedRequestIdsArray(),
+        schemaVersion = TARGETED_REQUEST_SCHEMA_VERSION,
+    }
+end
+
+WORKFLOW_HELPERS.cycleTargetedPreset = function()
+    if not ensureTargetedCatalogLoaded() then return nil end
+    applyTargetedPreset(targetedRequestPresetIndex + 1)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("preset-cycled") end
+    return {
+        preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex].label,
+        selectedRequestIds = selectedRequestIdsArray(),
+    }
+end
+
+WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
+    local ready, err = ensureTargetedCatalogLoaded()
+    if not ready then return false, err end
+    if targetedCaptureSession and targetedCaptureSession.active then
+        return false, "targeted session already active"
+    end
+    local selected = {}
+    local byId = {}
+    local requestedIds = type(options) == "table" and options.requestIds or nil
+    if type(requestedIds) == "table" then
+        for _, requestId in ipairs(requestedIds) do
+            if targetedRequestCatalog[requestId] and not byId[requestId] then
+                byId[requestId] = true
+                selected[#selected + 1] = requestId
+            end
+        end
+    else
+        selected = selectedRequestIdsArray()
+    end
+    if #selected == 0 then return false, "no targeted requests selected" end
+
+    local maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds
+    local requests = {}
+    local requestProgress = {}
+    for _, requestId in ipairs(selected) do
+        local request = cloneValue(targetedRequestCatalog[requestId])
+        requests[requestId] = request
+        if request.maxDurationSeconds and request.maxDurationSeconds > maxDurationSeconds then
+            maxDurationSeconds = request.maxDurationSeconds
+        end
+        requestProgress[requestId] = {
+            requestId = requestId,
+            status = "collecting",
+            satisfiedEvidence = {},
+            missingEvidence = cloneValue(request.requiredEvidence),
+            observedCounts = {},
+            completionCriteria = cloneValue(request.completionCriteria),
+            failureConditions = cloneValue(request.failureConditions),
+            lastUpdatedAt = utcNowIso(),
+            lastSampleClock = 0,
+        }
+    end
+
+    targetedCaptureSession = {
+        schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+        exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+        sessionId = "targeted-" .. HttpService:GenerateGUID(false),
+        placeId = game.PlaceId,
+        gameId = game.GameId,
+        gameName = lastGameName or game.Name,
+        baselineScanId = pendingManifest and pendingManifest.scanId or nil,
+        startedAt = utcNowIso(),
+        startedClock = os.clock(),
+        stoppedAt = nil,
+        stopReason = nil,
+        active = true,
+        requestIds = cloneValue(selected),
+        requests = requests,
+        requestProgress = requestProgress,
+        maxDurationSeconds = maxDurationSeconds,
+        limits = {
+            tickSeconds = LIMITS.targetedCaptureTickSeconds,
+            maxEntitySnapshots = LIMITS.maxTargetedEntitySnapshots,
+            maxCameraSamples = LIMITS.maxTargetedCameraSamples,
+            maxMatchStateSamples = LIMITS.maxTargetedMatchStateSamples,
+        },
+        samples = {
+            characterEntities = {},
+            entityEvents = {},
+            cameraSamples = {},
+            cameraCorrelations = {},
+            inputSamples = {},
+            weaponSnapshots = {},
+            loadoutSnapshots = {},
+            matchStateSamples = {},
+            transitions = {},
+            progressLogs = {},
+            errors = {},
+            timelineEvents = {},
+        },
+        stats = {
+            ticks = 0,
+            nonLocalEntitiesSeen = 0,
+            teamSignalsSeen = 0,
+            objectiveSignalsSeen = 0,
+            hudWeaponSignals = 0,
+            loadoutChanges = 0,
+            primaryInputsSeen = 0,
+            lastPrimaryInputCount = observerStats.clickInputsProcessed or 0,
+            lastLoadoutSignature = nil,
+            lastMatchSignals = {},
+            entitySeen = {},
+        },
+        collectionLimitations = {
+            "Client-visible observations only",
+            "No server-authoritative state access",
+            "No remote invocation or synthetic gameplay outcomes",
+        },
+    }
+    targetedCaptureLastTick = 0
+    updateRequestProgress(targetedCaptureSession)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-started") end
+    return true, targetedCaptureSession.sessionId
+end
+
+WORKFLOW_HELPERS.stopTargetedCaptureSession = function(reason)
+    if not targetedCaptureSession or not targetedCaptureSession.active then
+        return false, "no active targeted session"
+    end
+    targetedCaptureSession.active = false
+    targetedCaptureSession.stoppedAt = utcNowIso()
+    targetedCaptureSession.stopReason = tostring(reason or "operator-stop"):sub(1,80)
+    updateRequestProgress(targetedCaptureSession)
+    targetedCaptureLastSession = targetedCaptureSession
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-stopped") end
+    return true, targetedCaptureSession.sessionId
+end
+
+local function captureTargetedTickForRequest(session, requestId, request, nowClock)
+    local progress = session.requestProgress[requestId]
+    if not progress then return end
+    if nowClock - (progress.lastSampleClock or 0) < (request.sampling and request.sampling.intervalSeconds or LIMITS.targetedCaptureTickSeconds) then
+        return
+    end
+    progress.lastSampleClock = nowClock
+
+    if requestId == "character-entity-observation" then
+        local entities, events = snapshotCharacterEntities(session)
+        for _, item in ipairs(entities) do
+            appendCapped(session.samples.characterEntities, LIMITS.maxTargetedEntitySnapshots, item)
+            appendTimelineEvent(session, "character-entity", cloneValue(item))
+            if item.isLocalPlayer == false then
+                session.stats.nonLocalEntitiesSeen = math.max(session.stats.nonLocalEntitiesSeen, 1)
+            end
+            if item.team then
+                session.stats.teamSignalsSeen = session.stats.teamSignalsSeen + 1
+            end
+        end
+        for _, event in ipairs(events) do
+            appendCapped(session.samples.entityEvents, LIMITS.maxTargetedEntityEvents, event)
+            appendTimelineEvent(session, "entity-event", cloneValue(event))
+        end
+        return
+    end
+
+    if requestId == "combat-camera-weapon-correlation" then
+        local camera = workspace.CurrentCamera
+        local previousPrimary = session.stats.lastPrimaryInputCount
+        local currentPrimary = observerStats.clickInputsProcessed or observerStats.clickInputsObserved or 0
+        local primaryDelta = math.max(0, currentPrimary - previousPrimary)
+        session.stats.lastPrimaryInputCount = currentPrimary
+        session.stats.primaryInputsSeen = math.max(session.stats.primaryInputsSeen, currentPrimary)
+
+        if camera then
+            local look = camera.CFrame.LookVector
+            local sample = {
+                observedAt = utcNowIso(),
+                sessionElapsedSeconds = sessionElapsed(nowClock),
+                position = watchVec(camera.CFrame.Position),
+                lookVector = watchVec(look),
+                fieldOfView = roundNumber(camera.FieldOfView or 0, 3),
+                mousePrimaryInputs = currentPrimary,
+            }
+            appendCapped(session.samples.cameraSamples, LIMITS.maxTargetedCameraSamples, sample)
+            appendTimelineEvent(session, "camera-sample", cloneValue(sample))
+
+            local last = session.stats.lastCameraLook
+            if last and primaryDelta > 0 then
+                local delta = math.sqrt((look.X - last.X)^2 + (look.Y - last.Y)^2 + (look.Z - last.Z)^2)
+                local correlation = {
+                    observedAt = sample.observedAt,
+                    sessionElapsedSeconds = sample.sessionElapsedSeconds,
+                    mousePrimaryInputDelta = primaryDelta,
+                    lookDeltaMagnitude = roundNumber(delta, 6),
+                    correlated = delta > 0.01,
+                }
+                appendCapped(session.samples.cameraCorrelations, LIMITS.maxTargetedCameraCorrelations, correlation)
+                appendTimelineEvent(session, "camera-correlation", cloneValue(correlation))
+            end
+            session.stats.lastCameraLook = {X = look.X, Y = look.Y, Z = look.Z}
+        end
+
+        local inputSample = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(nowClock),
+            mousePrimaryInputs = currentPrimary,
+            mouseSecondaryInputs = observerStats.clickInputsGameProcessed or 0,
+            inputGesturesObserved = #inputGestureObservations,
+        }
+        appendCapped(session.samples.inputSamples, LIMITS.maxTargetedInputSamples, inputSample)
+
+        local loadout = snapshotLoadout()
+        appendCapped(session.samples.weaponSnapshots, LIMITS.maxTargetedWeaponSnapshots, {
+            observedAt = loadout.observedAt,
+            equippedTools = cloneValue(loadout.equippedTools),
+            hasCombatTool = loadout.hasCombatTool,
+        })
+        session.stats.hudWeaponSignals = session.stats.hudWeaponSignals + #loadout.hudWeaponIndicators
+        return
+    end
+
+    if requestId == "match-objective-state-observation" then
+        local objectiveSignals = captureGuiSignals({"score", "timer", "objective", "round", "capture", "team"}, 28)
+        local signalMap = {}
+        for _, item in ipairs(objectiveSignals) do signalMap[item.path] = item.text end
+        local sample = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(nowClock),
+            signalCount = #objectiveSignals,
+            signals = signalMap,
+        }
+        appendCapped(session.samples.matchStateSamples, LIMITS.maxTargetedMatchStateSamples, sample)
+        appendTimelineEvent(session, "match-state", {observedAt = sample.observedAt, signalCount = sample.signalCount})
+        session.stats.objectiveSignalsSeen = session.stats.objectiveSignalsSeen + #objectiveSignals
+
+        local previous = session.stats.lastMatchSignals
+        for path, text in pairs(signalMap) do
+            local before = previous[path]
+            if before and before ~= text then
+                local transition = {
+                    observedAt = sample.observedAt,
+                    path = path,
+                    before = tostring(before):sub(1,120),
+                    after = tostring(text):sub(1,120),
+                }
+                appendCapped(session.samples.transitions, LIMITS.maxTargetedTransitions, transition)
+                appendTimelineEvent(session, "match-transition", cloneValue(transition))
+            end
+            previous[path] = text
+        end
+        session.stats.lastMatchSignals = previous
+        return
+    end
+
+    if requestId == "loadout-runtime-observation" then
+        local loadout = snapshotLoadout()
+        appendCapped(session.samples.loadoutSnapshots, LIMITS.maxTargetedLoadoutSnapshots, loadout)
+        appendTimelineEvent(session, "loadout-snapshot", {
+            observedAt = loadout.observedAt,
+            equippedCount = #loadout.equippedTools,
+            backpackCount = #loadout.backpackTools,
+            hudSignals = #loadout.hudWeaponIndicators,
+        })
+
+        local signature = table.concat(loadout.equippedTools, "|") .. "::" .. table.concat(loadout.backpackTools, "|")
+        if session.stats.lastLoadoutSignature and session.stats.lastLoadoutSignature ~= signature then
+            session.stats.loadoutChanges = session.stats.loadoutChanges + 1
+        end
+        session.stats.lastLoadoutSignature = signature
+        session.stats.hudWeaponSignals = session.stats.hudWeaponSignals + #loadout.hudWeaponIndicators
+        return
+    end
+end
+
+WORKFLOW_HELPERS.captureTargetedObservationTick = function(reason)
+    local session = targetedCaptureSession
+    if not session or not session.active then return end
+    local nowClock = os.clock()
+    if nowClock - targetedCaptureLastTick < LIMITS.targetedCaptureTickSeconds then return end
+    targetedCaptureLastTick = nowClock
+
+    if nowClock - session.startedClock > session.maxDurationSeconds then
+        WORKFLOW_HELPERS.stopTargetedCaptureSession("duration-limit")
+        return
+    end
+
+    session.stats.ticks = session.stats.ticks + 1
+    for _, requestId in ipairs(session.requestIds) do
+        local request = session.requests[requestId]
+        if request then
+            local ok, err = pcall(function()
+                captureTargetedTickForRequest(session, requestId, request, nowClock)
+            end)
+            if not ok then
+                appendCapped(session.samples.errors, LIMITS.maxTargetedSessionErrors, {
+                    observedAt = utcNowIso(),
+                    requestId = requestId,
+                    message = sanitizeDiagnosticText(err, 180),
+                    reason = tostring(reason or "background"):sub(1,80),
+                })
+            end
+        end
+    end
+
+    updateRequestProgress(session)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("tick") end
+end
+
+local function targetedCaptureSummary(includeSamples)
+    local session = targetedCaptureSession or targetedCaptureLastSession
+    if not session then
+        return {
+            schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+            exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+            available = false,
+            reason = "no-targeted-session",
+            requestIds = selectedRequestIdsArray(),
+        }
+    end
+    local progress = summarizeTargetedProgress(session)
+    local payload = {
+        schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+        exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+        sessionId = session.sessionId,
+        placeId = session.placeId,
+        gameId = session.gameId,
+        gameName = session.gameName,
+        baselineScanId = session.baselineScanId,
+        active = session.active,
+        startedAt = session.startedAt,
+        stoppedAt = session.stoppedAt,
+        stopReason = session.stopReason,
+        requestIds = cloneValue(session.requestIds),
+        requests = cloneValue(session.requests),
+        requestProgress = cloneValue(session.requestProgress),
+        summary = {
+            completedRequests = progress.completedRequests,
+            unresolvedRequests = progress.unresolvedRequests,
+            totalRequests = progress.totalRequests,
+            ticks = session.stats.ticks,
+        },
+        collectionLimitations = cloneValue(session.collectionLimitations),
+        errors = cloneValue(session.samples.errors),
+    }
+    if includeSamples then
+        payload.samples = cloneValue(session.samples)
+    end
+    return payload
+end
+
+WORKFLOW_HELPERS.getTargetedCaptureSnapshot = function(includeSamples)
+    return targetedCaptureSummary(includeSamples == true)
+end
+
+WORKFLOW_HELPERS.setTargetedCaptureUiRefresh = function(callback)
+    if callback == nil or type(callback) == "function" then
+        uiRefreshCallback = callback
+        return true
+    end
+    return false
+end
+
+WORKFLOW_HELPERS.getTargetedCaptureUiState = function()
+    local snapshot = targetedCaptureSummary(false)
+    local summary = type(snapshot) == "table" and snapshot.summary or {}
+    local preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex]
+    return {
+        presetLabel = preset and preset.label or "CUSTOM",
+        active = type(snapshot) == "table" and snapshot.active == true,
+        stopReason = type(snapshot) == "table" and snapshot.stopReason or nil,
+        completedRequests = summary and summary.completedRequests or 0,
+        totalRequests = summary and summary.totalRequests or #targetedRequestOrder,
+        unresolvedRequests = summary and summary.unresolvedRequests or 0,
+    }
+end
+
+WORKFLOW_HELPERS.targetedCaptureForExport = function()
+    local payload = targetedCaptureSummary(true)
+    if type(payload) == "table" and type(payload.samples) == "table" then
+        payload.timelineEvents = payload.samples.timelineEvents or {}
+    end
+    return payload
+end
+
+
+local seeded, seedError = ensureTargetedCatalogLoaded()
+if seeded then
+    applyTargetedPreset(targetedRequestPresetIndex)
+else
+    warn("Lycoles targeted capture request seed failed", seedError)
+end
+
+_G.LycolesLoadTargetedRequests = function(payload)
+    return WORKFLOW_HELPERS.loadTargetedInspectionRequests(payload)
+end
+_G.LycolesStartTargetedCapture = function(options)
+    return WORKFLOW_HELPERS.startTargetedCaptureSession(options)
+end
+_G.LycolesStopTargetedCapture = function(reason)
+    return WORKFLOW_HELPERS.stopTargetedCaptureSession(reason)
+end
+_G.LycolesTargetedCaptureProgress = function(includeSamples)
+    return WORKFLOW_HELPERS.getTargetedCaptureSnapshot(includeSamples)
+end
+end
+initializeTargetedCaptureRuntime()
+
 local function scoredFeatureFromInteractionContext(obj,path)
     local scores={}
     local function add(feature,weight)
@@ -6224,6 +7082,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
         and type(reportTransportSnapshot.acknowledgedDigestParts)=="number")
         and reportTransportSnapshot.acknowledgedDigestParts or 0
     local gestureIntentSummary=summarizeInputGestureIntents()
+    local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport()
     return {
         schemaVersion="30.6.live-observation-export.1",
         exportKind="dynamic-observations",
@@ -6245,6 +7104,9 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             uploadInProgress=uploading,
             baselineMultipartUploadCompleted=baselineMultipartUploadCompleted,
             baselineReportTransport=reportTransportSnapshot,
+            targetedCaptureAvailable=targetedCapture and targetedCapture.available~=false,
+            targetedCaptureActive=targetedCapture and targetedCapture.active==true,
+            targetedCaptureSummary=targetedCapture and targetedCapture.summary or nil,
             note="Post-scan live observations overlay baseline evidence; receiver integrity remains unverified unless separately authenticated"
         },
         integrity={
@@ -6316,6 +7178,8 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             playerPositionHistory=playerPositionHistory,
             eventPositionSnapshots=eventPositionSnapshots,
             spatialLocationHistory=spatialLocationHistory,
+            targetedCaptureSessionSummary=targetedCapture,
+            targetedCaptureTimelineEvents=(targetedCapture and targetedCapture.timelineEvents) or {},
             cursorClickOrientationSchemas={
                 cursorObservation="30.6.cursor-observation.1",
                 clickTargetObservation="30.6.click-target-observation.1",
@@ -6435,6 +7299,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
             actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
             gameplayOutcomesVerified=0
         },
+        targetedCaptureSession=targetedCapture,
         playerPositionHistory=playerPositionHistory,
         eventPositionSnapshots=eventPositionSnapshots,
         spatialLocationHistory=spatialLocationHistory,
@@ -6942,6 +7807,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         sampleActivePointerGestureCameraHeading(heartbeatClock,"gesture-heartbeat")
         sampleActivePointerGesturesRelativeDelta(heartbeatClock)
         if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+        WORKFLOW_HELPERS.captureTargetedObservationTick("heartbeat")
     end))
     local keyActions={
         R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",
@@ -7905,6 +8771,7 @@ local function inspect(requestType, featureRequest)
             report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
             local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             local gestureIntentSummary=summarizeInputGestureIntents()
+            local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport()
             report.interactionDiagnostics = {
                 scanRequestType=observerStats.scanRequestType,
                 scanInvocationCount=observerStats.scanInvocationCount,
@@ -7957,6 +8824,8 @@ local function inspect(requestType, featureRequest)
                 playerPositionHistory=playerPositionHistory,
                 eventPositionSnapshots=eventPositionSnapshots,
                 spatialLocationHistory=spatialLocationHistory,
+                targetedCaptureSessionSummary=targetedCapture,
+                targetedCaptureTimelineEvents=(targetedCapture and targetedCapture.timelineEvents) or {},
                 cursorClickOrientationSchemas={
                     cursorObservation="30.6.cursor-observation.1",
                     clickTargetObservation="30.6.click-target-observation.1",
@@ -8106,6 +8975,7 @@ local function inspect(requestType, featureRequest)
             report.playerPositionHistory = playerPositionHistory
             report.eventPositionSnapshots = eventPositionSnapshots
             report.spatialLocationHistory = spatialLocationHistory
+            report.targetedCaptureSession = targetedCapture
             report.cursorObservationHistory = cursorObservationHistory
             report.clickTargetObservations = clickTargetObservations
             report.clickOutcomeRelationships = clickOutcomeRelationships
@@ -8374,6 +9244,68 @@ uploadHint = create("TextLabel", {
     TextYAlignment = Enum.TextYAlignment.Top
 }, panel)
 
+targetedPresetToggle = create("TextButton", {
+    Name = "TargetedPresetToggle", Text = "TARGET: ALL",
+    Size = UDim2.fromOffset(120, 24), Position = UDim2.fromOffset(380, 352),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(74, 82, 108), ZIndex = 4
+}, panel)
+
+targetedCaptureToggle = create("TextButton", {
+    Name = "TargetedCaptureToggle", Text = "CAPTURE: START",
+    Size = UDim2.fromOffset(120, 24), Position = UDim2.fromOffset(380, 379),
+    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(55, 110, 80), ZIndex = 4
+}, panel)
+
+targetedHint = create("TextLabel", {
+    Name = "TargetedHint",
+    Text = "Targeted: idle",
+    Position = UDim2.fromOffset(379, 405),
+    Size = UDim2.fromOffset(121, 34),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 10,
+    TextWrapped = true,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, panel)
+
+targetedCaptureUiRefresh = function(reason)
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    local presetLabel = uiState.presetLabel or "CUSTOM"
+    targetedPresetToggle.Text = "TARGET: " .. tostring(presetLabel)
+    local completed = uiState.completedRequests or 0
+    local total = uiState.totalRequests or 0
+    local unresolved = uiState.unresolvedRequests or 0
+    local active = uiState.active == true
+
+    if active then
+        targetedCaptureToggle.Text = "CAPTURE: STOP"
+        targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(128, 76, 48)
+    else
+        targetedCaptureToggle.Text = "CAPTURE: START"
+        targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(55, 110, 80)
+    end
+
+    local statusLine = active and "active" or "idle"
+    local reasonLine = uiState.stopReason and ("\nStop: " .. tostring(uiState.stopReason):sub(1,34)) or ""
+    targetedHint.Text = "Targeted: " .. statusLine .. " " .. tostring(completed) .. "/" .. tostring(total)
+        .. "\nOpen: " .. tostring(unresolved) .. reasonLine
+
+    if reason=="session-started" then
+        status.Text = "Targeted capture session started"
+    elseif reason=="session-stopped" then
+        status.Text = "Targeted capture session stopped"
+    elseif reason=="preset-cycled" then
+        status.Text = "Targeted preset: " .. tostring(presetLabel)
+    end
+end
+
+if WORKFLOW_HELPERS.setTargetedCaptureUiRefresh then
+    WORKFLOW_HELPERS.setTargetedCaptureUiRefresh(targetedCaptureUiRefresh)
+end
+
+
 refreshEvidenceControls = function(reason)
     local profile = activeScanProfile()
     autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
@@ -8383,6 +9315,7 @@ refreshEvidenceControls = function(reason)
     observationToggle.Text = "OBSERVE: " .. tostring(AUTO_EVIDENCE_IDLE_SECONDS) .. "s"
     evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
         .. "\nCoverage: " .. (profile.quickTargeted and "targeted" or "full")
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh(reason) end
     if reason=="profile-changed" then
         status.Text = "Scan mode " .. profile.label .. " | auto rescans "
             .. AUTO_EVIDENCE_MAX_RESCANS .. " | observation " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
@@ -8402,6 +9335,37 @@ observationToggle.MouseButton1Click:Connect(function()
     cycleObservationIdleSeconds()
     status.Text = "Observation window set to " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
 end)
+
+targetedPresetToggle.MouseButton1Click:Connect(function()
+    local result = WORKFLOW_HELPERS.cycleTargetedPreset()
+    if result then
+        if targetedCaptureUiRefresh then targetedCaptureUiRefresh("preset-cycled") end
+    else
+        status.Text = "Targeted preset unavailable"
+    end
+end)
+
+targetedCaptureToggle.MouseButton1Click:Connect(function()
+    local snapshot = WORKFLOW_HELPERS.getTargetedCaptureSnapshot(false)
+    local active = type(snapshot)=="table" and snapshot.active==true
+    if active then
+        local ok, err = WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-stop")
+        if not ok then
+            status.Text = "Targeted stop failed: " .. tostring(err)
+        elseif targetedCaptureUiRefresh then
+            targetedCaptureUiRefresh("session-stopped")
+        end
+        return
+    end
+
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession()
+    if not ok then
+        status.Text = "Targeted start failed: " .. tostring(result)
+        return
+    end
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-started") end
+end)
+
 refreshEvidenceControls("initial")
 
 -- Existing observer already captures pre/post state and GUI transitions. This
