@@ -1,0 +1,1123 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "featureSchemas": {
+    "combat_recoil_assist": {
+      "availability": "planned",
+      "category": "combat_and_targeting",
+      "featureId": "combat_recoil_assist",
+      "featureTitle": "Recoil Assistance",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "default",
+          "dependencies": [],
+          "id": "profileName",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "profileName",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "string",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "None",
+          "dependencies": [],
+          "id": "hotkey",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "hotkey",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "recoil_assist"
+    },
+    "combat_target_assist": {
+      "availability": "planned",
+      "category": "combat_and_targeting",
+      "featureId": "combat_target_assist",
+      "featureTitle": "Target Assistance",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 110,
+          "dependencies": [],
+          "id": "fovRadius",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "fovRadius",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 800,
+            "min": 5
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "showFovCircle",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "showFovCircle",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "#33D1FF",
+          "dependencies": [],
+          "id": "fovColor",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "fovColor",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "color",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 0.18,
+          "dependencies": [],
+          "id": "smoothness",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "smoothness",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 1,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": [
+            "Head",
+            "Torso",
+            "Closest"
+          ],
+          "default": "Head",
+          "dependencies": [
+            "enabled"
+          ],
+          "id": "targetPart",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "targetPart",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "choice",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "teamFilter",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "teamFilter",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "visibilityCheck",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "visibilityCheck",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 1200,
+          "dependencies": [],
+          "id": "maxDistance",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "maxDistance",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 5000,
+            "min": 50
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": [
+            "hold",
+            "toggle"
+          ],
+          "default": "hold",
+          "dependencies": [],
+          "id": "activationMode",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "activationMode",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "choice",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "MouseButton2",
+          "dependencies": [],
+          "id": "activationKeybind",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "activationKeybind",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 0,
+          "dependencies": [],
+          "id": "prediction",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "prediction",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 0.5,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 0.2,
+          "dependencies": [],
+          "id": "targetPersistence",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "targetPersistence",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 2,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "aim_assist"
+    },
+    "combat_trigger_assist": {
+      "availability": "planned",
+      "category": "combat_and_targeting",
+      "featureId": "combat_trigger_assist",
+      "featureTitle": "Trigger Assistance",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": [
+            "hold",
+            "toggle"
+          ],
+          "default": "hold",
+          "dependencies": [],
+          "id": "activationMode",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "activationMode",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "choice",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "MouseButton1",
+          "dependencies": [],
+          "id": "activationKeybind",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "activationKeybind",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 80,
+          "dependencies": [],
+          "id": "reactionDelayMs",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "reactionDelayMs",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 500,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "teamFilter",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "teamFilter",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 90,
+          "dependencies": [],
+          "id": "cooldownMs",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "cooldownMs",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 1000,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": [
+            "visible",
+            "crosshair-overlap"
+          ],
+          "default": "visible",
+          "dependencies": [],
+          "id": "targetCondition",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "targetCondition",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "choice",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "trigger_assist"
+    },
+    "esp_player_overlay": {
+      "availability": "planned",
+      "category": "esp_and_visuals",
+      "featureId": "esp_player_overlay",
+      "featureTitle": "Player Awareness Overlay",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "boxes",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "boxes",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "skeleton",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "skeleton",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "names",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "names",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "healthBars",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "healthBars",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "distance",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "distance",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "tracers",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "tracers",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": true,
+          "dependencies": [],
+          "id": "teamColors",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "teamColors",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "#FF4D4D",
+          "dependencies": [],
+          "id": "customColor",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "customColor",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "color",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 0.35,
+          "dependencies": [],
+          "id": "transparency",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "transparency",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 1,
+            "min": 0
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 2000,
+          "dependencies": [],
+          "id": "maxRenderDistance",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "maxRenderDistance",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 5000,
+            "min": 50
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": 20,
+          "dependencies": [],
+          "id": "updateRateHz",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "updateRateHz",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "number",
+          "validRange": {
+            "max": 60,
+            "min": 2
+          },
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "player_esp"
+    },
+    "loadout_information_suite": {
+      "availability": "planned",
+      "category": "weapons_and_loadout",
+      "featureId": "loadout_information_suite",
+      "featureTitle": "Loadout and Weapon Intelligence",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "default",
+          "dependencies": [],
+          "id": "profileName",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "profileName",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "string",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "None",
+          "dependencies": [],
+          "id": "hotkey",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "hotkey",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "loadout_info"
+    },
+    "movement_navigation_assist": {
+      "availability": "planned",
+      "category": "movement_and_navigation",
+      "featureId": "movement_navigation_assist",
+      "featureTitle": "Navigation Assistance",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "default",
+          "dependencies": [],
+          "id": "profileName",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "profileName",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "string",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "None",
+          "dependencies": [],
+          "id": "hotkey",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "hotkey",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "navigation_assist"
+    },
+    "objective_status_dashboard": {
+      "availability": "planned",
+      "category": "information",
+      "featureId": "objective_status_dashboard",
+      "featureTitle": "Objective and Match Status Dashboard",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "default",
+          "dependencies": [],
+          "id": "profileName",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "profileName",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "string",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "None",
+          "dependencies": [],
+          "id": "hotkey",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "hotkey",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "status_dashboard"
+    },
+    "profile_and_keybind_manager": {
+      "availability": "planned",
+      "category": "quality_of_life",
+      "featureId": "profile_and_keybind_manager",
+      "featureTitle": "Profiles and Keybinds",
+      "settings": [
+        {
+          "choices": null,
+          "default": false,
+          "dependencies": [],
+          "id": "enabled",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "enabled",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "boolean",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "default",
+          "dependencies": [],
+          "id": "profileName",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "profileName",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "string",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        },
+        {
+          "choices": null,
+          "default": "None",
+          "dependencies": [],
+          "id": "hotkey",
+          "persistence": {
+            "scope": "profile",
+            "serializable": true
+          },
+          "runtimeBinding": {
+            "bindingKey": "hotkey",
+            "notes": "No runtime behavior claim until implemented and validated.",
+            "status": "planned"
+          },
+          "type": "keybind",
+          "validRange": null,
+          "validation": {
+            "allowNull": false,
+            "required": true
+          }
+        }
+      ],
+      "toolType": "profile_manager"
+    }
+  },
+  "schemaVersion": "120.feature-config-catalog.1",
+  "summary": {
+    "activeSchemas": 0,
+    "featureSchemaCount": 8,
+    "plannedSchemas": 8,
+    "settingsCount": 47
+  }
+}

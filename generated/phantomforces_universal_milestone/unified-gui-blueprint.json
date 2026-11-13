@@ -1,0 +1,135 @@
+{
+  "categories": [
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "combat_recoil_assist",
+          "settingsCount": 3,
+          "status": "Evidence required",
+          "title": "Recoil Assistance"
+        },
+        {
+          "availability": "planned",
+          "featureId": "combat_target_assist",
+          "settingsCount": 13,
+          "status": "Evidence required",
+          "title": "Target Assistance"
+        },
+        {
+          "availability": "planned",
+          "featureId": "combat_trigger_assist",
+          "settingsCount": 7,
+          "status": "Evidence required",
+          "title": "Trigger Assistance"
+        }
+      ],
+      "id": "combat_and_targeting",
+      "title": "Combat And Targeting"
+    },
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "esp_player_overlay",
+          "settingsCount": 12,
+          "status": "Evidence required",
+          "title": "Player Awareness Overlay"
+        }
+      ],
+      "id": "esp_and_visuals",
+      "title": "Esp And Visuals"
+    },
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "objective_status_dashboard",
+          "settingsCount": 3,
+          "status": "Evidence required",
+          "title": "Objective and Match Status Dashboard"
+        }
+      ],
+      "id": "information",
+      "title": "Information"
+    },
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "movement_navigation_assist",
+          "settingsCount": 3,
+          "status": "Evidence required",
+          "title": "Navigation Assistance"
+        }
+      ],
+      "id": "movement_and_navigation",
+      "title": "Movement And Navigation"
+    },
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "profile_and_keybind_manager",
+          "settingsCount": 3,
+          "status": "Feasible",
+          "title": "Profiles and Keybinds"
+        }
+      ],
+      "id": "quality_of_life",
+      "title": "Quality Of Life"
+    },
+    {
+      "features": [
+        {
+          "availability": "planned",
+          "featureId": "loadout_information_suite",
+          "settingsCount": 3,
+          "status": "Evidence required",
+          "title": "Loadout and Weapon Intelligence"
+        }
+      ],
+      "id": "weapons_and_loadout",
+      "title": "Weapons And Loadout"
+    }
+  ],
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "diagnostics": {
+    "integrated": true,
+    "separateAdminGuiAllowed": false,
+    "sources": [
+      "feature-status",
+      "feasibility-blockers",
+      "runtime-validation"
+    ]
+  },
+  "profiles": {
+    "enabled": true,
+    "schema": {
+      "default": "default",
+      "id": "profileName",
+      "type": "string"
+    }
+  },
+  "schemaVersion": "120.unified-gui-architecture.1",
+  "window": {
+    "id": "lycoles-universal-main",
+    "sections": [
+      "feature-categories",
+      "feature-settings",
+      "profiles",
+      "keybinds",
+      "diagnostics",
+      "errors"
+    ],
+    "singleWindow": true,
+    "title": "Lycoles Universal Toolkit"
+  }
+}

@@ -1,0 +1,731 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "records": [
+    {
+      "category": "combat_and_targeting",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "cameraSamples",
+          "combatSignals.mousePrimaryInputs"
+        ]
+      },
+      "featureId": "combat_recoil_assist",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "camera",
+        "combat",
+        "weapon"
+      ],
+      "missingDependencies": [
+        "missing evidence: cameraSamples",
+        "dependency: weapon-specific recoil pattern observations"
+      ],
+      "requiredRuntimeData": [
+        "camera delta tracking",
+        "weapon firing cadence signal"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Recoil Assistance",
+      "whyUseful": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "combat_and_targeting",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "combatSignals.mousePrimaryInputs",
+          "inputControlTypes"
+        ]
+      },
+      "featureId": "combat_target_assist",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "aim",
+        "combat",
+        "target"
+      ],
+      "missingDependencies": [
+        "dependency: replicated opponent entity map",
+        "dependency: validated visibility check primitive"
+      ],
+      "requiredRuntimeData": [
+        "entity tracking",
+        "team relationship signal",
+        "camera orientation signal"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Target Assistance",
+      "whyUseful": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "combat_and_targeting",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "combatSignals.mousePrimaryInputs",
+          "stateChangeSignals"
+        ]
+      },
+      "featureId": "combat_trigger_assist",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "combat",
+        "fire",
+        "reaction"
+      ],
+      "missingDependencies": [
+        "missing evidence: stateChangeSignals",
+        "dependency: crosshair-target correlation evidence"
+      ],
+      "requiredRuntimeData": [
+        "crosshair overlap detection",
+        "team filter"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Trigger Assistance",
+      "whyUseful": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "esp_and_visuals",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "classDistributionTop",
+          "worldRegions"
+        ]
+      },
+      "featureId": "esp_player_overlay",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "awareness",
+        "combat",
+        "entities"
+      ],
+      "missingDependencies": [
+        "dependency: stable enemy/friendly identity signal"
+      ],
+      "requiredRuntimeData": [
+        "character list",
+        "camera projection",
+        "team coloring"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Player Awareness Overlay",
+      "whyUseful": "Addresses esp and visuals workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "weapons_and_loadout",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "featureSummary",
+          "inputControlTypes"
+        ]
+      },
+      "featureId": "loadout_information_suite",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "inventory",
+        "progression",
+        "weapons"
+      ],
+      "missingDependencies": [
+        "dependency: weapon stat extraction contract"
+      ],
+      "requiredRuntimeData": [
+        "current weapon identity",
+        "ammo/weapon state signals"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Loadout and Weapon Intelligence",
+      "whyUseful": "Addresses weapons and loadout workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "movement_and_navigation",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "worldRegions",
+          "cameraSamples"
+        ]
+      },
+      "featureId": "movement_navigation_assist",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "movement",
+        "navigation"
+      ],
+      "missingDependencies": [
+        "missing evidence: cameraSamples",
+        "dependency: persistent humanoid root availability"
+      ],
+      "requiredRuntimeData": [
+        "pathable anchor points",
+        "character root availability"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Navigation Assistance",
+      "whyUseful": "Addresses movement and navigation workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "information",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Evidence required",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "stateChangeSignals",
+          "featureSummary"
+        ]
+      },
+      "featureId": "objective_status_dashboard",
+      "lifecycle": {
+        "Blocked": true,
+        "Evidence required": true,
+        "Feasible": false,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "information",
+        "progression"
+      ],
+      "missingDependencies": [
+        "missing evidence: stateChangeSignals",
+        "dependency: match objective state key mapping"
+      ],
+      "requiredRuntimeData": [
+        "state signal subscriptions",
+        "ui presentation"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Objective and Match Status Dashboard",
+      "whyUseful": "Addresses information workflows with bounded evidence-aware controls."
+    },
+    {
+      "category": "quality_of_life",
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "configurationSchemaAvailable": true,
+      "currentStatus": "Feasible",
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "featureSummary"
+        ]
+      },
+      "featureId": "profile_and_keybind_manager",
+      "lifecycle": {
+        "Blocked": false,
+        "Evidence required": false,
+        "Feasible": true,
+        "Gameplay verified": false,
+        "Implementation ready": false,
+        "Implemented": false,
+        "Proposed": true,
+        "Runtime tested": false,
+        "Static validation passed": false
+      },
+      "mechanicsAddressed": [
+        "qol",
+        "settings"
+      ],
+      "missingDependencies": [],
+      "requiredRuntimeData": [
+        "config persistence layer"
+      ],
+      "statusCriteria": [
+        {
+          "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+          "status": "Proposed"
+        },
+        {
+          "criteria": "One or more required runtime/evidence dependencies are missing.",
+          "status": "Evidence required"
+        },
+        {
+          "criteria": "Required evidence exists for bounded implementation planning.",
+          "status": "Feasible"
+        },
+        {
+          "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+          "status": "Implementation ready"
+        },
+        {
+          "criteria": "Feature logic exists in generated/runtime script modules.",
+          "status": "Implemented"
+        },
+        {
+          "criteria": "Compilation/schema/dependency checks pass.",
+          "status": "Static validation passed"
+        },
+        {
+          "criteria": "Feature executed in live environment with bounded telemetry.",
+          "status": "Runtime tested"
+        },
+        {
+          "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+          "status": "Gameplay verified"
+        },
+        {
+          "criteria": "Policy or missing evidence prevents safe implementation.",
+          "status": "Blocked"
+        }
+      ],
+      "title": "Profiles and Keybinds",
+      "whyUseful": "Addresses quality of life workflows with bounded evidence-aware controls."
+    }
+  ],
+  "schemaVersion": "120.feature-feasibility.1",
+  "summary": {
+    "blocked": 7,
+    "count": 8,
+    "evidenceRequired": 7,
+    "feasible": 1
+  }
+}

@@ -811,3 +811,20 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `build/generation-jobs-v30.6.61-rewards/job-9cc84b4d2d584bb1/LycolesGeneratedUtility.lua`
   - copied to `potassium_artifacts/LycolesGeneratedUtility.lua`.
 
+
+## Update — 2026-11-13 — Phantom Forces universal architecture milestone
+
+- Added reusable milestone orchestrator: `tools/universal_architecture_milestone.py`.
+  - Inputs: extracted multipart baseline directory + optional live observation JSON.
+  - Outputs: architecture audit, evidence inventory, machine-readable game model, universal tool proposals, feature config catalog, feasibility records, and unified GUI blueprint.
+- Evidence package handling clarified for split archives:
+  - Extraction should merge ZIP members by filename and reject digest conflicts.
+  - Baseline extraction count and manifest `uploadedParts` are distinct metrics and must both be preserved in reports.
+- Live observation identity handling must account for dual scan identities:
+  - `integrity.scanId` may be a live-observation scan id,
+  - `baselineScanId`/root `scanId` can reference the baseline multipart package.
+  - Baseline-to-observation linkage should validate place id + baseline scan id equivalence, not live scan id equivalence.
+- Universal feature discovery is now objective/mechanic/challenge-driven with explicit lifecycle statuses and fail-closed claims; no feature is auto-marked implemented/runtime-tested/gameplay-verified.
+- Feature configuration schemas now enforce universal fields (`id`, type, defaults, range/choices, dependencies, runtime binding, validation, persistence) and keep non-implemented features as planned-only settings.
+- Unified GUI architecture output is single-window by contract, with integrated diagnostics/profiles/keybind sections and `separateAdminGuiAllowed=false`.
+
