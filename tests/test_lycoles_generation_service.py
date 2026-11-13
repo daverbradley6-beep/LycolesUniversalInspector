@@ -650,6 +650,35 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertIsInstance(snapshot["result"], dict)
             self.assertEqual(snapshot["result"]["jobId"], job_id)
 
+    def test_malformed_overlay_timing_falls_back_to_baseline_without_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Collect rewards")
+            overlay = root / "overlay.json"
+            overlay.write_text("{}", encoding="utf-8")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            original_build = service.evidence_processor._build_release.build
+
+            def patched_build(*args, **kwargs):
+                if kwargs.get("observation_files"):
+                    raise ValueError("Malformed interaction baseline timing")
+                return original_build(*args, **kwargs)
+
+            service.evidence_processor._build_release.build = patched_build
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Collect rewards",
+                observation_paths=(overlay,),
+            )
+            result = service.run_sync(request)
+            warnings = result["evidence"].get("warnings") or []
+            self.assertTrue(any("falling back to baseline-only generation" in item for item in warnings))
+            self.assertEqual(result["status"], "succeeded")
+
     def test_identical_jobs_reuse_analysis_cache_signature(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -679,6 +708,102 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertEqual(first["provider"]["analysisCacheKey"], second["provider"]["analysisCacheKey"])
             self.assertGreater(first["usage"]["analysis"]["tokens"], 0)
             self.assertEqual(second["usage"]["analysis"]["tokens"], 0)
+
+    def test_parts_job_emits_autonomous_plan_artifact_and_verification_states(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Collect rewards and farm currency")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Collect rewards and farm currency",
+            )
+            result = service.run_sync(request)
+
+            plan = result.get("autonomousGeneration") or {}
+            self.assertEqual(plan.get("schemaVersion"), "30.6.autonomous-generation-plan.1")
+            self.assertIn("featureDiscovery", plan)
+            self.assertIn("verificationStates", plan)
+            self.assertIn("selectedStrategy", plan)
+
+            lifecycle = (result.get("validation") or {}).get("verificationLifecycle") or {}
+            self.assertIn("states", lifecycle)
+            self.assertIn("currentState", lifecycle)
+            self.assertIn(lifecycle.get("currentState"), MODULE._VERIFICATION_STATE_ORDER)
+
+            plan_path = pathlib.Path(result["delivery"]["autonomousGenerationPath"])
+            self.assertTrue(plan_path.is_file())
+            persisted = json.loads(plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted.get("schemaVersion"), "30.6.autonomous-generation-plan.1")
+
+    def test_repeated_failed_strategy_is_demoted_in_next_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically collect rewards")
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically collect rewards",
+            )
+            first = service.run_sync(request)
+            selected_feature = ((first.get("autonomousGeneration") or {}).get("selectedFeature") or {})
+            selected_strategy = ((first.get("autonomousGeneration") or {}).get("selectedStrategy") or {})
+            self.assertTrue(selected_feature.get("featureId"))
+            self.assertTrue(selected_strategy.get("id"))
+
+            feedback_payload = {
+                "placeId": first["evidence"]["placeId"],
+                "scanId": first["evidence"]["scanId"],
+                "featureId": selected_feature.get("featureId"),
+                "strategyId": selected_strategy.get("id"),
+                "status": "failed",
+                "runtimeErrors": ["attempt failed"],
+                "failedInteractions": ["activation timeout"],
+            }
+            service.record_feedback(feedback_payload)
+            service.record_feedback(feedback_payload)
+
+            second = service.run_sync(request)
+            ranked = ((second.get("autonomousGeneration") or {}).get("featureDiscovery") or {}).get("ranked") or []
+            self.assertGreaterEqual(len(ranked), 1)
+            same_feature = next((item for item in ranked if item.get("featureId") == selected_feature.get("featureId")), None)
+            self.assertIsNotNone(same_feature)
+            same_strategy = next((item for item in (same_feature.get("strategies") or []) if item.get("id") == selected_strategy.get("id")), None)
+            self.assertIsNotNone(same_strategy)
+            self.assertGreaterEqual(same_strategy.get("priorFailureCount", 0), 2)
+            self.assertFalse(same_strategy.get("feasible"))
+
+    def test_record_feedback_roundtrip_and_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            payload = {
+                "placeId": 85896571713843,
+                "scanId": "scan-feedback-1",
+                "featureId": "feature-abc",
+                "strategyId": "strategy-c-direct-interaction",
+                "status": "partial",
+                "runtimeErrors": ["nil value"],
+                "missingObjects": ["PlayerGui.ScreenGui.Shop.Button"],
+                "successfulInteractions": ["Shop tab opened"],
+                "observedChanges": ["leaderstats.Coins: 10 -> 11"],
+                "notes": "Observed partial success.",
+            }
+            recorded = service.record_feedback(payload)
+            self.assertEqual(recorded.get("status"), "recorded")
+            listed = service.list_feedback()
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0].get("scanId"), "scan-feedback-1")
+            self.assertEqual(listed[0].get("status"), "partial")
+            self.assertTrue((root / "jobs" / "feedback-log.jsonl").is_file())
 
 
 

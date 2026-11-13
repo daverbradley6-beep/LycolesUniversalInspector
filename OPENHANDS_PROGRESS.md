@@ -1,3 +1,67 @@
+## Update — 2026-11-06 — v30.6.58 autonomous evidence-to-script orchestration, validation lifecycle, and feedback loop
+
+### Scope
+
+- Expanded `tools/lycoles_generation_service.py` into a full orchestration layer across:
+  - evidence ingestion,
+  - feature discovery/ranking,
+  - strategy selection (A/B/C policy ordering by category),
+  - generation request packaging,
+  - deterministic validation,
+  - delivery artifacts,
+  - runtime feedback ingestion.
+- Added autonomous planning contract (`30.6.autonomous-generation-plan.1`) including:
+  - ranked discovered features,
+  - selected strategy,
+  - evidence references,
+  - unverified assumptions,
+  - explicit verification-state map (`discovered` → `server-outcome-verified`).
+- Added deterministic validation upgrades:
+  - Luau compile check integration when `luau-compile` is present,
+  - dependency/executor-helper scan,
+  - verification lifecycle state export.
+- Added feedback contract and persistence:
+  - HTTP: `GET/POST /v1/generation/feedback`,
+  - CLI: `record-feedback --feedback-json <path>`,
+  - persistent `feedback-log.jsonl`,
+  - repeated-failure penalties to demote/block repeatedly failing strategies.
+- Added resilient ingestion fallback behavior for malformed legacy observation/baseline timing evidence:
+  - overlay fallback to baseline-only,
+  - synthetic manifest-readiness fallback with explicit blocker reporting (instead of crash).
+- Added delivery artifacts:
+  - `autonomous-generation.json`,
+  - `generation-blockers.json` when executable generation is blocked.
+
+### Validation
+
+- Focused service regressions:
+  - `python3 -m pytest tests/test_lycoles_generation_service.py -q`
+  - **16 passed**
+- Focused cross-component regressions:
+  - `python3 -m pytest tests/test_lycoles_generation_service.py tests/test_receiver_generation_pipeline.py tests/test_inspector_ui.py -q`
+  - **87 passed**
+- Full Python regression:
+  - `python3 -m pytest`
+  - **1663 passed, 17 skipped**
+- Luau syntax/parsing:
+  - `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- Luau compiler limits:
+  - `python3 -m pytest tests/test_inspector_compiler_limits.py -q` → **2 passed, 9 subtests passed**
+
+### Demonstration status (Bubble Gum INFINITY artifacts)
+
+- End-to-end generation service run now completes without crashing on malformed timing artifacts.
+- Current uploaded baseline/observation package is blocked by malformed timing/readiness snapshot consistency and produces explicit blocker output:
+  - `generation-blockers.json`
+  - `autonomous-generation.json`
+- No fabricated executable strategy was emitted under malformed evidence.
+
+### Version
+
+- Repository version bumped: **v30.6.58**
+- Inspector runtime version remains **v30.6.57** (no inspector code changes in this increment).
+
+
 ## Update — 2026-11-06 — v30.6.57 right-button camera-control labelling, temporal-promotion guardrails, and callback attribution breakdown
 
 ### Scope

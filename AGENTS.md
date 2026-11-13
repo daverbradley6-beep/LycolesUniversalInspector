@@ -40,6 +40,23 @@ Target experiences are third-party games that the user does not own and cannot o
 - Callback diagnostics must separate "callback observed" from "callback attributed" to avoid over-trusting unattributed callback events in intent promotion.
 
 
+
+## Session notes — 2026-11-06 autonomous generation service expansion (v30.6.58)
+
+- `tools/lycoles_generation_service.py` now exposes an autonomous orchestration contract (`30.6.autonomous-generation-plan.1`) with ranked discovered features, selected strategy, evidence references, assumptions, and explicit verification-state progression.
+- Generation strategy policy is category-driven (`pickup-reward-farming`, `training-progression`, `shop-purchase`, `inventory-equipment`, `pets-companions`, `teleport-navigation`) with A/B/C strategy ordering and feasibility scoring.
+- Runtime feedback loop is persistent and queryable:
+  - HTTP: `GET/POST /v1/generation/feedback`
+  - CLI: `record-feedback --feedback-json <path>`
+  - persisted in `feedback-log.jsonl`
+  - repeated failures penalize and can block re-selection of the same strategy.
+- Deterministic validation now includes optional Luau compile checks (`luau-compile` when available), dependency/helper scanning, and verification lifecycle status export.
+- Malformed legacy evidence is now fail-soft in the generation service:
+  - malformed observation timing falls back to baseline-only,
+  - malformed baseline timing falls back to manifest/synthetic readiness,
+  - service returns explicit blocker artifacts (`generation-blockers.json`) instead of crashing.
+
+
 ## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
 
 - Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.

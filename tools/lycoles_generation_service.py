@@ -8,6 +8,8 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
+import tempfile
 import threading
 import time
 import traceback
@@ -40,6 +42,122 @@ _AUTOMATIC_REQUEST_TERMS = {
     "grind",
     "afk",
 }
+
+_FEATURE_CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "pickup-reward-farming": (
+        "pickup", "collect", "reward", "coin", "coins", "currency", "gem", "gems",
+        "orb", "token", "loot", "drop", "resource", "farm",
+    ),
+    "training-progression": (
+        "train", "training", "progress", "xp", "exp", "experience", "level", "strength",
+        "power", "rank", "skill",
+    ),
+    "shop-purchase": (
+        "shop", "merchant", "buy", "purchase", "sell", "upgrade", "vendor",
+    ),
+    "inventory-equipment": (
+        "inventory", "backpack", "equip", "unequip", "tool", "item", "loadout",
+    ),
+    "pets-companions": (
+        "pet", "pets", "egg", "hatch", "companion", "mount",
+    ),
+    "teleport-navigation": (
+        "teleport", "portal", "travel", "navigate", "navigation", "move", "path", "zone", "island", "world",
+    ),
+}
+
+_CATEGORY_FALLBACK = "general-interaction"
+
+_CATEGORY_STRATEGY_ORDER: dict[str, tuple[str, ...]] = {
+    "pickup-reward-farming": (
+        "strategy-a-bring-pickups-to-player",
+        "strategy-b-navigate-player-to-target",
+        "strategy-c-direct-interaction",
+    ),
+    "training-progression": (
+        "strategy-c-direct-interaction",
+        "strategy-b-navigate-player-to-target",
+        "strategy-a-bring-pickups-to-player",
+    ),
+    "shop-purchase": (
+        "strategy-c-direct-interaction",
+        "strategy-b-navigate-player-to-target",
+    ),
+    "inventory-equipment": (
+        "strategy-c-direct-interaction",
+        "strategy-b-navigate-player-to-target",
+    ),
+    "pets-companions": (
+        "strategy-c-direct-interaction",
+        "strategy-b-navigate-player-to-target",
+        "strategy-a-bring-pickups-to-player",
+    ),
+    "teleport-navigation": (
+        "strategy-b-navigate-player-to-target",
+        "strategy-c-direct-interaction",
+    ),
+    "general-interaction": (
+        "strategy-c-direct-interaction",
+        "strategy-b-navigate-player-to-target",
+    ),
+}
+
+_STRATEGY_LABELS: dict[str, str] = {
+    "strategy-a-bring-pickups-to-player": "Strategy A — Bring pickups to the player",
+    "strategy-b-navigate-player-to-target": "Strategy B — Navigate the player to targets",
+    "strategy-c-direct-interaction": "Strategy C — Direct interaction with evidence-backed controls",
+}
+
+_STRATEGY_SUMMARY: dict[str, str] = {
+    "strategy-a-bring-pickups-to-player": (
+        "Prefer only when evidence suggests collectible instances can be safely manipulated client-side "
+        "without inventing server outcomes."
+    ),
+    "strategy-b-navigate-player-to-target": (
+        "Use observed positions, interaction range hints, and bounded movement loops to reach targets."
+    ),
+    "strategy-c-direct-interaction": (
+        "Invoke GUI, proximity prompts, tool activation, or observed control pathways with runtime guards."
+    ),
+}
+
+_VERIFICATION_STATE_ORDER = (
+    "discovered",
+    "generation-ready",
+    "generated",
+    "syntax-validated",
+    "runtime-tested",
+    "gameplay-verified",
+    "server-outcome-verified",
+)
+
+
+def _safe_feature_id(prefix: str, *parts: str) -> str:
+    joined = "|".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+    if not joined:
+        joined = prefix
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:14]
+    return f"{prefix}-{digest}"
+
+
+def _tokenize_text(value: Optional[str]) -> set[str]:
+    if not isinstance(value, str):
+        return set()
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _coerce_text_list(values: Any, *, max_items: int = 32, max_len: int = 240) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    for item in values:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append(text[:max_len])
+        if len(out) >= max_items:
+            break
+    return out
 
 
 def _request_requires_automatic_execution(request_text: Optional[str]) -> bool:
@@ -147,6 +265,7 @@ class EvidenceBundle:
     release_manifest: Optional[dict[str, Any]] = None
     generation_readiness: Optional[dict[str, Any]] = None
     generated_script: Optional[str] = None
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -176,6 +295,56 @@ class JobRecord:
                 "requireExecutable": self.request.require_executable,
             },
             "result": self.result,
+        }
+
+
+@dataclass
+class FeedbackRecord:
+    feedback_id: str
+    created_at: float
+    place_id: Optional[int]
+    scan_id: Optional[str]
+    feature_id: Optional[str]
+    strategy_id: Optional[str]
+    status: str
+    runtime_errors: list[str] = field(default_factory=list)
+    missing_objects: list[str] = field(default_factory=list)
+    failed_interactions: list[str] = field(default_factory=list)
+    successful_interactions: list[str] = field(default_factory=list)
+    navigation_failures: list[str] = field(default_factory=list)
+    executor_compatibility_issues: list[str] = field(default_factory=list)
+    observed_changes: list[str] = field(default_factory=list)
+    gameplay_verified: bool = False
+    server_outcome_verified: bool = False
+    notes: Optional[str] = None
+
+    def key(self) -> str:
+        return "|".join([
+            str(self.place_id or ""),
+            str(self.scan_id or ""),
+            str(self.feature_id or ""),
+            str(self.strategy_id or ""),
+        ])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feedbackId": self.feedback_id,
+            "createdAt": self.created_at,
+            "placeId": self.place_id,
+            "scanId": self.scan_id,
+            "featureId": self.feature_id,
+            "strategyId": self.strategy_id,
+            "status": self.status,
+            "runtimeErrors": self.runtime_errors,
+            "missingObjects": self.missing_objects,
+            "failedInteractions": self.failed_interactions,
+            "successfulInteractions": self.successful_interactions,
+            "navigationFailures": self.navigation_failures,
+            "executorCompatibilityIssues": self.executor_compatibility_issues,
+            "observedChanges": self.observed_changes,
+            "gameplayVerified": self.gameplay_verified,
+            "serverOutcomeVerified": self.server_outcome_verified,
+            "notes": self.notes,
         }
 
 
@@ -627,6 +796,20 @@ class EvidenceProcessor:
         return None
 
     @staticmethod
+    def _scan_metadata_from_parts_dir(parts_dir: Path) -> tuple[Optional[int], Optional[str]]:
+        for candidate in sorted(parts_dir.glob("*part-*.json"))[:5]:
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            place_id = payload.get("placeId") if isinstance(payload.get("placeId"), int) else None
+            scan_id = payload.get("scanId") if isinstance(payload.get("scanId"), str) else None
+            return place_id, scan_id
+        return None, None
+
+    @staticmethod
     def _resolve_manifest_input_path(path: Path) -> Path:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
@@ -676,13 +859,73 @@ class EvidenceProcessor:
             else:
                 raise ValueError(f"Observation path not found: {path}")
 
-        manifest = self._build_release.build(
-            request.evidence_path,
-            output_dir,
-            requested_capability=request.requested_capability,
-            observation_dirs=observation_dirs,
-            observation_files=observation_files,
-        )
+        warnings: list[str] = []
+        try:
+            manifest = self._build_release.build(
+                request.evidence_path,
+                output_dir,
+                requested_capability=request.requested_capability,
+                observation_dirs=observation_dirs,
+                observation_files=observation_files,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            if (observation_dirs or observation_files) and "Malformed interaction baseline timing" in message:
+                warnings.append(
+                    "Observation overlay ignored due to malformed baseline timing; falling back to baseline-only generation."
+                )
+                try:
+                    manifest = self._build_release.build(
+                        request.evidence_path,
+                        output_dir,
+                        requested_capability=request.requested_capability,
+                        observation_dirs=[],
+                        observation_files=[],
+                    )
+                except ValueError as baseline_exc:
+                    baseline_message = str(baseline_exc)
+                    if "Malformed interaction baseline timing" in baseline_message:
+                        warnings.append(
+                            "Baseline interactions include malformed timing; using manifest-readiness fallback with blocker reporting."
+                        )
+                        manifest_candidates = sorted(request.evidence_path.glob("*manifest*.json"))
+                        if not manifest_candidates:
+                            raise
+                        try:
+                            readiness = self._build_release.build_manifest_readiness(manifest_candidates[0], output_dir)
+                            place_id = readiness.get("placeId") if isinstance(readiness.get("placeId"), int) else None
+                            scan_id = readiness.get("scanId") if isinstance(readiness.get("scanId"), str) else None
+                        except Exception as manifest_exc:  # pylint: disable=broad-except
+                            place_id, scan_id = self._scan_metadata_from_parts_dir(request.evidence_path)
+                            warnings.append(
+                                f"Manifest-readiness parser rejected snapshot; synthesized fallback readiness ({manifest_exc})."
+                            )
+                            readiness = {
+                                "schemaVersion": "30.6.synthetic-manifest-readiness.1",
+                                "placeId": place_id,
+                                "scanId": scan_id,
+                                "generationReadiness": {
+                                    "status": "unsupported-by-current-evidence",
+                                    "blockers": [
+                                        "malformed_interaction_baseline_timing",
+                                        "full_multipart_report_unavailable",
+                                        "manifest_readiness_parser_rejected_snapshot",
+                                    ],
+                                },
+                                "claims": dict(FALSE_CLAIMS),
+                            }
+                        return EvidenceBundle(
+                            mode="manifest-only",
+                            place_id=place_id,
+                            scan_id=scan_id,
+                            output_dir=output_dir,
+                            manifest_readiness=readiness,
+                            warnings=warnings,
+                        )
+                    raise
+            else:
+                raise
+
         readiness_path = output_dir / "generation-readiness.json"
         script_path = output_dir / "LycolesGeneratedUtility.lua"
         generation_readiness = json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.exists() else None
@@ -695,6 +938,7 @@ class EvidenceProcessor:
             release_manifest=manifest,
             generation_readiness=generation_readiness,
             generated_script=generated_script,
+            warnings=warnings,
         )
 
 
@@ -751,6 +995,297 @@ class FeatureAnalysisEngine:
         return summary
 
 
+
+class AutonomousPlanningEngine:
+    @staticmethod
+    def _category_for(feature: dict[str, Any], requested_capability: Optional[str]) -> str:
+        joined = " ".join(
+            str(feature.get(key) or "")
+            for key in ("targetFeature", "kind", "targetPath", "label")
+        )
+        tokens = _tokenize_text(joined) | _tokenize_text(requested_capability)
+        for category, keywords in _FEATURE_CATEGORY_KEYWORDS.items():
+            if any(keyword in tokens for keyword in keywords):
+                return category
+        return _CATEGORY_FALLBACK
+
+    @staticmethod
+    def _feature_label(feature: dict[str, Any], category: str) -> str:
+        for key in ("targetFeature", "kind", "targetPath"):
+            value = feature.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return category
+
+    @staticmethod
+    def _extract_features(bundle: EvidenceBundle, analysis: dict[str, Any]) -> list[dict[str, Any]]:
+        features: list[dict[str, Any]] = []
+        readiness = bundle.generation_readiness if isinstance(bundle.generation_readiness, dict) else {}
+        for item in readiness.get("generatedCapabilities") or []:
+            if not isinstance(item, dict):
+                continue
+            features.append({
+                "id": item.get("id") if isinstance(item.get("id"), str) else _safe_feature_id("cap", str(item.get("kind") or "unknown"), str(item.get("targetPath") or "")),
+                "kind": item.get("kind") if isinstance(item.get("kind"), str) else None,
+                "targetFeature": item.get("targetFeature") if isinstance(item.get("targetFeature"), str) else None,
+                "targetPath": item.get("targetPath") if isinstance(item.get("targetPath"), str) else None,
+                "label": item.get("targetLabel") if isinstance(item.get("targetLabel"), str) else None,
+                "classification": item.get("classification") if isinstance(item.get("classification"), str) else None,
+                "automaticMovement": bool(item.get("automaticMovement") is True),
+                "boundedRepeat": bool(item.get("boundedRepeat") is True),
+                "operatorStartRequired": bool(item.get("operatorStartRequired") is True),
+                "commands": [str(cmd) for cmd in (item.get("commands") or []) if isinstance(cmd, str)][:20],
+                "source": "generated-capability",
+            })
+
+        request_feature = readiness.get("requestFeatureReadiness") if isinstance(readiness.get("requestFeatureReadiness"), dict) else {}
+        matched = (request_feature.get("featureEvidence") or {}).get("matchedFeatures")
+        if isinstance(matched, list):
+            for item in matched:
+                if not isinstance(item, dict):
+                    continue
+                feature_name = item.get("feature") if isinstance(item.get("feature"), str) else None
+                features.append({
+                    "id": _safe_feature_id("matched", str(feature_name or "unknown"), str(item.get("status") or "")),
+                    "kind": item.get("status") if isinstance(item.get("status"), str) else None,
+                    "targetFeature": feature_name,
+                    "targetPath": None,
+                    "label": feature_name,
+                    "classification": item.get("evidenceClassification") if isinstance(item.get("evidenceClassification"), str) else None,
+                    "automaticMovement": False,
+                    "boundedRepeat": False,
+                    "operatorStartRequired": True,
+                    "commands": [],
+                    "source": "matched-feature",
+                })
+
+        ai_analysis = analysis.get("aiAnalysis") if isinstance(analysis.get("aiAnalysis"), dict) else {}
+        ai_candidates = ai_analysis.get("candidateFeatures") if isinstance(ai_analysis.get("candidateFeatures"), list) else []
+        for candidate in ai_candidates:
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            features.append({
+                "id": _safe_feature_id("ai", candidate),
+                "kind": "ai-candidate",
+                "targetFeature": candidate.strip(),
+                "targetPath": None,
+                "label": candidate.strip(),
+                "classification": "ai-hypothesis",
+                "automaticMovement": False,
+                "boundedRepeat": False,
+                "operatorStartRequired": True,
+                "commands": [],
+                "source": "ai-analysis",
+            })
+
+        dedup: dict[str, dict[str, Any]] = {}
+        for item in features:
+            key = str(item.get("id") or _safe_feature_id("feature", str(item.get("targetFeature") or ""), str(item.get("targetPath") or "")))
+            if key not in dedup:
+                dedup[key] = item
+        return list(dedup.values())
+
+    @staticmethod
+    def _strategy_candidates(
+        feature: dict[str, Any],
+        category: str,
+        *,
+        request_requires_automatic: bool,
+        feedback_penalties: dict[str, int],
+    ) -> list[dict[str, Any]]:
+        target_path = str(feature.get("targetPath") or "")
+        kind = str(feature.get("kind") or "")
+        commands = feature.get("commands") if isinstance(feature.get("commands"), list) else []
+        has_world_path = target_path.startswith("Workspace.")
+        has_gui_path = "PlayerGui" in target_path
+        has_prompt = "proximity" in kind.lower() or "prompt" in target_path.lower()
+        has_direct_control = has_prompt or has_gui_path or bool(commands)
+
+        strategies: list[dict[str, Any]] = []
+        for strategy_id in _CATEGORY_STRATEGY_ORDER.get(category, _CATEGORY_STRATEGY_ORDER[_CATEGORY_FALLBACK]):
+            score = 0.25
+            evidence: list[str] = []
+            assumptions: list[str] = []
+
+            if strategy_id == "strategy-a-bring-pickups-to-player":
+                if has_world_path:
+                    score += 0.38
+                    evidence.append("workspace-target-path-observed")
+                else:
+                    assumptions.append("No direct workspace target path observed for relocation")
+                if request_requires_automatic:
+                    score += 0.05
+            elif strategy_id == "strategy-b-navigate-player-to-target":
+                if has_world_path:
+                    score += 0.32
+                    evidence.append("world-target-location-observed")
+                if feature.get("automaticMovement") is True:
+                    score += 0.18
+                    evidence.append("automatic-movement-capability-observed")
+                if not has_world_path and feature.get("automaticMovement") is not True:
+                    assumptions.append("Navigation may require additional spatial anchors")
+            else:  # strategy-c-direct-interaction
+                if has_direct_control:
+                    score += 0.38
+                    evidence.append("direct-control-signal-observed")
+                if has_prompt:
+                    score += 0.16
+                    evidence.append("proximity-prompt-signal-observed")
+                if not has_direct_control:
+                    assumptions.append("Direct interaction signals are weak or absent")
+
+            if feature.get("boundedRepeat") is True:
+                score += 0.07
+                evidence.append("bounded-repeat-observed")
+            if feature.get("operatorStartRequired") is True:
+                score -= 0.05
+                assumptions.append("Manual operator initiation may be required")
+
+            penalty_key = f"{feature.get('id')}|{strategy_id}"
+            prior_failures = int(feedback_penalties.get(penalty_key, 0))
+            if prior_failures > 0:
+                score -= min(0.3, 0.1 * prior_failures)
+                assumptions.append(f"Strategy previously failed {prior_failures} time(s)")
+            if prior_failures >= 2:
+                score = min(score, 0.19)
+                assumptions.append("Strategy temporarily blocked due to repeated failures")
+
+            feasible = score >= 0.38
+            strategies.append({
+                "id": strategy_id,
+                "label": _STRATEGY_LABELS[strategy_id],
+                "summary": _STRATEGY_SUMMARY[strategy_id],
+                "feasible": feasible,
+                "score": round(max(0.0, min(1.0, score)), 4),
+                "evidenceSignals": sorted(set(evidence)),
+                "assumptions": assumptions[:6],
+                "priorFailureCount": prior_failures,
+            })
+
+        strategies.sort(key=lambda item: (item.get("feasible") is True, item.get("score", 0.0)), reverse=True)
+        return strategies
+
+    def build_plan(
+        self,
+        bundle: EvidenceBundle,
+        request: GenerationRequest,
+        analysis: dict[str, Any],
+        feedback_penalties: dict[str, int],
+    ) -> dict[str, Any]:
+        discovered = self._extract_features(bundle, analysis)
+        request_text = request.requested_capability
+        requires_automatic = _request_requires_automatic_execution(request_text)
+
+        ranked_features: list[dict[str, Any]] = []
+        for item in discovered:
+            category = self._category_for(item, request_text)
+            strategies = self._strategy_candidates(
+                item,
+                category,
+                request_requires_automatic=requires_automatic,
+                feedback_penalties=feedback_penalties,
+            )
+            top = strategies[0] if strategies else None
+            rank = 0.2
+            if item.get("source") == "generated-capability":
+                rank += 0.35
+            if item.get("automaticMovement") is True:
+                rank += 0.12
+            if item.get("boundedRepeat") is True:
+                rank += 0.08
+            if top and top.get("feasible"):
+                rank += 0.2
+                rank += float(top.get("score") or 0.0) * 0.1
+            if item.get("classification") == "ai-hypothesis":
+                rank -= 0.08
+
+            ranked_features.append({
+                "featureId": item.get("id"),
+                "label": self._feature_label(item, category),
+                "category": category,
+                "source": item.get("source"),
+                "kind": item.get("kind"),
+                "targetFeature": item.get("targetFeature"),
+                "targetPath": item.get("targetPath"),
+                "classification": item.get("classification"),
+                "commands": item.get("commands") or [],
+                "rankScore": round(max(0.0, min(1.0, rank)), 4),
+                "strategies": strategies,
+                "generationReady": bool(top and top.get("feasible") is True),
+            })
+
+        ranked_features.sort(key=lambda feature: feature.get("rankScore", 0.0), reverse=True)
+        selected_feature = ranked_features[0] if ranked_features else None
+        selected_strategy = (
+            ((selected_feature or {}).get("strategies") or [None])[0]
+            if selected_feature is not None
+            else None
+        )
+
+        blockers: list[str] = []
+        if selected_feature is None:
+            blockers.append("no feature candidates discovered from current evidence bundle")
+        elif selected_strategy is None:
+            blockers.append("no strategy candidates available for selected feature")
+        elif selected_strategy.get("feasible") is not True:
+            blockers.append("selected feature has no feasible strategy under current evidence")
+
+        status_map = {
+            "discovered": bool(selected_feature),
+            "generation-ready": bool(selected_feature and selected_strategy and selected_strategy.get("feasible") is True),
+            "generated": False,
+            "syntax-validated": False,
+            "runtime-tested": False,
+            "gameplay-verified": False,
+            "server-outcome-verified": False,
+        }
+
+        generation_request = {
+            "requestedCapability": request_text,
+            "automaticExecutionRequested": requires_automatic,
+            "selectedFeatureId": selected_feature.get("featureId") if selected_feature else None,
+            "selectedStrategyId": selected_strategy.get("id") if selected_strategy else None,
+            "selectedStrategyLabel": selected_strategy.get("label") if selected_strategy else None,
+            "selectedFeatureCategory": selected_feature.get("category") if selected_feature else None,
+            "selectedFeaturePath": selected_feature.get("targetPath") if selected_feature else None,
+            "evidenceReferences": [
+                item for item in [
+                    selected_feature.get("targetPath") if selected_feature else None,
+                    selected_feature.get("kind") if selected_feature else None,
+                    selected_feature.get("classification") if selected_feature else None,
+                ]
+                if isinstance(item, str) and item
+            ][:12],
+            "unverifiedAssumptions": (selected_strategy.get("assumptions") if selected_strategy else [])[:8],
+        }
+
+        return {
+            "schemaVersion": "30.6.autonomous-generation-plan.1",
+            "pipeline": {
+                "stages": [
+                    "baseline-plus-observation-ingestion",
+                    "evidence-normalization",
+                    "feature-discovery",
+                    "strategy-selection",
+                    "script-generation",
+                    "deterministic-validation",
+                    "feedback-loop",
+                ],
+                "claims": dict(FALSE_CLAIMS),
+            },
+            "featureDiscovery": {
+                "count": len(ranked_features),
+                "ranked": ranked_features[:24],
+            },
+            "selectedFeature": selected_feature,
+            "selectedStrategy": selected_strategy,
+            "generationRequest": generation_request,
+            "verificationStates": status_map,
+            "blockers": blockers,
+            "claims": dict(FALSE_CLAIMS),
+        }
+
+
 class ScriptGenerationEngine:
     def __init__(
         self,
@@ -789,19 +1324,126 @@ class ScriptGenerationEngine:
 
 
 class ValidationRepairEngine:
+    _LUAU_COMPILE_DEFAULTS = (
+        Path(os.environ.get("LUAU_COMPILE_BIN", "")) if os.environ.get("LUAU_COMPILE_BIN") else None,
+        Path(__file__).resolve().parents[1] / "build" / "luau-0.744" / "luau-compile",
+        Path("/tmp/luau-0.744/luau-compile"),
+    )
+
     def __init__(self, llm_provider: BaseLLMProvider, model_routes: ModelRouteConfig) -> None:
         self._llm_provider = llm_provider
         self._routes = model_routes
+        self._luau_compile = self._find_luau_compile()
+
+    def _find_luau_compile(self) -> Optional[Path]:
+        for candidate in self._LUAU_COMPILE_DEFAULTS:
+            if isinstance(candidate, Path) and candidate.is_file():
+                return candidate
+        return None
+
+    def _compile_validation(self, code: str) -> dict[str, Any]:
+        if self._luau_compile is None:
+            return {
+                "available": False,
+                "passed": None,
+                "exitCode": None,
+                "stderr": None,
+            }
+        with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False, encoding="utf-8") as handle:
+            handle.write(code)
+            tmp_path = Path(handle.name)
+        try:
+            completed = subprocess.run(
+                [str(self._luau_compile), "--null", str(tmp_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return {
+                "available": True,
+                "passed": completed.returncode == 0,
+                "exitCode": completed.returncode,
+                "stderr": (completed.stderr or "")[:2000] or None,
+            }
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     @staticmethod
-    def _basic_validation(code: str, place_id: int) -> dict[str, Any]:
+    def _dependency_scan(code: str) -> dict[str, Any]:
+        helper_patterns = {
+            "fireproximityprompt": r"\bfireproximityprompt\b",
+            "firetouchinterest": r"\bfiretouchinterest\b",
+            "mousemoverel": r"\bmousemoverel\b",
+            "mouse1click": r"\bmouse1click\b",
+            "virtualinputmanager": r"\bVirtualInputManager\b",
+        }
+        required = [name for name, pattern in helper_patterns.items() if re.search(pattern, code)]
+        return {
+            "requiredExecutorHelpers": required,
+            "usesWaitForChild": bool(re.search(r"\bWaitForChild\b", code)),
+            "usesFindFirstChild": bool(re.search(r"\bFindFirstChild\b", code)),
+            "hasCleanupPath": bool(re.search(r"\bDisconnect\b|\bDestroy\b", code)),
+            "hasDuplicateGuard": bool(re.search(r"_G\.[A-Za-z0-9_]+", code)),
+        }
+
+    def _basic_validation(self, code: str, place_id: int) -> dict[str, Any]:
         if not isinstance(code, str):
             return {"valid": False, "reason": "code missing", "placeGuard": False}
         if not 1 <= len(code.encode("utf-8")) <= 1_000_000:
             return {"valid": False, "reason": "code size out of bounds", "placeGuard": False}
-        if f"assert(game.PlaceId == {place_id}" not in code:
+        place_guard = f"assert(game.PlaceId == {place_id}" in code
+        if not place_guard:
             return {"valid": False, "reason": "missing place guard", "placeGuard": False}
-        return {"valid": True, "reason": None, "placeGuard": True, "unsafeOperationsFound": False}
+
+        compile_check = self._compile_validation(code)
+        if compile_check["available"] and compile_check["passed"] is not True:
+            return {
+                "valid": False,
+                "reason": "luau compile failed",
+                "placeGuard": True,
+                "luauCompile": compile_check,
+                "dependencyScan": self._dependency_scan(code),
+            }
+
+        dependency_scan = self._dependency_scan(code)
+        return {
+            "valid": True,
+            "reason": None,
+            "placeGuard": True,
+            "unsafeOperationsFound": False,
+            "luauCompile": compile_check,
+            "dependencyScan": dependency_scan,
+            "runtimeTested": False,
+            "gameplayVerified": False,
+            "serverOutcomeVerified": False,
+        }
+
+    @staticmethod
+    def _verification_states(code: Optional[str], validation: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+        states = dict((plan.get("verificationStates") or {})) if isinstance(plan, dict) else {}
+        for name in _VERIFICATION_STATE_ORDER:
+            states.setdefault(name, False)
+        states["generated"] = bool(isinstance(code, str) and code.strip())
+        luau = validation.get("luauCompile") if isinstance(validation.get("luauCompile"), dict) else {}
+        states["syntax-validated"] = bool(validation.get("valid") is True and (
+            luau.get("available") is False or luau.get("passed") is True
+        ))
+        states["runtime-tested"] = False
+        states["gameplay-verified"] = False
+        states["server-outcome-verified"] = False
+
+        current = "discovered"
+        for name in _VERIFICATION_STATE_ORDER:
+            if states.get(name):
+                current = name
+        return {
+            "states": states,
+            "currentState": current,
+            "claims": dict(FALSE_CLAIMS),
+        }
 
     def validate_and_repair(
         self,
@@ -810,12 +1452,18 @@ class ValidationRepairEngine:
         analysis: dict[str, Any],
         usage: UsageLedger,
         route_plan: RoutePlan,
+        plan: Optional[dict[str, Any]] = None,
     ) -> tuple[Optional[str], dict[str, Any], Optional[str], list[str]]:
         if code is None:
-            return None, {"valid": False, "reason": "no script available", "placeGuard": False}, None, []
+            invalid = {"valid": False, "reason": "no script available", "placeGuard": False}
+            invalid["verificationLifecycle"] = self._verification_states(None, invalid, plan or {})
+            return None, invalid, None, []
         if not isinstance(place_id, int) or place_id <= 0:
-            return None, {"valid": False, "reason": "invalid place id", "placeGuard": False}, None, []
+            invalid = {"valid": False, "reason": "invalid place id", "placeGuard": False}
+            invalid["verificationLifecycle"] = self._verification_states(None, invalid, plan or {})
+            return None, invalid, None, []
         validation = self._basic_validation(code, place_id)
+        validation["verificationLifecycle"] = self._verification_states(code, validation, plan or {})
         if validation["valid"]:
             return code, validation, None, []
 
@@ -825,12 +1473,14 @@ class ValidationRepairEngine:
                 repaired, llm_usage = self._llm_provider.repair(code, analysis, model)
                 _apply_stage_usage(usage, "repair", llm_usage)
                 repaired_validation = self._basic_validation(repaired, place_id)
+                repaired_validation["verificationLifecycle"] = self._verification_states(repaired, repaired_validation, plan or {})
                 if repaired_validation["valid"]:
                     return repaired, repaired_validation, model, errors[:3]
                 errors.append(f"{model}: repaired output failed validation ({repaired_validation.get('reason')})")
             except ValueError as exc:
                 errors.append(f"{model}: {exc}")
 
+        validation["repairAttemptsExhausted"] = True
         return None, validation, None, errors[:3]
 
 
@@ -1001,15 +1651,59 @@ class DeliveryEngine:
         request: GenerationRequest,
         code: Optional[str],
         validation: dict[str, Any],
+        autonomous_plan: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         result_path = bundle.output_dir / "generated-result.json"
+        autonomous_path = bundle.output_dir / "autonomous-generation.json"
+        blocker_path = bundle.output_dir / "generation-blockers.json"
+
+        plan_payload = autonomous_plan if isinstance(autonomous_plan, dict) else {
+            "schemaVersion": "30.6.autonomous-generation-plan.1",
+            "featureDiscovery": {"count": 0, "ranked": []},
+            "selectedFeature": None,
+            "selectedStrategy": None,
+            "generationRequest": {
+                "requestedCapability": request.requested_capability,
+                "automaticExecutionRequested": _request_requires_automatic_execution(request.requested_capability),
+            },
+            "verificationStates": {
+                name: False for name in _VERIFICATION_STATE_ORDER
+            },
+            "blockers": ["autonomous planning unavailable"],
+            "claims": dict(FALSE_CLAIMS),
+        }
+        plan_payload["validation"] = validation
+
         if code is None or not validation.get("valid"):
+            blockers = ["generated script unavailable or failed validation"]
+            if isinstance(plan_payload.get("blockers"), list):
+                blockers.extend(str(item) for item in plan_payload.get("blockers") if isinstance(item, str))
+            blocker_payload = {
+                "schemaVersion": "30.6.generation-blockers.1",
+                "requestedCapability": request.requested_capability,
+                "placeId": bundle.place_id,
+                "scanId": bundle.scan_id,
+                "blockers": sorted(set(blockers)),
+                "validationReason": validation.get("reason"),
+                "minimumAdditionalEvidence": [
+                    "At least one execution-ready feature candidate with attributable interaction evidence",
+                    "Observed control pathway (GUI/proximity/tool) mapped to target feature",
+                    "State/outcome signal beyond temporal-only correlation",
+                ],
+                "claims": dict(FALSE_CLAIMS),
+            }
+            blocker_path.write_text(json.dumps(blocker_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+            plan_payload["blockerReportPath"] = str(blocker_path)
+            autonomous_path.write_text(json.dumps(plan_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
             payload = {
                 "generatedResultPath": None,
                 "generatedResultSchema": None,
                 "generatedScriptPath": None,
                 "generatedScriptKind": None,
                 "scriptArtifacts": {"utility": None, "guidedWorkflow": None, "promptInteractions": None},
+                "autonomousGenerationPath": str(autonomous_path),
+                "blockerReportPath": str(blocker_path),
                 "executableWorkflow": {
                     "requestedCapabilityProvided": bool(request.requested_capability),
                     "requestStatus": None,
@@ -1025,14 +1719,14 @@ class DeliveryEngine:
                     "requestAlignedExecutableWorkflowAvailable": False,
                     "manualGuiActivationRequired": False,
                     "automaticActivationSupported": False,
-                    "blockers": ["generated script unavailable or failed validation"],
+                    "blockers": sorted(set(blockers)),
                     "runtimeVerified": False,
                     "gameplayVerified": False,
                     "causalityProven": False,
                 },
                 "claims": dict(FALSE_CLAIMS),
             }
-            result_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            result_path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
             return payload
 
         readiness = bundle.generation_readiness
@@ -1058,12 +1752,19 @@ class DeliveryEngine:
         result_path.write_text(json.dumps(generated_result, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
         script_artifacts = self._script_artifacts(bundle, code)
         executable_workflow = self._executable_workflow_status(bundle, readiness)
+
+        plan_payload["generatedScriptPath"] = script_artifacts["generatedScriptPath"]
+        plan_payload["generatedScriptKind"] = script_artifacts["generatedScriptKind"]
+        autonomous_path.write_text(json.dumps(plan_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
         return {
             "generatedResultPath": str(result_path),
             "generatedResultSchema": generated_result.get("schemaVersion"),
             "generatedScriptPath": script_artifacts["generatedScriptPath"],
             "generatedScriptKind": script_artifacts["generatedScriptKind"],
             "scriptArtifacts": script_artifacts["scriptArtifacts"],
+            "autonomousGenerationPath": str(autonomous_path),
+            "blockerReportPath": None,
             "executableWorkflow": executable_workflow,
             "claims": {
                 "packageAuthenticityVerified": generated_result.get("packageAuthenticityVerified"),
@@ -1099,6 +1800,7 @@ class LycolesGenerationService:
 
         self.evidence_processor = EvidenceProcessor()
         self.feature_analysis = FeatureAnalysisEngine(self.llm_provider, self.model_routes)
+        self.autonomous_planning = AutonomousPlanningEngine()
         self.script_generation = ScriptGenerationEngine(
             self.llm_provider,
             self.model_routes,
@@ -1110,9 +1812,121 @@ class LycolesGenerationService:
         self._jobs_lock = threading.Lock()
         self._analysis_cache: dict[str, dict[str, Any]] = {}
         self._analysis_cache_lock = threading.Lock()
+        self._feedback_log_path = self.output_root / "feedback-log.jsonl"
+        self._feedback_lock = threading.Lock()
+        self._feedback_records: list[FeedbackRecord] = []
+        self._feedback_penalties: dict[str, int] = {}
+        self._load_feedback_log()
 
     def _output_dir_for(self, job_id: str) -> Path:
         return self.output_root / job_id
+
+    def _feedback_signature(self, place_id: Optional[int], scan_id: Optional[str], feature_id: Optional[str], strategy_id: Optional[str]) -> str:
+        return "|".join([
+            str(place_id or ""),
+            str(scan_id or ""),
+            str(feature_id or ""),
+            str(strategy_id or ""),
+        ])
+
+    def _rebuild_feedback_penalties(self) -> None:
+        penalties: dict[str, int] = {}
+        for record in self._feedback_records:
+            if record.status in {"failed", "runtime-error", "navigation-failed", "unsupported"}:
+                key = self._feedback_signature(record.place_id, record.scan_id, record.feature_id, record.strategy_id)
+                penalties[key] = penalties.get(key, 0) + 1
+        self._feedback_penalties = penalties
+
+    def _load_feedback_log(self) -> None:
+        if not self._feedback_log_path.is_file():
+            return
+        loaded: list[FeedbackRecord] = []
+        for line in self._feedback_log_path.read_text(encoding="utf-8").splitlines():
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            loaded.append(FeedbackRecord(
+                feedback_id=str(payload.get("feedbackId") or _safe_feature_id("feedback", text[:32])),
+                created_at=float(payload.get("createdAt") or time.time()),
+                place_id=payload.get("placeId") if isinstance(payload.get("placeId"), int) else None,
+                scan_id=payload.get("scanId") if isinstance(payload.get("scanId"), str) else None,
+                feature_id=payload.get("featureId") if isinstance(payload.get("featureId"), str) else None,
+                strategy_id=payload.get("strategyId") if isinstance(payload.get("strategyId"), str) else None,
+                status=str(payload.get("status") or "unknown"),
+                runtime_errors=_coerce_text_list(payload.get("runtimeErrors"), max_items=20),
+                missing_objects=_coerce_text_list(payload.get("missingObjects"), max_items=20),
+                failed_interactions=_coerce_text_list(payload.get("failedInteractions"), max_items=20),
+                successful_interactions=_coerce_text_list(payload.get("successfulInteractions"), max_items=20),
+                navigation_failures=_coerce_text_list(payload.get("navigationFailures"), max_items=20),
+                executor_compatibility_issues=_coerce_text_list(payload.get("executorCompatibilityIssues"), max_items=20),
+                observed_changes=_coerce_text_list(payload.get("observedChanges"), max_items=20),
+                gameplay_verified=payload.get("gameplayVerified") is True,
+                server_outcome_verified=payload.get("serverOutcomeVerified") is True,
+                notes=(payload.get("notes") if isinstance(payload.get("notes"), str) else None),
+            ))
+        self._feedback_records = loaded[-1000:]
+        self._rebuild_feedback_penalties()
+
+    def list_feedback(self) -> list[dict[str, Any]]:
+        with self._feedback_lock:
+            return [record.to_dict() for record in self._feedback_records]
+
+    def _feedback_penalties_for(self, *, place_id: Optional[int], scan_id: Optional[str]) -> dict[str, int]:
+        prefix = f"{place_id or ''}|{scan_id or ''}|"
+        with self._feedback_lock:
+            return {
+                key.split("|", 2)[2]: value
+                for key, value in self._feedback_penalties.items()
+                if key.startswith(prefix)
+            }
+
+    def record_feedback(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("feedback payload must be an object")
+        status = str(payload.get("status") or "unknown").strip().lower()
+        if status not in {"failed", "succeeded", "partial", "runtime-error", "navigation-failed", "unsupported"}:
+            raise ValueError("feedback status must be one of failed/succeeded/partial/runtime-error/navigation-failed/unsupported")
+
+        record = FeedbackRecord(
+            feedback_id=str(payload.get("feedbackId") or ("feedback-" + uuid.uuid4().hex[:12])),
+            created_at=float(payload.get("createdAt") or time.time()),
+            place_id=payload.get("placeId") if isinstance(payload.get("placeId"), int) else None,
+            scan_id=payload.get("scanId") if isinstance(payload.get("scanId"), str) else None,
+            feature_id=payload.get("featureId") if isinstance(payload.get("featureId"), str) else None,
+            strategy_id=payload.get("strategyId") if isinstance(payload.get("strategyId"), str) else None,
+            status=status,
+            runtime_errors=_coerce_text_list(payload.get("runtimeErrors"), max_items=20),
+            missing_objects=_coerce_text_list(payload.get("missingObjects"), max_items=20),
+            failed_interactions=_coerce_text_list(payload.get("failedInteractions"), max_items=20),
+            successful_interactions=_coerce_text_list(payload.get("successfulInteractions"), max_items=20),
+            navigation_failures=_coerce_text_list(payload.get("navigationFailures"), max_items=20),
+            executor_compatibility_issues=_coerce_text_list(payload.get("executorCompatibilityIssues"), max_items=20),
+            observed_changes=_coerce_text_list(payload.get("observedChanges"), max_items=20),
+            gameplay_verified=payload.get("gameplayVerified") is True,
+            server_outcome_verified=payload.get("serverOutcomeVerified") is True,
+            notes=(payload.get("notes")[:512] if isinstance(payload.get("notes"), str) else None),
+        )
+
+        with self._feedback_lock:
+            self._feedback_records.append(record)
+            if len(self._feedback_records) > 1000:
+                self._feedback_records = self._feedback_records[-1000:]
+            self._rebuild_feedback_penalties()
+            with self._feedback_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record.to_dict(), sort_keys=True, ensure_ascii=False) + "\n")
+
+        return {
+            "status": "recorded",
+            "feedback": record.to_dict(),
+            "penaltyFailures": self._feedback_penalties.get(record.key(), 0),
+        }
+
 
     def _run_pipeline(self, job_id: str, request: GenerationRequest) -> dict[str, Any]:
         usage = UsageLedger()
@@ -1138,13 +1952,27 @@ class LycolesGenerationService:
             "hit": analysis_cache_hit,
             "key": analysis_cache_key,
         }
+        analysis["evidenceWarnings"] = list(bundle.warnings)
+
+        feedback_penalties = self._feedback_penalties_for(place_id=bundle.place_id, scan_id=bundle.scan_id)
+        autonomous_plan = self.autonomous_planning.build_plan(bundle, request, analysis, feedback_penalties)
+        analysis["autonomousGeneration"] = autonomous_plan
+
         code, generation_source, generation_model_used, generation_errors = self.script_generation.generate(
             bundle, analysis, usage, route_plan)
         code, validation, repair_model_used, repair_errors = self.validation_repair.validate_and_repair(
-            code, bundle.place_id, analysis, usage, route_plan)
-        delivery = self.delivery.deliver(bundle, request, code, validation)
+            code, bundle.place_id, analysis, usage, route_plan, plan=autonomous_plan)
+        autonomous_plan["verificationStates"] = (
+            (validation.get("verificationLifecycle") or {}).get("states")
+            if isinstance(validation.get("verificationLifecycle"), dict)
+            else autonomous_plan.get("verificationStates")
+        )
+        delivery = self.delivery.deliver(bundle, request, code, validation, autonomous_plan=autonomous_plan)
 
-        blockers = analysis.get("explicitBlockers") or []
+        blockers = list(analysis.get("explicitBlockers") or [])
+        if isinstance(autonomous_plan.get("blockers"), list):
+            blockers.extend(str(item) for item in autonomous_plan.get("blockers") if isinstance(item, str))
+        blockers = sorted(set(blockers))
         executable_workflow = delivery.get("executableWorkflow") if isinstance(delivery.get("executableWorkflow"), dict) else {}
         request_provided = executable_workflow.get("requestedCapabilityProvided") is True
         request_executable_available = executable_workflow.get("requestAlignedExecutableWorkflowAvailable") is True
@@ -1170,6 +1998,17 @@ class LycolesGenerationService:
             or usage.generation_attempts > 0
             or usage.repair_attempts > 0
         )
+        usage_summary = usage.to_dict()
+        total_cost = float((usage_summary.get("total") or {}).get("costGbp") or 0.0)
+        syntax_validated = bool(((validation.get("verificationLifecycle") or {}).get("states") or {}).get("syntax-validated"))
+        economics = {
+            "totalCostGbp": round(total_cost, 8),
+            "totalTokens": int((usage_summary.get("total") or {}).get("tokens") or 0),
+            "costPerSyntaxValidatedScriptGbp": round(total_cost, 8) if syntax_validated else None,
+            "inferencePerformed": ai_inference_performed,
+            "analysisCacheHit": analysis_cache_hit,
+        }
+
         result = {
             "jobId": job_id,
             "status": "succeeded",
@@ -1203,14 +2042,17 @@ class LycolesGenerationService:
                 "mode": bundle.mode,
                 "placeId": bundle.place_id,
                 "scanId": bundle.scan_id,
+                "warnings": list(bundle.warnings),
                 "manifestReadinessPath": str(bundle.output_dir / "manifest-readiness-v109.json") if (bundle.output_dir / "manifest-readiness-v109.json").exists() else None,
                 "releaseManifestPath": str(bundle.output_dir / "release-manifest.json") if (bundle.output_dir / "release-manifest.json").exists() else None,
                 "generationReadinessPath": str(bundle.output_dir / "generation-readiness.json") if (bundle.output_dir / "generation-readiness.json").exists() else None,
             },
             "analysis": analysis,
+            "autonomousGeneration": autonomous_plan,
             "validation": validation,
             "delivery": delivery,
-            "usage": usage.to_dict(),
+            "usage": usage_summary,
+            "economics": economics,
             "claims": dict(FALSE_CLAIMS),
             "outputDir": str(bundle.output_dir),
         }
@@ -1288,6 +2130,8 @@ class LycolesGenerationService:
                     if job is None:
                         return self._json({"error": "Job not found"}, 404)
                     return self._json(job)
+                if parts == ["v1", "generation", "feedback"]:
+                    return self._json({"feedback": service.list_feedback()})
                 return self._json({"error": "Not found"}, 404)
 
             def do_POST(self):  # noqa: N802
@@ -1310,6 +2154,13 @@ class LycolesGenerationService:
                         )
                         job_id = service.submit(request)
                         return self._json({"jobId": job_id, "status": "queued", "statusUrl": f"/v1/generation/jobs/{job_id}"}, 202)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        return self._json({"error": str(exc)}, 400)
+                if parts == ["v1", "generation", "feedback"]:
+                    try:
+                        payload = self._read_json()
+                        recorded = service.record_feedback(payload)
+                        return self._json(recorded, 201)
                     except Exception as exc:  # pylint: disable=broad-except
                         return self._json({"error": str(exc)}, 400)
                 return self._json({"error": "Not found"}, 404)
@@ -1362,6 +2213,11 @@ def main() -> int:
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8787)
 
+    feedback_parser = subparsers.add_parser("record-feedback", help="Record runtime feedback for future generation retries")
+    feedback_parser.add_argument("--output-root", default="build/generation-jobs")
+    feedback_parser.add_argument("--feedback-json", required=True,
+                                 help="Path to JSON payload following the feedback contract")
+
     args = parser.parse_args()
     service = LycolesGenerationService(
         output_root=Path(args.output_root),
@@ -1370,6 +2226,12 @@ def main() -> int:
 
     if args.command == "run-job":
         result = service.run_sync(_request_from_args(args))
+        print(json.dumps(result, sort_keys=True))
+        return 0
+
+    if args.command == "record-feedback":
+        payload = json.loads(Path(args.feedback_json).expanduser().read_text(encoding="utf-8"))
+        result = service.record_feedback(payload)
         print(json.dumps(result, sort_keys=True))
         return 0
 
