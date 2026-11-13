@@ -57,6 +57,16 @@ Target experiences are third-party games that the user does not own and cannot o
   - service returns explicit blocker artifacts (`generation-blockers.json`) instead of crashing.
 
 
+## Session notes — 2026-11-06 legacy baseline + recording compatibility (v30.6.59)
+
+- Real merged observation streams can legitimately contain `baselineSource="input-event-callback"` in two timing forms:
+  1. legacy raw: `baselineTiming="input-event-callback"`
+  2. normalized overlay: `baselineTiming="activation-callback"`
+  Downstream validators must accept both and normalize behavior to activation-callback semantics.
+- `explicitWorkflowRecording` metadata can appear for `automatic-activity-window` transactions; this must **not** trigger strict explicit-user recording validation. Gate explicit recording checks only on explicit-user markers (`transactionLinkSource`/`linkageSource`/`explicitUserArmed`/`user-recorded-*`).
+- For Bubble Gum replay in this workspace, merged evidence now processes without parser crashes, but current available package still lands in `observational-only-request-unmet` (no feasible evidence-backed strategy for requested auto reward pickup).
+
+
 ## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
 
 - Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.

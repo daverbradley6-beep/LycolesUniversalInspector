@@ -132,6 +132,21 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"step contract"):
             generator.validate(forged)
 
+
+    def test_workflow_baseline_accepts_legacy_input_event_callback(self):
+        value=plan();first,second=value["observedInteractionHistory"]
+        first.update(baselineSource="input-event-callback",
+            baselineTiming="activation-callback",preActivationBaselineAvailable=False)
+        second.update(baselineSource="GuiButton.InputBegan",baselineTiming="pre-activation",
+            preActivationBaselineAvailable=True,baselineAgeSeconds=0.02)
+        result=self.analyze(value)
+        candidate=result["workflowCandidates"][0]
+        self.assertEqual(candidate["steps"][0]["observationBaseline"]["timing"],
+            "activation-callback")
+        self.assertTrue(candidate["steps"][0]["observationBaseline"]["possibleSynchronousLoss"])
+        self.assertEqual(candidate["steps"][1]["observationBaseline"]["timing"],
+            "pre-activation")
+
     def test_workflow_cadence_signals_capture_burst_sequences(self):
         value=plan()
         value["observedInteractionHistory"].append(event("Finalize",3,4,5))
@@ -195,6 +210,30 @@ class GeneratedWorkflowPlanningTests(unittest.TestCase):
         expired["observedInteractionHistory"][1]["sessionElapsedSeconds"]=70.001
         with self.assertRaisesRegex(ValueError,"explicit workflow recording"):
             self.analyze(expired)
+
+    def test_automatic_activity_window_recording_is_not_explicit_user_recording(self):
+        transaction="auto-recorded-1234"
+        events=[
+            {"transactionId":transaction,"sequence":1,
+             "transactionLinkSource":"automatic-activity-window",
+             "sessionId":"session","sessionElapsedSeconds":2.723,
+             "explicitWorkflowRecording":{
+                 "recordingId":transaction,"order":1,"startedElapsedSeconds":2.723,
+                 "maxDurationSeconds":60,"maxEvents":8,
+                 "linkageSource":"automatic-activity-window",
+                 "explicitUserArmed":False,"establishesOrdering":True,
+                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}},
+            {"transactionId":transaction,"sequence":2,
+             "transactionLinkSource":"automatic-activity-window",
+             "sessionId":"session","sessionElapsedSeconds":3.119,
+             "explicitWorkflowRecording":{
+                 "recordingId":transaction,"order":2,"startedElapsedSeconds":2.723,
+                 "maxDurationSeconds":60,"maxEvents":8,
+                 "linkageSource":"automatic-activity-window",
+                 "explicitUserArmed":False,"establishesOrdering":True,
+                 "causalityProven":False,"runtimeVerified":False,"gameplayVerified":False}}
+        ]
+        self.assertFalse(planner._explicit_recording(events,transaction))
 
 
     def test_session_timing_is_review_only_and_does_not_create_linkage(self):

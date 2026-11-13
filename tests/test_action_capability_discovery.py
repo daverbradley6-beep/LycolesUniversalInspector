@@ -61,6 +61,29 @@ class ActionCapabilityDiscoveryTests(unittest.TestCase):
         self.assertEqual(target["baselineEvidence"]["activationCallbackEvents"],1)
         self.assertTrue(target["baselineEvidence"]["possibleSynchronousLoss"])
 
+
+    def test_legacy_input_event_callback_timing_is_normalized(self):
+        plan={"integrity":{"scanComplete":True,"placeId":123,"scanId":"legacy-input-callback"},
+            "actionableObjects":[],"observedInteractionHistory":[
+                {"path":"LocalPlayer.Input.MouseButton1.None",
+                 "controlType":"InputBegan.MouseButton1",
+                 "baselineSource":"input-event-callback",
+                 "baselineTiming":"input-event-callback",
+                 "preActivationBaselineAvailable":False,
+                 "baselineAgeSeconds":None},
+                {"path":"LocalPlayer.Input.MouseButton2.None",
+                 "controlType":"InputBegan.MouseButton2",
+                 "baselineSource":"input-event-callback",
+                 "baselineTiming":"activation-callback",
+                 "preActivationBaselineAvailable":False,
+                 "baselineAgeSeconds":None}]}
+        result=discovery.analyze(plan)
+        self.assertEqual(len(result["observedActions"]),2)
+        self.assertTrue(all(item["baselineEvidence"]["timing"]=="activation-callback"
+            for item in result["observedActions"]))
+        self.assertTrue(all(item["baselineEvidence"]["possibleSynchronousLoss"] is True
+            for item in result["observedActions"]))
+
     def test_malformed_baseline_timing_fails_closed(self):
         plan=self.gui_plan();event=plan["observedInteractionHistory"][0]
         event.update({"baselineSource":"GuiButton.InputBegan",

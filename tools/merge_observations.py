@@ -89,7 +89,7 @@ def _non_negative_int(value,default=0):
 
 _BASELINE_FIELDS=("baselineSource","baselineTiming","baselineAgeSeconds","preActivationBaselineAvailable")
 _BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
-    "Tool.Equipped","activation-callback-fallback"}
+    "Tool.Equipped","activation-callback-fallback","input-event-callback"}
 
 
 def _normalize_event_baseline_timing(event):
@@ -111,7 +111,9 @@ def _normalize_event_baseline_timing(event):
         for field in _BASELINE_FIELDS:
             event.pop(field,None)
         return event
-    timing="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
+    timing=("activation-callback"
+        if source in {"activation-callback-fallback","input-event-callback"}
+        else "pre-activation")
     event["baselineSource"]=source
     event["baselineTiming"]=timing
     event["preActivationBaselineAvailable"]=(timing=="pre-activation")

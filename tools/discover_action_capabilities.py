@@ -62,7 +62,7 @@ def _evidence_tier(state_changes,gui_changes):
 
 
 _BASELINE_SOURCES={"GuiButton.InputBegan","ProximityPrompt.PromptButtonHoldBegan",
-    "Tool.Equipped","activation-callback-fallback"}
+    "Tool.Equipped","activation-callback-fallback","input-event-callback"}
 
 def _baseline_evidence(event):
     fields=("baselineSource","baselineTiming","baselineAgeSeconds",
@@ -72,14 +72,22 @@ def _baseline_evidence(event):
             "possibleSynchronousLoss":True}
     source=event.get("baselineSource");timing=event.get("baselineTiming")
     available=event.get("preActivationBaselineAvailable");age=event.get("baselineAgeSeconds")
-    expected="activation-callback" if source=="activation-callback-fallback" else "pre-activation"
-    if (source not in _BASELINE_SOURCES or timing!=expected or type(available) is not bool
-            or available!=(timing=="pre-activation") or (age is not None and
+    if source=="activation-callback-fallback":
+        valid_timings={"activation-callback"};normalized="activation-callback";expected_available=False
+    elif source=="input-event-callback":
+        valid_timings={"input-event-callback","activation-callback"}
+        normalized="activation-callback";expected_available=False
+    else:
+        valid_timings={"pre-activation"};normalized="pre-activation";expected_available=True
+    if (source not in _BASELINE_SOURCES or timing not in valid_timings
+            or type(available) is not bool or available is not expected_available
+            or (age is not None and
             (type(age) not in (int,float) or type(age) is bool or not math.isfinite(age)
                 or not 0<=age<=3600))):
         raise ValueError("Malformed interaction baseline timing")
-    return {"timing":timing,"source":source,"preActivationBaselineAvailable":available,
-        "possibleSynchronousLoss":not available}
+    return {"timing":normalized,"source":source,
+        "preActivationBaselineAvailable":expected_available,
+        "possibleSynchronousLoss":not expected_available}
 
 def _baseline_summary():
     return {"events":0,"preActivationEvents":0,"activationCallbackEvents":0,

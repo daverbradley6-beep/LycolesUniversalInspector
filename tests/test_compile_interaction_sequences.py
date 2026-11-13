@@ -28,6 +28,13 @@ class SequenceTests(unittest.TestCase):
         workflow=m.compile_sequences(plan)["workflows"][0]
         self.assertEqual(workflow["preActivationBaselineSteps"],1)
         self.assertEqual(workflow["activationCallbackBaselineSteps"],1)
+
+        second.update(baselineSource="input-event-callback",
+            baselineTiming="activation-callback",preActivationBaselineAvailable=False)
+        workflow=m.compile_sequences(plan)["workflows"][0]
+        self.assertEqual(workflow["activationCallbackBaselineSteps"],1)
+        self.assertEqual(workflow["steps"][1]["baselineTiming"],"activation-callback")
+
         second["preActivationBaselineAvailable"]=True
         with self.assertRaisesRegex(ValueError,"baseline timing"):
             m.compile_sequences(plan)

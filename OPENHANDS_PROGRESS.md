@@ -1,3 +1,59 @@
+## Update — 2026-11-06 — v30.6.59 legacy baseline/recording compatibility unblock for autonomous generation
+
+### Scope
+
+- Fixed autonomous generation crash on real Bubble Gum evidence where `observedInteractionHistory` mixed legacy baseline forms:
+  - `baselineSource="input-event-callback"` with `baselineTiming="input-event-callback"` (legacy raw form), and
+  - `baselineSource="input-event-callback"` with `baselineTiming="activation-callback"` (normalized overlay form).
+- Applied compatible baseline parsing/normalization across the full downstream pipeline:
+  - `tools/discover_action_capabilities.py`
+  - `tools/compile_interaction_sequences.py`
+  - `tools/plan_generated_workflows.py`
+  - `tools/merge_observations.py`
+- Fixed a second blocker in workflow planning:
+  - `_explicit_recording` no longer misclassifies `automatic-activity-window` metadata as explicit user-armed recording.
+  - Explicit recording validation now activates only for true explicit-user markers.
+- Added regressions for both blocker classes:
+  - legacy `input-event-callback` acceptance/normalization,
+  - automatic activity-window recording not treated as explicit-user recording.
+
+### Root-cause evidence
+
+- Failing merged events had exact fields:
+  - `baselineSource: "input-event-callback"`
+  - `baselineTiming: "activation-callback"`
+  - `preActivationBaselineAvailable: false`
+  - paths like `LocalPlayer.Input.MouseButton1.None` / `MouseButton2.None`
+- Previous validators required `baselineTiming=="input-event-callback"` whenever source was `input-event-callback`, causing fail-closed rejection of normalized overlays.
+
+### Validation
+
+- Focused regressions:
+  - `python3 -m pytest tests/test_action_capability_discovery.py tests/test_compile_interaction_sequences.py tests/test_generated_workflow_planning.py tests/test_lycoles_generation_service.py -q`
+  - **81 passed, 5 subtests passed**
+- Full Python regression:
+  - `python3 -m pytest`
+  - **1666 passed, 17 skipped**
+- Luau syntax/parsing:
+  - `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- Luau compiler-limit guard:
+  - `python3 -m pytest tests/test_inspector_compiler_limits.py -q` → **2 passed, 9 subtests passed**
+
+### Bubble Gum generation run status (no new scan requested)
+
+- Generation job now completes without malformed baseline/explicit-recording crashes.
+- Current available local evidence package still resolves to:
+  - `generationStatus: observational-only-request-unmet`
+  - blocker: `selected feature has no feasible strategy under current evidence`
+- Generated utility artifact is produced (`LycolesGeneratedUtility.lua`) as deterministic fallback output.
+
+### Version
+
+- Repository/inspector version bumped: **v30.6.59**
+
+
+
+
 ## Update — 2026-11-06 — v30.6.58 autonomous evidence-to-script orchestration, validation lifecycle, and feedback loop
 
 ### Scope
