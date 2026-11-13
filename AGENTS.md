@@ -712,3 +712,24 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Inspector UI regression causes/fixes:
   - version drift (`version.txt` 30.6.48 vs inspector runtime 30.6.49) fixed by syncing to `30.6.49`
   - queue-processing guard assertion fixed by restoring expected line `if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end`
+
+
+## Update — 2026-11-13 — pickup evidence propagation into autonomous planning
+
+- Root cause identified for reward/pickup under-classification in replay generation readiness:
+  - `tools/assess_generation_readiness.py::_request_feature_matches` hardcoded `tokenEvidenceOnly=True` and did not propagate observed control/path evidence from `observedInteractionHistory`.
+  - `tools/lycoles_generation_service.py::AutonomousPlanningEngine._extract_features` dropped matched-feature target paths/controls (`targetPath=None`, `commands=[]`), which forced strategy feasibility blockers (`observed GUI/prompt/tool control pathway`).
+  - `tools/generated_result.py` incorrectly required `tokenEvidenceOnly` to always be `True` for matched features.
+- Implemented universal, conservative fixes:
+  - Added `_request_feature_history_signals(plan)` to aggregate per-feature interaction signals from observed history.
+  - Matched feature evidence now carries representative path/control metadata (`representativeTargetPath`, `representativeGuiTargetPath`, `representativeWorldTargetPath`, `observedControlTypes`) plus bounded outcome counters.
+  - `tokenEvidenceOnly` is now derived from actual evidence presence (boolean), not hardcoded.
+  - Planning ingestion now uses matched-feature representative paths and observed controls, enabling evidence-backed direct-interaction strategy scoring.
+  - World-path inference from click raycast was gated to avoid GUI-overlay leakage (only treated as world evidence when the event has world interaction signals).
+- New regression tests:
+  - `tests/test_generation_readiness.py::test_request_feature_match_propagates_observed_target_path_and_outcome_signals`
+  - `tests/test_generated_result.py::test_request_feature_match_accepts_non_token_only_boolean`
+- Verified behavior on v30.6.57 replay package:
+  - Rewards request now surfaces a feasible `strategy-c-direct-interaction` candidate with observed GUI path evidence.
+  - Generation status remains conservative (`observational-only-request-unmet`) until execution-ready workflow and live validation criteria are met.
+

@@ -119,6 +119,15 @@ class GeneratedResultTests(unittest.TestCase):
             self.assertFalse(result[claim])
         self.assertRegex(result["generatedCodeSHA256"],r"^[a-f0-9]{64}$")
 
+    def test_request_feature_match_accepts_non_token_only_boolean(self):
+        readiness=self.readiness()
+        readiness["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"][0]["tokenEvidenceOnly"]=False
+        result=self.build(generation_readiness=readiness)
+        self.assertFalse(result["generationReadiness"]["requestFeatureReadiness"][
+            "featureEvidence"]["matchedFeatures"][0]["tokenEvidenceOnly"])
+
+
+
     def test_rejects_missing_place_guard_and_bad_validation(self):
         with self.assertRaisesRegex(ValueError,"place guard"):
             self.build(code="print('unsafe identity')")

@@ -110,6 +110,38 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(result["unavailableRequestedBehavior"],[])
         self.assertFalse(result["request"]["fullRequestImplemented"])
 
+
+    def test_request_feature_match_propagates_observed_target_path_and_outcome_signals(self):
+        value={"integrity":{"scanComplete":True,"placeId":85896571713843,
+                "scanId":"reward-path-propagation"},
+            "requestedCapability":"Automatically claim the daily reward",
+            "features":[feature("rewards",0,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"LocalPlayer.PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button",
+                "controlType":"GuiButton.Activated",
+                "featureCandidate":"rewards",
+                "clickOutcomeRelationship":{
+                    "outcomeCorroborated":True,
+                    "stateChangeTemporallyAssociated":True,
+                    "meaningfulGameplayOutcomeObserved":True,
+                    "interactionCallbackAttributed":False,
+                },
+                "outcomeVerified":False,
+            }]}
+        result=assess(value)
+        matched=(result["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"])[0]
+        self.assertEqual(matched["feature"],"rewards")
+        self.assertEqual(matched["representativeTargetPath"],
+            "LocalPlayer.PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button")
+        self.assertIn("GuiButton.Activated",matched["observedControlTypes"])
+        self.assertGreaterEqual(matched["interactionEvents"],1)
+        self.assertGreaterEqual(matched["observableOutcomeCandidates"],1)
+        self.assertGreaterEqual(matched["featureStateCorrelations"],1)
+        self.assertEqual(matched["evidenceClassification"],
+            "observable-outcome-candidate-unverified")
+        self.assertFalse(matched["tokenEvidenceOnly"])
+
+
     def test_fps_tool_evidence_stays_discovery_only_without_replay(self):
         value={"integrity":{"scanComplete":True,"placeId":456,"scanId":"fps-scan"},
             "requestedCapability":"Automatically attack visible enemies",

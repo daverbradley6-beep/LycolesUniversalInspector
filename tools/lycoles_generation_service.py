@@ -1146,17 +1146,28 @@ class AutonomousPlanningEngine:
                 if not isinstance(item, dict):
                     continue
                 feature_name = item.get("feature") if isinstance(item.get("feature"), str) else None
+                observed_controls = [
+                    str(value)
+                    for value in (item.get("observedControlTypes") or [])
+                    if isinstance(value, str)
+                ][:20]
+                target_path = None
+                for key in ("representativeTargetPath", "representativeGuiTargetPath", "representativeWorldTargetPath"):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        target_path = value.strip()
+                        break
                 features.append({
                     "id": _safe_feature_id("matched", str(feature_name or "unknown"), str(item.get("status") or "")),
                     "kind": item.get("status") if isinstance(item.get("status"), str) else None,
                     "targetFeature": feature_name,
-                    "targetPath": None,
+                    "targetPath": target_path,
                     "label": feature_name,
                     "classification": item.get("evidenceClassification") if isinstance(item.get("evidenceClassification"), str) else None,
                     "automaticMovement": False,
                     "boundedRepeat": False,
                     "operatorStartRequired": True,
-                    "commands": [],
+                    "commands": observed_controls,
                     "source": "matched-feature",
                 })
 

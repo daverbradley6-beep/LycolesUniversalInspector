@@ -421,12 +421,87 @@ def _discovery_only(actions):
     return values
 
 
+def _request_feature_history_signals(plan):
+    history=plan.get("observedInteractionHistory",[])
+    if not isinstance(history,list) or len(history)>20_000:
+        raise ValueError("compiled plan has malformed interaction history")
+    values={}
+    for event in history:
+        if not isinstance(event,dict):
+            raise ValueError("compiled plan has malformed interaction history")
+        feature=event.get("featureCandidate")
+        if not isinstance(feature,str) or not 1<=len(feature)<=120:
+            continue
+        bucket=values.setdefault(feature,{"interactionEvents":0,"outcomeEvents":0,
+            "stateCorrelatedEvents":0,"callbackAttributedEvents":0,
+            "meaningfulGameplayOutcomeEvents":0,"guiCorrelatedEvents":0,
+            "targetPaths":set(),"worldTargetPaths":set(),"guiTargetPaths":set(),
+            "controlTypes":set()})
+        bucket["interactionEvents"]+=1
+
+        control=event.get("controlType")
+        gui_correlated=False
+        world_signal=False
+        if isinstance(control,str) and 1<=len(control)<=120:
+            bucket["controlTypes"].add(control)
+            if control.startswith("GuiButton."):
+                gui_correlated=True
+            if control.startswith(("ProximityPrompt.","ClickDetector.","Tool.","InputBegan.")):
+                world_signal=True
+
+        path=event.get("path")
+        if isinstance(path,str) and 1<=len(path)<=400:
+            bucket["targetPaths"].add(path)
+            if "PlayerGui" in path:
+                bucket["guiTargetPaths"].add(path)
+                gui_correlated=True
+            if path.startswith("Workspace."):
+                bucket["worldTargetPaths"].add(path)
+                world_signal=True
+
+        click_target=event.get("clickTargetObservation")
+        if isinstance(click_target,dict):
+            resolved=click_target.get("resolvedTargetPath")
+            if isinstance(resolved,str) and 1<=len(resolved)<=400:
+                bucket["targetPaths"].add(resolved)
+                if "PlayerGui" in resolved:
+                    bucket["guiTargetPaths"].add(resolved)
+                    gui_correlated=True
+                if resolved.startswith("Workspace.") and world_signal:
+                    bucket["worldTargetPaths"].add(resolved)
+            raycast=click_target.get("raycastTarget")
+            if isinstance(raycast,dict):
+                raycast_path=raycast.get("path")
+                if (isinstance(raycast_path,str) and 1<=len(raycast_path)<=400
+                        and raycast_path.startswith("Workspace.") and world_signal):
+                    bucket["targetPaths"].add(raycast_path)
+                    bucket["worldTargetPaths"].add(raycast_path)
+
+        if gui_correlated:
+            bucket["guiCorrelatedEvents"]+=1
+
+        relation=event.get("clickOutcomeRelationship")
+        if isinstance(relation,dict):
+            if relation.get("outcomeCorroborated") is True:
+                bucket["outcomeEvents"]+=1
+            if relation.get("stateChangeTemporallyAssociated") is True:
+                bucket["stateCorrelatedEvents"]+=1
+            if relation.get("interactionCallbackAttributed") is True:
+                bucket["callbackAttributedEvents"]+=1
+            if relation.get("meaningfulGameplayOutcomeObserved") is True:
+                bucket["meaningfulGameplayOutcomeEvents"]+=1
+    return values
+
+
+
 def _request_feature_matches(plan,request_words):
     features=plan.get("features")
     if not isinstance(features,list) or len(features)>5000:
         raise ValueError("compiled plan has malformed feature inventory")
     if not request_words:return []
+    history_signals=_request_feature_history_signals(plan)
     values=[]
+    pickup_terms={"pickup","collect","coin","coins","currency","gem","gems","orb","token","loot","drop","farm","bubble","egg"}
     for feature in features:
         if not isinstance(feature,dict):
             raise ValueError("compiled plan has malformed feature evidence")
@@ -439,6 +514,12 @@ def _request_feature_matches(plan,request_words):
             "observableOutcomeCandidates","featureStateCorrelations","featureGuiCorrelations")}
         if any(type(value) is not int or not 0<=value<=10_000_000 for value in counts.values()):
             raise ValueError("compiled plan has malformed feature evidence")
+        signals=history_signals.get(name,{})
+        counts["interactionEvents"]=max(counts["interactionEvents"],int(signals.get("interactionEvents",0)))
+        counts["observableOutcomeCandidates"]=max(counts["observableOutcomeCandidates"],int(signals.get("outcomeEvents",0)))
+        counts["featureStateCorrelations"]=max(counts["featureStateCorrelations"],int(signals.get("stateCorrelatedEvents",0)))
+        counts["featureGuiCorrelations"]=max(counts["featureGuiCorrelations"],int(signals.get("guiCorrelatedEvents",0)))
+
         status=feature.get("status")
         if not isinstance(status,str) or not 1<=len(status)<=120:
             raise ValueError("compiled plan has malformed feature evidence")
@@ -455,12 +536,46 @@ def _request_feature_matches(plan,request_words):
         gameplay_score+=4*counts["observableOutcomeCandidates"]
         gameplay_score+=3*counts["featureStateCorrelations"]
         gameplay_score+=2*counts["interactionEvents"]
+
+        gui_paths=sorted(path for path in signals.get("guiTargetPaths",set()) if isinstance(path,str))
+        world_paths=sorted(path for path in signals.get("worldTargetPaths",set()) if isinstance(path,str))
+        target_paths=sorted(path for path in signals.get("targetPaths",set()) if isinstance(path,str))
+        representative_path=None
+        if request_words&pickup_terms and world_paths:
+            representative_path=world_paths[0]
+        elif gui_paths:
+            representative_path=gui_paths[0]
+        elif world_paths:
+            representative_path=world_paths[0]
+        elif target_paths:
+            representative_path=target_paths[0]
+
+        if counts["observableOutcomeCandidates"]>0:
+            evidence_classification="observable-outcome-candidate-unverified"
+        elif counts["interactionEvents"]>0:
+            evidence_classification="interaction-observed-no-outcome-contract"
+        else:
+            evidence_classification=_FEATURE_EVIDENCE_CLASSIFICATION.get(
+                status,"unrecognized-feature-status")
+
+        observed_control_types=sorted(control for control in signals.get("controlTypes",set()) if isinstance(control,str))[:20]
+        token_only=not bool(counts["interactionEvents"] or counts["observableOutcomeCandidates"]
+            or counts["featureStateCorrelations"] or counts["featureGuiCorrelations"]
+            or representative_path or observed_control_types)
+
         values.append({"feature":name,"status":status,
-            "evidenceClassification":_FEATURE_EVIDENCE_CLASSIFICATION.get(
-                status,"unrecognized-feature-status"),
+            "evidenceClassification":evidence_classification,
             "matchedTerms":matched_terms,**counts,
             "gameplayPriorityScore":gameplay_score,
-            "tokenEvidenceOnly":True,"implementationReady":False})
+            "tokenEvidenceOnly":token_only,
+            "implementationReady":False,
+            "representativeTargetPath":representative_path,
+            "representativeGuiTargetPath":gui_paths[0] if gui_paths else None,
+            "representativeWorldTargetPath":world_paths[0] if world_paths else None,
+            "observedControlTypes":observed_control_types,
+            "interactionCallbackAttributedEvents":int(signals.get("callbackAttributedEvents",0)),
+            "meaningfulGameplayOutcomeEvents":int(signals.get("meaningfulGameplayOutcomeEvents",0)),
+        })
     values.sort(key=lambda item:(-item["gameplayPriorityScore"],
         -item["observableOutcomeCandidates"],-item["featureStateCorrelations"],
         -item["interactionEvents"],item["feature"]))

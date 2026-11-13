@@ -287,7 +287,7 @@ def _validate_request_feature_readiness(value,requested_capability,generated_ids
                 or any(type(item.get(field)) is not int or not 0<=item[field]<=10_000_000
                     for field in ("interactionEvents","observableOutcomeCandidates",
                                   "featureStateCorrelations","featureGuiCorrelations"))
-                or item.get("tokenEvidenceOnly") is not True
+                or type(item.get("tokenEvidenceOnly")) is not bool
                 or item.get("implementationReady") is not False):
             raise ValueError("Invalid request-feature readiness feature match")
 
