@@ -8,13 +8,41 @@ class InspectorUITests(unittest.TestCase):
         self.assertRegex(VERSION,r"^\d+\.\d+\.\d+$")
         self.assertIn(f'local VERSION = "{VERSION}"',SRC)
         self.assertIn(f'-- Lycoles Universal Inspector v{VERSION}',SRC)
-    def test_evidence_not_in_header(self):
-        self.assertIn("autoEvidenceToggle.Parent = panel",SRC)
-        self.assertIn("autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)",SRC)
-        self.assertNotIn("autoEvidenceToggle.Parent = interactionToggle.Parent",SRC)
-    def test_output_does_not_cover_sidebar(self):
-        self.assertIn("Size = UDim2.fromOffset(360, 164)",SRC)
-        self.assertIn("Position = UDim2.fromOffset(12, 164)",SRC)
+    def test_evidence_controls_live_in_automation_tab(self):
+        self.assertIn("autoEvidenceToggle.Parent = automationPane",SRC)
+        self.assertIn("autoEvidenceToggle.Position = UDim2.fromOffset(8, 48)",SRC)
+        self.assertIn("Name = \"AutomationPane\"",SRC)
+        self.assertNotIn("autoEvidenceToggle.Parent = panel",SRC)
+    def test_output_uses_shared_tab_content_area(self):
+        self.assertIn('Name = "TabContentArea"',SRC)
+        self.assertIn('Name = "InspectorPane"',SRC)
+        self.assertIn('output.Size = UDim2.fromOffset(474, 120)',SRC)
+        self.assertIn('output.Position = UDim2.fromOffset(8, 118)',SRC)
+
+    def test_tab_switching_controls_shared_content_visibility(self):
+        self.assertIn('inspectorPane.Visible = tab == "inspector"',SRC)
+        self.assertIn('capturePane.Visible = tab == "capture"',SRC)
+        self.assertIn('automationPane.Visible = tab == "automation"',SRC)
+        self.assertIn('settingsPane.Visible = tab == "settings"',SRC)
+        self.assertIn('generatedScriptPane.Visible = tab == "generated"',SRC)
+        self.assertIn('inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("inspector") end)',SRC)
+        self.assertIn('captureTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("capture") end)',SRC)
+        self.assertIn('automationTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("automation") end)',SRC)
+        self.assertIn('settingsTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("settings") end)',SRC)
+
+
+    def test_layout_bounds_and_control_preservation(self):
+        self.assertIn('Size = UDim2.fromOffset(510, 460)',SRC)
+        self.assertIn('Name = "UploadHint"',SRC)
+        self.assertIn('scan.Parent = inspectorPane',SRC)
+        self.assertIn('copy.Parent = inspectorPane',SRC)
+        self.assertIn('save.Parent = inspectorPane',SRC)
+        self.assertIn('close.Parent = inspectorPane',SRC)
+        self.assertIn('watchToggle.Parent = automationPane',SRC)
+        self.assertIn('interactionToggle.Parent = automationPane',SRC)
+        self.assertIn('config.Parent = inspectorPane',SRC)
+
+
     def test_ack_not_misrepresented_as_integrity(self):
         self.assertIn("Receiver ACK ",SRC)
         self.assertIn("verify receiver integrity separately",SRC)
@@ -103,10 +131,15 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('pendingManifest.localExport.status="incomplete"',SRC)
         self.assertIn('pendingManifest.localExport.status="failed"',SRC)
 
-    def test_two_tab_generation_request_ui(self):
+    def test_tabbed_generation_request_ui(self):
         self.assertIn('Name = "InspectorTab"',SRC)
+        self.assertIn('Name = "CaptureTab"',SRC)
+        self.assertIn('Name = "AutomationTab"',SRC)
+        self.assertIn('Name = "SettingsTab"',SRC)
         self.assertIn('Name = "GeneratedScriptTab"',SRC)
         self.assertIn('Name = "GeneratedScriptPane"',SRC)
+        self.assertIn('generatedScriptPane.Visible = tab == "generated"',SRC)
+        self.assertIn('showGeneratedScriptPane("generated")',SRC)
         self.assertIn('PlaceholderText = "Describe the client-visible capability to generate"',SRC)
         self.assertIn('Text = "PRODUCE SCRIPT"',SRC)
         self.assertIn('report.featureRequest',SRC)
@@ -115,6 +148,51 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('local function inspect(requestType, featureRequest)',SRC)
         self.assertIn('inspect("feature-request", request)',SRC)
         self.assertNotIn('local requestedCapability',SRC)
+
+
+    def test_capture_tab_exposes_pause_resume_restart_controls(self):
+        self.assertIn('Name = "TargetedCaptureToggle", Text = "PAUSE CAPTURE"',SRC)
+        self.assertIn('Name = "TargetedRestartToggle", Text = "RESTART CAPTURE"',SRC)
+        self.assertIn('WORKFLOW_HELPERS.pauseTargetedCaptureSession',SRC)
+        self.assertIn('WORKFLOW_HELPERS.resumeTargetedCaptureSession',SRC)
+        self.assertIn('WORKFLOW_HELPERS.restartTargetedCaptureSession',SRC)
+        self.assertIn('targetedCaptureToggle.MouseButton1Click:Connect(function()',SRC)
+        self.assertIn('Targeted pause failed:',SRC)
+        self.assertIn('Targeted resume waiting:',SRC)
+        self.assertIn('Targeted restart waiting:',SRC)
+
+    def test_targeted_readiness_waiting_and_duplicate_prevention(self):
+        self.assertIn('local function targetedCaptureReady()',SRC)
+        self.assertIn('if not observerStats.inputBindingReady then return false, "input-observation-not-ready" end',SRC)
+        self.assertIn('if not observerStats.sweepCompleted then return false, "interaction-sweep-incomplete" end',SRC)
+        self.assertIn('if lifecycleState.pausedByUser and not force then',SRC)
+        self.assertIn('return false, "targeted capture paused by user"',SRC)
+        self.assertIn('return false, "targeted session already active"',SRC)
+
+    def test_targeted_respawn_and_listener_cleanup_paths_exist(self):
+        self.assertIn('respawnGenerations=spatialStats.respawnGenerations',SRC)
+        self.assertIn('observerStats.inputBindingReady then return end',SRC)
+        self.assertIn('for _, connection in ipairs(watchConnections) do connection:Disconnect() end',SRC)
+        self.assertIn('pcall(_G.LycolesStopTargetedCapture,"inspector-closed")',SRC)
+
+    def test_targeted_capture_automatic_lifecycle_is_enabled(self):
+        self.assertIn('WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle = function(reason)',SRC)
+        self.assertIn('setLifecycle("initializing",',SRC)
+        self.assertIn('setLifecycle("waiting-for-readiness",',SRC)
+        self.assertIn('setLifecycle("capturing",',SRC)
+        self.assertIn('setLifecycle("exporting",',SRC)
+        self.assertIn('setLifecycle("continuing",',SRC)
+        self.assertIn('WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("heartbeat")',SRC)
+        self.assertIn('WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("startup")',SRC)
+        self.assertIn('if lifecycleState.pausedByUser then',SRC)
+
+    def test_targeted_export_continuity_and_duplicate_suppression(self):
+        self.assertIn('WORKFLOW_HELPERS.targetedCaptureForExport = function(context)',SRC)
+        self.assertIn('duplicateExportSuppressed = duplicate',SRC)
+        self.assertIn('duplicateExportsSuppressed =',SRC)
+        self.assertIn('lifecycleState.exportCount = lifecycleState.exportCount + 1',SRC)
+        self.assertIn('targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="manifest",scanId=result.scanId})',SRC)
+        self.assertIn('targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="live-observation",scanId=baselineScanId})',SRC)
 
     def test_generated_pane_tracks_evidence_handoff_without_verification_claims(self):
         self.assertIn('local function refreshGeneratedHandoff(phase)',SRC)

@@ -886,3 +886,27 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Regression status after Milestone 2 changes:
   - targeted Python suites: `92 passed`
   - Luau parser checks: `4 passed, 0 failed`
+
+## Update — 2026-11-13 — Milestone 3.1 tabbed GUI + automatic targeted capture
+
+- Inspector GUI was redesigned into a single-window tabbed layout with shared content area:
+  - Tabs: `Inspector`, `Capture`, `Automation`, `Settings`, and `Generated`.
+  - Legacy right-side stacked controls were removed to prevent overlap with scan output.
+  - Tab panes use scrolling frames and explicit pane visibility switching.
+- Targeted capture lifecycle is now automatic and stateful:
+  - lifecycle phases: `initializing` -> `waiting-for-readiness` -> `capturing` -> `exporting` -> `continuing`.
+  - Auto-start is driven by `WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle` on startup and heartbeat.
+  - Readiness requires alive inspector + interaction observer enabled + input binding ready + sweep completed.
+- Manual controls are preserved and expanded in Capture tab:
+  - Pause/resume toggle and explicit restart control.
+  - Manual pause sets `pausedByUser` and is respected by auto lifecycle (no immediate auto-restart).
+- Targeted export continuity metadata added:
+  - `WORKFLOW_HELPERS.targetedCaptureForExport(context)` now tracks context (`manifest` vs `live-observation`), duplicate suppression, and export continuity counters.
+  - Call sites now pass `{kind, scanId}` to avoid duplicate export accounting.
+- Root local register pressure remained safe after redesign:
+  - computed root local pressure: `168` (budget `170`, Potassium hard limit `200`).
+- New/updated UI regressions cover:
+  - tab switching + pane visibility,
+  - shared content layout/control preservation,
+  - capture pause/resume/restart paths,
+  - automatic lifecycle and duplicate-export continuity metadata.

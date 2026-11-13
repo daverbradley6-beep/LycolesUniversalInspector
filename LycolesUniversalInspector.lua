@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.62
+-- Lycoles Universal Inspector v30.6.63
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.62"
+local VERSION = "30.6.63"
 
 local endpoint = ""
 local autoSend = true
@@ -1191,18 +1191,66 @@ local function button(label, x)
     }, panel)
 end
 
-local inspectorTab = create("TextButton", {
+inspectorTab = create("TextButton", {
     Name = "InspectorTab", Text = "Inspector",
-    Size = UDim2.fromOffset(78, 28), Position = UDim2.fromOffset(270, 10),
+    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(200, 10),
     BackgroundColor3 = Color3.fromRGB(48, 116, 150),
     TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
 }, panel)
-local generatedScriptTab = create("TextButton", {
-    Name = "GeneratedScriptTab", Text = "Generated Script",
-    Size = UDim2.fromOffset(112, 28), Position = UDim2.fromOffset(352, 10),
+captureTab = create("TextButton", {
+    Name = "CaptureTab", Text = "Capture",
+    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(276, 10),
     BackgroundColor3 = Color3.fromRGB(95, 95, 95),
     TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
 }, panel)
+automationTab = create("TextButton", {
+    Name = "AutomationTab", Text = "Automation",
+    Size = UDim2.fromOffset(84, 28), Position = UDim2.fromOffset(352, 10),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
+settingsTab = create("TextButton", {
+    Name = "SettingsTab", Text = "Settings",
+    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(440, 10),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
+generatedScriptTab = create("TextButton", {
+    Name = "GeneratedScriptTab", Text = "Generated",
+    Size = UDim2.fromOffset(88, 28), Position = UDim2.fromOffset(200, 44),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+}, panel)
+
+local tabContentArea = create("Frame", {
+    Name = "TabContentArea", Size = UDim2.fromOffset(498, 356),
+    Position = UDim2.fromOffset(6, 84), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, ZIndex = 2
+}, panel)
+inspectorPane = create("ScrollingFrame", {
+    Name = "InspectorPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = true,
+    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+capturePane = create("ScrollingFrame", {
+    Name = "CapturePane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 520), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+automationPane = create("ScrollingFrame", {
+    Name = "AutomationPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+settingsPane = create("ScrollingFrame", {
+    Name = "SettingsPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
 
 -- Draggable panel and compact minimised launcher.
 local UserInputService = game:GetService("UserInputService")
@@ -1370,11 +1418,13 @@ local automatic = create("TextButton", {
     BorderSizePixel = 2
 }, config)
 
-local generatedScriptPane = create("Frame", {
-    Name = "GeneratedScriptPane", Size = UDim2.fromOffset(510, 396),
-    Position = UDim2.fromOffset(0, 48), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
-    BorderSizePixel = 0, Visible = false, ZIndex = 7
-}, panel)
+local generatedScriptPane = create("ScrollingFrame", {
+    Name = "GeneratedScriptPane", Size = UDim2.new(1, 0, 1, 0),
+    Position = UDim2.fromOffset(0, 0), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderSizePixel = 0, Visible = false, ZIndex = 3,
+    CanvasSize = UDim2.fromOffset(0, 440), ScrollBarThickness = 6,
+    ScrollingDirection = Enum.ScrollingDirection.Y, AutomaticCanvasSize = Enum.AutomaticSize.None
+}, tabContentArea)
 create("TextLabel", {
     Text = "Request an evidence-grounded client utility",
     Size = UDim2.fromOffset(486, 30), Position = UDim2.fromOffset(12, 10),
@@ -1420,13 +1470,60 @@ local generatedCodeOutput = create("TextBox", {
     TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 8
 }, generatedScriptPane)
-local function showGeneratedScriptPane(visible)
-    generatedScriptPane.Visible = visible
-    inspectorTab.BackgroundColor3 = visible and Color3.fromRGB(95, 95, 95) or Color3.fromRGB(48, 116, 150)
-    generatedScriptTab.BackgroundColor3 = visible and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+scan.Parent = inspectorPane
+copy.Parent = inspectorPane
+save.Parent = inspectorPane
+close.Parent = inspectorPane
+status.Parent = inspectorPane
+queueLabel.Parent = inspectorPane
+output.Parent = inspectorPane
+config.Parent = inspectorPane
+watchToggle.Parent = automationPane
+interactionToggle.Parent = automationPane
+
+scan.Position = UDim2.fromOffset(8, 8)
+copy.Position = UDim2.fromOffset(128, 8)
+save.Position = UDim2.fromOffset(248, 8)
+close.Position = UDim2.fromOffset(368, 8)
+status.Size = UDim2.fromOffset(474, 50)
+status.Position = UDim2.fromOffset(8, 44)
+queueLabel.Size = UDim2.fromOffset(474, 18)
+queueLabel.Position = UDim2.fromOffset(8, 96)
+output.Size = UDim2.fromOffset(474, 120)
+output.Position = UDim2.fromOffset(8, 118)
+config.Size = UDim2.fromOffset(474, 108)
+config.Position = UDim2.fromOffset(8, 244)
+url.Size = UDim2.fromOffset(452, 30)
+url.Position = UDim2.fromOffset(10, 8)
+send.Size = UDim2.fromOffset(176, 40)
+send.Position = UDim2.fromOffset(10, 52)
+automatic.Size = UDim2.fromOffset(274, 40)
+automatic.Position = UDim2.fromOffset(188, 52)
+watchToggle.Size = UDim2.fromOffset(220, 30)
+watchToggle.Position = UDim2.fromOffset(8, 8)
+interactionToggle.Size = UDim2.fromOffset(220, 30)
+interactionToggle.Position = UDim2.fromOffset(236, 8)
+
+local function showGeneratedScriptPane(selectedTab)
+    local tab = selectedTab or "inspector"
+    inspectorPane.Visible = tab == "inspector"
+    capturePane.Visible = tab == "capture"
+    automationPane.Visible = tab == "automation"
+    settingsPane.Visible = tab == "settings"
+    generatedScriptPane.Visible = tab == "generated"
+
+    inspectorTab.BackgroundColor3 = (tab == "inspector") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+    captureTab.BackgroundColor3 = (tab == "capture") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+    automationTab.BackgroundColor3 = (tab == "automation") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+    settingsTab.BackgroundColor3 = (tab == "settings") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+    generatedScriptTab.BackgroundColor3 = (tab == "generated") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
 end
-inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(false) end)
-generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane(true) end)
+inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("inspector") end)
+captureTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("capture") end)
+automationTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("automation") end)
+settingsTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("settings") end)
+generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("generated") end)
+showGeneratedScriptPane("inspector")
 local function refreshGeneratedHandoff(phase)
     if not pendingManifest then return end
     local requestText=pendingManifest.featureRequest
@@ -1966,7 +2063,7 @@ loadGeneratedResult.MouseButton1Click:Connect(function()
         generatedStatus.Text="Loaded legacy display-only offline result for scan "..result.scanId
             ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
     end
-    showGeneratedScriptPane(true)
+    showGeneratedScriptPane("generated")
 end)
 end
 
@@ -5065,6 +5162,26 @@ local function initializeTargetedCaptureRuntime()
     local targetedCaptureLastTick = 0
     local uiRefreshCallback = nil
 
+    local lifecycleState = {
+        phase = "initializing",
+        reason = "startup",
+        pausedByUser = false,
+        lastTransitionAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        lastError = nil,
+        restartCount = 0,
+        exportCount = 0,
+        sessionCount = 0,
+        lastSessionId = nil,
+    }
+
+    local function setLifecycle(phase, reason, err)
+        lifecycleState.phase = phase or lifecycleState.phase
+        lifecycleState.reason = tostring(reason or lifecycleState.reason or "none"):sub(1,120)
+        lifecycleState.lastTransitionAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        lifecycleState.lastError = err and sanitizeDiagnosticText(err, 180) or nil
+    end
+
+
     local function utcNowIso()
         return os.date("!%Y-%m-%dT%H:%M:%SZ")
     end
@@ -5475,8 +5592,16 @@ WORKFLOW_HELPERS.cycleTargetedPreset = function()
 end
 
 WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
+    local force = type(options) == "table" and options.force == true
+    if lifecycleState.pausedByUser and not force then
+        setLifecycle("paused", "paused-by-user")
+        return false, "targeted capture paused by user"
+    end
     local ready, err = ensureTargetedCatalogLoaded()
-    if not ready then return false, err end
+    if not ready then
+        setLifecycle("waiting-for-readiness", "request-catalog-unavailable", err)
+        return false, err
+    end
     if targetedCaptureSession and targetedCaptureSession.active then
         return false, "targeted session already active"
     end
@@ -5493,7 +5618,10 @@ WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
     else
         selected = selectedRequestIdsArray()
     end
-    if #selected == 0 then return false, "no targeted requests selected" end
+    if #selected == 0 then
+        setLifecycle("waiting-for-readiness", "no-targeted-requests")
+        return false, "no targeted requests selected"
+    end
 
     local maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds
     local requests = {}
@@ -5540,6 +5668,12 @@ WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
             maxCameraSamples = LIMITS.maxTargetedCameraSamples,
             maxMatchStateSamples = LIMITS.maxTargetedMatchStateSamples,
         },
+        exportState = {
+            lastManifestScanId = nil,
+            lastLiveBaselineScanId = nil,
+            duplicateExportsSuppressed = 0,
+            exportCount = 0,
+        },
         samples = {
             characterEntities = {},
             entityEvents = {},
@@ -5574,6 +5708,10 @@ WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
         },
     }
     targetedCaptureLastTick = 0
+    lifecycleState.pausedByUser = false
+    lifecycleState.sessionCount = lifecycleState.sessionCount + 1
+    lifecycleState.lastSessionId = targetedCaptureSession.sessionId
+    setLifecycle("capturing", force and "forced-start" or "session-started")
     updateRequestProgress(targetedCaptureSession)
     if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-started") end
     return true, targetedCaptureSession.sessionId
@@ -5583,14 +5721,117 @@ WORKFLOW_HELPERS.stopTargetedCaptureSession = function(reason)
     if not targetedCaptureSession or not targetedCaptureSession.active then
         return false, "no active targeted session"
     end
+    local stopReason = tostring(reason or "operator-stop"):sub(1,80)
     targetedCaptureSession.active = false
     targetedCaptureSession.stoppedAt = utcNowIso()
-    targetedCaptureSession.stopReason = tostring(reason or "operator-stop"):sub(1,80)
+    targetedCaptureSession.stopReason = stopReason
     updateRequestProgress(targetedCaptureSession)
     targetedCaptureLastSession = targetedCaptureSession
+    if stopReason == "operator-pause" then
+        lifecycleState.pausedByUser = true
+        setLifecycle("paused", stopReason)
+    elseif stopReason == "duration-limit" then
+        setLifecycle("exporting", stopReason)
+    else
+        setLifecycle("waiting-for-readiness", stopReason)
+    end
     if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-stopped") end
     return true, targetedCaptureSession.sessionId
 end
+
+local function targetedCaptureReady()
+    if not alive then return false, "inspector-closed" end
+    if not interactionObserveEnabled then return false, "interaction-observer-disabled" end
+    if not observerStats.inputBindingReady then return false, "input-observation-not-ready" end
+    if not observerStats.sweepCompleted then return false, "interaction-sweep-incomplete" end
+    return true, "ready"
+end
+
+WORKFLOW_HELPERS.pauseTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = true
+    if targetedCaptureSession and targetedCaptureSession.active then
+        local ok, err = WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-pause")
+        if not ok then return false, err end
+    else
+        setLifecycle("paused", "operator-pause")
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-paused") end
+    end
+    return true, "paused"
+end
+
+WORKFLOW_HELPERS.resumeTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = false
+    local ready, reason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", reason)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resume-waiting") end
+        return false, reason
+    end
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if not ok then
+        setLifecycle("waiting-for-readiness", "resume-failed", result)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resume-failed") end
+        return false, result
+    end
+    setLifecycle("capturing", "operator-resume")
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resumed") end
+    return true, result
+end
+
+WORKFLOW_HELPERS.restartTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = false
+    lifecycleState.restartCount = lifecycleState.restartCount + 1
+    if targetedCaptureSession and targetedCaptureSession.active then
+        WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-restart")
+    end
+    local ready, reason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", reason)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-restart-waiting") end
+        return false, reason
+    end
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if not ok then
+        setLifecycle("waiting-for-readiness", "restart-failed", result)
+        return false, result
+    end
+    setLifecycle("capturing", "operator-restart")
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-restarted") end
+    return true, result
+end
+
+WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle = function(reason)
+    if lifecycleState.pausedByUser then
+        setLifecycle("paused", "paused-by-user")
+        return false, "paused"
+    end
+
+    if targetedCaptureSession and targetedCaptureSession.active then
+        if lifecycleState.phase ~= "capturing" then setLifecycle("capturing", reason or "active") end
+        return true, "capturing"
+    end
+
+    local ready, readinessReason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", readinessReason)
+        return false, readinessReason
+    end
+
+    if lifecycleState.phase == "exporting" then
+        setLifecycle("continuing", "interval-rollover")
+    else
+        setLifecycle("initializing", reason or "auto-start")
+    end
+
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if ok then
+        setLifecycle("capturing", reason or "auto-started")
+        return true, result
+    end
+    setLifecycle("waiting-for-readiness", "start-failed", result)
+    return false, result
+end
+
 
 local function captureTargetedTickForRequest(session, requestId, request, nowClock)
     local progress = session.requestProgress[requestId]
@@ -5819,7 +6060,20 @@ end
 WORKFLOW_HELPERS.getTargetedCaptureUiState = function()
     local snapshot = targetedCaptureSummary(false)
     local summary = type(snapshot) == "table" and snapshot.summary or {}
+    local progress = type(snapshot) == "table" and snapshot.requestProgress or {}
     local preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex]
+    local function requestStatus(requestId)
+        local entry = type(progress) == "table" and progress[requestId] or nil
+        local missing = type(entry) == "table" and type(entry.missingEvidence) == "table" and #entry.missingEvidence or 0
+        local satisfied = type(entry) == "table" and type(entry.satisfiedEvidence) == "table" and #entry.satisfiedEvidence or 0
+        return {
+            status = type(entry) == "table" and entry.status or "collecting",
+            missing = missing,
+            satisfied = satisfied,
+        }
+    end
+    local sessionRef = targetedCaptureSession or targetedCaptureLastSession
+    local samplesRef = type(sessionRef) == "table" and sessionRef.samples or nil
     return {
         presetLabel = preset and preset.label or "CUSTOM",
         active = type(snapshot) == "table" and snapshot.active == true,
@@ -5827,14 +6081,73 @@ WORKFLOW_HELPERS.getTargetedCaptureUiState = function()
         completedRequests = summary and summary.completedRequests or 0,
         totalRequests = summary and summary.totalRequests or #targetedRequestOrder,
         unresolvedRequests = summary and summary.unresolvedRequests or 0,
+        sessionId = type(snapshot) == "table" and snapshot.sessionId or nil,
+        lifecyclePhase = lifecycleState.phase,
+        lifecycleReason = lifecycleState.reason,
+        lifecyclePausedByUser = lifecycleState.pausedByUser,
+        lifecycleLastTransitionAt = lifecycleState.lastTransitionAt,
+        lifecycleLastError = lifecycleState.lastError,
+        lifecycleSessionCount = lifecycleState.sessionCount,
+        lifecycleExportCount = lifecycleState.exportCount,
+        lifecycleRestartCount = lifecycleState.restartCount,
+        requestEntity = requestStatus("character-entity-observation"),
+        requestCombat = requestStatus("combat-camera-weapon-correlation"),
+        requestMatch = requestStatus("match-objective-state-observation"),
+        requestLoadout = requestStatus("loadout-runtime-observation"),
+        sampleCounts = {
+            characterEntities = type(samplesRef) == "table" and #samplesRef.characterEntities or 0,
+            cameraSamples = type(samplesRef) == "table" and #samplesRef.cameraSamples or 0,
+            matchStateSamples = type(samplesRef) == "table" and #samplesRef.matchStateSamples or 0,
+            loadoutSnapshots = type(samplesRef) == "table" and #samplesRef.loadoutSnapshots or 0,
+            errors = type(samplesRef) == "table" and #samplesRef.errors or 0,
+        },
     }
 end
 
-WORKFLOW_HELPERS.targetedCaptureForExport = function()
+WORKFLOW_HELPERS.targetedCaptureForExport = function(context)
     local payload = targetedCaptureSummary(true)
     if type(payload) == "table" and type(payload.samples) == "table" then
         payload.timelineEvents = payload.samples.timelineEvents or {}
     end
+    local session = targetedCaptureSession or targetedCaptureLastSession
+    if type(session) == "table" then
+        session.exportState = type(session.exportState) == "table" and session.exportState or {
+            lastManifestScanId = nil,
+            lastLiveBaselineScanId = nil,
+            duplicateExportsSuppressed = 0,
+            exportCount = 0,
+        }
+        local exportKind = type(context) == "table" and tostring(context.kind or "unknown") or "unknown"
+        local scanId = type(context) == "table" and tostring(context.scanId or "none") or "none"
+        local duplicate = false
+        if exportKind == "manifest" then
+            duplicate = session.exportState.lastManifestScanId == scanId
+            if not duplicate then session.exportState.lastManifestScanId = scanId end
+        elseif exportKind == "live-observation" then
+            duplicate = session.exportState.lastLiveBaselineScanId == scanId
+            if not duplicate then session.exportState.lastLiveBaselineScanId = scanId end
+        end
+        if duplicate then
+            session.exportState.duplicateExportsSuppressed = (session.exportState.duplicateExportsSuppressed or 0) + 1
+        else
+            session.exportState.exportCount = (session.exportState.exportCount or 0) + 1
+            lifecycleState.exportCount = lifecycleState.exportCount + 1
+            if lifecycleState.phase == "exporting" then setLifecycle("continuing", "export-complete") end
+        end
+        payload.exportContinuity = {
+            kind = exportKind,
+            scanId = scanId,
+            duplicateExportSuppressed = duplicate,
+            sessionExportCount = session.exportState.exportCount or 0,
+            duplicateExportsSuppressed = session.exportState.duplicateExportsSuppressed or 0,
+        }
+    end
+    payload.lifecycle = {
+        phase = lifecycleState.phase,
+        reason = lifecycleState.reason,
+        pausedByUser = lifecycleState.pausedByUser,
+        lastTransitionAt = lifecycleState.lastTransitionAt,
+    }
     return payload
 end
 
@@ -5854,6 +6167,15 @@ _G.LycolesStartTargetedCapture = function(options)
 end
 _G.LycolesStopTargetedCapture = function(reason)
     return WORKFLOW_HELPERS.stopTargetedCaptureSession(reason)
+end
+_G.LycolesPauseTargetedCapture = function()
+    return WORKFLOW_HELPERS.pauseTargetedCaptureSession()
+end
+_G.LycolesResumeTargetedCapture = function()
+    return WORKFLOW_HELPERS.resumeTargetedCaptureSession()
+end
+_G.LycolesRestartTargetedCapture = function()
+    return WORKFLOW_HELPERS.restartTargetedCaptureSession()
 end
 _G.LycolesTargetedCaptureProgress = function(includeSamples)
     return WORKFLOW_HELPERS.getTargetedCaptureSnapshot(includeSamples)
@@ -7082,7 +7404,7 @@ WORKFLOW_HELPERS.buildLiveObservationExport = function()
         and type(reportTransportSnapshot.acknowledgedDigestParts)=="number")
         and reportTransportSnapshot.acknowledgedDigestParts or 0
     local gestureIntentSummary=summarizeInputGestureIntents()
-    local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport()
+    local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="live-observation",scanId=baselineScanId})
     return {
         schemaVersion="30.6.live-observation-export.1",
         exportKind="dynamic-observations",
@@ -7807,6 +8129,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         sampleActivePointerGestureCameraHeading(heartbeatClock,"gesture-heartbeat")
         sampleActivePointerGesturesRelativeDelta(heartbeatClock)
         if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+        WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("heartbeat")
         WORKFLOW_HELPERS.captureTargetedObservationTick("heartbeat")
     end))
     local keyActions={
@@ -8771,7 +9094,7 @@ local function inspect(requestType, featureRequest)
             report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
             local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             local gestureIntentSummary=summarizeInputGestureIntents()
-            local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport()
+            local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="manifest",scanId=result.scanId})
             report.interactionDiagnostics = {
                 scanRequestType=observerStats.scanRequestType,
                 scanInvocationCount=observerStats.scanInvocationCount,
@@ -9161,21 +9484,20 @@ end
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
 autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
-autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
-autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)
+autoEvidenceToggle.Size = UDim2.fromOffset(230, 30)
+autoEvidenceToggle.Position = UDim2.fromOffset(8, 48)
 autoEvidenceToggle.Text = "EVIDENCE: ON"
-autoEvidenceToggle.TextSize = 10
+autoEvidenceToggle.TextSize = 12
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
 autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
-autoEvidenceToggle.Parent = panel
--- Keep evidence control below INTERACT and outside the report viewport.
+autoEvidenceToggle.Parent = automationPane
 autoEvidenceToggle.ZIndex = 4
 workflowRecordToggle = create("TextButton", {
     Name="WorkflowRecordToggle",Text="FLOW: AUTO-IDLE",
-    Size=UDim2.fromOffset(120,26),Position=UDim2.fromOffset(380,201),
-    TextSize=10,TextColor3=Color3.fromRGB(245,245,245),
+    Size=UDim2.fromOffset(230,30),Position=UDim2.fromOffset(252,48),
+    TextSize=12,TextColor3=Color3.fromRGB(245,245,245),
     BackgroundColor3=Color3.fromRGB(85,85,105),ZIndex=4
-},panel)
+},automationPane)
 refreshWorkflowRecorder=function(reason)
     if workflowRecording.active then
         local mode=workflowRecording.automatic and "AUTO" or "MANUAL"
@@ -9211,64 +9533,167 @@ end)
 
 scanModeToggle = create("TextButton", {
     Name = "ScanModeToggle", Text = "SCAN MODE: FULL",
-    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 232),
-    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 86),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
     BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
-}, panel)
+}, automationPane)
 observationToggle = create("TextButton", {
     Name = "ObservationWindowToggle", Text = "OBSERVE: 12s",
-    Size = UDim2.fromOffset(120, 26), Position = UDim2.fromOffset(380, 263),
-    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(252, 86),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
     BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
-}, panel)
+}, automationPane)
 evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
     Text = "Auto rescans: 0/4",
-    Position = UDim2.fromOffset(379, 294),
-    Size = UDim2.fromOffset(121, 36),
+    Position = UDim2.fromOffset(8, 124),
+    Size = UDim2.fromOffset(474, 44),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
-    TextSize = 10,
+    TextSize = 12,
     TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
-}, panel)
+}, automationPane)
+automationHint = create("TextLabel", {
+    Name = "AutomationHint",
+    Text = "Automation state: idle",
+    Position = UDim2.fromOffset(8, 172),
+    Size = UDim2.fromOffset(474, 44),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 12,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, automationPane)
 uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
-    Position = UDim2.fromOffset(379, 332),
-    Size = UDim2.fromOffset(121, 18),
+    Position = UDim2.fromOffset(8, 356),
+    Size = UDim2.fromOffset(474, 28),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
-    TextSize = 10,
+    TextSize = 11,
     TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
-}, panel)
+}, inspectorPane)
 
 targetedPresetToggle = create("TextButton", {
     Name = "TargetedPresetToggle", Text = "TARGET: ALL",
-    Size = UDim2.fromOffset(120, 24), Position = UDim2.fromOffset(380, 352),
-    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 8),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
     BackgroundColor3 = Color3.fromRGB(74, 82, 108), ZIndex = 4
-}, panel)
-
+}, capturePane)
 targetedCaptureToggle = create("TextButton", {
-    Name = "TargetedCaptureToggle", Text = "CAPTURE: START",
-    Size = UDim2.fromOffset(120, 24), Position = UDim2.fromOffset(380, 379),
-    TextSize = 10, TextColor3 = Color3.fromRGB(245,245,245),
-    BackgroundColor3 = Color3.fromRGB(55, 110, 80), ZIndex = 4
-}, panel)
-
+    Name = "TargetedCaptureToggle", Text = "PAUSE CAPTURE",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 46),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(128, 76, 48), ZIndex = 4
+}, capturePane)
+targetedRestartToggle = create("TextButton", {
+    Name = "TargetedRestartToggle", Text = "RESTART CAPTURE",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(252, 46),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(74, 82, 108), ZIndex = 4
+}, capturePane)
 targetedHint = create("TextLabel", {
     Name = "TargetedHint",
-    Text = "Targeted: idle",
-    Position = UDim2.fromOffset(379, 405),
-    Size = UDim2.fromOffset(121, 34),
+    Text = "Targeted: waiting",
+    Position = UDim2.fromOffset(8, 84),
+    Size = UDim2.fromOffset(474, 48),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
-    TextSize = 10,
+    TextSize = 12,
     TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
-}, panel)
+}, capturePane)
+targetedEntityLabel = create("TextLabel", {
+    Name = "TargetedEntityProgress", Text = "Entity observation: waiting",
+    Position = UDim2.fromOffset(8, 136), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedCombatLabel = create("TextLabel", {
+    Name = "TargetedCombatProgress", Text = "Combat/camera observation: waiting",
+    Position = UDim2.fromOffset(8, 160), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedMatchLabel = create("TextLabel", {
+    Name = "TargetedMatchProgress", Text = "Match/objective observation: waiting",
+    Position = UDim2.fromOffset(8, 184), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedLoadoutLabel = create("TextLabel", {
+    Name = "TargetedLoadoutProgress", Text = "Loadout observation: waiting",
+    Position = UDim2.fromOffset(8, 208), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedEvidenceLabel = create("TextLabel", {
+    Name = "TargetedEvidenceCollected", Text = "Evidence collected: 0 samples",
+    Position = UDim2.fromOffset(8, 236), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedMissingLabel = create("TextLabel", {
+    Name = "TargetedEvidenceMissing", Text = "Evidence missing: n/a",
+    Position = UDim2.fromOffset(8, 260), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedErrorLabel = create("TextLabel", {
+    Name = "TargetedCaptureErrors", Text = "Capture errors: 0",
+    Position = UDim2.fromOffset(8, 284), Size = UDim2.fromOffset(474, 48),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, capturePane)
+
+settingsLimitsLabel = create("TextLabel", {
+    Name = "SettingsLimitsLabel",
+    Text = "Capture limits\n- max requests: "..tostring(LIMITS.maxTargetedRequests)
+        .."\n- max entity samples: "..tostring(LIMITS.maxTargetedEntitySnapshots)
+        .."\n- max camera samples: "..tostring(LIMITS.maxTargetedCameraSamples),
+    Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, settingsPane)
+settingsSamplingLabel = create("TextLabel", {
+    Name = "SettingsSamplingLabel",
+    Text = "Sampling intervals\n- targeted tick: "..tostring(LIMITS.targetedCaptureTickSeconds).."s"
+        .."\n- observation idle: "..tostring(AUTO_EVIDENCE_IDLE_SECONDS).."s"
+        .."\n- workflow window: "..tostring(LIMITS.workflowRecordingSeconds).."s",
+    Position = UDim2.fromOffset(8, 104), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, settingsPane)
+settingsExportLabel = create("TextLabel", {
+    Name = "SettingsExportLabel",
+    Text = "Export preferences\n- multipart JSON export preserved"
+        .."\n- receiver ACK tracked separately from integrity verification"
+        .."\n- targeted session IDs and provenance preserved",
+    Position = UDim2.fromOffset(8, 200), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, settingsPane)
+settingsPerfLabel = create("TextLabel", {
+    Name = "SettingsPerformanceLabel",
+    Text = "Performance + diagnostics\n- bounded queues and capped timelines"
+        .."\n- no duplicate listener installation"
+        .."\n- automatic lifecycle: initializing → waiting → capturing → exporting → continuing",
+    Position = UDim2.fromOffset(8, 296), Size = UDim2.fromOffset(474, 84),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, settingsPane)
 
 targetedCaptureUiRefresh = function(reason)
     local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
@@ -9278,24 +9703,50 @@ targetedCaptureUiRefresh = function(reason)
     local total = uiState.totalRequests or 0
     local unresolved = uiState.unresolvedRequests or 0
     local active = uiState.active == true
+    local phase = tostring(uiState.lifecyclePhase or "waiting-for-readiness")
+    local reasonLine = uiState.lifecycleReason and tostring(uiState.lifecycleReason):sub(1,64) or "none"
+    local pausedByUser = uiState.lifecyclePausedByUser == true
 
-    if active then
-        targetedCaptureToggle.Text = "CAPTURE: STOP"
+    if active and not pausedByUser then
+        targetedCaptureToggle.Text = "PAUSE CAPTURE"
         targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(128, 76, 48)
     else
-        targetedCaptureToggle.Text = "CAPTURE: START"
+        targetedCaptureToggle.Text = "RESUME CAPTURE"
         targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(55, 110, 80)
     end
 
-    local statusLine = active and "active" or "idle"
-    local reasonLine = uiState.stopReason and ("\nStop: " .. tostring(uiState.stopReason):sub(1,34)) or ""
-    targetedHint.Text = "Targeted: " .. statusLine .. " " .. tostring(completed) .. "/" .. tostring(total)
-        .. "\nOpen: " .. tostring(unresolved) .. reasonLine
+    local entity = uiState.requestEntity or {}
+    local combat = uiState.requestCombat or {}
+    local matchState = uiState.requestMatch or {}
+    local loadout = uiState.requestLoadout or {}
+    local samples = uiState.sampleCounts or {}
 
-    if reason=="session-started" then
-        status.Text = "Targeted capture session started"
-    elseif reason=="session-stopped" then
-        status.Text = "Targeted capture session stopped"
+    targetedHint.Text = "Lifecycle: " .. phase .. " | session " .. tostring(uiState.sessionId or "n/a")
+        .. "\nProgress: " .. tostring(completed) .. "/" .. tostring(total)
+        .. " complete | " .. tostring(unresolved) .. " open"
+    targetedEntityLabel.Text = "Entity observation: " .. tostring(entity.status or "collecting") .. " | satisfied "
+        .. tostring(entity.satisfied or 0) .. " | missing " .. tostring(entity.missing or 0)
+    targetedCombatLabel.Text = "Combat/camera observation: " .. tostring(combat.status or "collecting") .. " | satisfied "
+        .. tostring(combat.satisfied or 0) .. " | missing " .. tostring(combat.missing or 0)
+    targetedMatchLabel.Text = "Match/objective observation: " .. tostring(matchState.status or "collecting") .. " | satisfied "
+        .. tostring(matchState.satisfied or 0) .. " | missing " .. tostring(matchState.missing or 0)
+    targetedLoadoutLabel.Text = "Loadout observation: " .. tostring(loadout.status or "collecting") .. " | satisfied "
+        .. tostring(loadout.satisfied or 0) .. " | missing " .. tostring(loadout.missing or 0)
+    targetedEvidenceLabel.Text = "Evidence collected: entity " .. tostring(samples.characterEntities or 0)
+        .. ", camera " .. tostring(samples.cameraSamples or 0)
+        .. ", match " .. tostring(samples.matchStateSamples or 0)
+        .. ", loadout " .. tostring(samples.loadoutSnapshots or 0)
+    targetedMissingLabel.Text = "Evidence missing: " .. tostring(entity.missing or 0)
+        .. "+" .. tostring(combat.missing or 0)
+        .. "+" .. tostring(matchState.missing or 0)
+        .. "+" .. tostring(loadout.missing or 0)
+    targetedErrorLabel.Text = "Capture errors: " .. tostring(samples.errors or 0)
+        .. "\nLifecycle reason: " .. reasonLine
+
+    if reason=="session-started" or reason=="session-resumed" then
+        status.Text = "Targeted capture active"
+    elseif reason=="session-stopped" or reason=="session-paused" then
+        status.Text = "Targeted capture paused"
     elseif reason=="preset-cycled" then
         status.Text = "Targeted preset: " .. tostring(presetLabel)
     end
@@ -9315,7 +9766,15 @@ refreshEvidenceControls = function(reason)
     observationToggle.Text = "OBSERVE: " .. tostring(AUTO_EVIDENCE_IDLE_SECONDS) .. "s"
     evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
         .. "\nCoverage: " .. (profile.quickTargeted and "targeted" or "full")
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    automationHint.Text = "Watch: " .. (watchEnabled and "ON" or "OFF")
+        .. " | Interaction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
+        .. "\nTargeted lifecycle: " .. tostring(uiState.lifecyclePhase or "waiting-for-readiness")
+        .. " | reason: " .. tostring(uiState.lifecycleReason or "none")
     if targetedCaptureUiRefresh then targetedCaptureUiRefresh(reason) end
+    settingsSamplingLabel.Text = "Sampling intervals\n- targeted tick: "..tostring(LIMITS.targetedCaptureTickSeconds).."s"
+        .."\n- observation idle: "..tostring(AUTO_EVIDENCE_IDLE_SECONDS).."s"
+        .."\n- workflow window: "..tostring(LIMITS.workflowRecordingSeconds).."s"
     if reason=="profile-changed" then
         status.Text = "Scan mode " .. profile.label .. " | auto rescans "
             .. AUTO_EVIDENCE_MAX_RESCANS .. " | observation " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
@@ -9346,27 +9805,40 @@ targetedPresetToggle.MouseButton1Click:Connect(function()
 end)
 
 targetedCaptureToggle.MouseButton1Click:Connect(function()
-    local snapshot = WORKFLOW_HELPERS.getTargetedCaptureSnapshot(false)
-    local active = type(snapshot)=="table" and snapshot.active==true
-    if active then
-        local ok, err = WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-stop")
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    local active = uiState.active == true
+    local pausedByUser = uiState.lifecyclePausedByUser == true
+    if active and not pausedByUser then
+        local ok, err = WORKFLOW_HELPERS.pauseTargetedCaptureSession()
         if not ok then
-            status.Text = "Targeted stop failed: " .. tostring(err)
+            status.Text = "Targeted pause failed: " .. tostring(err)
         elseif targetedCaptureUiRefresh then
-            targetedCaptureUiRefresh("session-stopped")
+            targetedCaptureUiRefresh("session-paused")
         end
         return
     end
 
-    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession()
+    local ok, result = WORKFLOW_HELPERS.resumeTargetedCaptureSession()
     if not ok then
-        status.Text = "Targeted start failed: " .. tostring(result)
+        status.Text = "Targeted resume waiting: " .. tostring(result)
         return
     end
-    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-started") end
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-resumed") end
+end)
+
+targetedRestartToggle.MouseButton1Click:Connect(function()
+    local ok, result = WORKFLOW_HELPERS.restartTargetedCaptureSession()
+    if not ok then
+        status.Text = "Targeted restart waiting: " .. tostring(result)
+        return
+    end
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-restarted") end
 end)
 
 refreshEvidenceControls("initial")
+if WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle then
+    WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("startup")
+end
 
 -- Existing observer already captures pre/post state and GUI transitions. This
 -- scheduler consolidates those records into profile-selected reports after activity settles.
