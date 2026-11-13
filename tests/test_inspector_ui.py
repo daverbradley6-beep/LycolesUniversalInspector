@@ -43,6 +43,54 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('config.Parent = inspectorPane',SRC)
 
 
+    def test_tab_bar_compact_single_row_layout(self):
+        self.assertIn('Position = UDim2.fromOffset(8, 52)',SRC)
+        self.assertIn('Position = UDim2.fromOffset(106, 52)',SRC)
+        self.assertIn('Position = UDim2.fromOffset(204, 52)',SRC)
+        self.assertIn('Position = UDim2.fromOffset(302, 52)',SRC)
+        self.assertIn('Position = UDim2.fromOffset(400, 52)',SRC)
+        self.assertNotIn('Position = UDim2.fromOffset(200, 44)',SRC)
+
+    def test_settings_tab_contains_functional_appearance_controls(self):
+        self.assertIn('Name = "SettingsAppearanceHeader"',SRC)
+        self.assertIn('Name = "ThemePresetButton"',SRC)
+        self.assertIn('Name = "ThemeSaveButton"',SRC)
+        self.assertIn('Name = "ThemeResetButton"',SRC)
+        self.assertIn('Name = "ThemePersistenceStatus"',SRC)
+        self.assertIn('createThemeAdjustRow(0, "Background shade: ", "backgroundShade"',SRC)
+        self.assertIn('createThemeAdjustRow(9, "Button hover brightness: ", "buttonHoverBrightness"',SRC)
+        self.assertIn('themePresetButton.MouseButton1Click:Connect(function()',SRC)
+        self.assertIn('themeSaveButton.MouseButton1Click:Connect(function()',SRC)
+        self.assertIn('themeResetButton.MouseButton1Click:Connect(function()',SRC)
+
+    def test_theme_manager_tokens_and_live_apply_path(self):
+        self.assertIn('THEME_PRESETS = {',SRC)
+        self.assertIn('function themeRegister(instance, spec)',SRC)
+        self.assertIn('function themeApply()',SRC)
+        self.assertIn('function themeRefreshTabVisuals()',SRC)
+        self.assertIn('themeEnsureCorner(instance)',SRC)
+        self.assertIn('themeEnsureStroke(instance)',SRC)
+        self.assertIn('THEME_PANEL_SCALE.Scale = themeClamp(THEME_ACTIVE.uiScale',SRC)
+        self.assertIn('instance.TextSize = math.floor(THEME_BASE_TEXT_SIZE[instance] * themeClamp(THEME_ACTIVE.textScale',SRC)
+
+    def test_theme_persistence_save_load_and_fallback(self):
+        self.assertIn('THEME_CONFIG_PATH = "LycolesInspector/settings/theme.json"',SRC)
+        self.assertIn('function themePersistenceSupported()',SRC)
+        self.assertIn('function themeLoadFromDisk()',SRC)
+        self.assertIn('function themeSaveToDisk()',SRC)
+        self.assertIn('pcall(makefolder, THEME_CONFIG_FOLDER)',SRC)
+        self.assertIn('pcall(makefolder, THEME_CONFIG_SUBFOLDER)',SRC)
+        self.assertIn('schemaVersion = THEME_SCHEMA_VERSION',SRC)
+        self.assertIn('THEME_LAST_SAVE_MESSAGE = "Theme file is malformed; defaults restored"',SRC)
+        self.assertIn('Theme persistence unavailable in this executor (session-only changes active)',SRC)
+
+    def test_no_duplicate_primary_tab_control_instances(self):
+        self.assertEqual(SRC.count('Name = "InspectorTab"'), 1)
+        self.assertEqual(SRC.count('Name = "CaptureTab"'), 1)
+        self.assertEqual(SRC.count('Name = "AutomationTab"'), 1)
+        self.assertEqual(SRC.count('Name = "SettingsTab"'), 1)
+        self.assertEqual(SRC.count('Name = "GeneratedScriptTab"'), 1)
+
     def test_ack_not_misrepresented_as_integrity(self):
         self.assertIn("Receiver ACK ",SRC)
         self.assertIn("verify receiver integrity separately",SRC)

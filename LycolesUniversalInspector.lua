@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.63
+-- Lycoles Universal Inspector v30.6.64
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.63"
+local VERSION = "30.6.64"
 
 local endpoint = ""
 local autoSend = true
@@ -1153,28 +1153,301 @@ local function create(className, properties, parent)
     return item
 end
 
+THEME_SCHEMA_VERSION = 1
+THEME_CONFIG_FOLDER = "LycolesInspector"
+THEME_CONFIG_SUBFOLDER = "LycolesInspector/settings"
+THEME_CONFIG_PATH = "LycolesInspector/settings/theme.json"
+THEME_PRESETS = {
+    Graphite = {
+        backgroundShade = 36, surfaceShade = 48, cardShade = 58, elevatedShade = 68,
+        buttonShade = 74, borderBrightness = 86, borderOpacity = 0.45,
+        cornerRadius = 8, textBrightness = 242, textSecondaryBrightness = 193,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 10,
+    },
+    Slate = {
+        backgroundShade = 44, surfaceShade = 58, cardShade = 70, elevatedShade = 78,
+        buttonShade = 84, borderBrightness = 102, borderOpacity = 0.38,
+        cornerRadius = 8, textBrightness = 240, textSecondaryBrightness = 198,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 9,
+    },
+    Silver = {
+        backgroundShade = 66, surfaceShade = 86, cardShade = 104, elevatedShade = 120,
+        buttonShade = 134, borderBrightness = 162, borderOpacity = 0.32,
+        cornerRadius = 8, textBrightness = 246, textSecondaryBrightness = 214,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 8,
+    },
+}
+THEME_DEFAULT_PRESET = "Graphite"
+THEME_ACTIVE = {}
+THEME_REGISTRY = {}
+THEME_PANE_REGISTRY = {}
+THEME_BASE_TEXT_SIZE = {}
+THEME_BUTTON_HOVER_BINDINGS = {}
+THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable"
+THEME_STATUS_LABEL = nil
+THEME_PANEL_SCALE = nil
+THEME_SELECTED_TAB = "inspector"
+
+function themeClamp(value, minimum, maximum)
+    local n = tonumber(value)
+    if not n then return minimum end
+    if n < minimum then return minimum end
+    if n > maximum then return maximum end
+    return n
+end
+
+function themeShade(brightness)
+    local v = math.floor(themeClamp(brightness, 0, 255) + 0.5)
+    return Color3.fromRGB(v, v, v)
+end
+
+function themeCopyTable(source)
+    local out = {}
+    for k, v in pairs(source or {}) do
+        out[k] = v
+    end
+    return out
+end
+
+function themePresetNames()
+    return {"Graphite", "Slate", "Silver", "Custom"}
+end
+
+function themeNormalize(raw)
+    local base = themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET])
+    local incoming = type(raw) == "table" and raw or {}
+    base.backgroundShade = themeClamp(incoming.backgroundShade or base.backgroundShade, 0, 255)
+    base.surfaceShade = themeClamp(incoming.surfaceShade or base.surfaceShade, 0, 255)
+    base.cardShade = themeClamp(incoming.cardShade or base.cardShade, 0, 255)
+    base.elevatedShade = themeClamp(incoming.elevatedShade or base.elevatedShade, 0, 255)
+    base.buttonShade = themeClamp(incoming.buttonShade or base.buttonShade, 0, 255)
+    base.borderBrightness = themeClamp(incoming.borderBrightness or base.borderBrightness, 0, 255)
+    base.borderOpacity = themeClamp(incoming.borderOpacity or base.borderOpacity, 0.05, 1.0)
+    base.cornerRadius = themeClamp(incoming.cornerRadius or base.cornerRadius, 0, 24)
+    base.textBrightness = themeClamp(incoming.textBrightness or base.textBrightness, 110, 255)
+    base.textSecondaryBrightness = themeClamp(incoming.textSecondaryBrightness or base.textSecondaryBrightness, 90, 255)
+    base.textScale = themeClamp(incoming.textScale or base.textScale, 0.7, 1.35)
+    base.uiScale = themeClamp(incoming.uiScale or base.uiScale, 0.85, 1.25)
+    base.buttonHoverBrightness = themeClamp(incoming.buttonHoverBrightness or base.buttonHoverBrightness, 0, 40)
+    base.preset = type(incoming.preset) == "string" and incoming.preset or THEME_DEFAULT_PRESET
+    return base
+end
+
+function themePalette()
+    local t = THEME_ACTIVE
+    return {
+        background = themeShade(t.backgroundShade),
+        surface = themeShade(t.surfaceShade),
+        card = themeShade(t.cardShade),
+        elevated = themeShade(t.elevatedShade),
+        button = themeShade(t.buttonShade),
+        border = themeShade(t.borderBrightness),
+        text = themeShade(t.textBrightness),
+        textSecondary = themeShade(t.textSecondaryBrightness),
+        highlight = themeShade(themeClamp(t.textBrightness + 6, 0, 255)),
+    }
+end
+
+function themeBrightnessDelta(color, delta)
+    local function c(v)
+        return themeClamp(math.floor((v * 255) + delta + 0.5), 0, 255)
+    end
+    return Color3.fromRGB(c(color.R), c(color.G), c(color.B))
+end
+
+function themeEnsureCorner(instance)
+    local corner = instance:FindFirstChild("ThemeCorner")
+    if not corner then
+        corner = Instance.new("UICorner")
+        corner.Name = "ThemeCorner"
+        corner.Parent = instance
+    end
+    corner.CornerRadius = UDim.new(0, math.floor(themeClamp(THEME_ACTIVE.cornerRadius, 0, 24) + 0.5))
+end
+
+function themeEnsureStroke(instance)
+    local stroke = instance:FindFirstChild("ThemeStroke")
+    if not stroke then
+        stroke = Instance.new("UIStroke")
+        stroke.Name = "ThemeStroke"
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Parent = instance
+    end
+    local palette = themePalette()
+    stroke.Color = palette.border
+    stroke.Thickness = 1
+    stroke.Transparency = 1 - themeClamp(THEME_ACTIVE.borderOpacity, 0.05, 1.0)
+end
+
+function themeRegister(instance, spec)
+    if not instance or type(spec) ~= "table" then return end
+    THEME_REGISTRY[#THEME_REGISTRY + 1] = {instance = instance, spec = spec}
+    if spec.paneKey then THEME_PANE_REGISTRY[spec.paneKey] = instance end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox"))
+        and THEME_BASE_TEXT_SIZE[instance] == nil then
+        THEME_BASE_TEXT_SIZE[instance] = instance.TextSize
+    end
+    if spec.corner then themeEnsureCorner(instance) end
+    if spec.stroke then themeEnsureStroke(instance) end
+    if spec.hover and instance:IsA("TextButton") and not THEME_BUTTON_HOVER_BINDINGS[instance] then
+        local hoverSpec = spec
+        local enterConn = instance.MouseEnter:Connect(function()
+            local palette = themePalette()
+            local token = hoverSpec.hoverToken or hoverSpec.bgToken or "button"
+            local base = palette[token] or palette.button
+            instance.BackgroundColor3 = themeBrightnessDelta(base, THEME_ACTIVE.buttonHoverBrightness)
+        end)
+        local leaveConn = instance.MouseLeave:Connect(function()
+            themeApply()
+        end)
+        THEME_BUTTON_HOVER_BINDINGS[instance] = {enter = enterConn, leave = leaveConn}
+    end
+end
+
+function themeApplyToInstance(instance, spec, palette)
+    if not instance or not instance.Parent then return end
+    if spec.corner then themeEnsureCorner(instance) end
+    if spec.stroke then themeEnsureStroke(instance) end
+    if spec.bgToken and instance:IsA("GuiObject") then
+        instance.BackgroundColor3 = palette[spec.bgToken] or instance.BackgroundColor3
+    end
+    if spec.textToken and (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox")) then
+        instance.TextColor3 = palette[spec.textToken] or instance.TextColor3
+    end
+    if instance:IsA("TextBox") then
+        instance.PlaceholderColor3 = palette.textSecondary
+    end
+    if instance:IsA("GuiObject") and spec.noBorder then
+        instance.BorderSizePixel = 0
+    end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox"))
+        and THEME_BASE_TEXT_SIZE[instance] ~= nil then
+        instance.TextSize = math.floor(THEME_BASE_TEXT_SIZE[instance] * themeClamp(THEME_ACTIVE.textScale, 0.7, 1.35) + 0.5)
+    end
+end
+
+function themeRefreshTabVisuals()
+    local palette = themePalette()
+    local selected = THEME_SELECTED_TAB or "inspector"
+    if inspectorTab then inspectorTab.BackgroundColor3 = (selected == "inspector") and palette.elevated or palette.button end
+    if captureTab then captureTab.BackgroundColor3 = (selected == "capture") and palette.elevated or palette.button end
+    if automationTab then automationTab.BackgroundColor3 = (selected == "automation") and palette.elevated or palette.button end
+    if settingsTab then settingsTab.BackgroundColor3 = (selected == "settings") and palette.elevated or palette.button end
+    if generatedScriptTab then generatedScriptTab.BackgroundColor3 = (selected == "generated") and palette.elevated or palette.button end
+end
+
+function themeApply()
+    local palette = themePalette()
+    for _, entry in ipairs(THEME_REGISTRY) do
+        themeApplyToInstance(entry.instance, entry.spec, palette)
+    end
+    themeRefreshTabVisuals()
+    if THEME_PANEL_SCALE then
+        THEME_PANEL_SCALE.Scale = themeClamp(THEME_ACTIVE.uiScale, 0.85, 1.25)
+    end
+    if THEME_STATUS_LABEL and THEME_STATUS_LABEL.Parent then
+        THEME_STATUS_LABEL.TextColor3 = palette.textSecondary
+    end
+end
+
+function themeApplyPreset(presetName)
+    local selected = tostring(presetName or THEME_DEFAULT_PRESET)
+    if selected ~= "Custom" and THEME_PRESETS[selected] then
+        THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[selected]))
+        THEME_ACTIVE.preset = selected
+    elseif selected == "Custom" then
+        THEME_ACTIVE.preset = "Custom"
+    end
+    themeApply()
+end
+
+function themePersistenceSupported()
+    return type(readfile) == "function" and type(writefile) == "function" and type(makefolder) == "function"
+end
+
+function themeLoadFromDisk()
+    if not themePersistenceSupported() then
+        THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+        return false, "unsupported"
+    end
+    if type(isfile) == "function" and not isfile(THEME_CONFIG_PATH) then
+        return false, "missing"
+    end
+    local okRead, body = pcall(readfile, THEME_CONFIG_PATH)
+    if not okRead then
+        local message = tostring(body)
+        local lower = message:lower()
+        if lower:find("not found", 1, true)
+            or lower:find("no such", 1, true)
+            or lower:find("exist", 1, true) then
+            return false, "missing"
+        end
+        return false, message
+    end
+    local okDecode, payload = pcall(function() return HttpService:JSONDecode(body) end)
+    if not okDecode or type(payload) ~= "table" then
+        THEME_LAST_SAVE_MESSAGE = "Theme file is malformed; defaults restored"
+        return false, "malformed"
+    end
+    local loaded = payload.theme or payload
+    THEME_ACTIVE = themeNormalize(loaded)
+    if not THEME_PRESETS[THEME_ACTIVE.preset or ""] then THEME_ACTIVE.preset = "Custom" end
+    return true, "loaded"
+end
+
+function themeSaveToDisk()
+    if not themePersistenceSupported() then
+        THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+        return false, "unsupported"
+    end
+    pcall(makefolder, THEME_CONFIG_FOLDER)
+    pcall(makefolder, THEME_CONFIG_SUBFOLDER)
+    local payload = {
+        schemaVersion = THEME_SCHEMA_VERSION,
+        savedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        theme = themeNormalize(THEME_ACTIVE),
+    }
+    local okEncode, body = pcall(function() return HttpService:JSONEncode(payload) end)
+    if not okEncode then
+        THEME_LAST_SAVE_MESSAGE = "Theme encode failed"
+        return false, tostring(body)
+    end
+    local okWrite, err = pcall(writefile, THEME_CONFIG_PATH, body)
+    if not okWrite then
+        THEME_LAST_SAVE_MESSAGE = "Theme save failed"
+        return false, tostring(err)
+    end
+    THEME_LAST_SAVE_MESSAGE = "Theme saved to " .. THEME_CONFIG_PATH
+    return true, "saved"
+end
+
+THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+
+
 local panel = create("Frame", {
     Size = UDim2.fromOffset(510, 460),
     Position = UDim2.new(0.5, -255, 0.5, -220),
     BackgroundColor3 = Color3.fromRGB(55, 55, 55),
     BorderColor3 = Color3.new(0, 0, 0),
-    BorderSizePixel = 3,
-    Active = true
+    BorderSizePixel = 0,
+    Active = true,
+    ClipsDescendants = true
 }, gui)
 
-create("Frame", {
+headerBackground = create("Frame", {
     Name = "HeaderBackground", Size = UDim2.new(1, 0, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80), BorderSizePixel = 0
+    BackgroundColor3 = Color3.fromRGB(80, 80, 80), BorderSizePixel = 0,
+    ZIndex = 4
 }, panel)
-create("TextLabel", {
+titleLabel = create("TextLabel", {
     Text = "Lycoles Universal Inspector v" .. VERSION,
-    Size = UDim2.fromOffset(260, 48), BackgroundTransparency = 1,
+    Size = UDim2.fromOffset(320, 48), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
     TextXAlignment = Enum.TextXAlignment.Left,
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
     Font = Enum.Font.GothamBold,
-    ZIndex = 2
+    ZIndex = 5
 }, panel)
 
 local function button(label, x)
@@ -1184,42 +1457,48 @@ local function button(label, x)
         Position = UDim2.fromOffset(x, 56),
         BackgroundColor3 = Color3.fromRGB(105, 105, 105),
         BorderColor3 = Color3.new(0, 0, 0),
-        BorderSizePixel = 2,
+        BorderSizePixel = 0,
         TextColor3 = Color3.new(1, 1, 1),
         TextSize = 14,
-        Active = true
+        Active = true,
+        ZIndex = 4
     }, panel)
 end
 
 inspectorTab = create("TextButton", {
     Name = "InspectorTab", Text = "Inspector",
-    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(200, 10),
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(8, 52),
     BackgroundColor3 = Color3.fromRGB(48, 116, 150),
-    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
 }, panel)
 captureTab = create("TextButton", {
     Name = "CaptureTab", Text = "Capture",
-    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(276, 10),
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(106, 52),
     BackgroundColor3 = Color3.fromRGB(95, 95, 95),
-    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
 }, panel)
 automationTab = create("TextButton", {
     Name = "AutomationTab", Text = "Automation",
-    Size = UDim2.fromOffset(84, 28), Position = UDim2.fromOffset(352, 10),
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(204, 52),
     BackgroundColor3 = Color3.fromRGB(95, 95, 95),
-    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
 }, panel)
 settingsTab = create("TextButton", {
     Name = "SettingsTab", Text = "Settings",
-    Size = UDim2.fromOffset(72, 28), Position = UDim2.fromOffset(440, 10),
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(302, 52),
     BackgroundColor3 = Color3.fromRGB(95, 95, 95),
-    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
 }, panel)
 generatedScriptTab = create("TextButton", {
     Name = "GeneratedScriptTab", Text = "Generated",
-    Size = UDim2.fromOffset(88, 28), Position = UDim2.fromOffset(200, 44),
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(400, 52),
     BackgroundColor3 = Color3.fromRGB(95, 95, 95),
-    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 5
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
 }, panel)
 
 local tabContentArea = create("Frame", {
@@ -1248,7 +1527,7 @@ automationPane = create("ScrollingFrame", {
 settingsPane = create("ScrollingFrame", {
     Name = "SettingsPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
     BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
-    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    CanvasSize = UDim2.fromOffset(0, 980), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
     AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
 }, tabContentArea)
 
@@ -1500,6 +1779,21 @@ send.Position = UDim2.fromOffset(10, 52)
 automatic.Size = UDim2.fromOffset(274, 40)
 automatic.Position = UDim2.fromOffset(188, 52)
 watchToggle.Size = UDim2.fromOffset(220, 30)
+
+scan.ZIndex = 4
+copy.ZIndex = 4
+save.ZIndex = 4
+close.ZIndex = 4
+status.ZIndex = 4
+queueLabel.ZIndex = 4
+output.ZIndex = 4
+config.ZIndex = 4
+url.ZIndex = 4
+send.ZIndex = 4
+automatic.ZIndex = 4
+watchToggle.ZIndex = 4
+interactionToggle.ZIndex = 4
+
 watchToggle.Position = UDim2.fromOffset(8, 8)
 interactionToggle.Size = UDim2.fromOffset(220, 30)
 interactionToggle.Position = UDim2.fromOffset(236, 8)
@@ -1511,12 +1805,8 @@ local function showGeneratedScriptPane(selectedTab)
     automationPane.Visible = tab == "automation"
     settingsPane.Visible = tab == "settings"
     generatedScriptPane.Visible = tab == "generated"
-
-    inspectorTab.BackgroundColor3 = (tab == "inspector") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
-    captureTab.BackgroundColor3 = (tab == "capture") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
-    automationTab.BackgroundColor3 = (tab == "automation") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
-    settingsTab.BackgroundColor3 = (tab == "settings") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
-    generatedScriptTab.BackgroundColor3 = (tab == "generated") and Color3.fromRGB(48, 116, 150) or Color3.fromRGB(95, 95, 95)
+    THEME_SELECTED_TAB = tab
+    themeRefreshTabVisuals()
 end
 inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("inspector") end)
 captureTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("capture") end)
@@ -9654,46 +9944,304 @@ targetedErrorLabel = create("TextLabel", {
     TextYAlignment = Enum.TextYAlignment.Top
 }, capturePane)
 
+settingsTitleLabel = create("TextLabel", {
+    Name = "SettingsAppearanceHeader",
+    Text = "Appearance",
+    Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(220, 26),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 15, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 4
+}, settingsPane)
+themePresetLabel = create("TextLabel", {
+    Name = "ThemePresetLabel", Text = "Preset:",
+    Position = UDim2.fromOffset(8, 38), Size = UDim2.fromOffset(60, 24),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4
+}, settingsPane)
+themePresetButton = create("TextButton", {
+    Name = "ThemePresetButton", Text = "Graphite",
+    Position = UDim2.fromOffset(74, 36), Size = UDim2.fromOffset(130, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themeSaveButton = create("TextButton", {
+    Name = "ThemeSaveButton", Text = "SAVE THEME",
+    Position = UDim2.fromOffset(212, 36), Size = UDim2.fromOffset(130, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themeResetButton = create("TextButton", {
+    Name = "ThemeResetButton", Text = "RESET DEFAULT",
+    Position = UDim2.fromOffset(350, 36), Size = UDim2.fromOffset(132, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themePersistenceLabel = create("TextLabel", {
+    Name = "ThemePersistenceStatus", Text = "Theme persistence status: initializing",
+    Position = UDim2.fromOffset(8, 68), Size = UDim2.fromOffset(474, 32),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(190,200,206),
+    TextSize = 11, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+THEME_STATUS_LABEL = themePersistenceLabel
+THEME_VALUE_ROWS = {}
+
+function themeSetActiveValue(key, value)
+    THEME_ACTIVE[key] = value
+    if not THEME_PRESETS[THEME_ACTIVE.preset or ""] then
+        THEME_ACTIVE.preset = "Custom"
+    elseif key ~= "preset" then
+        THEME_ACTIVE.preset = "Custom"
+    end
+    themeApply()
+end
+
+function themeFormatSettingValue(key, value)
+    if key == "borderOpacity" then return string.format("%.2f", value) end
+    if key == "textScale" or key == "uiScale" then return string.format("%.2f", value) end
+    return tostring(math.floor(value + 0.5))
+end
+
+function themeRefreshSettingsRows()
+    themePresetButton.Text = tostring(THEME_ACTIVE.preset or "Custom")
+    for _, row in ipairs(THEME_VALUE_ROWS) do
+        local value = THEME_ACTIVE[row.key] or row.minimum
+        row.valueLabel.Text = row.labelPrefix .. themeFormatSettingValue(row.key, value)
+    end
+    if themePersistenceSupported() then
+        themePersistenceLabel.Text = THEME_LAST_SAVE_MESSAGE
+    else
+        themePersistenceLabel.Text = "Theme persistence unavailable in this executor (session-only changes active)"
+    end
+end
+
+function createThemeAdjustRow(rowIndex, labelPrefix, key, minimum, maximum, step)
+    local y = 104 + (rowIndex * 42)
+    local card = create("Frame", {
+        Name = "ThemeRow-" .. key,
+        Position = UDim2.fromOffset(8, y), Size = UDim2.fromOffset(474, 36),
+        BackgroundColor3 = Color3.fromRGB(58,58,58), BorderSizePixel = 0, ZIndex = 4
+    }, settingsPane)
+    local valueLabel = create("TextLabel", {
+        Text = labelPrefix, Position = UDim2.fromOffset(8, 4), Size = UDim2.fromOffset(332, 28),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(235,235,235),
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4
+    }, card)
+    local minus = create("TextButton", {
+        Text = "-", Position = UDim2.fromOffset(346, 4), Size = UDim2.fromOffset(56, 28),
+        BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+        TextSize = 16, BorderSizePixel = 0, ZIndex = 4
+    }, card)
+    local plus = create("TextButton", {
+        Text = "+", Position = UDim2.fromOffset(410, 4), Size = UDim2.fromOffset(56, 28),
+        BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+        TextSize = 16, BorderSizePixel = 0, ZIndex = 4
+    }, card)
+    THEME_VALUE_ROWS[#THEME_VALUE_ROWS + 1] = {
+        key = key,
+        minimum = minimum,
+        maximum = maximum,
+        step = step,
+        valueLabel = valueLabel,
+        labelPrefix = labelPrefix,
+    }
+    minus.MouseButton1Click:Connect(function()
+        local current = themeClamp(THEME_ACTIVE[key] or minimum, minimum, maximum)
+        themeSetActiveValue(key, themeClamp(current - step, minimum, maximum))
+        themeRefreshSettingsRows()
+        refreshEvidenceControls("theme-adjust")
+    end)
+    plus.MouseButton1Click:Connect(function()
+        local current = themeClamp(THEME_ACTIVE[key] or minimum, minimum, maximum)
+        themeSetActiveValue(key, themeClamp(current + step, minimum, maximum))
+        themeRefreshSettingsRows()
+        refreshEvidenceControls("theme-adjust")
+    end)
+    themeRegister(card, {bgToken="card", stroke=true, corner=true, noBorder=true})
+    themeRegister(valueLabel, {textToken="text", noBorder=true})
+    themeRegister(minus, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+    themeRegister(plus, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+end
+
+createThemeAdjustRow(0, "Background shade: ", "backgroundShade", 0, 255, 4)
+createThemeAdjustRow(1, "Surface shade: ", "surfaceShade", 0, 255, 4)
+createThemeAdjustRow(2, "Button shade: ", "buttonShade", 0, 255, 4)
+createThemeAdjustRow(3, "Border brightness: ", "borderBrightness", 0, 255, 4)
+createThemeAdjustRow(4, "Border opacity: ", "borderOpacity", 0.05, 1.0, 0.05)
+createThemeAdjustRow(5, "Corner radius: ", "cornerRadius", 0, 24, 1)
+createThemeAdjustRow(6, "Text brightness: ", "textBrightness", 110, 255, 3)
+createThemeAdjustRow(7, "Text scale: ", "textScale", 0.7, 1.35, 0.05)
+createThemeAdjustRow(8, "UI scale: ", "uiScale", 0.85, 1.25, 0.02)
+createThemeAdjustRow(9, "Button hover brightness: ", "buttonHoverBrightness", 0, 40, 1)
+
 settingsLimitsLabel = create("TextLabel", {
     Name = "SettingsLimitsLabel",
     Text = "Capture limits\n- max requests: "..tostring(LIMITS.maxTargetedRequests)
         .."\n- max entity samples: "..tostring(LIMITS.maxTargetedEntitySnapshots)
         .."\n- max camera samples: "..tostring(LIMITS.maxTargetedCameraSamples),
-    Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(474, 88),
+    Position = UDim2.fromOffset(8, 530), Size = UDim2.fromOffset(474, 88),
     BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
     TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
 }, settingsPane)
 settingsSamplingLabel = create("TextLabel", {
     Name = "SettingsSamplingLabel",
     Text = "Sampling intervals\n- targeted tick: "..tostring(LIMITS.targetedCaptureTickSeconds).."s"
         .."\n- observation idle: "..tostring(AUTO_EVIDENCE_IDLE_SECONDS).."s"
         .."\n- workflow window: "..tostring(LIMITS.workflowRecordingSeconds).."s",
-    Position = UDim2.fromOffset(8, 104), Size = UDim2.fromOffset(474, 88),
+    Position = UDim2.fromOffset(8, 626), Size = UDim2.fromOffset(474, 88),
     BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
     TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
 }, settingsPane)
 settingsExportLabel = create("TextLabel", {
     Name = "SettingsExportLabel",
     Text = "Export preferences\n- multipart JSON export preserved"
         .."\n- receiver ACK tracked separately from integrity verification"
         .."\n- targeted session IDs and provenance preserved",
-    Position = UDim2.fromOffset(8, 200), Size = UDim2.fromOffset(474, 88),
+    Position = UDim2.fromOffset(8, 722), Size = UDim2.fromOffset(474, 88),
     BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
     TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
 }, settingsPane)
 settingsPerfLabel = create("TextLabel", {
     Name = "SettingsPerformanceLabel",
     Text = "Performance + diagnostics\n- bounded queues and capped timelines"
         .."\n- no duplicate listener installation"
         .."\n- automatic lifecycle: initializing → waiting → capturing → exporting → continuing",
-    Position = UDim2.fromOffset(8, 296), Size = UDim2.fromOffset(474, 84),
+    Position = UDim2.fromOffset(8, 818), Size = UDim2.fromOffset(474, 120),
     BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
     TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
 }, settingsPane)
+
+THEME_PANEL_SCALE = Instance.new("UIScale")
+THEME_PANEL_SCALE.Parent = panel
+THEME_LOAD_OK, THEME_LOAD_STATE = themeLoadFromDisk()
+if THEME_LOAD_OK then
+    THEME_LAST_SAVE_MESSAGE = "Theme loaded from " .. THEME_CONFIG_PATH
+elseif THEME_LOAD_STATE == "missing" then
+    THEME_LAST_SAVE_MESSAGE = "No saved theme found; using defaults"
+elseif THEME_LOAD_STATE == "malformed" then
+    THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+else
+    THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+end
+
+THEME_PRESET_NAMES = themePresetNames()
+THEME_PRESET_INDEX = 1
+for idx, presetName in ipairs(THEME_PRESET_NAMES) do
+    if presetName == tostring(THEME_ACTIVE.preset or THEME_DEFAULT_PRESET) then
+        THEME_PRESET_INDEX = idx
+        break
+    end
+end
+
+themePresetButton.MouseButton1Click:Connect(function()
+    THEME_PRESET_INDEX = (THEME_PRESET_INDEX % #THEME_PRESET_NAMES) + 1
+    local selected = THEME_PRESET_NAMES[THEME_PRESET_INDEX]
+    themeApplyPreset(selected)
+    if selected == "Custom" then
+        THEME_ACTIVE.preset = "Custom"
+        themeApply()
+    end
+    themeRefreshSettingsRows()
+    refreshEvidenceControls("theme-preset")
+end)
+
+themeSaveButton.MouseButton1Click:Connect(function()
+    local ok, message = themeSaveToDisk()
+    if not ok then
+        THEME_LAST_SAVE_MESSAGE = "Theme save failed: " .. tostring(message)
+    end
+    themeRefreshSettingsRows()
+    status.Text = THEME_LAST_SAVE_MESSAGE
+end)
+
+themeResetButton.MouseButton1Click:Connect(function()
+    THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+    THEME_ACTIVE.preset = THEME_DEFAULT_PRESET
+    for idx, presetName in ipairs(THEME_PRESET_NAMES) do
+        if presetName == THEME_DEFAULT_PRESET then THEME_PRESET_INDEX = idx break end
+    end
+    THEME_LAST_SAVE_MESSAGE = "Theme reset to default preset"
+    themeApply()
+    themeRefreshSettingsRows()
+    refreshEvidenceControls("theme-reset")
+end)
+
+themeRegister(panel, {bgToken="background", stroke=true, corner=true, noBorder=true})
+themeRegister(headerBackground, {bgToken="surface", noBorder=true})
+themeRegister(titleLabel, {textToken="text", noBorder=true})
+themeRegister(tabContentArea, {bgToken="surface", stroke=true, corner=true, noBorder=true})
+themeRegister(inspectorPane, {bgToken="surface", noBorder=true})
+themeRegister(capturePane, {bgToken="surface", noBorder=true})
+themeRegister(automationPane, {bgToken="surface", noBorder=true})
+themeRegister(settingsPane, {bgToken="surface", noBorder=true})
+themeRegister(generatedScriptPane, {bgToken="surface", noBorder=true})
+
+themeRegister(minimise, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(mini, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(inspectorTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(captureTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(automationTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(settingsTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(generatedScriptTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(scan, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(copy, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(save, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(close, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(status, {textToken="text", noBorder=true})
+themeRegister(queueLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(output, {bgToken="card", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(config, {bgToken="card", stroke=true, corner=true, noBorder=true})
+themeRegister(url, {bgToken="surface", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(send, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(automatic, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(watchToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(interactionToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(autoEvidenceToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(workflowRecordToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(scanModeToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(observationToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedPresetToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedCaptureToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedRestartToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(evidenceHint, {textToken="textSecondary", noBorder=true})
+themeRegister(automationHint, {textToken="textSecondary", noBorder=true})
+themeRegister(uploadHint, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedHint, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedEntityLabel, {textToken="text", noBorder=true})
+themeRegister(targetedCombatLabel, {textToken="text", noBorder=true})
+themeRegister(targetedMatchLabel, {textToken="text", noBorder=true})
+themeRegister(targetedLoadoutLabel, {textToken="text", noBorder=true})
+themeRegister(targetedEvidenceLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedMissingLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedErrorLabel, {textToken="textSecondary", noBorder=true})
+
+themeRegister(settingsTitleLabel, {textToken="text", noBorder=true})
+themeRegister(themePresetLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(themePresetButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themeSaveButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themeResetButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themePersistenceLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsLimitsLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsSamplingLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsExportLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsPerfLabel, {textToken="textSecondary", noBorder=true})
+
+themeRegister(featureRequestInput, {bgToken="card", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(produceScript, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(loadGeneratedResult, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(generatedStatus, {textToken="textSecondary", noBorder=true})
+themeRegister(generatedCodeOutput, {bgToken="card", textToken="textSecondary", stroke=true, corner=true, noBorder=true})
+
+themeApply()
+themeRefreshSettingsRows()
+
 
 targetedCaptureUiRefresh = function(reason)
     local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}

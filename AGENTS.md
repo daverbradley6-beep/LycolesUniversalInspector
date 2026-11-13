@@ -910,3 +910,25 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - shared content layout/control preservation,
   - capture pause/resume/restart paths,
   - automatic lifecycle and duplicate-export continuity metadata.
+
+## Update — 2026-11-13 — Milestone 3.2 functional tabs + monochrome theme persistence
+
+- Fixed tab usability defects observed live in Potassium:
+  - tab navigation now fits a single row (`Inspector`, `Capture`, `Automation`, `Settings`, `Generated`),
+  - inspector and settings pane content now render with explicit pane-child z-index handling.
+- Restored functional Inspector content in tabbed layout (scan/copy/save/receiver/report controls remain live, not decorative).
+- Replaced static settings placeholders with functional Appearance controls:
+  - preset cycle (`Graphite`, `Slate`, `Silver`, `Custom`),
+  - adjustable background/surface/button shades, border brightness/opacity, corner radius,
+    text brightness, text scale, UI scale, button hover brightness,
+  - explicit Save Theme and Reset Default actions.
+- Added centralized theme manager in inspector runtime:
+  - tokenized palette + registry-based apply path,
+  - shared corner/stroke styling (`UICorner`, `UIStroke`) and hover behavior,
+  - live re-application across registered controls/tabs.
+- Added theme persistence contract with fallback handling:
+  - config path `LycolesInspector/settings/theme.json`, schema-versioned payload,
+  - robust load/save handling for missing files, malformed JSON, and unsupported file APIs,
+  - explicit user-visible status messaging when persistence is unavailable.
+- Automatic targeted capture lifecycle remains integrated; theme and tab operations do not restart capture sessions.
+- Compiler pressure remained within budget after changes (`root local pressure = 168`, budget `170`).
