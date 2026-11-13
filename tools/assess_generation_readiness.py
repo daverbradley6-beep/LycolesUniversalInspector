@@ -425,6 +425,9 @@ def _request_feature_history_signals(plan):
     history=plan.get("observedInteractionHistory",[])
     if not isinstance(history,list) or len(history)>20_000:
         raise ValueError("compiled plan has malformed interaction history")
+    claim_tokens={"claim","collect","redeem","reward","gift","receive","prize"}
+    close_tokens={"close","xbutton","exit","cancel","back"}
+    open_tokens={"open","menu","tab","show"}
     values={}
     for event in history:
         if not isinstance(event,dict):
@@ -436,7 +439,7 @@ def _request_feature_history_signals(plan):
             "stateCorrelatedEvents":0,"callbackAttributedEvents":0,
             "meaningfulGameplayOutcomeEvents":0,"guiCorrelatedEvents":0,
             "targetPaths":set(),"worldTargetPaths":set(),"guiTargetPaths":set(),
-            "controlTypes":set()})
+            "controlTypes":set(),"pathSignals":{}})
         bucket["interactionEvents"]+=1
 
         control=event.get("controlType")
@@ -450,6 +453,7 @@ def _request_feature_history_signals(plan):
                 world_signal=True
 
         path=event.get("path")
+        path_bucket=None
         if isinstance(path,str) and 1<=len(path)<=400:
             bucket["targetPaths"].add(path)
             if "PlayerGui" in path:
@@ -458,6 +462,37 @@ def _request_feature_history_signals(plan):
             if path.startswith("Workspace."):
                 bucket["worldTargetPaths"].add(path)
                 world_signal=True
+            path_bucket=bucket["pathSignals"].setdefault(path,{"interactionEvents":0,
+                "claimSignals":0,"closeSignals":0,"openSignals":0,
+                "outcomeSignals":0,"stateSignals":0,"callbackSignals":0,
+                "meaningfulSignals":0,"completionSignals":0,
+                "notificationSignals":0,"guiSignals":0,"worldSignals":0,
+                "controlTypes":set()})
+            path_bucket["interactionEvents"]+=1
+            if isinstance(control,str) and 1<=len(control)<=120:
+                path_bucket["controlTypes"].add(control)
+            path_tokens=_tokens(path)
+            if path_tokens&claim_tokens:
+                path_bucket["claimSignals"]+=1
+            if path_tokens&close_tokens:
+                path_bucket["closeSignals"]+=1
+            if path_tokens&open_tokens:
+                path_bucket["openSignals"]+=1
+            if "PlayerGui" in path:
+                path_bucket["guiSignals"]+=1
+            if path.startswith("Workspace."):
+                path_bucket["worldSignals"]+=1
+
+        workflow=event.get("workflow") if isinstance(event.get("workflow"),dict) else {}
+        workflow_action=workflow.get("action") if isinstance(workflow.get("action"),str) else None
+        if path_bucket is not None and workflow_action:
+            action_tokens=_tokens(workflow_action)
+            if action_tokens&claim_tokens:
+                path_bucket["claimSignals"]+=1
+            if action_tokens&close_tokens:
+                path_bucket["closeSignals"]+=1
+            if action_tokens&open_tokens:
+                path_bucket["openSignals"]+=1
 
         click_target=event.get("clickTargetObservation")
         if isinstance(click_target,dict):
@@ -479,17 +514,45 @@ def _request_feature_history_signals(plan):
 
         if gui_correlated:
             bucket["guiCorrelatedEvents"]+=1
+            if path_bucket is not None:
+                path_bucket["guiSignals"]+=1
+
+        gui_changes=event.get("guiStateChanges") if isinstance(event.get("guiStateChanges"),list) else []
+        if path_bucket is not None:
+            for change in gui_changes:
+                if not isinstance(change,dict):
+                    continue
+                gui_path=change.get("path")
+                if not isinstance(gui_path,str):
+                    continue
+                gui_tokens=_tokens(gui_path)
+                if gui_tokens&claim_tokens:
+                    path_bucket["claimSignals"]+=1
+                if {"complete","completed","claimed"}&gui_tokens:
+                    path_bucket["outcomeSignals"]+=1
+                    path_bucket["meaningfulSignals"]+=1
+                    path_bucket["completionSignals"]+=1
+                if "notification" in gui_tokens:
+                    path_bucket["notificationSignals"]+=1
 
         relation=event.get("clickOutcomeRelationship")
         if isinstance(relation,dict):
             if relation.get("outcomeCorroborated") is True:
                 bucket["outcomeEvents"]+=1
+                if path_bucket is not None:
+                    path_bucket["outcomeSignals"]+=1
             if relation.get("stateChangeTemporallyAssociated") is True:
                 bucket["stateCorrelatedEvents"]+=1
+                if path_bucket is not None:
+                    path_bucket["stateSignals"]+=1
             if relation.get("interactionCallbackAttributed") is True:
                 bucket["callbackAttributedEvents"]+=1
+                if path_bucket is not None:
+                    path_bucket["callbackSignals"]+=1
             if relation.get("meaningfulGameplayOutcomeObserved") is True:
                 bucket["meaningfulGameplayOutcomeEvents"]+=1
+                if path_bucket is not None:
+                    path_bucket["meaningfulSignals"]+=1
     return values
 
 
@@ -502,6 +565,7 @@ def _request_feature_matches(plan,request_words):
     history_signals=_request_feature_history_signals(plan)
     values=[]
     pickup_terms={"pickup","collect","coin","coins","currency","gem","gems","orb","token","loot","drop","farm","bubble","egg"}
+    claim_terms={"claim","collect","reward","rewards","daily","gift","redeem","prize"}
     for feature in features:
         if not isinstance(feature,dict):
             raise ValueError("compiled plan has malformed feature evidence")
@@ -540,15 +604,50 @@ def _request_feature_matches(plan,request_words):
         gui_paths=sorted(path for path in signals.get("guiTargetPaths",set()) if isinstance(path,str))
         world_paths=sorted(path for path in signals.get("worldTargetPaths",set()) if isinstance(path,str))
         target_paths=sorted(path for path in signals.get("targetPaths",set()) if isinstance(path,str))
-        representative_path=None
-        if request_words&pickup_terms and world_paths:
-            representative_path=world_paths[0]
-        elif gui_paths:
-            representative_path=gui_paths[0]
-        elif world_paths:
-            representative_path=world_paths[0]
-        elif target_paths:
-            representative_path=target_paths[0]
+        path_signals=signals.get("pathSignals") if isinstance(signals.get("pathSignals"),dict) else {}
+
+        request_claim=bool(request_words&claim_terms)
+        selected_path=None
+        selected_stats={}
+        if path_signals:
+            ranked=[]
+            for path,stats in path_signals.items():
+                if not isinstance(path,str) or not 1<=len(path)<=400 or not isinstance(stats,dict):
+                    continue
+                score=float(stats.get("interactionEvents",0))
+                score+=2.0*float(stats.get("outcomeSignals",0))
+                score+=1.2*float(stats.get("stateSignals",0))
+                if request_claim:
+                    score+=3.0*float(stats.get("claimSignals",0))
+                    score+=6.0*float(stats.get("completionSignals",0))
+                    score+=2.0*float(stats.get("meaningfulSignals",0))
+                    score-=5.0*float(stats.get("closeSignals",0))
+                    score-=3.0*float(stats.get("notificationSignals",0))
+                ranked.append((score,path,stats))
+            if ranked:
+                ranked.sort(key=lambda item:(-item[0],item[1]))
+                selected_path,selected_stats=ranked[0][1],ranked[0][2]
+
+        representative_path=selected_path
+        if representative_path is None:
+            if request_words&pickup_terms and world_paths:
+                representative_path=world_paths[0]
+            elif gui_paths:
+                representative_path=gui_paths[0]
+            elif world_paths:
+                representative_path=world_paths[0]
+            elif target_paths:
+                representative_path=target_paths[0]
+
+        request_action_aligned=True
+        if request_claim:
+            claim_like=bool(float(selected_stats.get("claimSignals",0))>0
+                or float(selected_stats.get("outcomeSignals",0))>0
+                or float(selected_stats.get("meaningfulSignals",0))>0)
+            close_bias=float(selected_stats.get("closeSignals",0))
+            request_action_aligned=bool(representative_path and claim_like and close_bias<=0)
+            if not request_action_aligned:
+                representative_path=None
 
         if counts["observableOutcomeCandidates"]>0:
             evidence_classification="observable-outcome-candidate-unverified"
@@ -558,7 +657,15 @@ def _request_feature_matches(plan,request_words):
             evidence_classification=_FEATURE_EVIDENCE_CLASSIFICATION.get(
                 status,"unrecognized-feature-status")
 
-        observed_control_types=sorted(control for control in signals.get("controlTypes",set()) if isinstance(control,str))[:20]
+        if representative_path and isinstance(path_signals.get(representative_path),dict):
+            observed_control_types=sorted(control for control in
+                path_signals[representative_path].get("controlTypes",set())
+                if isinstance(control,str))[:20]
+        else:
+            observed_control_types=sorted(control for control in signals.get("controlTypes",set()) if isinstance(control,str))[:20]
+        if request_claim and not request_action_aligned:
+            observed_control_types=[]
+
         token_only=not bool(counts["interactionEvents"] or counts["observableOutcomeCandidates"]
             or counts["featureStateCorrelations"] or counts["featureGuiCorrelations"]
             or representative_path or observed_control_types)
@@ -570,11 +677,16 @@ def _request_feature_matches(plan,request_words):
             "tokenEvidenceOnly":token_only,
             "implementationReady":False,
             "representativeTargetPath":representative_path,
-            "representativeGuiTargetPath":gui_paths[0] if gui_paths else None,
-            "representativeWorldTargetPath":world_paths[0] if world_paths else None,
+            "representativeGuiTargetPath":(
+                representative_path if isinstance(representative_path,str) and "PlayerGui" in representative_path
+                else (gui_paths[0] if gui_paths else None)),
+            "representativeWorldTargetPath":(
+                representative_path if isinstance(representative_path,str) and representative_path.startswith("Workspace.")
+                else (world_paths[0] if world_paths else None)),
             "observedControlTypes":observed_control_types,
             "interactionCallbackAttributedEvents":int(signals.get("callbackAttributedEvents",0)),
             "meaningfulGameplayOutcomeEvents":int(signals.get("meaningfulGameplayOutcomeEvents",0)),
+            "requestActionSemanticsAligned":request_action_aligned,
         })
     values.sort(key=lambda item:(-item["gameplayPriorityScore"],
         -item["observableOutcomeCandidates"],-item["featureStateCorrelations"],

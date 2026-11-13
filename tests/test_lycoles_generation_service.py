@@ -802,6 +802,39 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertTrue(plan["selectionDiagnostics"]["fallbackUsed"])
             self.assertEqual(plan["selectedStrategy"]["id"], "strategy-c-direct-interaction")
 
+
+    def test_matched_feature_semantic_mismatch_clears_path_and_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            bundle = MODULE.EvidenceBundle(
+                mode="multipart",
+                place_id=85896571713843,
+                scan_id="scan-semantic-mismatch",
+                output_dir=root,
+                generation_readiness={
+                    "requestFeatureReadiness": {
+                        "featureEvidence": {
+                            "matchedFeatures": [
+                                {
+                                    "feature": "rewards",
+                                    "status": "discovered",
+                                    "evidenceClassification": "interaction-observed-no-outcome-contract",
+                                    "representativeTargetPath": "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Top.Close.Button",
+                                    "observedControlTypes": ["GuiButton.Activated"],
+                                    "requestActionSemanticsAligned": False,
+                                }
+                            ]
+                        }
+                    }
+                },
+            )
+            features = MODULE.AutonomousPlanningEngine._extract_features(bundle, analysis={})
+            matched = [item for item in features if item.get("source") == "matched-feature"]
+            self.assertEqual(len(matched), 1)
+            self.assertIsNone(matched[0].get("targetPath"))
+            self.assertEqual(matched[0].get("commands"), [])
+
+
     def test_malformed_overlay_timing_falls_back_to_baseline_without_crash(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

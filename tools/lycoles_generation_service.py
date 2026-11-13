@@ -1157,6 +1157,10 @@ class AutonomousPlanningEngine:
                     if isinstance(value, str) and value.strip():
                         target_path = value.strip()
                         break
+                semantics_aligned = item.get("requestActionSemanticsAligned") is not False
+                if not semantics_aligned:
+                    target_path = None
+                    observed_controls = []
                 features.append({
                     "id": _safe_feature_id("matched", str(feature_name or "unknown"), str(item.get("status") or "")),
                     "kind": item.get("status") if isinstance(item.get("status"), str) else None,

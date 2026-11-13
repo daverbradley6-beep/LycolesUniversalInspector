@@ -140,6 +140,50 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(matched["evidenceClassification"],
             "observable-outcome-candidate-unverified")
         self.assertFalse(matched["tokenEvidenceOnly"])
+        self.assertTrue(matched["requestActionSemanticsAligned"])
+
+
+    def test_claim_request_rejects_close_only_control_and_prefers_claim_semantics(self):
+        value={"integrity":{"scanComplete":True,"placeId":85896571713843,
+                "scanId":"reward-semantic-selection"},
+            "requestedCapability":"Automatically claim the daily reward",
+            "features":[feature("rewards",0,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Top.Close.Button",
+                "controlType":"GuiButton.Activated",
+                "featureCandidate":"rewards",
+                "workflow":{"action":"close"},
+                "outcomeVerified":False,
+            },{
+                "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+                "controlType":"GuiButton.Activated",
+                "featureCandidate":"rewards",
+                "workflow":{"action":"claim"},
+                "guiStateChanges":[
+                    {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button.Label"},
+                    {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Completed"},
+                ],
+                "clickOutcomeRelationship":{
+                    "outcomeCorroborated":False,
+                    "stateChangeTemporallyAssociated":False,
+                    "meaningfulGameplayOutcomeObserved":False,
+                    "interactionCallbackAttributed":True,
+                },
+                "outcomeVerified":False,
+            }]}
+        result=assess(value)
+        matched=(result["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"])[0]
+        self.assertEqual(matched["representativeTargetPath"],
+            "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button")
+        self.assertTrue(matched["requestActionSemanticsAligned"])
+        self.assertIn("GuiButton.Activated",matched["observedControlTypes"])
+
+        close_only={**value,"observedInteractionHistory":[value["observedInteractionHistory"][0]]}
+        result_close=assess(close_only)
+        matched_close=(result_close["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"])[0]
+        self.assertIsNone(matched_close["representativeTargetPath"])
+        self.assertFalse(matched_close["requestActionSemanticsAligned"])
+        self.assertEqual(matched_close["observedControlTypes"],[])
 
 
     def test_fps_tool_evidence_stays_discovery_only_without_replay(self):

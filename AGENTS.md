@@ -733,3 +733,24 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - Rewards request now surfaces a feasible `strategy-c-direct-interaction` candidate with observed GUI path evidence.
   - Generation status remains conservative (`observational-only-request-unmet`) until execution-ready workflow and live validation criteria are met.
 
+
+## Update — 2026-11-13 — v30.6.61 rewards replay import + claim-control semantics
+
+- Strict import of v30.6.61 rewards evidence succeeded with expected identities:
+  - place: `85896571713843`
+  - baseline scan: `BA775179-415E-46D4-8161-AC8ABB4EA53F`
+  - observation scan (source/integrity): `live-observation-1FACED15-4343-44BA-8C22-3C5932B7B475`
+  - baseline parts complete: `983/983`
+  - concatenated observation SHA256: `9e0e1d65733414769439af2d4e4308dc05ba160abcf0afcd4ab9656e93c2ed19`
+- Rewards interaction timeline showed callback-attributed GUI interactions but no corroborated scalar reward-outcome contract.
+- The likely claim control in this scan is `DailyRewards.Frame.Playtime.Main.1.Button` (GUI transitions: `Label` hidden, `Completed` shown), while `Top.Close.Button` remains close-only.
+- Universal semantic-selection hardening added to readiness/planning:
+  - request-feature history now tracks per-path semantics (`claim`, `close`, completion transitions, notification-only transitions).
+  - claim-like requests prioritize completion-backed controls and penalize notification-only/open-close controls.
+  - matched features now publish `requestActionSemanticsAligned`.
+  - planner ingestion clears `targetPath`/`commands` when semantics are misaligned, preventing false request-aligned direct-interaction feasibility from close/menu controls.
+- Regressions added for:
+  - claim-path preference over close-only controls,
+  - semantic mismatch path/control suppression in planner extraction.
+- Generation remains conservative (`observational-only-request-unmet`) until request-aligned execution-ready workflow candidates and live verification evidence exist.
+
