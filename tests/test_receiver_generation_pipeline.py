@@ -1967,36 +1967,49 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             payload = json.loads(overlay.read_text(encoding="utf-8"))
 
             conflict_intent = {
-                "schemaVersion": "30.6.input-gesture-intent.2",
-                "primaryIntent": "ambiguous-competing-hypotheses",
+                "schemaVersion": "30.6.input-gesture-intent.3",
+                "primaryIntent": "camera-manipulation-candidate",
                 "clickCandidate": False,
-                "cameraDragCandidate": False,
+                "cameraDragCandidate": True,
                 "heldInputCandidate": True,
                 "guiInteractionCandidate": False,
-                "worldInteractionCandidate": True,
+                "worldInteractionCandidate": False,
                 "ambiguousInput": True,
                 "likelyCameraMovement": True,
                 "likelyGameplayInteraction": True,
+                "inputContextSignals": {
+                    "mouseButton": "MouseButton2",
+                    "rightButtonInput": True,
+                    "leftButtonInput": False,
+                    "rightButtonCameraControlHypothesis": True,
+                },
                 "confidence": {
-                    "cameraManipulationScore": 0.74,
-                    "gameplayInteractionScore": 0.41,
-                    "primaryIntentConfidence": 0.74,
+                    "cameraManipulationScore": 0.81,
+                    "gameplayInteractionScore": 0.52,
+                    "primaryIntentConfidence": 0.81,
                 },
                 "physicalGesture": {
                     "kind": "hold",
                     "pointerMovementObserved": False,
                     "movementSamples": 0,
+                    "inputChangedMovementSamples": 0,
+                    "relativeDeltaMovementSamples": 0,
                     "durationSeconds": 0.68,
                 },
                 "targetAndOutcomeSignals": {
                     "guiTargetConfirmed": False,
                     "worldTargetConfirmed": True,
                     "worldRaycastOnly": True,
-                    "callbackObserved": False,
+                    "callbackObserved": True,
+                    "callbackAttributed": False,
+                    "callbackAttributionMissing": True,
                     "stateChangeTemporallyAssociated": True,
                     "meaningfulGameplayOutcomeObserved": False,
-                    "outcomeCorroborated": False,
-                    "temporalOnlyStateAssociation": True,
+                    "outcomeCorroborated": True,
+                    "corroboratedTemporalOnly": True,
+                    "temporalOnlyStateAssociation": False,
+                    "weakTemporalPromotionSignal": True,
+                    "worldPromotionBlockedByCamera": True,
                     "targetAmbiguous": False,
                     "cameraRotationWithoutPointerEvidence": True,
                     "competingIntentSignals": True,
@@ -2008,14 +2021,14 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
 
             payload["inputGestureObservations"] = [
                 {
-                    "id": "gesture_2",
+                    "id": "gesture_7",
                     "observedAt": "2026-11-06T12:00:09Z",
                     "startedAt": "2026-11-06T12:00:08Z",
                     "endedAt": "2026-11-06T12:00:09Z",
                     "startSessionElapsedSeconds": 8.1,
                     "endSessionElapsedSeconds": 8.8,
-                    "mouseButton": "MouseButton1",
-                    "inputType": "MouseButton1",
+                    "mouseButton": "MouseButton2",
+                    "inputType": "MouseButton2",
                     "clickObservationId": "click_pickup_1",
                     "completionReason": "input-ended",
                     "interrupted": False,
@@ -2026,8 +2039,8 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                         "maxCursorDeltaPixels": 0.0,
                         "movementSamples": 0,
                         "pointerMovementObserved": False,
-                        "cameraHeadingDeltaDegrees": 68.38,
-                        "cameraCumulativeTurnDegrees": 68.38,
+                        "cameraHeadingDeltaDegrees": 80.86,
+                        "cameraCumulativeTurnDegrees": 80.86,
                         "maxCameraTurnStepDegrees": 0.0,
                         "cameraSampleCount": 3,
                         "cameraSamplesWithoutPointerMovement": 3,
@@ -2036,14 +2049,14 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                     "intent": conflict_intent,
                 },
                 {
-                    "id": "gesture_3",
+                    "id": "gesture_8",
                     "observedAt": "2026-11-06T12:00:10Z",
                     "startedAt": "2026-11-06T12:00:09Z",
                     "endedAt": "2026-11-06T12:00:10Z",
                     "startSessionElapsedSeconds": 9.0,
                     "endSessionElapsedSeconds": 9.6,
-                    "mouseButton": "MouseButton1",
-                    "inputType": "MouseButton1",
+                    "mouseButton": "MouseButton2",
+                    "inputType": "MouseButton2",
                     "clickObservationId": "click_pickup_1",
                     "completionReason": "input-ended",
                     "interrupted": False,
@@ -2054,8 +2067,8 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                         "maxCursorDeltaPixels": 0.0,
                         "movementSamples": 0,
                         "pointerMovementObserved": False,
-                        "cameraHeadingDeltaDegrees": 17.68,
-                        "cameraCumulativeTurnDegrees": 17.68,
+                        "cameraHeadingDeltaDegrees": 62.40,
+                        "cameraCumulativeTurnDegrees": 62.40,
                         "maxCameraTurnStepDegrees": 0.0,
                         "cameraSampleCount": 2,
                         "cameraSamplesWithoutPointerMovement": 2,
@@ -2082,8 +2095,8 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                         "maxCursorDeltaPixels": 0.0,
                         "movementSamples": 0,
                         "pointerMovementObserved": False,
-                        "cameraHeadingDeltaDegrees": 105.3,
-                        "cameraCumulativeTurnDegrees": 105.3,
+                        "cameraHeadingDeltaDegrees": 144.04,
+                        "cameraCumulativeTurnDegrees": 144.04,
                         "maxCameraTurnStepDegrees": 0.0,
                         "cameraSampleCount": 4,
                         "cameraSamplesWithoutPointerMovement": 4,
@@ -2115,7 +2128,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                         "maxCameraTurnStepDegrees": 1.1,
                     },
                     "intent": {
-                        "schemaVersion": "30.6.input-gesture-intent.2",
+                        "schemaVersion": "30.6.input-gesture-intent.3",
                         "primaryIntent": "gui-interaction-candidate",
                         "clickCandidate": True,
                         "cameraDragCandidate": False,
@@ -2164,7 +2177,7 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
                         "cameraRotationWithoutPointerMovement": False,
                     },
                     "intent": {
-                        "schemaVersion": "30.6.input-gesture-intent.2",
+                        "schemaVersion": "30.6.input-gesture-intent.3",
                         "primaryIntent": "camera-manipulation-candidate",
                         "clickCandidate": False,
                         "cameraDragCandidate": True,
@@ -2212,7 +2225,19 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
             self.assertGreaterEqual(gesture_quality.get("cameraRotationWithoutPointerEvidence", 0), 3)
             self.assertGreaterEqual(gesture_quality.get("worldRaycastOnlySignals", 0), 3)
             self.assertGreaterEqual(gesture_quality.get("competingIntentSignals", 0), 1)
+            self.assertGreaterEqual(gesture_quality.get("rightButtonCameraControlHypotheses", 0), 2)
+            self.assertGreaterEqual(gesture_quality.get("worldPromotionBlockedByCamera", 0), 3)
             self.assertGreaterEqual(gesture_quality.get("cameraGameplayConflicts", 0), 1)
+
+            gestures = report.get("inputGestureObservations") or []
+            gesture_ids = {item.get("id") for item in gestures if isinstance(item, dict)}
+            self.assertTrue({"gesture_6", "gesture_7", "gesture_8"}.issubset(gesture_ids))
+            for item in gestures:
+                if not isinstance(item, dict) or item.get("id") not in {"gesture_6", "gesture_7", "gesture_8"}:
+                    continue
+                intent = item.get("intent") or {}
+                self.assertTrue(intent.get("likelyCameraMovement") is True)
+                self.assertFalse(intent.get("worldInteractionCandidate") is True)
 
             spatial_relationships = report.get("spatialActionOutcomeRelationships") or []
             self.assertTrue(any(((item.get("outcomeVerification") or {}).get("inputGestureCameraConfounded") is True) for item in spatial_relationships if isinstance(item, dict)))

@@ -1,3 +1,52 @@
+## Update — 2026-11-06 — v30.6.57 right-button camera-control labelling, temporal-promotion guardrails, and callback attribution breakdown
+
+### Scope
+
+- Added explicit mouse-button intent context to gesture intent output (`inputContextSignals`) including right-button camera-control hypothesis.
+- Added mouse-lock/relative-pointer fallback sampling:
+  - heartbeat `UserInputService:GetMouseDelta()` capture while pointer gesture is active,
+  - movement-source metrics (`inputChangedMovementSamples`, `relativeDeltaMovementSamples`) to explain camera-turn-without-screen-delta cases.
+- Strengthened intent classification safeguards:
+  - right-button camera rotation contributes strong camera-control hypothesis,
+  - temporal-only/weak corroboration no longer promotes camera-control gestures into confident world-interaction candidates,
+  - camera/gameplay competing hypotheses remain simultaneously represented where evidence conflicts.
+- Added callback-attribution separation in click outcomes:
+  - `interactionCallbackObserved` vs `interactionCallbackAttributed`,
+  - callback attribution status in provenance and diagnostics,
+  - staged `interaction-callback-unattributed` status for independent debugging.
+- Added callback-source attribution diagnostics in `interactionDiagnostics` and `inputObservationStats` (object vs input callback pathways and attributed/unattributed counts).
+- Updated receiver normalization and downstream confounder handling for the new v30.6.57 fields (`inputContextSignals`, callback attribution, weak temporal promotion signals, world-promotion blocks).
+- Extended receiver quality metrics for right-button camera hypotheses and world-promotion block counts.
+- Added regression fixture coverage using labelled live camera-control examples:
+  - `gesture_6` (MouseButton1, 144.04°)
+  - `gesture_7` (MouseButton2, 80.86°)
+  - `gesture_8` (MouseButton2, 62.40°)
+
+### Validation
+
+- Focused regressions:
+  - `python3 -m pytest tests/test_inspector_ui.py tests/test_receiver_generation_pipeline.py tests/test_inspector_compiler_limits.py -q`
+  - **74 passed, 9 subtests passed**
+- Full regression:
+  - `python3 -m pytest`
+  - **1659 passed, 17 skipped**
+- Luau syntax/parsing:
+  - `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- Luau compile matrix (`LycolesUniversalInspector.lua`):
+  - `-O0..2 × -g0..2` all pass, no register overflow
+- Luau AST root local pressure: **168** (budget **170**, Potassium hard cap **200**)
+
+### Version
+
+- Inspector version bumped: **v30.6.57**
+
+### Live status
+
+- Offline validation complete.
+- **Potassium live verification pending** for confirmation that labelled right-button camera rotations remain non-promoted to confident world interactions without independent gameplay evidence.
+
+
+
 ## Update — 2026-11-06 — v30.6.56 gesture attribution conflict correction and ambiguity-preserving receiver propagation
 
 ### Scope

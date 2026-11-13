@@ -31,6 +31,15 @@ Target experiences are third-party games that the user does not own and cannot o
 - Receiver-side synthesis must propagate camera/gameplay ambiguity signals into spatial relationships (`camera-intent-confounder`) rather than silently upgrading them into actionable world interactions.
 
 
+## Session notes — 2026-11-06 right-button camera-control follow-up (v30.6.57)
+
+- Relative-pointer camera rotation can occur with zero `InputChanged.MouseMovement` samples under executor mouse-lock contexts; heartbeat `GetMouseDelta()` sampling during active pointer gestures is required to avoid false "no movement" conclusions.
+- Gesture intent now carries explicit `inputContextSignals` (including mouse button identity and right-button camera-control hypothesis) so downstream systems can distinguish button semantics from outcome semantics.
+- Temporal-only or weakly corroborated client-state signals must not promote camera-control gestures into confident world interactions when camera-confounder evidence is present.
+- Keep camera and gameplay hypotheses simultaneously represented when evidence conflicts; do not collapse to one hypothesis prematurely.
+- Callback diagnostics must separate "callback observed" from "callback attributed" to avoid over-trusting unattributed callback events in intent promotion.
+
+
 ## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
 
 - Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.

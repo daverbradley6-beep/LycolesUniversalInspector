@@ -1311,6 +1311,7 @@ def _build_universal_discovery_report(
         signals = value.get("targetAndOutcomeSignals") if isinstance(value.get("targetAndOutcomeSignals"), dict) else {}
         confidence = value.get("confidence") if isinstance(value.get("confidence"), dict) else {}
         physical = value.get("physicalGesture") if isinstance(value.get("physicalGesture"), dict) else {}
+        context = value.get("inputContextSignals") if isinstance(value.get("inputContextSignals"), dict) else {}
         return {
             "schemaVersion": value.get("schemaVersion") if isinstance(value.get("schemaVersion"), str) else None,
             "primaryIntent": value.get("primaryIntent") if isinstance(value.get("primaryIntent"), str) else None,
@@ -1322,6 +1323,12 @@ def _build_universal_discovery_report(
             "ambiguousInput": bool(value.get("ambiguousInput") is True),
             "likelyCameraMovement": bool(value.get("likelyCameraMovement") is True),
             "likelyGameplayInteraction": bool(value.get("likelyGameplayInteraction") is True),
+            "inputContextSignals": {
+                "mouseButton": context.get("mouseButton") if isinstance(context.get("mouseButton"), str) else None,
+                "rightButtonInput": bool(context.get("rightButtonInput") is True),
+                "leftButtonInput": bool(context.get("leftButtonInput") is True),
+                "rightButtonCameraControlHypothesis": bool(context.get("rightButtonCameraControlHypothesis") is True),
+            },
             "confidence": {
                 "cameraManipulationScore": _numeric(confidence.get("cameraManipulationScore")),
                 "gameplayInteractionScore": _numeric(confidence.get("gameplayInteractionScore")),
@@ -1331,6 +1338,8 @@ def _build_universal_discovery_report(
                 "kind": physical.get("kind") if isinstance(physical.get("kind"), str) else None,
                 "pointerMovementObserved": bool(physical.get("pointerMovementObserved") is True),
                 "movementSamples": int(physical.get("movementSamples")) if isinstance(physical.get("movementSamples"), int) else None,
+                "inputChangedMovementSamples": int(physical.get("inputChangedMovementSamples")) if isinstance(physical.get("inputChangedMovementSamples"), int) else None,
+                "relativeDeltaMovementSamples": int(physical.get("relativeDeltaMovementSamples")) if isinstance(physical.get("relativeDeltaMovementSamples"), int) else None,
                 "durationSeconds": _numeric(physical.get("durationSeconds")),
             },
             "targetAndOutcomeSignals": {
@@ -1338,10 +1347,15 @@ def _build_universal_discovery_report(
                 "worldTargetConfirmed": bool(signals.get("worldTargetConfirmed") is True),
                 "worldRaycastOnly": bool(signals.get("worldRaycastOnly") is True),
                 "callbackObserved": bool(signals.get("callbackObserved") is True),
+                "callbackAttributed": bool(signals.get("callbackAttributed") is True),
+                "callbackAttributionMissing": bool(signals.get("callbackAttributionMissing") is True),
                 "stateChangeTemporallyAssociated": bool(signals.get("stateChangeTemporallyAssociated") is True),
                 "meaningfulGameplayOutcomeObserved": bool(signals.get("meaningfulGameplayOutcomeObserved") is True),
                 "outcomeCorroborated": bool(signals.get("outcomeCorroborated") is True),
+                "corroboratedTemporalOnly": bool(signals.get("corroboratedTemporalOnly") is True),
                 "temporalOnlyStateAssociation": bool(signals.get("temporalOnlyStateAssociation") is True),
+                "weakTemporalPromotionSignal": bool(signals.get("weakTemporalPromotionSignal") is True),
+                "worldPromotionBlockedByCamera": bool(signals.get("worldPromotionBlockedByCamera") is True),
                 "targetAmbiguous": bool(signals.get("targetAmbiguous") is True),
                 "cameraRotationWithoutPointerEvidence": bool(signals.get("cameraRotationWithoutPointerEvidence") is True),
                 "competingIntentSignals": bool(signals.get("competingIntentSignals") is True),
@@ -1458,6 +1472,7 @@ def _build_universal_discovery_report(
             "clickObserved": bool(value.get("clickObserved") is True),
             "targetIdentified": bool(value.get("targetIdentified") is True),
             "interactionCallbackObserved": bool(value.get("interactionCallbackObserved") is True),
+            "interactionCallbackAttributed": bool(value.get("interactionCallbackAttributed") is True),
             "stateChangeTemporallyAssociated": bool(value.get("stateChangeTemporallyAssociated") is True),
             "meaningfulGameplayOutcomeObserved": bool(value.get("meaningfulGameplayOutcomeObserved") is True),
             "outcomeCorroborated": bool(value.get("outcomeCorroborated") is True),
@@ -1469,6 +1484,7 @@ def _build_universal_discovery_report(
                 "clickObserved": bool(verification.get("clickObserved") is True),
                 "targetIdentified": bool(verification.get("targetIdentified") is True),
                 "interactionCallbackObserved": bool(verification.get("interactionCallbackObserved") is True),
+                "interactionCallbackAttributed": bool(verification.get("interactionCallbackAttributed") is True),
                 "stateChangeObserved": bool(verification.get("stateChangeObserved") is True),
                 "temporallyAssociated": bool(verification.get("temporallyAssociated") is True),
                 "multiSignalCorroborated": bool(verification.get("multiSignalCorroborated") is True),
@@ -1533,6 +1549,8 @@ def _build_universal_discovery_report(
                 "cumulativeCursorTravelPixels": _numeric(metrics.get("cumulativeCursorTravelPixels")),
                 "maxCursorDeltaPixels": _numeric(metrics.get("maxCursorDeltaPixels")),
                 "movementSamples": int(metrics.get("movementSamples")) if isinstance(metrics.get("movementSamples"), int) else None,
+                "inputChangedMovementSamples": int(metrics.get("inputChangedMovementSamples")) if isinstance(metrics.get("inputChangedMovementSamples"), int) else None,
+                "relativeDeltaMovementSamples": int(metrics.get("relativeDeltaMovementSamples")) if isinstance(metrics.get("relativeDeltaMovementSamples"), int) else None,
                 "pointerMovementObserved": bool(metrics.get("pointerMovementObserved") is True),
                 "cameraHeadingDeltaDegrees": _numeric(metrics.get("cameraHeadingDeltaDegrees")),
                 "cameraCumulativeTurnDegrees": _numeric(metrics.get("cameraCumulativeTurnDegrees")),
@@ -1610,14 +1628,23 @@ def _build_universal_discovery_report(
             gesture_intent = _normalize_input_gesture_intent(click_target_payload.get("inputIntent"))
 
         intent_signals = (gesture_intent or {}).get("targetAndOutcomeSignals") if isinstance((gesture_intent or {}).get("targetAndOutcomeSignals"), dict) else {}
+        intent_context = (gesture_intent or {}).get("inputContextSignals") if isinstance((gesture_intent or {}).get("inputContextSignals"), dict) else {}
         camera_confounded = bool(
             gesture_intent
             and (gesture_intent.get("likelyCameraMovement") is True)
-            and (gesture_intent.get("likelyGameplayInteraction") is not True or gesture_intent.get("ambiguousInput") is True)
+            and (
+                (gesture_intent.get("likelyGameplayInteraction") is not True)
+                or (gesture_intent.get("ambiguousInput") is True)
+                or (intent_context.get("rightButtonCameraControlHypothesis") is True)
+            )
             and (
                 (intent_signals.get("worldRaycastOnly") is True)
                 or (intent_signals.get("cameraRotationWithoutPointerEvidence") is True)
                 or (intent_signals.get("competingIntentSignals") is True)
+                or (intent_signals.get("weakTemporalPromotionSignal") is True)
+                or (intent_signals.get("worldPromotionBlockedByCamera") is True)
+                or (intent_signals.get("callbackAttributionMissing") is True)
+                or (intent_context.get("rightButtonCameraControlHypothesis") is True)
             )
         )
 
@@ -2825,14 +2852,23 @@ def _build_universal_discovery_report(
                     break
 
         linked_intent_signals = (linked_intent or {}).get("targetAndOutcomeSignals") if isinstance((linked_intent or {}).get("targetAndOutcomeSignals"), dict) else {}
+        linked_intent_context = (linked_intent or {}).get("inputContextSignals") if isinstance((linked_intent or {}).get("inputContextSignals"), dict) else {}
         input_gesture_camera_confounded = bool(
             linked_intent
             and (linked_intent.get("likelyCameraMovement") is True)
-            and (linked_intent.get("likelyGameplayInteraction") is not True or linked_intent.get("ambiguousInput") is True)
+            and (
+                (linked_intent.get("likelyGameplayInteraction") is not True)
+                or (linked_intent.get("ambiguousInput") is True)
+                or (linked_intent_context.get("rightButtonCameraControlHypothesis") is True)
+            )
             and (
                 (linked_intent_signals.get("worldRaycastOnly") is True)
                 or (linked_intent_signals.get("cameraRotationWithoutPointerEvidence") is True)
                 or (linked_intent_signals.get("competingIntentSignals") is True)
+                or (linked_intent_signals.get("weakTemporalPromotionSignal") is True)
+                or (linked_intent_signals.get("worldPromotionBlockedByCamera") is True)
+                or (linked_intent_signals.get("callbackAttributionMissing") is True)
+                or (linked_intent_context.get("rightButtonCameraControlHypothesis") is True)
             )
         )
 
@@ -4101,6 +4137,13 @@ def _build_universal_discovery_report(
         "clickOutcomeCorrelation": {
             "total": len(click_outcome_relationships),
             "callbackObserved": sum(1 for item in click_outcome_relationships if item.get("interactionCallbackObserved") is True),
+            "callbackAttributed": sum(1 for item in click_outcome_relationships if item.get("interactionCallbackAttributed") is True),
+            "callbackObservedButUnattributed": sum(
+                1
+                for item in click_outcome_relationships
+                if item.get("interactionCallbackObserved") is True
+                and item.get("interactionCallbackAttributed") is not True
+            ),
             "stateAssociated": sum(1 for item in click_outcome_relationships if item.get("stateChangeTemporallyAssociated") is True),
             "meaningfulOutcomeObserved": sum(1 for item in click_outcome_relationships if item.get("meaningfulGameplayOutcomeObserved") is True),
             "corroborated": sum(1 for item in click_outcome_relationships if item.get("outcomeCorroborated") is True),
@@ -4139,10 +4182,25 @@ def _build_universal_discovery_report(
                 for item in input_gesture_observations
                 if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("competingIntentSignals")) is True)
             ),
+            "rightButtonCameraControlHypotheses": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("inputContextSignals") or {}).get("rightButtonCameraControlHypothesis")) is True)
+            ),
             "temporalOnlyStateAssociations": sum(
                 1
                 for item in input_gesture_observations
                 if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("temporalOnlyStateAssociation")) is True)
+            ),
+            "corroboratedTemporalOnly": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("corroboratedTemporalOnly")) is True)
+            ),
+            "worldPromotionBlockedByCamera": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("worldPromotionBlockedByCamera")) is True)
             ),
             "cameraGameplayConflicts": sum(
                 1

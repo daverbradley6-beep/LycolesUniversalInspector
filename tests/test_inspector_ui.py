@@ -350,7 +350,8 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('uploading = true',SRC)
         self.assertIn('uploading = false',SRC)
         self.assertIn('if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end',SRC)
-        self.assertIn('sampleActivePointerGestureCameraHeading(os.clock(),"gesture-heartbeat")',SRC)
+        self.assertIn('sampleActivePointerGestureCameraHeading(heartbeatClock,"gesture-heartbeat")',SRC)
+        self.assertIn('sampleActivePointerGesturesRelativeDelta(heartbeatClock)',SRC)
         self.assertNotIn('and interactionObserveEnabled and not uploading',SRC)
 
     def test_click_pipeline_processed_input_and_stage_diagnostics(self):
@@ -367,8 +368,10 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('finalizePointerGesture(inputName,inputName,"input-ended")', SRC)
         self.assertIn('updateActivePointerGesturesFromMouseDelta(delta,now)', SRC)
         self.assertIn('worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved', SRC)
-        self.assertIn('schemaVersion="30.6.input-gesture-intent.2"', SRC)
-        self.assertIn('temporalOnlyStateAssociation=stateAssociated and not robustOutcomeSignal', SRC)
+        self.assertIn('schemaVersion="30.6.input-gesture-intent.3"', SRC)
+        self.assertIn('temporalOnlyStateAssociation=stateAssociated and not callbackAttributed', SRC)
+        self.assertIn('rightButtonCameraControlHypothesis', SRC)
+        self.assertIn('worldPromotionBlockedByCamera', SRC)
         self.assertIn('cameraRotationWithoutPointerEvidence', SRC)
         self.assertIn('inspectorOwnedTarget=clickInspectorOwned', SRC)
         self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)', SRC)
