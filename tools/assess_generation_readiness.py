@@ -657,6 +657,8 @@ def _request_feature_matches(plan,request_words):
             evidence_classification=_FEATURE_EVIDENCE_CLASSIFICATION.get(
                 status,"unrecognized-feature-status")
 
+        completion_signals=int(selected_stats.get("completionSignals",0))
+        notification_signals=int(selected_stats.get("notificationSignals",0))
         if representative_path and isinstance(path_signals.get(representative_path),dict):
             observed_control_types=sorted(control for control in
                 path_signals[representative_path].get("controlTypes",set())
@@ -665,6 +667,8 @@ def _request_feature_matches(plan,request_words):
             observed_control_types=sorted(control for control in signals.get("controlTypes",set()) if isinstance(control,str))[:20]
         if request_claim and not request_action_aligned:
             observed_control_types=[]
+            completion_signals=0
+            notification_signals=0
 
         token_only=not bool(counts["interactionEvents"] or counts["observableOutcomeCandidates"]
             or counts["featureStateCorrelations"] or counts["featureGuiCorrelations"]
@@ -686,6 +690,8 @@ def _request_feature_matches(plan,request_words):
             "observedControlTypes":observed_control_types,
             "interactionCallbackAttributedEvents":int(signals.get("callbackAttributedEvents",0)),
             "meaningfulGameplayOutcomeEvents":int(signals.get("meaningfulGameplayOutcomeEvents",0)),
+            "completionTransitionSignals":completion_signals,
+            "notificationTransitionSignals":notification_signals,
             "requestActionSemanticsAligned":request_action_aligned,
         })
     values.sort(key=lambda item:(-item["gameplayPriorityScore"],
@@ -897,6 +903,18 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
         and bool(item.get("matchedTerms")) for item in workflow_candidates)
     automatic_execution_required=_request_requires_automatic_execution(request)
     request_aligned_review_only_gui=review_only_gui["requestAlignedCandidates"]
+    claim_request_terms={"claim","collect","reward","rewards","daily","gift","redeem","prize"}
+    claim_request=bool(request_token_set&claim_request_terms)
+    controlled_claim_candidates=sum(
+        item.get("requestActionSemanticsAligned") is True
+        and isinstance(item.get("representativeTargetPath"),str)
+        and bool(item.get("representativeTargetPath"))
+        and type(item.get("completionTransitionSignals")) is int
+        and item["completionTransitionSignals"]>0
+        and "GuiButton.Activated" in (item.get("observedControlTypes") or [])
+        for item in feature_values)
+    execution_contract_valid=bool(claim_request and controlled_claim_candidates>0)
+    ready_for_controlled_testing=execution_contract_valid
     if request is None:
         request_status="no-capability-requested"
     elif status=="generated-bounded-subset":
@@ -943,6 +961,9 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "reviewOnlyGuiTransitionCandidates":review_only_gui["totalCandidates"],
             "requestAlignedReviewOnlyGuiTransitionCandidates":request_aligned_review_only_gui,
             "requestAlignedReviewOnlyGuiTransitionPaths":review_only_gui["requestAlignedPaths"],
+            "controlledClaimTrialCandidates":controlled_claim_candidates,
+            "executionContractValid":execution_contract_valid,
+            "readyForControlledTesting":ready_for_controlled_testing,
             "selectedCandidateId":workflow_selection.get("selectedCandidateId"),
             "selectedCandidateRequestAligned":bool(workflow_target and _workflow_request_aligned(
                 workflow_target,request)) if request is not None else False,
@@ -965,6 +986,9 @@ def _request_feature_readiness(plan,request,status,generated,matched_generated,g
             "requestAlignedExecutionReadyWorkflows":request_aligned_workflows,
             "requestAlignedAutomaticExecutionReadyWorkflows":request_aligned_automatic_workflows,
             "requestAlignedReviewOnlyGuiTransitions":request_aligned_review_only_gui,
+            "controlledClaimTrialCandidates":controlled_claim_candidates,
+            "executionContractValid":1 if execution_contract_valid else 0,
+            "readyForControlledTesting":1 if ready_for_controlled_testing else 0,
             "blockers":len(blockers)},
         "nameMatchingSufficientForImplementation":False,
         "temporalCorrelationSufficientForImplementation":False,

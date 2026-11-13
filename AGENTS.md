@@ -754,3 +754,29 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - semantic mismatch path/control suppression in planner extraction.
 - Generation remains conservative (`observational-only-request-unmet`) until request-aligned execution-ready workflow candidates and live verification evidence exist.
 
+
+## Update — 2026-11-13 — Controlled rewards-claim trial contract (v30.6.61)
+
+- Root cause of strict executable rejection persists by design:
+  - workflow planner remains `review-only-candidates` for rewards claim due GUI-transition-only evidence (`reviewOnlyTemporalOutcomeCandidate`) and no resolvable scalar outcome contract (`trialGenerationReady=False`, `replayContractAvailable=False`).
+  - therefore strict execution-ready counters stay zero and `--require-executable` still fails with request-aligned execution/automatic blockers.
+- Added explicit controlled-trial status path without weakening strict execution-ready gates:
+  - `requestFeatureReadiness.workflowEvidence.controlledClaimTrialCandidates`
+  - `requestFeatureReadiness.workflowEvidence.executionContractValid`
+  - `requestFeatureReadiness.workflowEvidence.readyForControlledTesting`
+  - mirrored in delivery executable status as `executionContractValid` and `readyForControlledPotassiumTesting`.
+- For claim requests, generated utility now emits strict claim-only targets:
+  - includes only semantically aligned claim controls with completion transition evidence;
+  - excludes Close/Cancel/Back and notification/menu-only controls;
+  - preserves path confidence/provenance fields per target.
+- Controlled claim trial behavior in generated Lua:
+  - place-guarded, one bounded attempt only,
+  - activation via `VirtualInputManager` mouse-button click (no firesignal / no synthetic event invocation),
+  - checks pre/post completion/label visibility transitions,
+  - clean stop with explicit messages for missing controls, unavailable activation, already-completed state, timeout, and bounded-attempt exhaustion.
+- Current v30.6.61 rewards job confirms:
+  - strict executable unavailable (unchanged blockers),
+  - controlled contract valid and ready for controlled Potassium trial,
+  - claim path selected: `DailyRewards.Frame.Playtime.Main.1.Button`,
+  - close path excluded from emitted targets.
+

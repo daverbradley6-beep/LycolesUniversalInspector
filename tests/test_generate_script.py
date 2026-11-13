@@ -186,4 +186,60 @@ class GeneratorTests(unittest.TestCase):
             self.assertIn("full request implemented: false",commands)
             self.assertIn('panel.Name="AdminCommands"',combined)
 
+
+    def test_claim_request_emits_only_claim_control_and_controlled_contract(self):
+        plan=self.plan()
+        plan["features"]=[{"feature":"rewards"}]
+        plan["requestedCapability"]="Automatically claim the daily reward"
+        plan["observedInteractionHistory"]= [{
+            "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+            "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+            "workflow":{"phase":"initiated","action":"claim","confidence":"bounded","verified":False},
+            "guiStateChanges":[
+                {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button.Label",
+                 "beforeVisible":True,"afterVisible":False},
+                {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Completed",
+                 "beforeVisible":False,"afterVisible":True},
+            ],
+        },{
+            "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Top.Close.Button",
+            "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+            "workflow":{"phase":"initiated","action":"close","confidence":"bounded","verified":False},
+        },{
+            "path":"LocalPlayer.PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button",
+            "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+            "workflow":{"phase":"initiated","action":"claim","confidence":"bounded","verified":False},
+            "guiStateChanges":[
+                {"path":"PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button.Notification",
+                 "beforeVisible":True,"afterVisible":False},
+            ],
+        }]
+        lua=generator.render(plan)
+        self.assertIn("DailyRewards.Frame.Playtime.Main.1.Button",lua)
+        self.assertNotIn("DailyRewards.Frame.Playtime.Top.Close.Button",lua)
+        self.assertNotIn("HUD.Left.Buttons.DailyRewards.Button\", kind",lua)
+        self.assertIn("local CONTROLLED_REQUEST = {enabled=true",lua)
+        self.assertIn("bounded single claim attempt already used",lua)
+        self.assertIn("completion-state transition observed",lua)
+        self.assertIn("Syntax-valid: true",lua)
+        self.assertIn("Execution-contract-valid:",lua)
+
+    def test_claim_request_without_completion_transition_disables_controlled_contract(self):
+        plan=self.plan()
+        plan["features"]=[{"feature":"rewards"}]
+        plan["requestedCapability"]="Automatically claim the daily reward"
+        plan["observedInteractionHistory"]= [{
+            "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Top.Close.Button",
+            "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+            "workflow":{"phase":"initiated","action":"close","confidence":"bounded","verified":False},
+            "guiStateChanges":[
+                {"path":"PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button.Notification",
+                 "beforeVisible":True,"afterVisible":False},
+            ],
+        }]
+        lua=generator.render(plan)
+        self.assertIn("no evidence-backed claim control discovered",lua)
+        self.assertIn("local CONTROLLED_REQUEST = {enabled=false",lua)
+        self.assertIn("Ready for controlled Potassium testing",lua)
+
 if __name__=="__main__":unittest.main()

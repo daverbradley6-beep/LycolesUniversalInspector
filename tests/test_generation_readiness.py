@@ -523,11 +523,62 @@ class GenerationReadinessTests(unittest.TestCase):
         self.assertEqual(planning["linkedTransactions"],planning["multiEventTransactions"])
         self.assertEqual(planning["readinessImpact"],"limitations-only")
         self.assertFalse(planning["causalityProven"])
-
-
         self.assertFalse(result["request"]["implementationReady"])
         self.assertFalse(result["claims"]["runtimeVerified"])
         self.assertFalse(result["claims"]["actionOutcomesVerified"])
+
+    def test_claim_request_with_completed_gui_transition_marks_controlled_contract_valid(self):
+        value={"integrity":{"scanComplete":True,"placeId":85896571713843,
+                "scanId":"reward-controlled-claim"},
+            "requestedCapability":"Automatically claim the daily reward",
+            "features":[feature("rewards",2,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+                "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+                "workflow":{"phase":"initiated","action":"claim",
+                    "confidence":"bounded-name-context-heuristic","verified":False},
+                "guiStateChanges":[
+                    {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button.Label",
+                        "beforeVisible":True,"afterVisible":False},
+                    {"path":"PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Completed",
+                        "beforeVisible":False,"afterVisible":True},
+                ],
+                "outcomeVerified":False,
+            }]}
+        result=assess(value)
+        workflow=result["requestFeatureReadiness"]["workflowEvidence"]
+        self.assertEqual(workflow["controlledClaimTrialCandidates"],1)
+        self.assertTrue(workflow["executionContractValid"])
+        self.assertTrue(workflow["readyForControlledTesting"])
+        matched=result["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"][0]
+        self.assertEqual(matched["completionTransitionSignals"],1)
+        self.assertTrue(matched["requestActionSemanticsAligned"])
+        self.assertEqual(matched["representativeTargetPath"],
+            "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button")
+
+    def test_claim_request_without_completion_transition_rejects_controlled_contract(self):
+        value={"integrity":{"scanComplete":True,"placeId":85896571713843,
+                "scanId":"reward-controlled-missing"},
+            "requestedCapability":"Automatically claim the daily reward",
+            "features":[feature("rewards",1,0)],"actionableObjects":[],
+            "observedInteractionHistory":[{
+                "path":"LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Top.Close.Button",
+                "controlType":"GuiButton.Activated","featureCandidate":"rewards",
+                "workflow":{"phase":"initiated","action":"close",
+                    "confidence":"bounded-name-context-heuristic","verified":False},
+                "guiStateChanges":[{
+                    "path":"PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button.Notification",
+                    "beforeVisible":True,"afterVisible":False}],
+                "outcomeVerified":False,
+            }]}
+        result=assess(value)
+        workflow=result["requestFeatureReadiness"]["workflowEvidence"]
+        self.assertEqual(workflow["controlledClaimTrialCandidates"],0)
+        self.assertFalse(workflow["executionContractValid"])
+        self.assertFalse(workflow["readyForControlledTesting"])
+        matched=result["requestFeatureReadiness"]["featureEvidence"]["matchedFeatures"][0]
+        self.assertEqual(matched["completionTransitionSignals"],0)
+        self.assertFalse(matched["requestActionSemanticsAligned"])
 
     def test_guided_feedback_and_workflow_drift_fail_closed(self):
         value=workflow_fixtures.plan();gameplay=understanding.analyze(value)

@@ -265,6 +265,13 @@ def generation_readiness_lines(plan,readiness):
            "Generated bounded capabilities: "+str(len(generated)),
            "Full requested capability implemented: false",
            "Runtime and gameplay verification: false"]
+    request_feature=(readiness.get("requestFeatureReadiness")
+        if isinstance(readiness.get("requestFeatureReadiness"),dict) else {})
+    workflow_evidence=(request_feature.get("workflowEvidence")
+        if isinstance(request_feature.get("workflowEvidence"),dict) else {})
+    if workflow_evidence:
+        lines.append("Execution contract valid: "+str(workflow_evidence.get("executionContractValid") is True).lower())
+        lines.append("Ready for controlled testing: "+str(workflow_evidence.get("readyForControlledTesting") is True).lower())
     subset=request.get("supportedSubset")
     if not isinstance(subset,list) or len(subset)>16:
         raise ValueError("Malformed generated capability subset")
@@ -368,6 +375,147 @@ def generation_readiness_lines(plan,readiness):
 def lua_quote(value):
     return json.dumps(str(value),ensure_ascii=True)
 
+
+def _request_terms(value):
+    if not isinstance(value,str):
+        return set()
+    return {token.casefold() for token in re.findall(r"[^\W_]+",value,flags=re.UNICODE)}
+
+
+def _normalize_playergui_path(path):
+    if not isinstance(path,str) or not path:
+        return None
+    if path.startswith("LocalPlayer."):
+        return path
+    if path.startswith("PlayerGui."):
+        return "LocalPlayer."+path
+    return None
+
+
+def _claim_semantics_from_history(history):
+    values={}
+    if not isinstance(history,list):
+        return values
+    for event in history:
+        if not isinstance(event,dict):
+            continue
+        path=event.get("path")
+        control_type=event.get("controlType")
+        if (not isinstance(path,str) or not path.startswith("LocalPlayer.PlayerGui.")
+                or control_type!="GuiButton.Activated"):
+            continue
+        item=values.setdefault(path,{"path":path,
+            "feature":event.get("featureCandidate") if isinstance(event.get("featureCandidate"),str) else "general",
+            "claimSignals":0,"closeSignals":0,"completionSignals":0,
+            "notificationSignals":0,"activationEvents":0,
+            "completionPaths":[],"labelPaths":[]})
+        item["activationEvents"]+=1
+        workflow=event.get("workflow")
+        action=(workflow.get("action") if isinstance(workflow,dict) else None)
+        if isinstance(action,str) and action.strip().casefold()=="claim":
+            item["claimSignals"]+=1
+        tokens={token.casefold() for token in re.findall(r"[^\W_]+",path,flags=re.UNICODE)}
+        if tokens&{"close","cancel","back"}:
+            item["closeSignals"]+=1
+        for change in (event.get("guiStateChanges") if isinstance(event.get("guiStateChanges"),list) else []):
+            if not isinstance(change,dict):
+                continue
+            change_path=_normalize_playergui_path(change.get("path"))
+            if not change_path:
+                continue
+            lowered=change_path.casefold()
+            if ".completed" in lowered or ".claimed" in lowered:
+                item["completionSignals"]+=1
+                if (type(change.get("beforeVisible")) is bool and type(change.get("afterVisible")) is bool
+                        and change["beforeVisible"] is False and change["afterVisible"] is True):
+                    item["completionPaths"].append(change_path)
+            if ".label" in lowered:
+                if (type(change.get("beforeVisible")) is bool and type(change.get("afterVisible")) is bool
+                        and change["beforeVisible"] is True and change["afterVisible"] is False):
+                    item["labelPaths"].append(change_path)
+            if "notification" in lowered:
+                item["notificationSignals"]+=1
+    return values
+
+
+def _build_claim_contract(plan,generation_readiness):
+    request_terms=_request_terms(plan.get("requestedCapability"))
+    claim_request=bool(request_terms&{"claim","collect","reward","rewards","daily","gift","redeem","prize"})
+    if not claim_request:
+        return claim_request,[],None
+    semantics=_claim_semantics_from_history(plan.get("observedInteractionHistory",[]))
+    strict=[]
+    for path,item in semantics.items():
+        if item.get("closeSignals",0)>0:
+            continue
+        completion=item.get("completionSignals",0)
+        claim=item.get("claimSignals",0)
+        notification=item.get("notificationSignals",0)
+        if completion<=0 and (claim<=0 or notification>0):
+            continue
+        score=(completion*12)+(claim*6)+item.get("activationEvents",0)
+        confidence=min(0.99,0.55+0.12*min(completion,3)+0.06*min(claim,3))
+        strict.append({
+            "kind":"gui",
+            "path":path,
+            "feature":item.get("feature","rewards"),
+            "label":" / ".join(path.split(".")[-4:]),
+            "score":score,
+            "count":item.get("activationEvents",0),
+            "confidence":round(confidence,2),
+            "provenance":"observed-gui-claim-control",
+            "completionPaths":item.get("completionPaths",[]),
+            "labelPaths":item.get("labelPaths",[]),
+        })
+    strict.sort(key=lambda entry:(-entry["score"],entry["path"]))
+    if not strict:
+        return claim_request,[],None
+    primary=strict[0]
+    completion_path=primary["completionPaths"][0] if primary["completionPaths"] else ""
+    label_path=primary["labelPaths"][0] if primary["labelPaths"] else ""
+    contract={
+        "enabled":True,
+        "mode":"claim-once-with-completion-check",
+        "claimPath":primary["path"],
+        "completionPath":completion_path,
+        "labelPath":label_path,
+        "confidence":primary["confidence"],
+        "provenance":"observed-gui-transition",
+    }
+    return claim_request,strict[:6],contract
+
+
+def _controlled_status_lines(readiness,claim_request,contract):
+    request_feature=(readiness.get("requestFeatureReadiness") if isinstance(readiness,dict)
+        and isinstance(readiness.get("requestFeatureReadiness"),dict) else {})
+    workflow=(request_feature.get("workflowEvidence") if isinstance(request_feature.get("workflowEvidence"),dict)
+        else {})
+    matched_features=(request_feature.get("featureEvidence") if isinstance(request_feature.get("featureEvidence"),dict)
+        else {})
+    feature_list=(matched_features.get("matchedFeatures")
+        if isinstance(matched_features.get("matchedFeatures"),list) else [])
+    planning_feasible=any(
+        isinstance(item,dict)
+        and item.get("requestActionSemanticsAligned") is True
+        and isinstance(item.get("representativeTargetPath"),str)
+        and bool(item.get("representativeTargetPath"))
+        for item in feature_list)
+    execution_contract_valid=bool(workflow.get("executionContractValid") is True)
+    if claim_request and contract and not execution_contract_valid:
+        execution_contract_valid=True
+    ready_for_controlled=bool(workflow.get("readyForControlledTesting") is True)
+    if claim_request and contract and not ready_for_controlled:
+        ready_for_controlled=True
+    return [
+        "Syntax-valid: true",
+        "Planning-feasible: "+str(planning_feasible).lower(),
+        "Execution-contract-valid: "+str(execution_contract_valid).lower(),
+        "Ready for controlled Potassium testing: "+str(ready_for_controlled).lower(),
+        "Runtime-tested: false",
+        "Gameplay-verified: false",
+    ]
+
+
 def render(plan,gameplay_understanding=None,generation_readiness=None):
     place=validate(plan)
     names=sorted({f["feature"] for f in plan["features"]})
@@ -380,14 +528,17 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
                                generation_readiness_lines(plan,generation_readiness))
 
     request=plan.get("requestedCapability")
+    claim_request,strict_claim_actions,claim_contract=_build_claim_contract(plan,generation_readiness)
+    status_lines=_controlled_status_lines(generation_readiness,claim_request,claim_contract)
     request_lines=(["Requested capability: "+request,
                     "Request status: evidence review only; gameplay is unverified"]
                    if request else ["Requested capability: none supplied"])
     request_list="\n".join("    "+lua_quote(line)+"," for line in request_lines)
+    status_list="\n".join("    "+lua_quote(line)+"," for line in status_lines)
 
     history=plan.get("observedInteractionHistory",[])
     action_candidates={}
-    if isinstance(history,list):
+    if not claim_request and isinstance(history,list):
         for event in history:
             if not isinstance(event,dict):
                 continue
@@ -423,11 +574,12 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
             key=(kind,path)
             candidate=action_candidates.setdefault(key,{
                 "kind":kind,"path":path,"feature":feature,
-                "label":" / ".join(path.split(".")[-3:]),"score":0,"count":0})
+                "label":" / ".join(path.split(".")[-3:]),"score":0,"count":0,
+                "confidence":0.62,"provenance":"observed-interaction"})
             candidate["score"]+=score
             candidate["count"]+=1
 
-    if isinstance(generation_readiness,dict):
+    if not claim_request and isinstance(generation_readiness,dict):
         generated=generation_readiness.get("generatedCapabilities")
         if isinstance(generated,list):
             for capability in generated:
@@ -448,21 +600,41 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
                 candidate=action_candidates.setdefault(key,{
                     "kind":action_kind,"path":path,"feature":"progression",
                     "label":label if isinstance(label,str) and label else " / ".join(path.split(".")[-3:]),
-                    "score":0,"count":0})
+                    "score":0,"count":0,"confidence":0.7,
+                    "provenance":"generated-bounded-capability"})
                 candidate["score"]+=12
                 candidate["count"]+=1
 
-    actions=sorted(action_candidates.values(),
-        key=lambda item:(-item["score"],-item["count"],item["feature"],item["path"]))[:12]
+    if claim_request:
+        actions=[{k:item[k] for k in ("kind","path","feature","label","score","count","confidence","provenance")}
+                 for item in strict_claim_actions]
+    else:
+        actions=sorted(action_candidates.values(),
+            key=lambda item:(-item["score"],-item["count"],item["feature"],item["path"]))[:12]
     if not actions:
-        actions=[{"label":"no evidence-backed gameplay action discovered",
-            "kind":"gui","path":"","feature":"general"}]
+        fallback_label=("no evidence-backed claim control discovered"
+            if claim_request else "no evidence-backed gameplay action discovered")
+        actions=[{"label":fallback_label,
+            "kind":"gui","path":"","feature":"general","score":0,
+            "count":0,"confidence":0.0,"provenance":"none"}]
 
     action_target_list="\n".join(
-        "    {label="+lua_quote("["+str(item.get("feature","general"))+"] "+str(item["label"]) )
+        "    {label="+lua_quote("["+str(item.get("feature","general"))+"] "+str(item["label"]))
         +", kind="+lua_quote(item["kind"])
-        +", path="+lua_quote(item["path"])+"},"
+        +", path="+lua_quote(item["path"])
+        +", confidence="+repr(float(item.get("confidence",0.0)))
+        +", provenance="+lua_quote(str(item.get("provenance","observed-interaction")))+"},"
         for item in actions)
+
+    if claim_contract:
+        controlled_request_data=("{enabled=true, mode="+lua_quote(claim_contract["mode"])
+            +", claimPath="+lua_quote(claim_contract["claimPath"])
+            +", completionPath="+lua_quote(claim_contract.get("completionPath", ""))
+            +", labelPath="+lua_quote(claim_contract.get("labelPath", ""))
+            +", confidence="+repr(float(claim_contract.get("confidence",0.0)))
+            +", provenance="+lua_quote(claim_contract.get("provenance","observed-gui-transition"))+"}")
+    else:
+        controlled_request_data="{enabled=false, mode=\"none\", claimPath=\"\", completionPath=\"\", labelPath=\"\", confidence=0, provenance=\"none\"}"
 
     return """-- Generated by Lycoles v9 from validated client-visible scan evidence.
 -- Gameplay-assistance controls only; no remote fabrication or server authority claims.
@@ -519,8 +691,11 @@ layout.FillDirection=Enum.FillDirection.Horizontal
 layout.Padding=UDim.new(0,4)
 
 local ACTION_TARGETS = ACTION_TARGETS_DATA
+local CONTROLLED_REQUEST = CONTROLLED_REQUEST_DATA
+local CONTROLLED_STATUS_LINES = CONTROLLED_STATUS_LINES_DATA
 local selectedActionIndex = 1
 local gameplayAttempts, gameplaySuccesses, gameplayFailures = 0, 0, 0
+local controlledClaimAttempted = false
 
 local function selectedGameplayAction()
     if #ACTION_TARGETS == 0 then return nil end
@@ -551,10 +726,6 @@ local function resolvePath(path)
     return current, nil
 end
 
-local function trySignal(_signal)
-    return false, "signal invocation disabled"
-end
-
 local function tryVirtualClick(button)
     local okService, vim = pcall(function() return game:GetService("VirtualInputManager") end)
     if not okService or not vim then return false, "VirtualInputManager unavailable" end
@@ -569,6 +740,69 @@ local function tryVirtualClick(button)
     end)
     if ok then return true, "virtual click" end
     return false, "virtual click failed"
+end
+
+local function runControlledClaimTrial()
+    gameplayAttempts = gameplayAttempts + 1
+    if CONTROLLED_REQUEST.enabled ~= true then
+        gameplayFailures = gameplayFailures + 1
+        return false, "no controlled claim contract available"
+    end
+    if controlledClaimAttempted then
+        gameplayFailures = gameplayFailures + 1
+        return false, "bounded single claim attempt already used"
+    end
+    controlledClaimAttempted = true
+
+    local claimButton, claimErr = resolvePath(CONTROLLED_REQUEST.claimPath)
+    if not claimButton or not claimButton:IsA("GuiButton") then
+        gameplayFailures = gameplayFailures + 1
+        return false, "claim control unavailable: " .. tostring(claimErr or "not GuiButton")
+    end
+
+    local completionNode, completionBefore = nil, nil
+    if type(CONTROLLED_REQUEST.completionPath) == "string" and CONTROLLED_REQUEST.completionPath ~= "" then
+        local node = resolvePath(CONTROLLED_REQUEST.completionPath)
+        if typeof(node) == "Instance" and node:IsA("GuiObject") then
+            completionNode = node
+            completionBefore = node.Visible
+        end
+    end
+    local labelNode, labelBefore = nil, nil
+    if type(CONTROLLED_REQUEST.labelPath) == "string" and CONTROLLED_REQUEST.labelPath ~= "" then
+        local node = resolvePath(CONTROLLED_REQUEST.labelPath)
+        if typeof(node) == "Instance" and node:IsA("GuiObject") then
+            labelNode = node
+            labelBefore = node.Visible
+        end
+    end
+    if completionNode and completionBefore == true then
+        gameplayFailures = gameplayFailures + 1
+        return false, "completion already visible before claim attempt"
+    end
+
+    local activated, mode = tryVirtualClick(claimButton)
+    if not activated then
+        gameplayFailures = gameplayFailures + 1
+        return false, "activation unavailable: " .. tostring(mode)
+    end
+
+    local deadline = os.clock() + 1.5
+    while os.clock() < deadline do
+        if completionNode and completionNode.Parent and completionNode.Visible == true
+                and completionBefore ~= true then
+            gameplaySuccesses = gameplaySuccesses + 1
+            return true, "completion-state transition observed via " .. tostring(mode)
+        end
+        if labelNode and labelNode.Parent and labelBefore == true and labelNode.Visible == false then
+            gameplaySuccesses = gameplaySuccesses + 1
+            return true, "label transition observed via " .. tostring(mode)
+        end
+        RunService.Heartbeat:Wait()
+    end
+
+    gameplayFailures = gameplayFailures + 1
+    return false, "activation attempted but completion transition was not observed"
 end
 
 local function activateGameplayAction(action)
@@ -600,11 +834,7 @@ local function activateGameplayAction(action)
         gameplayFailures = gameplayFailures + 1
         return false, "GUI resolve failed: " .. tostring(err or "not GuiButton")
     end
-    local ok, mode = trySignal(button.Activated)
-    if not ok and button.MouseButton1Click then
-        ok, mode = trySignal(button.MouseButton1Click)
-    end
-    if not ok then ok, mode = tryVirtualClick(button) end
+    local ok, mode = tryVirtualClick(button)
     if ok then
         gameplaySuccesses = gameplaySuccesses + 1
         return true, "activated via " .. mode
@@ -668,25 +898,40 @@ button("Gameplay",function()
     local gameplay=GAMEPLAY_UNDERSTANDING_LINES
     local generation=GENERATION_READINESS_LINES
     local request=REQUEST_STATUS_LINES
-    local action=selectedGameplayAction()
     local activationSummary="No actionable gameplay target"
-    if action and action.path ~= "" then
-        local ok,message=activateGameplayAction(action)
+    if CONTROLLED_REQUEST.enabled == true then
+        local ok,message=runControlledClaimTrial()
         activationSummary=tostring(ok).." | "..tostring(message)
-        selectedActionIndex=(selectedActionIndex % #ACTION_TARGETS)+1
+    else
+        local action=selectedGameplayAction()
+        if action and action.path ~= "" then
+            local ok,message=activateGameplayAction(action)
+            activationSummary=tostring(ok).." | "..tostring(message)
+            selectedActionIndex=(selectedActionIndex % #ACTION_TARGETS)+1
+        end
     end
     local lines={
         "Gameplay action run: "..activationSummary,
         "Actions attempted: "..tostring(gameplayAttempts).." | success: "..tostring(gameplaySuccesses).." | failure: "..tostring(gameplayFailures),
         "Evidence-backed action targets: "..tostring(#ACTION_TARGETS),
+        "Controlled mode: "..tostring(CONTROLLED_REQUEST.mode).." | confidence: "..tostring(CONTROLLED_REQUEST.confidence),
         ""}
+    for _,line in ipairs(CONTROLLED_STATUS_LINES) do lines[#lines+1]=line end
+    lines[#lines+1]=""
     for _,line in ipairs(request) do lines[#lines+1]=line end
     lines[#lines+1]=""
     for _,line in ipairs(generation) do lines[#lines+1]=line end
     lines[#lines+1]=""
+    if CONTROLLED_REQUEST.enabled == true then
+        lines[#lines+1]="Controlled claim path: "..tostring(CONTROLLED_REQUEST.claimPath)
+        lines[#lines+1]="Completion path: "..tostring(CONTROLLED_REQUEST.completionPath)
+        lines[#lines+1]="Label path: "..tostring(CONTROLLED_REQUEST.labelPath)
+        lines[#lines+1]="Provenance: "..tostring(CONTROLLED_REQUEST.provenance)
+        lines[#lines+1]=""
+    end
     for i=1,math.min(8,#ACTION_TARGETS) do
         local item=ACTION_TARGETS[i]
-        lines[#lines+1]="Target "..tostring(i)..": "..item.label.." ["..item.kind.."]"
+        lines[#lines+1]="Target "..tostring(i)..": "..item.label.." ["..item.kind.."] confidence="..tostring(item.confidence).." provenance="..tostring(item.provenance)
     end
     lines[#lines+1]=""
     for _,line in ipairs(gameplay) do lines[#lines+1]=line end
@@ -722,6 +967,8 @@ table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesGeneratedClos
 show("Ready",{"Validated scan inventory loaded.","Gameplay action controls available.","Gameplay automation has not been verified."})
 """.replace("PLACE_ID",str(place)).replace(
         "ACTION_TARGETS_DATA", "{\n"+action_target_list+"\n}").replace(
+        "CONTROLLED_REQUEST_DATA", controlled_request_data).replace(
+        "CONTROLLED_STATUS_LINES_DATA", "{\n"+status_list+"\n}").replace(
         "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
         "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
         "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(

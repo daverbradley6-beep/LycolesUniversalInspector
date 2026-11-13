@@ -1802,6 +1802,8 @@ class DeliveryEngine:
             if isinstance(planning.get("requestAlignedAutomaticExecutionReadyWorkflows"), int)
             else 0
         )
+        controlled_contract_valid = bool(workflow_evidence.get("executionContractValid") is True)
+        ready_for_controlled_testing = bool(workflow_evidence.get("readyForControlledTesting") is True)
 
         guided_generated = guided_trial.get("generated") is True
         selected_candidate_id = workflow_selection.get("selectedCandidateId")
@@ -1840,6 +1842,8 @@ class DeliveryEngine:
             "automaticExecutionReadyWorkflowCandidates": automatic_execution_ready_candidates,
             "requestAlignedExecutionReadyWorkflowCandidates": request_aligned_candidates,
             "requestAlignedAutomaticExecutionReadyWorkflowCandidates": request_aligned_automatic_candidates,
+            "executionContractValid": controlled_contract_valid,
+            "readyForControlledPotassiumTesting": ready_for_controlled_testing,
             "guidedWorkflowScriptGenerated": guided_generated,
             "selectedWorkflowCandidateId": selected_candidate_id,
             "executableWorkflowAvailable": executable_available,
@@ -1920,6 +1924,8 @@ class DeliveryEngine:
                     "automaticExecutionReadyWorkflowCandidates": 0,
                     "requestAlignedExecutionReadyWorkflowCandidates": 0,
                     "requestAlignedAutomaticExecutionReadyWorkflowCandidates": 0,
+                    "executionContractValid": False,
+                    "readyForControlledPotassiumTesting": False,
                     "guidedWorkflowScriptGenerated": False,
                     "selectedWorkflowCandidateId": None,
                     "executableWorkflowAvailable": False,
