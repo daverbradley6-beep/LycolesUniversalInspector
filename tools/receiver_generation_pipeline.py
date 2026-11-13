@@ -1309,6 +1309,8 @@ def _build_universal_discovery_report(
         if not isinstance(value, dict):
             return None
         signals = value.get("targetAndOutcomeSignals") if isinstance(value.get("targetAndOutcomeSignals"), dict) else {}
+        confidence = value.get("confidence") if isinstance(value.get("confidence"), dict) else {}
+        physical = value.get("physicalGesture") if isinstance(value.get("physicalGesture"), dict) else {}
         return {
             "schemaVersion": value.get("schemaVersion") if isinstance(value.get("schemaVersion"), str) else None,
             "primaryIntent": value.get("primaryIntent") if isinstance(value.get("primaryIntent"), str) else None,
@@ -1320,6 +1322,17 @@ def _build_universal_discovery_report(
             "ambiguousInput": bool(value.get("ambiguousInput") is True),
             "likelyCameraMovement": bool(value.get("likelyCameraMovement") is True),
             "likelyGameplayInteraction": bool(value.get("likelyGameplayInteraction") is True),
+            "confidence": {
+                "cameraManipulationScore": _numeric(confidence.get("cameraManipulationScore")),
+                "gameplayInteractionScore": _numeric(confidence.get("gameplayInteractionScore")),
+                "primaryIntentConfidence": _numeric(confidence.get("primaryIntentConfidence")),
+            },
+            "physicalGesture": {
+                "kind": physical.get("kind") if isinstance(physical.get("kind"), str) else None,
+                "pointerMovementObserved": bool(physical.get("pointerMovementObserved") is True),
+                "movementSamples": int(physical.get("movementSamples")) if isinstance(physical.get("movementSamples"), int) else None,
+                "durationSeconds": _numeric(physical.get("durationSeconds")),
+            },
             "targetAndOutcomeSignals": {
                 "guiTargetConfirmed": bool(signals.get("guiTargetConfirmed") is True),
                 "worldTargetConfirmed": bool(signals.get("worldTargetConfirmed") is True),
@@ -1328,7 +1341,13 @@ def _build_universal_discovery_report(
                 "stateChangeTemporallyAssociated": bool(signals.get("stateChangeTemporallyAssociated") is True),
                 "meaningfulGameplayOutcomeObserved": bool(signals.get("meaningfulGameplayOutcomeObserved") is True),
                 "outcomeCorroborated": bool(signals.get("outcomeCorroborated") is True),
+                "temporalOnlyStateAssociation": bool(signals.get("temporalOnlyStateAssociation") is True),
                 "targetAmbiguous": bool(signals.get("targetAmbiguous") is True),
+                "cameraRotationWithoutPointerEvidence": bool(signals.get("cameraRotationWithoutPointerEvidence") is True),
+                "competingIntentSignals": bool(signals.get("competingIntentSignals") is True),
+                "pointerMovementObserved": bool(signals.get("pointerMovementObserved") is True),
+                "cameraSamples": int(signals.get("cameraSamples")) if isinstance(signals.get("cameraSamples"), int) else None,
+                "cameraSamplesWithoutPointerMovement": int(signals.get("cameraSamplesWithoutPointerMovement")) if isinstance(signals.get("cameraSamplesWithoutPointerMovement"), int) else None,
             },
             "note": value.get("note") if isinstance(value.get("note"), str) else None,
         }
@@ -1514,9 +1533,14 @@ def _build_universal_discovery_report(
                 "cumulativeCursorTravelPixels": _numeric(metrics.get("cumulativeCursorTravelPixels")),
                 "maxCursorDeltaPixels": _numeric(metrics.get("maxCursorDeltaPixels")),
                 "movementSamples": int(metrics.get("movementSamples")) if isinstance(metrics.get("movementSamples"), int) else None,
+                "pointerMovementObserved": bool(metrics.get("pointerMovementObserved") is True),
                 "cameraHeadingDeltaDegrees": _numeric(metrics.get("cameraHeadingDeltaDegrees")),
                 "cameraCumulativeTurnDegrees": _numeric(metrics.get("cameraCumulativeTurnDegrees")),
                 "maxCameraTurnStepDegrees": _numeric(metrics.get("maxCameraTurnStepDegrees")),
+                "cameraSampleCount": int(metrics.get("cameraSampleCount")) if isinstance(metrics.get("cameraSampleCount"), int) else None,
+                "cameraSamplesWithoutPointerMovement": int(metrics.get("cameraSamplesWithoutPointerMovement")) if isinstance(metrics.get("cameraSamplesWithoutPointerMovement"), int) else None,
+                "cameraTurnDerivedFromBoundaryOnly": bool(metrics.get("cameraTurnDerivedFromBoundaryOnly") is True),
+                "cameraRotationWithoutPointerMovement": bool(metrics.get("cameraRotationWithoutPointerMovement") is True),
             },
             "intent": _normalize_input_gesture_intent(value.get("intent")),
         }
@@ -1577,12 +1601,33 @@ def _build_universal_discovery_report(
                 "preconditions": preconditions,
             })
 
+        gesture_intent = _normalize_input_gesture_intent(metadata.get("inputGestureIntent"))
+        if gesture_intent is None:
+            click_outcome_payload = event.get("clickOutcomeRelationship") if isinstance(event.get("clickOutcomeRelationship"), dict) else {}
+            gesture_intent = _normalize_input_gesture_intent(click_outcome_payload.get("inputIntent"))
+        if gesture_intent is None:
+            click_target_payload = event.get("clickTargetObservation") if isinstance(event.get("clickTargetObservation"), dict) else {}
+            gesture_intent = _normalize_input_gesture_intent(click_target_payload.get("inputIntent"))
+
+        intent_signals = (gesture_intent or {}).get("targetAndOutcomeSignals") if isinstance((gesture_intent or {}).get("targetAndOutcomeSignals"), dict) else {}
+        camera_confounded = bool(
+            gesture_intent
+            and (gesture_intent.get("likelyCameraMovement") is True)
+            and (gesture_intent.get("likelyGameplayInteraction") is not True or gesture_intent.get("ambiguousInput") is True)
+            and (
+                (intent_signals.get("worldRaycastOnly") is True)
+                or (intent_signals.get("cameraRotationWithoutPointerEvidence") is True)
+                or (intent_signals.get("competingIntentSignals") is True)
+            )
+        )
+
         gui_changes = event.get("guiStateChanges") if isinstance(event.get("guiStateChanges"), list) else []
         if len(gui_changes) > 0:
             events_with_gui_transition += 1
 
         state_changes = event.get("stateChanges") if isinstance(event.get("stateChanges"), list) else []
         numeric_delta_detected = False
+        numeric_delta_detected_non_confounded = False
         relationship_state_changes: list[dict[str, Any]] = []
         for change in state_changes:
             if not isinstance(change, dict):
@@ -1599,6 +1644,8 @@ def _build_universal_discovery_report(
                 delta = round(after_num - before_num, 6)
                 if delta != 0:
                     numeric_delta_detected = True
+                    if not camera_confounded:
+                        numeric_delta_detected_non_confounded = True
 
             classification = _classify_observed_state_key(key)
             category = _stat_category_from_key(key, classification)
@@ -1639,16 +1686,30 @@ def _build_universal_discovery_report(
                 "after": after,
                 "delta": delta,
                 "category": category,
+                "cameraConfounded": bool(camera_confounded),
             })
 
         if relationship_state_changes:
             events_with_state_delta += 1
 
         relationship_confidence = "low"
-        if numeric_delta_detected:
+        if numeric_delta_detected_non_confounded:
             relationship_confidence = "medium"
             if feature_candidate and control_type in {"Tool.Activated", "GuiButton.Activated", "ProximityPrompt.Triggered"}:
                 relationship_confidence = "high"
+        elif numeric_delta_detected:
+            relationship_confidence = "low"
+
+        conflicting_signals = [] if attribution not in {"unattributed", "unattributed-input"} else ["unattributed-activity"]
+        if camera_confounded:
+            conflicting_signals.append("camera-intent-confounder")
+
+        limitations = [
+            "Client-observed temporal correlation only",
+            "No server authority proof",
+        ]
+        if camera_confounded:
+            limitations.append("Pointer interaction likely confounded by camera manipulation signals")
 
         relationships.append({
             "id": "rel_" + hashlib.sha256(f"{control_type}|{path}|{event.get('sequence')}|{event.get('sessionElapsedSeconds')}".encode("utf-8")).hexdigest()[:16],
@@ -1665,6 +1726,7 @@ def _build_universal_discovery_report(
                 "characterOrientationAtAction": _normalize_orientation(event.get("characterOrientationAtAction")),
                 "cameraOrientationAtAction": _normalize_orientation(event.get("cameraOrientationAtAction")),
                 "cameraCharacterHeadingDeltaDegrees": _numeric(event.get("cameraCharacterHeadingDeltaDegrees")),
+                "inputGestureIntent": gesture_intent,
             },
             "objectIdentity": {
                 "pathIdentity": path_identity if isinstance(path_identity, list) else None,
@@ -1676,15 +1738,12 @@ def _build_universal_discovery_report(
             "possibleDependencies": [feature_candidate] if feature_candidate else [],
             "conflictingActivity": {
                 "attribution": attribution,
-                "signals": [] if attribution not in {"unattributed", "unattributed-input"} else ["unattributed-activity"],
+                "signals": conflicting_signals,
             },
             "confidence": {
                 "level": relationship_confidence,
                 "causality": "not-proven-temporal-correlation-only",
-                "limitations": [
-                    "Client-observed temporal correlation only",
-                    "No server authority proof",
-                ],
+                "limitations": limitations,
             },
         })
 
@@ -1702,13 +1761,16 @@ def _build_universal_discovery_report(
             node["activationCount"] += 1
 
         if path and (path.lower().startswith("workspace.") or control_type == "ProximityPrompt.Triggered"):
-            candidate = world_candidates.setdefault(path, {
-                "path": path,
-                "controlTypes": set(),
-                "observedInteractions": 0,
-            })
-            candidate["controlTypes"].add(control_type)
-            candidate["observedInteractions"] += 1
+            if camera_confounded and control_type.startswith("InputBegan.MouseButton"):
+                pass
+            else:
+                candidate = world_candidates.setdefault(path, {
+                    "path": path,
+                    "controlTypes": set(),
+                    "observedInteractions": 0,
+                })
+                candidate["controlTypes"].add(control_type)
+                candidate["observedInteractions"] += 1
 
     for transaction_id, transaction_events in workflow_transactions.items():
         def _event_order_key(item: dict[str, Any]) -> tuple[float, int]:
@@ -2117,16 +2179,17 @@ def _build_universal_discovery_report(
                 "clickObservationId": click_ref,
                 "clickObserved": True,
                 "targetIdentified": click_ref in click_target_by_id,
-                "interactionCallbackObserved": True,
+                "interactionCallbackObserved": False,
                 "stateChangeTemporallyAssociated": len(state_changes) > 0,
                 "meaningfulGameplayOutcomeObserved": meaningful_count > 0,
                 "outcomeCorroborated": meaningful_count >= 2 or bool(event.get("clientStateCorroborated") is True),
                 "reproduciblyLiveValidated": False,
-                "stage": "state-change-temporally-associated" if len(state_changes) > 0 else "interaction-callback-observed",
+                "stage": "state-change-temporally-associated" if len(state_changes) > 0 else "click-observed",
                 "status": "observational-only",
                 "linkedInteractionSequences": [event.get("sequence")] if isinstance(event.get("sequence"), int) else [],
                 "linkedTransactionIds": [event.get("transactionId")] if isinstance(event.get("transactionId"), str) else [],
                 "missingEvidence": [
+                    "No direct interaction callback evidence available for derived click outcome",
                     "No controlled live validation proving reproducible outcome",
                 ],
             }
@@ -2744,6 +2807,35 @@ def _build_universal_discovery_report(
             elif action_type.startswith("Tool."):
                 inferred_relationship_mechanism = "tool"
 
+        click_observation_id = (
+            action_payload.get("clickObservationId") if isinstance(action_payload.get("clickObservationId"), str)
+            else (positional.get("clickObservationId") if isinstance(positional, dict) and isinstance(positional.get("clickObservationId"), str) else None)
+        )
+        click_outcome = click_outcome_by_click_id.get(click_observation_id) if isinstance(click_observation_id, str) else None
+        click_target = click_target_by_id.get(click_observation_id) if isinstance(click_observation_id, str) else None
+        linked_intent = None
+        for candidate_intent in (
+            action_payload.get("inputGestureIntent"),
+            (click_outcome or {}).get("inputIntent") if isinstance(click_outcome, dict) else None,
+            (click_target or {}).get("inputIntent") if isinstance(click_target, dict) else None,
+        ):
+            if isinstance(candidate_intent, dict):
+                linked_intent = _normalize_input_gesture_intent(candidate_intent)
+                if linked_intent is not None:
+                    break
+
+        linked_intent_signals = (linked_intent or {}).get("targetAndOutcomeSignals") if isinstance((linked_intent or {}).get("targetAndOutcomeSignals"), dict) else {}
+        input_gesture_camera_confounded = bool(
+            linked_intent
+            and (linked_intent.get("likelyCameraMovement") is True)
+            and (linked_intent.get("likelyGameplayInteraction") is not True or linked_intent.get("ambiguousInput") is True)
+            and (
+                (linked_intent_signals.get("worldRaycastOnly") is True)
+                or (linked_intent_signals.get("cameraRotationWithoutPointerEvidence") is True)
+                or (linked_intent_signals.get("competingIntentSignals") is True)
+            )
+        )
+
         spatial_relationships.append({
             "id": "spatial_" + str(relation.get("id") or "unknown"),
             "relationshipId": relation.get("id"),
@@ -2755,11 +2847,10 @@ def _build_universal_discovery_report(
             "atActionPosition": positional.get("action") if isinstance(positional, dict) else None,
             "postActionPosition": positional.get("post") if isinstance(positional, dict) else None,
             "observationWindows": positional.get("observationWindows") if isinstance(positional, dict) else relation.get("observationWindows"),
-            "clickObservationId": (
-                action_payload.get("clickObservationId") if isinstance(action_payload.get("clickObservationId"), str)
-                else (positional.get("clickObservationId") if isinstance(positional, dict) and isinstance(positional.get("clickObservationId"), str) else None)
-            ),
+            "clickObservationId": click_observation_id,
             "clickTargetObservation": _normalize_click_target_observation(action_payload.get("clickTargetObservation")),
+            "inputGestureIntent": linked_intent,
+            "inputGestureCameraConfounded": input_gesture_camera_confounded,
             "characterOrientationAtAction": (
                 _normalize_orientation(action_payload.get("characterOrientationAtAction"))
                 or (positional.get("characterOrientation") if isinstance(positional, dict) and isinstance(positional.get("characterOrientation"), dict) else None)
@@ -2812,6 +2903,7 @@ def _build_universal_discovery_report(
                     and isinstance(item.get("key"), str)
                     and _is_gameplay_outcome_key(item.get("key"))
                 }) >= 2,
+                "inputGestureCameraConfounded": input_gesture_camera_confounded,
                 "causalityProven": False,
             },
             "confidence": relation.get("confidence") if isinstance(relation.get("confidence"), dict) else {},
@@ -4036,6 +4128,27 @@ def _build_universal_discovery_report(
                 1
                 for item in input_gesture_observations
                 if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("worldRaycastOnly")) is True)
+            ),
+            "cameraRotationWithoutPointerEvidence": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("cameraRotationWithoutPointerEvidence")) is True)
+            ),
+            "competingIntentSignals": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("competingIntentSignals")) is True)
+            ),
+            "temporalOnlyStateAssociations": sum(
+                1
+                for item in input_gesture_observations
+                if ((((item.get("intent") or {}).get("targetAndOutcomeSignals") or {}).get("temporalOnlyStateAssociation")) is True)
+            ),
+            "cameraGameplayConflicts": sum(
+                1
+                for item in input_gesture_observations
+                if ((item.get("intent") or {}).get("likelyCameraMovement") is True)
+                and ((item.get("intent") or {}).get("likelyGameplayInteraction") is True)
             ),
             "cameraMovementToGameplayRatio": (
                 round(

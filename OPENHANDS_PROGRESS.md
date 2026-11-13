@@ -1,4 +1,52 @@
+## Update — 2026-11-06 — v30.6.56 gesture attribution conflict correction and ambiguity-preserving receiver propagation
+
+### Scope
+
+- Refactored `classifyInputGestureIntent` to separate physical gesture evidence from gameplay/camera intent hypotheses and target/outcome corroboration.
+- Added ambiguity-preserving intent signals for:
+  - camera rotation without pointer movement,
+  - temporal-only state associations,
+  - competing camera/gameplay hypotheses,
+  - confidence scoring for camera-vs-gameplay interpretation.
+- Hardened lifecycle attribution boundaries:
+  - start/end camera heading sampled at gesture press/release,
+  - heartbeat-driven camera sampling while gesture is active,
+  - pointer movement tracking independent of late click-throttle paths.
+- Reduced false world-interaction attribution for raycast-only camera turns and weak temporal-only state associations.
+- Reconciled gesture diagnostics with explicit counter-alignment telemetry (`captured/completed/interrupted/open` record-vs-counter views).
+- Receiver pipeline now preserves intent ambiguity and propagates camera-confounder signals into spatial action-outcome relationships.
+- Receiver quality metrics extended with:
+  - `cameraRotationWithoutPointerEvidence`
+  - `competingIntentSignals`
+  - `temporalOnlyStateAssociations`
+  - `cameraGameplayConflicts`
+
+### Validation
+
+- Focused regressions:
+  - `python3 -m pytest tests/test_inspector_ui.py tests/test_receiver_generation_pipeline.py tests/test_compile_scan.py tests/test_inspector_compiler_limits.py -q`
+  - **95 passed, 9 subtests passed**
+- Full regression:
+  - `python3 -m pytest`
+  - **1659 passed, 17 skipped**
+- Luau syntax/parsing:
+  - `node --test tests/test_luau_syntax.mjs` → **4 passed**
+- Luau compile matrix (`LycolesUniversalInspector.lua`):
+  - `-O0..2 × -g0..2` all pass, no register overflow
+- Luau AST root local pressure: **168** (budget **170**, Potassium hard cap **200**)
+
+### Version
+
+- Inspector version bumped: **v30.6.56**
+
+### Live status
+
+- Offline validation complete.
+- **Potassium live verification pending** for final confirmation that `loadstring(source)` succeeds and camera-drag gestures are no longer escalated into false gameplay/world interactions.
+
+
 ## Update — 2026-11-06 — v30.6.55 pointer-gesture intent classification and export integration
+
 
 ### Scope
 

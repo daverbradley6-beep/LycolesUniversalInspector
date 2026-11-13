@@ -1958,6 +1958,267 @@ class ReceiverGenerationPipelineTests(unittest.TestCase):
 
 
 
+    def test_gesture_conflict_cases_preserve_camera_vs_gameplay_ambiguity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            overlay = root / "gesture-conflicts.json"
+            make_pickup_discovery_observation_export(overlay)
+
+            payload = json.loads(overlay.read_text(encoding="utf-8"))
+
+            conflict_intent = {
+                "schemaVersion": "30.6.input-gesture-intent.2",
+                "primaryIntent": "ambiguous-competing-hypotheses",
+                "clickCandidate": False,
+                "cameraDragCandidate": False,
+                "heldInputCandidate": True,
+                "guiInteractionCandidate": False,
+                "worldInteractionCandidate": True,
+                "ambiguousInput": True,
+                "likelyCameraMovement": True,
+                "likelyGameplayInteraction": True,
+                "confidence": {
+                    "cameraManipulationScore": 0.74,
+                    "gameplayInteractionScore": 0.41,
+                    "primaryIntentConfidence": 0.74,
+                },
+                "physicalGesture": {
+                    "kind": "hold",
+                    "pointerMovementObserved": False,
+                    "movementSamples": 0,
+                    "durationSeconds": 0.68,
+                },
+                "targetAndOutcomeSignals": {
+                    "guiTargetConfirmed": False,
+                    "worldTargetConfirmed": True,
+                    "worldRaycastOnly": True,
+                    "callbackObserved": False,
+                    "stateChangeTemporallyAssociated": True,
+                    "meaningfulGameplayOutcomeObserved": False,
+                    "outcomeCorroborated": False,
+                    "temporalOnlyStateAssociation": True,
+                    "targetAmbiguous": False,
+                    "cameraRotationWithoutPointerEvidence": True,
+                    "competingIntentSignals": True,
+                    "pointerMovementObserved": False,
+                    "cameraSamples": 3,
+                    "cameraSamplesWithoutPointerMovement": 3,
+                },
+            }
+
+            payload["inputGestureObservations"] = [
+                {
+                    "id": "gesture_2",
+                    "observedAt": "2026-11-06T12:00:09Z",
+                    "startedAt": "2026-11-06T12:00:08Z",
+                    "endedAt": "2026-11-06T12:00:09Z",
+                    "startSessionElapsedSeconds": 8.1,
+                    "endSessionElapsedSeconds": 8.8,
+                    "mouseButton": "MouseButton1",
+                    "inputType": "MouseButton1",
+                    "clickObservationId": "click_pickup_1",
+                    "completionReason": "input-ended",
+                    "interrupted": False,
+                    "metrics": {
+                        "durationSeconds": 0.7,
+                        "cursorDisplacementPixels": 0.0,
+                        "cumulativeCursorTravelPixels": 0.0,
+                        "maxCursorDeltaPixels": 0.0,
+                        "movementSamples": 0,
+                        "pointerMovementObserved": False,
+                        "cameraHeadingDeltaDegrees": 68.38,
+                        "cameraCumulativeTurnDegrees": 68.38,
+                        "maxCameraTurnStepDegrees": 0.0,
+                        "cameraSampleCount": 3,
+                        "cameraSamplesWithoutPointerMovement": 3,
+                        "cameraRotationWithoutPointerMovement": True,
+                    },
+                    "intent": conflict_intent,
+                },
+                {
+                    "id": "gesture_3",
+                    "observedAt": "2026-11-06T12:00:10Z",
+                    "startedAt": "2026-11-06T12:00:09Z",
+                    "endedAt": "2026-11-06T12:00:10Z",
+                    "startSessionElapsedSeconds": 9.0,
+                    "endSessionElapsedSeconds": 9.6,
+                    "mouseButton": "MouseButton1",
+                    "inputType": "MouseButton1",
+                    "clickObservationId": "click_pickup_1",
+                    "completionReason": "input-ended",
+                    "interrupted": False,
+                    "metrics": {
+                        "durationSeconds": 0.6,
+                        "cursorDisplacementPixels": 0.0,
+                        "cumulativeCursorTravelPixels": 0.0,
+                        "maxCursorDeltaPixels": 0.0,
+                        "movementSamples": 0,
+                        "pointerMovementObserved": False,
+                        "cameraHeadingDeltaDegrees": 17.68,
+                        "cameraCumulativeTurnDegrees": 17.68,
+                        "maxCameraTurnStepDegrees": 0.0,
+                        "cameraSampleCount": 2,
+                        "cameraSamplesWithoutPointerMovement": 2,
+                        "cameraRotationWithoutPointerMovement": True,
+                    },
+                    "intent": conflict_intent,
+                },
+                {
+                    "id": "gesture_6",
+                    "observedAt": "2026-11-06T12:00:12Z",
+                    "startedAt": "2026-11-06T12:00:11Z",
+                    "endedAt": "2026-11-06T12:00:12Z",
+                    "startSessionElapsedSeconds": 11.0,
+                    "endSessionElapsedSeconds": 11.9,
+                    "mouseButton": "MouseButton1",
+                    "inputType": "MouseButton1",
+                    "clickObservationId": "click_pickup_1",
+                    "completionReason": "input-ended",
+                    "interrupted": False,
+                    "metrics": {
+                        "durationSeconds": 0.9,
+                        "cursorDisplacementPixels": 0.0,
+                        "cumulativeCursorTravelPixels": 0.0,
+                        "maxCursorDeltaPixels": 0.0,
+                        "movementSamples": 0,
+                        "pointerMovementObserved": False,
+                        "cameraHeadingDeltaDegrees": 105.3,
+                        "cameraCumulativeTurnDegrees": 105.3,
+                        "maxCameraTurnStepDegrees": 0.0,
+                        "cameraSampleCount": 4,
+                        "cameraSamplesWithoutPointerMovement": 4,
+                        "cameraRotationWithoutPointerMovement": True,
+                    },
+                    "intent": conflict_intent,
+                },
+                {
+                    "id": "gesture_gui_click",
+                    "observedAt": "2026-11-06T12:00:14Z",
+                    "startedAt": "2026-11-06T12:00:14Z",
+                    "endedAt": "2026-11-06T12:00:14Z",
+                    "startSessionElapsedSeconds": 14.0,
+                    "endSessionElapsedSeconds": 14.1,
+                    "mouseButton": "MouseButton1",
+                    "inputType": "MouseButton1",
+                    "clickObservationId": "click_pickup_1",
+                    "completionReason": "click-observed",
+                    "interrupted": False,
+                    "metrics": {
+                        "durationSeconds": 0.1,
+                        "cursorDisplacementPixels": 2.0,
+                        "cumulativeCursorTravelPixels": 2.4,
+                        "maxCursorDeltaPixels": 1.8,
+                        "movementSamples": 1,
+                        "pointerMovementObserved": True,
+                        "cameraHeadingDeltaDegrees": 1.1,
+                        "cameraCumulativeTurnDegrees": 1.1,
+                        "maxCameraTurnStepDegrees": 1.1,
+                    },
+                    "intent": {
+                        "schemaVersion": "30.6.input-gesture-intent.2",
+                        "primaryIntent": "gui-interaction-candidate",
+                        "clickCandidate": True,
+                        "cameraDragCandidate": False,
+                        "heldInputCandidate": False,
+                        "guiInteractionCandidate": True,
+                        "worldInteractionCandidate": False,
+                        "ambiguousInput": False,
+                        "likelyCameraMovement": False,
+                        "likelyGameplayInteraction": True,
+                        "targetAndOutcomeSignals": {
+                            "guiTargetConfirmed": True,
+                            "worldTargetConfirmed": False,
+                            "worldRaycastOnly": False,
+                            "callbackObserved": True,
+                            "stateChangeTemporallyAssociated": True,
+                            "meaningfulGameplayOutcomeObserved": True,
+                            "outcomeCorroborated": True,
+                            "targetAmbiguous": False,
+                        },
+                    },
+                },
+                {
+                    "id": "gesture_locked_drag",
+                    "observedAt": "2026-11-06T12:00:16Z",
+                    "startedAt": "2026-11-06T12:00:15Z",
+                    "endedAt": "2026-11-06T12:00:16Z",
+                    "startSessionElapsedSeconds": 15.0,
+                    "endSessionElapsedSeconds": 16.0,
+                    "mouseButton": "MouseButton2",
+                    "inputType": "MouseButton2",
+                    "clickObservationId": None,
+                    "completionReason": "input-ended",
+                    "interrupted": False,
+                    "metrics": {
+                        "durationSeconds": 1.0,
+                        "cursorDisplacementPixels": 0.8,
+                        "cumulativeCursorTravelPixels": 248.0,
+                        "maxCursorDeltaPixels": 34.0,
+                        "movementSamples": 14,
+                        "pointerMovementObserved": True,
+                        "cameraHeadingDeltaDegrees": 72.4,
+                        "cameraCumulativeTurnDegrees": 74.1,
+                        "maxCameraTurnStepDegrees": 7.6,
+                        "cameraSampleCount": 10,
+                        "cameraSamplesWithoutPointerMovement": 0,
+                        "cameraRotationWithoutPointerMovement": False,
+                    },
+                    "intent": {
+                        "schemaVersion": "30.6.input-gesture-intent.2",
+                        "primaryIntent": "camera-manipulation-candidate",
+                        "clickCandidate": False,
+                        "cameraDragCandidate": True,
+                        "heldInputCandidate": False,
+                        "guiInteractionCandidate": False,
+                        "worldInteractionCandidate": False,
+                        "ambiguousInput": False,
+                        "likelyCameraMovement": True,
+                        "likelyGameplayInteraction": False,
+                        "targetAndOutcomeSignals": {
+                            "guiTargetConfirmed": False,
+                            "worldTargetConfirmed": False,
+                            "worldRaycastOnly": False,
+                            "callbackObserved": False,
+                            "stateChangeTemporallyAssociated": False,
+                            "meaningfulGameplayOutcomeObserved": False,
+                            "outcomeCorroborated": False,
+                            "targetAmbiguous": True,
+                            "cameraRotationWithoutPointerEvidence": False,
+                            "competingIntentSignals": False,
+                        },
+                    },
+                },
+            ]
+
+            payload["clickOutcomeRelationships"][0]["inputIntent"] = conflict_intent
+            payload["interactionDiagnostics"]["recentInteractions"][0]["clickOutcomeRelationship"]["inputIntent"] = conflict_intent
+            payload["interactionDiagnostics"]["recentInteractions"][0]["controlMetadata"] = {
+                "inputGestureIntent": conflict_intent,
+            }
+
+            overlay.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = MODULE.run_universal_discovery_export(
+                observation_path=overlay,
+                output_root=root / "out",
+                requested_capability="Differentiate camera drags from gameplay clicks",
+                scenario_name="gesture-conflict",
+            )
+            self.assertEqual(result["status"], "succeeded")
+
+            report = json.loads(pathlib.Path(result["discovery"]["reportPath"]).read_text(encoding="utf-8"))
+            gesture_quality = (((report.get("qualityMetrics") or {}).get("spatialDiscovery") or {}).get("inputGestureIntent") or {})
+            self.assertEqual(gesture_quality.get("total"), 5)
+            self.assertGreaterEqual(gesture_quality.get("cameraRotationWithoutPointerEvidence", 0), 3)
+            self.assertGreaterEqual(gesture_quality.get("worldRaycastOnlySignals", 0), 3)
+            self.assertGreaterEqual(gesture_quality.get("competingIntentSignals", 0), 1)
+            self.assertGreaterEqual(gesture_quality.get("cameraGameplayConflicts", 0), 1)
+
+            spatial_relationships = report.get("spatialActionOutcomeRelationships") or []
+            self.assertTrue(any(((item.get("outcomeVerification") or {}).get("inputGestureCameraConfounded") is True) for item in spatial_relationships if isinstance(item, dict)))
+            self.assertTrue(any(("camera-intent-confounder" in ((item.get("potentialConfoundingInteractions") or {}).get("signals") or [])) for item in spatial_relationships if isinstance(item, dict)))
+
+
     def test_ambiguous_click_target_attribution_is_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

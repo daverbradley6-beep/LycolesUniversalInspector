@@ -350,11 +350,13 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('uploading = true',SRC)
         self.assertIn('uploading = false',SRC)
         self.assertIn('if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end',SRC)
+        self.assertIn('sampleActivePointerGestureCameraHeading(os.clock(),"gesture-heartbeat")',SRC)
         self.assertNotIn('and interactionObserveEnabled and not uploading',SRC)
 
     def test_click_pipeline_processed_input_and_stage_diagnostics(self):
         self.assertIn('local isClickInput=(inputName=="MouseButton1" or inputName=="MouseButton2")', SRC)
-        self.assertIn('if isClickInput then observerStats.clickInputsObserved=observerStats.clickInputsObserved+1 end', SRC)
+        self.assertIn('observerStats.clickInputsObserved=observerStats.clickInputsObserved+1', SRC)
+        self.assertIn('inputObserverState.buttonsDown[inputName]=true', SRC)
         self.assertIn('if gameProcessed and action~="fire" and action~="reload" and action~="switch" then', SRC)
         self.assertIn('if isClickInput then observerStats.clickInputsGameProcessed=observerStats.clickInputsGameProcessed+1', SRC)
         self.assertIn('if not action and isClickInput then action="pointer-activate" end', SRC)
@@ -365,6 +367,9 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('finalizePointerGesture(inputName,inputName,"input-ended")', SRC)
         self.assertIn('updateActivePointerGesturesFromMouseDelta(delta,now)', SRC)
         self.assertIn('worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved', SRC)
+        self.assertIn('schemaVersion="30.6.input-gesture-intent.2"', SRC)
+        self.assertIn('temporalOnlyStateAssociation=stateAssociated and not robustOutcomeSignal', SRC)
+        self.assertIn('cameraRotationWithoutPointerEvidence', SRC)
         self.assertIn('inspectorOwnedTarget=clickInspectorOwned', SRC)
         self.assertIn('function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)', SRC)
         self.assertIn('Inspector-owned UI target; excluded from gameplay correlation', SRC)
@@ -377,6 +382,8 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('inputGesturesStarted=observerStats.inputGesturesStarted', SRC)
         self.assertIn('inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements', SRC)
         self.assertIn('gestureIntentSummary=gestureIntentSummary', SRC)
+        self.assertIn('incrementInputGestureIntentCounters(intent)', SRC)
+        self.assertIn('counterAlignment={', SRC)
         self.assertIn('stage="multi-signal-corroborated"', SRC)
 
     def test_click_diagnostics_export_and_workspace_root_filtering(self):

@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.55
+-- Lycoles Universal Inspector v30.6.56
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.55"
+local VERSION = "30.6.56"
 
 local endpoint = ""
 local autoSend = true
@@ -2761,16 +2761,34 @@ function classifyInputGestureIntent(gesture,clickObservation,relation)
     local displacement=type(metrics.cursorDisplacementPixels)=="number" and metrics.cursorDisplacementPixels or 0
     local cumulativeCursor=type(metrics.cumulativeCursorTravelPixels)=="number" and metrics.cumulativeCursorTravelPixels or 0
     if cumulativeCursor>displacement then displacement=cumulativeCursor end
+    local movementSamples=type(metrics.movementSamples)=="number" and metrics.movementSamples or 0
+    local maxCursorDelta=type(metrics.maxCursorDeltaPixels)=="number" and metrics.maxCursorDeltaPixels or 0
+    local pointerMovementObserved=(movementSamples>0) or cumulativeCursor>0 or maxCursorDelta>0
+
     local cameraTurn=type(metrics.cameraHeadingDeltaDegrees)=="number" and metrics.cameraHeadingDeltaDegrees or 0
     local cumulativeTurn=type(metrics.cameraCumulativeTurnDegrees)=="number" and metrics.cameraCumulativeTurnDegrees or 0
     if cumulativeTurn>cameraTurn then cameraTurn=cumulativeTurn end
+    local cameraRotationWithoutPointerEvidence=(cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and not pointerMovementObserved
+    local cameraSamples=type(metrics.cameraSampleCount)=="number" and metrics.cameraSampleCount or 0
+    local cameraSamplesWithoutPointerMovement=type(metrics.cameraSamplesWithoutPointerMovement)=="number"
+        and metrics.cameraSamplesWithoutPointerMovement or 0
+
+    local heldThreshold=math.max(LIMITS.inputGestureHeldMinDurationSeconds,
+        LIMITS.inputGestureClickMaxDurationSeconds+0.28)
+    local physicalDragCandidate=pointerMovementObserved and (
+        displacement>=LIMITS.inputGestureDragMinDisplacementPixels
+        or maxCursorDelta>=(LIMITS.inputGestureDragMinDisplacementPixels*0.6)
+    )
 
     local clickCandidate=(duration<=LIMITS.inputGestureClickMaxDurationSeconds)
+        and not physicalDragCandidate
         and displacement<(LIMITS.inputGestureDragMinDisplacementPixels*0.75)
         and cameraTurn<LIMITS.inputGestureCameraTurnMinDegrees
-    local heldInputCandidate=duration>=LIMITS.inputGestureHeldMinDurationSeconds
-    local dragCandidate=displacement>=LIMITS.inputGestureDragMinDisplacementPixels
-        or cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees
+    local heldInputCandidate=(duration>=heldThreshold)
+        and not clickCandidate and not physicalDragCandidate
+    local dragCandidate=physicalDragCandidate
+        or (pointerMovementObserved and cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees)
 
     local targetClassification=type(clickObservation)=="table" and clickObservation.targetClassification or nil
     local guiTargetConfirmed=targetClassification=="confirmed-gui-target"
@@ -2783,49 +2801,103 @@ function classifyInputGestureIntent(gesture,clickObservation,relation)
     local stateAssociated=type(relation)=="table" and relation.stateChangeTemporallyAssociated==true
     local meaningfulOutcome=type(relation)=="table" and relation.meaningfulGameplayOutcomeObserved==true
     local corroborated=type(relation)=="table" and relation.outcomeCorroborated==true
+    local robustOutcomeSignal=callbackObserved or meaningfulOutcome or corroborated
+    local temporalOnlyStateAssociation=stateAssociated and not robustOutcomeSignal
 
     local worldRaycastObserved=(type(clickObservation)=="table"
         and type(clickObservation.raycastTarget)=="table"
         and type(clickObservation.raycastTarget.path)=="string")
     local worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved
-        and not callbackObserved and not stateAssociated
-        and not meaningfulOutcome and not corroborated
+        and not robustOutcomeSignal and not guiTargetConfirmed
 
     local guiInteractionCandidate=guiTargetConfirmed and (clickCandidate or heldInputCandidate
-        or dragCandidate or callbackObserved or stateAssociated)
-    local worldInteractionCandidate=worldTargetConfirmed and (clickCandidate
-        or heldInputCandidate or dragCandidate or callbackObserved or stateAssociated)
+        or dragCandidate or callbackObserved or stateAssociated or meaningfulOutcome or corroborated)
+    local worldInteractionCandidate=worldTargetConfirmed and not worldRaycastOnly
+        and (clickCandidate or heldInputCandidate or robustOutcomeSignal
+            or (dragCandidate and robustOutcomeSignal))
 
     local cameraDragCandidate=dragCandidate
         and cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees
-        and not guiInteractionCandidate
-        and not (callbackObserved or stateAssociated or meaningfulOutcome or corroborated)
+        and pointerMovementObserved
+        and not guiTargetConfirmed
+        and not robustOutcomeSignal
 
-    local likelyGameplayInteraction=(guiInteractionCandidate or worldInteractionCandidate)
-        and not (cameraDragCandidate and not (callbackObserved or stateAssociated))
-    local likelyCameraMovement=cameraDragCandidate and not (callbackObserved
-        or stateAssociated or meaningfulOutcome or corroborated)
+    local cameraScore=0
+    if cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees then cameraScore=cameraScore+0.44 end
+    if pointerMovementObserved then cameraScore=cameraScore+0.28 end
+    if dragCandidate then cameraScore=cameraScore+0.16 end
+    if worldRaycastOnly then cameraScore=cameraScore+0.08 end
+    if robustOutcomeSignal then cameraScore=cameraScore-0.24 end
+    if guiTargetConfirmed then cameraScore=cameraScore-0.2 end
+    if cameraRotationWithoutPointerEvidence then cameraScore=cameraScore-0.12 end
+    cameraScore=clampNumber(cameraScore,0,1)
+
+    local gameplayScore=0
+    if clickCandidate then gameplayScore=gameplayScore+0.28 end
+    if heldInputCandidate then gameplayScore=gameplayScore+0.18 end
+    if guiTargetConfirmed then gameplayScore=gameplayScore+0.34 end
+    if worldTargetConfirmed then gameplayScore=gameplayScore+0.18 end
+    if callbackObserved then gameplayScore=gameplayScore+0.2 end
+    if meaningfulOutcome then gameplayScore=gameplayScore+0.24 end
+    if corroborated then gameplayScore=gameplayScore+0.2 end
+    if temporalOnlyStateAssociation then gameplayScore=gameplayScore+0.06 end
+    if worldRaycastOnly then gameplayScore=gameplayScore-0.24 end
+    if cameraDragCandidate and not robustOutcomeSignal then gameplayScore=gameplayScore-0.12 end
+    gameplayScore=clampNumber(gameplayScore,0,1)
+
+    local likelyCameraMovement=(cameraScore>=0.56)
+        and (cameraDragCandidate or cameraRotationWithoutPointerEvidence)
+    local likelyGameplayInteraction=(gameplayScore>=0.56)
+        and (guiInteractionCandidate or worldInteractionCandidate or robustOutcomeSignal)
+
+    local competingIntentSignals=likelyCameraMovement and likelyGameplayInteraction
+    if temporalOnlyStateAssociation and likelyCameraMovement and not callbackObserved and not corroborated then
+        likelyGameplayInteraction=false
+    end
 
     local ambiguousInput=ambiguousTarget
+        or competingIntentSignals
+        or cameraRotationWithoutPointerEvidence
         or (worldRaycastOnly and likelyCameraMovement)
+        or (temporalOnlyStateAssociation and likelyCameraMovement)
         or (not guiInteractionCandidate and not worldInteractionCandidate
             and not clickCandidate and not heldInputCandidate and not cameraDragCandidate)
 
+    local physicalGestureKind="press-release"
+    if type(gesture)=="table" and gesture.interrupted==true then
+        physicalGestureKind="interrupted"
+    elseif physicalDragCandidate then
+        physicalGestureKind="drag"
+    elseif heldInputCandidate then
+        physicalGestureKind="hold"
+    elseif clickCandidate then
+        physicalGestureKind="click"
+    end
+
     local primaryIntent="ambiguous-input"
-    if guiInteractionCandidate then
+    if competingIntentSignals then
+        primaryIntent="ambiguous-competing-hypotheses"
+    elseif likelyCameraMovement and not likelyGameplayInteraction then
+        primaryIntent="camera-manipulation-candidate"
+    elseif guiInteractionCandidate then
         primaryIntent="gui-interaction-candidate"
     elseif worldInteractionCandidate then
         primaryIntent="world-interaction-candidate"
-    elseif likelyCameraMovement then
-        primaryIntent="camera-drag-candidate"
     elseif heldInputCandidate then
         primaryIntent="held-input-candidate"
     elseif clickCandidate then
         primaryIntent="click-candidate"
+    elseif cameraRotationWithoutPointerEvidence then
+        primaryIntent="camera-rotation-uncertain"
+    end
+
+    local primaryConfidence=math.max(cameraScore,gameplayScore)
+    if ambiguousInput and math.abs(cameraScore-gameplayScore)<=0.16 then
+        primaryConfidence=math.max(primaryConfidence,0.52)
     end
 
     return {
-        schemaVersion="30.6.input-gesture-intent.1",
+        schemaVersion="30.6.input-gesture-intent.2",
         primaryIntent=primaryIntent,
         clickCandidate=clickCandidate,
         cameraDragCandidate=cameraDragCandidate,
@@ -2835,6 +2907,20 @@ function classifyInputGestureIntent(gesture,clickObservation,relation)
         ambiguousInput=ambiguousInput,
         likelyCameraMovement=likelyCameraMovement,
         likelyGameplayInteraction=likelyGameplayInteraction,
+        physicalGesture={
+            kind=physicalGestureKind,
+            durationSeconds=roundNumber(duration,4),
+            pointerMovementObserved=pointerMovementObserved,
+            movementSamples=movementSamples,
+            displacementPixels=roundNumber(displacement,2),
+            cameraTurnDegrees=roundNumber(cameraTurn,2),
+            interrupted=type(gesture)=="table" and gesture.interrupted==true,
+        },
+        confidence={
+            cameraManipulationScore=roundNumber(cameraScore,3),
+            gameplayInteractionScore=roundNumber(gameplayScore,3),
+            primaryIntentConfidence=roundNumber(primaryConfidence,3),
+        },
         targetAndOutcomeSignals={
             guiTargetConfirmed=guiTargetConfirmed,
             worldTargetConfirmed=worldTargetConfirmed,
@@ -2843,25 +2929,89 @@ function classifyInputGestureIntent(gesture,clickObservation,relation)
             stateChangeTemporallyAssociated=stateAssociated,
             meaningfulGameplayOutcomeObserved=meaningfulOutcome,
             outcomeCorroborated=corroborated,
+            temporalOnlyStateAssociation=temporalOnlyStateAssociation,
             targetAmbiguous=ambiguousTarget,
+            pointerMovementObserved=pointerMovementObserved,
+            cameraRotationWithoutPointerEvidence=cameraRotationWithoutPointerEvidence,
+            competingIntentSignals=competingIntentSignals,
+            cameraSamples=cameraSamples,
+            cameraSamplesWithoutPointerMovement=cameraSamplesWithoutPointerMovement,
         },
-        note="Intent categories are observational candidates and do not prove gameplay outcomes",
+        note="Intent hypotheses are bounded observational signals and do not prove gameplay outcomes",
     }
+end
+
+function compactInputGestureIntent(intent)
+    if type(intent)~="table" then return nil end
+    local signals=type(intent.targetAndOutcomeSignals)=="table" and intent.targetAndOutcomeSignals or {}
+    local confidence=type(intent.confidence)=="table" and intent.confidence or {}
+    local physical=type(intent.physicalGesture)=="table" and intent.physicalGesture or {}
+    return {
+        schemaVersion=intent.schemaVersion,
+        primaryIntent=intent.primaryIntent,
+        clickCandidate=intent.clickCandidate==true,
+        cameraDragCandidate=intent.cameraDragCandidate==true,
+        heldInputCandidate=intent.heldInputCandidate==true,
+        guiInteractionCandidate=intent.guiInteractionCandidate==true,
+        worldInteractionCandidate=intent.worldInteractionCandidate==true,
+        ambiguousInput=intent.ambiguousInput==true,
+        likelyCameraMovement=intent.likelyCameraMovement==true,
+        likelyGameplayInteraction=intent.likelyGameplayInteraction==true,
+        confidence={
+            cameraManipulationScore=confidence.cameraManipulationScore,
+            gameplayInteractionScore=confidence.gameplayInteractionScore,
+            primaryIntentConfidence=confidence.primaryIntentConfidence,
+        },
+        physicalGesture={
+            kind=physical.kind,
+            pointerMovementObserved=physical.pointerMovementObserved==true,
+            movementSamples=physical.movementSamples,
+            durationSeconds=physical.durationSeconds,
+        },
+        targetAndOutcomeSignals={
+            guiTargetConfirmed=signals.guiTargetConfirmed==true,
+            worldTargetConfirmed=signals.worldTargetConfirmed==true,
+            worldRaycastOnly=signals.worldRaycastOnly==true,
+            callbackObserved=signals.callbackObserved==true,
+            stateChangeTemporallyAssociated=signals.stateChangeTemporallyAssociated==true,
+            meaningfulGameplayOutcomeObserved=signals.meaningfulGameplayOutcomeObserved==true,
+            outcomeCorroborated=signals.outcomeCorroborated==true,
+            temporalOnlyStateAssociation=signals.temporalOnlyStateAssociation==true,
+            targetAmbiguous=signals.targetAmbiguous==true,
+            cameraRotationWithoutPointerEvidence=signals.cameraRotationWithoutPointerEvidence==true,
+            competingIntentSignals=signals.competingIntentSignals==true,
+        },
+    }
+end
+
+function incrementInputGestureIntentCounters(intent)
+    if type(intent)~="table" then return end
+    if intent.clickCandidate then observerStats.inputGestureClickCandidates=observerStats.inputGestureClickCandidates+1 end
+    if intent.cameraDragCandidate then observerStats.inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates+1 end
+    if intent.heldInputCandidate then observerStats.inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates+1 end
+    if intent.guiInteractionCandidate then observerStats.inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates+1 end
+    if intent.worldInteractionCandidate then observerStats.inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates+1 end
+    if intent.ambiguousInput then observerStats.inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs+1 end
+    if intent.likelyCameraMovement then observerStats.inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements+1 end
+    if intent.likelyGameplayInteraction then observerStats.inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions+1 end
 end
 
 function applyInputGestureIntent(gesture,intent,clickObservation,relation)
     if type(gesture)~="table" or type(intent)~="table" then return end
     gesture.intent=intent
+    local compactIntent=compactInputGestureIntent(intent)
     if type(clickObservation)=="table" then
         clickObservation.inputGestureId=gesture.id
-        clickObservation.inputIntent=intent
+        clickObservation.inputIntent=compactIntent or intent
     end
     if type(relation)=="table" then
         relation.inputGestureId=gesture.id
-        relation.inputIntent=intent
+        relation.inputIntent=compactIntent or intent
         relation.provenance=type(relation.provenance)=="table" and relation.provenance or {}
         relation.provenance.inputGestureId=gesture.id
         relation.provenance.inputGesturePrimaryIntent=intent.primaryIntent
+        relation.provenance.inputGesturePrimaryConfidence=(type(intent.confidence)=="table")
+            and intent.confidence.primaryIntentConfidence or nil
     end
 end
 
@@ -2880,6 +3030,8 @@ end
 function summarizeInputGestureIntents()
     local summary={
         total=#inputGestureObservations,
+        completedGestures=0,
+        interruptedGestures=0,
         clickCandidates=0,
         cameraDragCandidates=0,
         heldInputCandidates=0,
@@ -2888,10 +3040,20 @@ function summarizeInputGestureIntents()
         ambiguousInputs=0,
         likelyCameraMovements=0,
         likelyGameplayInteractions=0,
+        cameraRotationWithoutPointerEvidence=0,
+        competingIntentSignals=0,
         byPrimaryIntent={},
+        byPhysicalGestureKind={},
         openGestures=0,
     }
     for _,gesture in ipairs(inputGestureObservations) do
+        if type(gesture)=="table" then
+            if gesture.interrupted==true then
+                summary.interruptedGestures=summary.interruptedGestures+1
+            else
+                summary.completedGestures=summary.completedGestures+1
+            end
+        end
         local intent=(type(gesture)=="table" and type(gesture.intent)=="table") and gesture.intent or nil
         if intent then
             if intent.clickCandidate then summary.clickCandidates=summary.clickCandidates+1 end
@@ -2902,13 +3064,33 @@ function summarizeInputGestureIntents()
             if intent.ambiguousInput then summary.ambiguousInputs=summary.ambiguousInputs+1 end
             if intent.likelyCameraMovement then summary.likelyCameraMovements=summary.likelyCameraMovements+1 end
             if intent.likelyGameplayInteraction then summary.likelyGameplayInteractions=summary.likelyGameplayInteractions+1 end
+            local signals=(type(intent.targetAndOutcomeSignals)=="table") and intent.targetAndOutcomeSignals or {}
+            if signals.cameraRotationWithoutPointerEvidence==true then
+                summary.cameraRotationWithoutPointerEvidence=summary.cameraRotationWithoutPointerEvidence+1
+            end
+            if signals.competingIntentSignals==true then
+                summary.competingIntentSignals=summary.competingIntentSignals+1
+            end
             local primary=tostring(intent.primaryIntent or "unknown")
             summary.byPrimaryIntent[primary]=(summary.byPrimaryIntent[primary] or 0)+1
+            local physical=(type(intent.physicalGesture)=="table") and intent.physicalGesture or {}
+            local physicalKind=tostring(physical.kind or "unknown")
+            summary.byPhysicalGestureKind[physicalKind]=(summary.byPhysicalGestureKind[physicalKind] or 0)+1
         end
     end
     for _,active in pairs(inputObserverState.activePointerGestures) do
         if type(active)=="table" then summary.openGestures=summary.openGestures+1 end
     end
+    summary.counterAlignment={
+        capturedByRecords=summary.total,
+        capturedBySpatialStats=spatialStats.inputGesturesCaptured,
+        completedByRecords=summary.completedGestures,
+        completedByObserverStats=observerStats.inputGesturesCompleted,
+        interruptedByRecords=summary.interruptedGestures,
+        interruptedByObserverStats=observerStats.inputGesturesInterrupted,
+        openGestureCount=summary.openGestures,
+        startedByObserverStats=observerStats.inputGesturesStarted,
+    }
     return summary
 end
 
@@ -2924,10 +3106,18 @@ function beginPointerGesture(buttonName,inputType)
         existing.endSessionElapsedSeconds=sessionElapsed(interruptedNow)
         existing.metrics=existing.metrics or {}
         existing.metrics.durationSeconds=roundNumber(math.max(0,(interruptedNow-(existing.startedClock or interruptedNow))),4)
+        existing.endOrientation=gestureOrientationSnapshot("gesture-interrupted-"..button)
+        local startHeading=existing.startOrientation and existing.startOrientation.cameraHeadingDegrees or nil
+        local endHeading=existing.endOrientation and existing.endOrientation.cameraHeadingDegrees or nil
+        local interruptedHeadingDelta=headingDeltaMagnitude(startHeading,endHeading)
+        if type(interruptedHeadingDelta)=="number" then
+            existing.metrics.cameraHeadingDeltaDegrees=interruptedHeadingDelta
+        end
         local existingClick=(type(existing.clickObservationId)=="string") and clickTargetById[existing.clickObservationId] or nil
         local existingRelation=resolveClickOutcomeForObservation(existing.clickObservationId)
         local existingIntent=classifyInputGestureIntent(existing,existingClick,existingRelation)
         applyInputGestureIntent(existing,existingIntent,existingClick,existingRelation)
+        incrementInputGestureIntentCounters(existingIntent)
         appendInputGestureObservation(existing)
         inputObserverState.activePointerGestures[button]=nil
         spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
@@ -2967,9 +3157,14 @@ function beginPointerGesture(buttonName,inputType)
             cumulativeCursorTravelPixels=0,
             maxCursorDeltaPixels=0,
             movementSamples=0,
+            pointerMovementObserved=false,
             cameraHeadingDeltaDegrees=nil,
             cameraCumulativeTurnDegrees=0,
             maxCameraTurnStepDegrees=0,
+            cameraSampleCount=1,
+            cameraSamplesWithoutPointerMovement=0,
+            cameraTurnDerivedFromBoundaryOnly=false,
+            cameraRotationWithoutPointerMovement=false,
             lastCameraHeadingDegrees=orientation and orientation.cameraHeadingDegrees or nil,
             lastCameraSampleClock=nowClock,
         },
@@ -2980,21 +3175,15 @@ function beginPointerGesture(buttonName,inputType)
     return gesture
 end
 
-function updateActivePointerGesturesFromMouseDelta(delta,nowClock)
-    if typeof(delta)~="Vector2" then return end
+function sampleActivePointerGestureCameraHeading(nowClock,reasonLabel)
     local now=type(nowClock)=="number" and nowClock or os.clock()
-    local magnitude=delta.Magnitude
+    local label=tostring(reasonLabel or "gesture-sample")
     for button,gesture in pairs(inputObserverState.activePointerGestures) do
-        if inputObserverState.buttonsDown[button] and type(gesture)=="table" then
+        if type(gesture)=="table" then
             gesture.metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
             local metrics=gesture.metrics
-            metrics.movementSamples=(metrics.movementSamples or 0)+1
-            metrics.cumulativeCursorTravelPixels=roundNumber((metrics.cumulativeCursorTravelPixels or 0)+magnitude,2)
-            if magnitude>(metrics.maxCursorDeltaPixels or 0) then
-                metrics.maxCursorDeltaPixels=roundNumber(magnitude,2)
-            end
             if now-(metrics.lastCameraSampleClock or 0)>=LIMITS.inputGestureCameraSampleSeconds then
-                local orientation=gestureOrientationSnapshot("gesture-move-"..button)
+                local orientation=gestureOrientationSnapshot(label.."-"..button)
                 local heading=orientation and orientation.cameraHeadingDegrees or nil
                 if type(heading)=="number" and type(metrics.lastCameraHeadingDegrees)=="number" then
                     local step=headingDeltaMagnitude(metrics.lastCameraHeadingDegrees,heading) or 0
@@ -3007,9 +3196,32 @@ function updateActivePointerGesturesFromMouseDelta(delta,nowClock)
                     metrics.lastCameraHeadingDegrees=heading
                 end
                 metrics.lastCameraSampleClock=now
+                metrics.cameraSampleCount=(metrics.cameraSampleCount or 0)+1
+                if not (metrics.pointerMovementObserved==true or (metrics.movementSamples or 0)>0) then
+                    metrics.cameraSamplesWithoutPointerMovement=(metrics.cameraSamplesWithoutPointerMovement or 0)+1
+                end
             end
         end
     end
+end
+
+function updateActivePointerGesturesFromMouseDelta(delta,nowClock)
+    if typeof(delta)~="Vector2" then return end
+    local now=type(nowClock)=="number" and nowClock or os.clock()
+    local magnitude=delta.Magnitude
+    for _,gesture in pairs(inputObserverState.activePointerGestures) do
+        if type(gesture)=="table" then
+            gesture.metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+            local metrics=gesture.metrics
+            metrics.movementSamples=(metrics.movementSamples or 0)+1
+            if magnitude>0 then metrics.pointerMovementObserved=true end
+            metrics.cumulativeCursorTravelPixels=roundNumber((metrics.cumulativeCursorTravelPixels or 0)+magnitude,2)
+            if magnitude>(metrics.maxCursorDeltaPixels or 0) then
+                metrics.maxCursorDeltaPixels=roundNumber(magnitude,2)
+            end
+        end
+    end
+    sampleActivePointerGestureCameraHeading(now,"gesture-move")
 end
 
 function finalizePointerGesture(buttonName,inputType,reason)
@@ -3053,6 +3265,20 @@ function finalizePointerGesture(buttonName,inputType,reason)
     local headingDelta=headingDeltaMagnitude(startHeading,endHeading)
     if type(headingDelta)=="number" then metrics.cameraHeadingDeltaDegrees=headingDelta end
 
+    local movementSamples=type(metrics.movementSamples)=="number" and metrics.movementSamples or 0
+    local cumulativeCursor=type(metrics.cumulativeCursorTravelPixels)=="number" and metrics.cumulativeCursorTravelPixels or 0
+    local maxCursorDelta=type(metrics.maxCursorDeltaPixels)=="number" and metrics.maxCursorDeltaPixels or 0
+    metrics.pointerMovementObserved=(metrics.pointerMovementObserved==true)
+        or movementSamples>0 or cumulativeCursor>0 or maxCursorDelta>0
+    local cumulativeTurn=type(metrics.cameraCumulativeTurnDegrees)=="number" and metrics.cameraCumulativeTurnDegrees or 0
+    local resolvedTurn=type(headingDelta)=="number" and headingDelta or 0
+    if cumulativeTurn>resolvedTurn then resolvedTurn=cumulativeTurn end
+    metrics.cameraTurnDerivedFromBoundaryOnly=(type(headingDelta)=="number")
+        and (headingDelta>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and (cumulativeTurn<=0)
+    metrics.cameraRotationWithoutPointerMovement=(resolvedTurn>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and not (metrics.pointerMovementObserved==true)
+
     gesture.metrics=metrics
 
     local clickObservation=(type(gesture.clickObservationId)=="string")
@@ -3064,14 +3290,7 @@ function finalizePointerGesture(buttonName,inputType,reason)
     appendInputGestureObservation(gesture)
     observerStats.inputGesturesCompleted=observerStats.inputGesturesCompleted+1
     spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
-    if intent.clickCandidate then observerStats.inputGestureClickCandidates=observerStats.inputGestureClickCandidates+1 end
-    if intent.cameraDragCandidate then observerStats.inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates+1 end
-    if intent.heldInputCandidate then observerStats.inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates+1 end
-    if intent.guiInteractionCandidate then observerStats.inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates+1 end
-    if intent.worldInteractionCandidate then observerStats.inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates+1 end
-    if intent.ambiguousInput then observerStats.inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs+1 end
-    if intent.likelyCameraMovement then observerStats.inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements+1 end
-    if intent.likelyGameplayInteraction then observerStats.inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions+1 end
+    incrementInputGestureIntentCounters(intent)
     return gesture
 end
 
@@ -6549,6 +6768,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
     table.insert(watchConnections,game:GetService("RunService").Heartbeat:Connect(function()
         if not alive then return end
         capturePlayerPositionSample("heartbeat-adaptive",false)
+        sampleActivePointerGestureCameraHeading(os.clock(),"gesture-heartbeat")
         if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
     end))
     local keyActions={
@@ -6566,7 +6786,10 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
         local inputName=tostring(inputType and inputType.Name or "")
         local isClickInput=(inputName=="MouseButton1" or inputName=="MouseButton2")
 
-        if isClickInput then observerStats.clickInputsObserved=observerStats.clickInputsObserved+1 end
+        if isClickInput then
+            observerStats.clickInputsObserved=observerStats.clickInputsObserved+1
+            inputObserverState.buttonsDown[inputName]=true
+        end
 
         local action=keyActions[keyName] or WORKFLOW_HELPERS.inferInputAction(keyCode,inputType,toolSnapshot)
         local clickObservation=nil
@@ -6607,7 +6830,7 @@ WORKFLOW_HELPERS.startUniversalInputObservation = function()
 
         local controlKey=("input:%s:%s"):format(inputName,keyName)
         if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.12) then return end
-        inputObserverState.buttonsDown[inputName]=true
+        if not isClickInput then inputObserverState.buttonsDown[inputName]=true end
 
         local clickTargetScope=clickObservation and clickObservation.targetScope or nil
         local clickInspectorOwned=clickObservation and clickObservation.inspectorOwnedTarget==true

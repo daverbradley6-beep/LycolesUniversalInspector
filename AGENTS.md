@@ -18,6 +18,19 @@ Target experiences are third-party games that the user does not own and cannot o
 
 
 
+## Session notes — 2026-11-06 gesture attribution conflict correction (v30.6.56)
+
+- Camera heading change alone must not be treated as conclusive drag intent. Require pointer-movement evidence for strong camera-drag classification, and preserve a separate `camera-rotation-uncertain`/ambiguous path when movement evidence is absent.
+- Keep three concerns independent in exported gesture evidence:
+  1. Physical gesture signals (duration, movement, displacement, interruption)
+  2. Intent hypotheses (camera/gameplay, ambiguity, confidence)
+  3. Target/outcome corroboration (GUI/world, raycast-only, callback/state-change quality)
+- Raycast-only world targeting with weak/temporal-only outcome signals should remain non-confirmatory and must not auto-escalate to world-interaction intent.
+- Sampling reliability matters under executors: maintain press/release orientation boundaries and heartbeat camera sampling while gestures are active to reduce missed camera-turn evidence when mouse delta events are sparse.
+- Counter reconciliation is required for live diagnostics: export explicit record-vs-counter alignment for captured/completed/interrupted/open gestures.
+- Receiver-side synthesis must propagate camera/gameplay ambiguity signals into spatial relationships (`camera-intent-confounder`) rather than silently upgrading them into actionable world interactions.
+
+
 ## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
 
 - Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.
