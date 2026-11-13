@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -172,6 +173,7 @@ def _load_local_module(filename: str, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -2012,6 +2014,10 @@ class LycolesGenerationService:
         prefer_ai_generation = self.provider_info.enabled and prefer_ai_flag in {"1", "true", "yes", "on"}
 
         self.evidence_processor = EvidenceProcessor()
+        self.evidence_reconciliation = _load_local_module(
+            "evidence_reconciliation_milestone.py",
+            "lycoles_evidence_reconciliation",
+        )
         self.feature_analysis = FeatureAnalysisEngine(self.llm_provider, self.model_routes)
         self.autonomous_planning = AutonomousPlanningEngine()
         self.script_generation = ScriptGenerationEngine(
@@ -2147,6 +2153,25 @@ class LycolesGenerationService:
         bundle = self.evidence_processor.process(request, output_dir)
         route_plan = _build_route_plan(bundle, self.model_routes)
 
+        reconciliation_result: Optional[dict[str, Any]] = None
+        reconciliation_error: Optional[str] = None
+        capability_plan_path = bundle.output_dir / "capability-plan.json"
+        if bundle.mode == "multipart" and capability_plan_path.is_file():
+            try:
+                reconciliation_result = self.evidence_reconciliation.run_from_artifacts(
+                    capability_plan_path=capability_plan_path,
+                    output_dir=bundle.output_dir / "evidence-reconciliation-v121",
+                    observation_files=request.observation_paths,
+                    integration_context={
+                        "source": "lycoles_generation_service",
+                        "jobId": job_id,
+                        "evidenceKind": request.evidence_kind,
+                        "requestedCapability": request.requested_capability,
+                    },
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                reconciliation_error = str(exc)
+
         analysis_cache_key = _analysis_cache_signature(bundle, route_plan)
         analysis_cache_hit = False
         with self._analysis_cache_lock:
@@ -2165,7 +2190,16 @@ class LycolesGenerationService:
             "hit": analysis_cache_hit,
             "key": analysis_cache_key,
         }
-        analysis["evidenceWarnings"] = list(bundle.warnings)
+        warnings = list(bundle.warnings)
+        if reconciliation_error:
+            warnings.append(f"evidence reconciliation generation failed: {reconciliation_error}")
+        analysis["evidenceWarnings"] = warnings
+        if reconciliation_result:
+            analysis["evidenceReconciliation"] = {
+                "outputDir": reconciliation_result.get("outputDir"),
+                "summary": reconciliation_result.get("summary"),
+                "files": reconciliation_result.get("files"),
+            }
 
         feedback_penalties = self._feedback_penalties_for(place_id=bundle.place_id, scan_id=bundle.scan_id)
         autonomous_plan = self.autonomous_planning.build_plan(bundle, request, analysis, feedback_penalties)
@@ -2325,10 +2359,11 @@ class LycolesGenerationService:
                 "mode": bundle.mode,
                 "placeId": bundle.place_id,
                 "scanId": bundle.scan_id,
-                "warnings": list(bundle.warnings),
+                "warnings": warnings,
                 "manifestReadinessPath": str(bundle.output_dir / "manifest-readiness-v109.json") if (bundle.output_dir / "manifest-readiness-v109.json").exists() else None,
                 "releaseManifestPath": str(bundle.output_dir / "release-manifest.json") if (bundle.output_dir / "release-manifest.json").exists() else None,
                 "generationReadinessPath": str(bundle.output_dir / "generation-readiness.json") if (bundle.output_dir / "generation-readiness.json").exists() else None,
+                "evidenceReconciliationOutputDir": reconciliation_result.get("outputDir") if isinstance(reconciliation_result, dict) else None,
             },
             "analysis": analysis,
             "autonomousGeneration": autonomous_plan,
@@ -2336,6 +2371,12 @@ class LycolesGenerationService:
             "delivery": delivery,
             "usage": usage_summary,
             "economics": economics,
+            "evidenceReconciliation": {
+                "generated": isinstance(reconciliation_result, dict),
+                "error": reconciliation_error,
+                "summary": reconciliation_result.get("summary") if isinstance(reconciliation_result, dict) else None,
+                "files": reconciliation_result.get("files") if isinstance(reconciliation_result, dict) else None,
+            },
             "claims": dict(FALSE_CLAIMS),
             "outputDir": str(bundle.output_dir),
         }

@@ -1,0 +1,534 @@
+{
+  "cameraEvidenceBreakdown": {
+    "analysis": [
+      "Camera state sample stream is empty in this observation export.",
+      "Camera-turn evidence exists in gesture intent metrics.",
+      "Previous feasibility gating relied on camera state samples only; this under-classified available camera evidence."
+    ],
+    "cameraInputGestures": 40,
+    "cameraMovementCorrelations": 10,
+    "cameraRotationObservations": 21,
+    "cameraStateSamples": 0,
+    "verifiedCameraResponseBehavior": false
+  },
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "evidenceCoverage": {
+    "available": [
+      "camera_rotation_gesture",
+      "character_spatial_positions",
+      "feature_summary",
+      "input_control_types",
+      "map_geometry",
+      "mouse_primary_input",
+      "movement_actions",
+      "movement_position_samples",
+      "world_regions"
+    ],
+    "capturedNotClassified": [
+      "camera_movement_correlation",
+      "player_entity_set",
+      "visibility_signal",
+      "weapon_state_signal"
+    ],
+    "capturedNotExtracted": [
+      "camera_state_samples"
+    ],
+    "missingEvidence": [
+      "camera_movement_correlation",
+      "camera_state_samples",
+      "hud_weapon_indicators",
+      "loadout_gui_structures",
+      "objective_hud_signals",
+      "player_entity_set",
+      "state_change_signals",
+      "team_relationship_signal",
+      "visibility_signal",
+      "weapon_equipped_signal",
+      "weapon_state_signal"
+    ]
+  },
+  "reconciliationFindings": [
+    {
+      "classification": "captured-but-not-correctly-classified",
+      "description": "Gesture-derived camera-turn evidence existed while camera state sample count was zero.",
+      "id": "camera-evidence-type-mismatch",
+      "impact": "Combat and navigation capabilities were over-blocked by camera sample gate."
+    },
+    {
+      "classification": "collected-but-not-correctly-extracted",
+      "description": "Loadout and weapon GUI path tokens were present in observation click candidates.",
+      "id": "loadout-gui-evidence-underused",
+      "impact": "Loadout information capability was treated as generic evidence-required without capability split."
+    },
+    {
+      "classification": "genuinely-missing",
+      "description": "No state-change signals were captured in the compiled interaction history.",
+      "id": "state-change-signal-absence",
+      "impact": "Trigger, recoil verification, and objective dashboards cannot progress to implementation-ready."
+    },
+    {
+      "classification": "partially-available",
+      "description": "Single humanoid/local entity evidence exists but opponent/team coverage is incomplete.",
+      "id": "entity-scope-limitation",
+      "impact": "Target assist and full ESP enhancements remain blocked."
+    }
+  ],
+  "requirementStatusSummary": {
+    "available": 15,
+    "captured-not-classified": 12,
+    "captured-not-extracted": 2,
+    "missing": 13
+  },
+  "requirementTrace": [
+    {
+      "available": true,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType"
+      ],
+      "requirementId": "mouse_primary_input",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees",
+        "observation.cameraOrientationSamples"
+      ],
+      "requirementId": "camera_state_samples",
+      "status": "captured-not-extracted"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "plan.classCounts.Tool"
+      ],
+      "requirementId": "weapon_equipped_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType",
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "weapon_state_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "observation.inputGestureObservations",
+        "plan.observedInteractionHistory",
+        "plan.stateChanges"
+      ],
+      "requirementId": "camera_movement_correlation",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+      "featureId": "combat_recoil_assist",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"
+      ],
+      "requirementId": "camera_rotation_gesture",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_target_assist.target_candidate_selection",
+      "featureId": "combat_target_assist",
+      "provenance": [
+        "plan.classCounts.Player",
+        "plan.classCounts.Humanoid"
+      ],
+      "requirementId": "player_entity_set",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "capabilityId": "combat_target_assist.target_candidate_selection",
+      "featureId": "combat_target_assist",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "requirementId": "character_spatial_positions",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_target_assist.target_candidate_selection",
+      "featureId": "combat_target_assist",
+      "provenance": [
+        "plan.classCounts.Team",
+        "plan.classCounts.Teams"
+      ],
+      "requirementId": "team_relationship_signal",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "capabilityId": "combat_target_assist.target_candidate_selection",
+      "featureId": "combat_target_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType"
+      ],
+      "requirementId": "input_control_types",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_target_assist.target_candidate_selection",
+      "featureId": "combat_target_assist",
+      "provenance": [
+        "observation.clickOutcomeRelationships.outcomeCorroborated"
+      ],
+      "requirementId": "visibility_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType"
+      ],
+      "requirementId": "mouse_primary_input",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "plan.classCounts.Player",
+        "plan.classCounts.Humanoid"
+      ],
+      "requirementId": "player_entity_set",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "plan.classCounts.Tool"
+      ],
+      "requirementId": "weapon_equipped_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType",
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "weapon_state_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "state_change_signals",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+      "featureId": "combat_trigger_assist",
+      "provenance": [
+        "observation.clickOutcomeRelationships.outcomeCorroborated"
+      ],
+      "requirementId": "visibility_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.basic_entity_boxes",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "plan.classCounts.Player",
+        "plan.classCounts.Humanoid"
+      ],
+      "requirementId": "player_entity_set",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "capabilityId": "esp_player_overlay.basic_entity_boxes",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "requirementId": "character_spatial_positions",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.basic_entity_boxes",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "plan.classCounts.Team",
+        "plan.classCounts.Teams"
+      ],
+      "requirementId": "team_relationship_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.basic_entity_boxes",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "observation.clickOutcomeRelationships.outcomeCorroborated"
+      ],
+      "requirementId": "visibility_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "plan.classCounts.Player",
+        "plan.classCounts.Humanoid"
+      ],
+      "requirementId": "player_entity_set",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "plan.classCounts.Team",
+        "plan.classCounts.Teams"
+      ],
+      "requirementId": "team_relationship_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "state_change_signals",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+      "featureId": "esp_player_overlay",
+      "provenance": [
+        "observation.clickOutcomeRelationships.outcomeCorroborated"
+      ],
+      "requirementId": "visibility_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "capabilityId": "loadout_information_suite.loadout_gui_reader",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "observation.clickTargetObservations.guiCandidates.path"
+      ],
+      "requirementId": "loadout_gui_structures",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "capabilityId": "loadout_information_suite.loadout_gui_reader",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "plan.features"
+      ],
+      "requirementId": "feature_summary",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "loadout_information_suite.loadout_gui_reader",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "observation.clickTargetObservations.guiCandidates.path"
+      ],
+      "requirementId": "hud_weapon_indicators",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "loadout_information_suite.runtime_weapon_state",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "plan.classCounts.Tool"
+      ],
+      "requirementId": "weapon_equipped_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "loadout_information_suite.runtime_weapon_state",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "observation.clickTargetObservations.guiCandidates.path"
+      ],
+      "requirementId": "hud_weapon_indicators",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "capabilityId": "loadout_information_suite.runtime_weapon_state",
+      "featureId": "loadout_information_suite",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType",
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "weapon_state_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "requirementId": "movement_position_samples",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "plan.observedInteractionHistory.actionKind"
+      ],
+      "requirementId": "movement_actions",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"
+      ],
+      "requirementId": "camera_rotation_gesture",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.path_hinting",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "plan.universalDiscovery.regions"
+      ],
+      "requirementId": "world_regions",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.path_hinting",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "plan.classCounts.Part",
+        "plan.classCounts.MeshPart",
+        "plan.classCounts.UnionOperation"
+      ],
+      "requirementId": "map_geometry",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "capabilityId": "movement_navigation_assist.path_hinting",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "requirementId": "character_spatial_positions",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "movement_navigation_assist.path_hinting",
+      "featureId": "movement_navigation_assist",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees",
+        "observation.cameraOrientationSamples"
+      ],
+      "requirementId": "camera_state_samples",
+      "status": "captured-not-extracted"
+    },
+    {
+      "available": false,
+      "capabilityId": "objective_status_dashboard.reactive_match_reader",
+      "featureId": "objective_status_dashboard",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "objective_hud_signals",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "capabilityId": "objective_status_dashboard.reactive_match_reader",
+      "featureId": "objective_status_dashboard",
+      "provenance": [
+        "plan.features"
+      ],
+      "requirementId": "feature_summary",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "capabilityId": "objective_status_dashboard.reactive_match_reader",
+      "featureId": "objective_status_dashboard",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "requirementId": "state_change_signals",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "capabilityId": "profile_and_keybind_manager.profile_persistence",
+      "featureId": "profile_and_keybind_manager",
+      "provenance": [
+        "plan.features"
+      ],
+      "requirementId": "feature_summary",
+      "status": "available"
+    }
+  ],
+  "scan": {
+    "interactionEvents": 73,
+    "objects": 92466,
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "schemaVersion": "121.evidence-reconciliation-report.1"
+}

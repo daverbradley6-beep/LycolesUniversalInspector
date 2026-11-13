@@ -1,0 +1,1460 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "features": [
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Estimate recoil direction from firing cadence and camera deltas, then apply bounded camera compensation.",
+          "implementationDependencies": [
+            "camera-control runtime adapter",
+            "weapon-state classifier"
+          ],
+          "implementationMethod": "client camera delta sampler with fire-correlation guardrails",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "camera-control runtime adapter",
+            "weapon-state classifier"
+          ],
+          "missingEvidence": [
+            "camera_state_samples",
+            "weapon_equipped_signal",
+            "weapon_state_signal",
+            "camera_movement_correlation"
+          ],
+          "name": "Camera recoil compensation",
+          "optionalSupportingSignals": [
+            "camera_rotation_gesture"
+          ],
+          "requiredEntities": [
+            "weapon_equipped_signal"
+          ],
+          "requiredObservations": [
+            "mouse_primary_input",
+            "camera_state_samples"
+          ],
+          "requiredProperties": [
+            "weapon_state_signal"
+          ],
+          "requiredTemporalRelationships": [
+            "camera movement must co-occur with firing windows",
+            "non-firing camera movement must be separable"
+          ],
+          "requirementResults": [
+            {
+              "available": true,
+              "description": "Primary mouse input events observed",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType"
+              ],
+              "rationale": "11 primary mouse input events observed.",
+              "requirementId": "mouse_primary_input",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Raw camera orientation state samples",
+              "provenance": [
+                "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees",
+                "observation.cameraOrientationSamples"
+              ],
+              "rationale": "Camera turn evidence exists via gestures, but raw camera state sample stream is empty.",
+              "requirementId": "camera_state_samples",
+              "status": "captured-not-extracted"
+            },
+            {
+              "available": false,
+              "description": "Equipped weapon/tool evidence",
+              "provenance": [
+                "plan.classCounts.Tool"
+              ],
+              "rationale": "No direct weapon/tool entity evidence.",
+              "requirementId": "weapon_equipped_signal",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Weapon/ammo/reload state-change evidence",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType",
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "Primary firing-like input exists but no weapon-state transitions were captured/classified.",
+              "requirementId": "weapon_state_signal",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": false,
+              "description": "Temporal relation between camera movement and combat-relevant events",
+              "provenance": [
+                "observation.inputGestureObservations",
+                "plan.observedInteractionHistory",
+                "plan.stateChanges"
+              ],
+              "rationale": "Camera movement and combat input are co-observed, but no validating state transitions were classified.",
+              "requirementId": "camera_movement_correlation",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": true,
+              "description": "Camera-turn gestures observed from input intent metrics",
+              "provenance": [
+                "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"
+              ],
+              "rationale": "21 gestures include non-zero camera turn evidence.",
+              "requirementId": "camera_rotation_gesture",
+              "status": "available"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "reduced recoil drift in controlled burst test"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_recoil_assist",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Recoil Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_target_assist.target_candidate_selection",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Select candidate entities for aim assist using character positions and team relationships.",
+          "implementationDependencies": [
+            "entity-index adapter",
+            "projection adapter"
+          ],
+          "implementationMethod": "entity tracker + team filter + camera projection",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "entity-index adapter",
+            "projection adapter"
+          ],
+          "missingEvidence": [
+            "player_entity_set",
+            "team_relationship_signal"
+          ],
+          "name": "Target candidate selection",
+          "optionalSupportingSignals": [
+            "visibility_signal"
+          ],
+          "requiredEntities": [
+            "player_entity_set",
+            "team_relationship_signal"
+          ],
+          "requiredObservations": [
+            "character_spatial_positions",
+            "input_control_types"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "candidate updates synchronized with render step"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Non-local player entity set available",
+              "provenance": [
+                "plan.classCounts.Player",
+                "plan.classCounts.Humanoid"
+              ],
+              "rationale": "Only local/single character entity observed; opponent set is unconfirmed.",
+              "requirementId": "player_entity_set",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": true,
+              "description": "Character/player spatial samples",
+              "provenance": [
+                "observation.playerPositionHistory"
+              ],
+              "rationale": "405 player position samples observed.",
+              "requirementId": "character_spatial_positions",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Team relationship evidence available",
+              "provenance": [
+                "plan.classCounts.Team",
+                "plan.classCounts.Teams"
+              ],
+              "rationale": "No team relationship evidence.",
+              "requirementId": "team_relationship_signal",
+              "status": "missing"
+            },
+            {
+              "available": true,
+              "description": "Input/control type distribution available",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType"
+              ],
+              "rationale": "Control type distribution is present.",
+              "requirementId": "input_control_types",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Occlusion/visibility evidence",
+              "provenance": [
+                "observation.clickOutcomeRelationships.outcomeCorroborated"
+              ],
+              "rationale": "Corroborated click outcome exists, but explicit visibility/occlusion classification is absent.",
+              "requirementId": "visibility_signal",
+              "status": "captured-not-classified"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "stable candidate lock under movement"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_target_assist",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Target Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Trigger fire condition only when validated target criteria are met.",
+          "implementationDependencies": [
+            "fire-control adapter",
+            "target classifier"
+          ],
+          "implementationMethod": "crosshair overlap predicate with cooldown and team checks",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "fire-control adapter",
+            "target classifier"
+          ],
+          "missingEvidence": [
+            "player_entity_set",
+            "weapon_equipped_signal",
+            "weapon_state_signal",
+            "state_change_signals"
+          ],
+          "name": "Crosshair fire condition",
+          "optionalSupportingSignals": [
+            "visibility_signal"
+          ],
+          "requiredEntities": [
+            "player_entity_set",
+            "weapon_equipped_signal"
+          ],
+          "requiredObservations": [
+            "mouse_primary_input"
+          ],
+          "requiredProperties": [
+            "weapon_state_signal",
+            "state_change_signals"
+          ],
+          "requiredTemporalRelationships": [
+            "trigger decisions aligned with frame updates"
+          ],
+          "requirementResults": [
+            {
+              "available": true,
+              "description": "Primary mouse input events observed",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType"
+              ],
+              "rationale": "11 primary mouse input events observed.",
+              "requirementId": "mouse_primary_input",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Non-local player entity set available",
+              "provenance": [
+                "plan.classCounts.Player",
+                "plan.classCounts.Humanoid"
+              ],
+              "rationale": "Only local/single character entity observed; opponent set is unconfirmed.",
+              "requirementId": "player_entity_set",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": false,
+              "description": "Equipped weapon/tool evidence",
+              "provenance": [
+                "plan.classCounts.Tool"
+              ],
+              "rationale": "No direct weapon/tool entity evidence.",
+              "requirementId": "weapon_equipped_signal",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Weapon/ammo/reload state-change evidence",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType",
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "Primary firing-like input exists but no weapon-state transitions were captured/classified.",
+              "requirementId": "weapon_state_signal",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": false,
+              "description": "General state change keys available",
+              "provenance": [
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "No state-change signals were captured.",
+              "requirementId": "state_change_signals",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Occlusion/visibility evidence",
+              "provenance": [
+                "observation.clickOutcomeRelationships.outcomeCorroborated"
+              ],
+              "rationale": "Corroborated click outcome exists, but explicit visibility/occlusion classification is absent.",
+              "requirementId": "visibility_signal",
+              "status": "captured-not-classified"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "validated trigger condition logs without false positives"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_trigger_assist",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Trigger Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "esp_player_overlay.basic_entity_boxes",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Render player box overlays for visible character entities.",
+          "implementationDependencies": [
+            "drawing adapter",
+            "projection adapter"
+          ],
+          "implementationMethod": "runtime character enumeration + camera projection + box rendering",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "drawing adapter",
+            "projection adapter"
+          ],
+          "missingEvidence": [
+            "player_entity_set"
+          ],
+          "name": "Basic player boxes",
+          "optionalSupportingSignals": [
+            "team_relationship_signal",
+            "visibility_signal"
+          ],
+          "requiredEntities": [
+            "player_entity_set"
+          ],
+          "requiredObservations": [
+            "character_spatial_positions"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "entity projection updates each render frame"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Non-local player entity set available",
+              "provenance": [
+                "plan.classCounts.Player",
+                "plan.classCounts.Humanoid"
+              ],
+              "rationale": "Only local/single character entity observed; opponent set is unconfirmed.",
+              "requirementId": "player_entity_set",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": true,
+              "description": "Character/player spatial samples",
+              "provenance": [
+                "observation.playerPositionHistory"
+              ],
+              "rationale": "405 player position samples observed.",
+              "requirementId": "character_spatial_positions",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Team relationship evidence available",
+              "provenance": [
+                "plan.classCounts.Team",
+                "plan.classCounts.Teams"
+              ],
+              "rationale": "No team relationship evidence.",
+              "requirementId": "team_relationship_signal",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Occlusion/visibility evidence",
+              "provenance": [
+                "observation.clickOutcomeRelationships.outcomeCorroborated"
+              ],
+              "rationale": "Corroborated click outcome exists, but explicit visibility/occlusion classification is absent.",
+              "requirementId": "visibility_signal",
+              "status": "captured-not-classified"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "overlay tracks moving entities in live match"
+          ]
+        },
+        {
+          "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Add team coloring and health bars when team/health data is available.",
+          "implementationDependencies": [
+            "health value resolver",
+            "team-color map"
+          ],
+          "implementationMethod": "entity metadata layering over basic overlay",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": false,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "health value resolver",
+            "team-color map"
+          ],
+          "missingEvidence": [
+            "player_entity_set",
+            "team_relationship_signal",
+            "state_change_signals"
+          ],
+          "name": "Team/health enhancements",
+          "optionalSupportingSignals": [
+            "visibility_signal"
+          ],
+          "requiredEntities": [
+            "player_entity_set",
+            "team_relationship_signal"
+          ],
+          "requiredObservations": [],
+          "requiredProperties": [
+            "state_change_signals"
+          ],
+          "requiredTemporalRelationships": [
+            "metadata refresh under player updates"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Non-local player entity set available",
+              "provenance": [
+                "plan.classCounts.Player",
+                "plan.classCounts.Humanoid"
+              ],
+              "rationale": "Only local/single character entity observed; opponent set is unconfirmed.",
+              "requirementId": "player_entity_set",
+              "status": "captured-not-classified"
+            },
+            {
+              "available": false,
+              "description": "Team relationship evidence available",
+              "provenance": [
+                "plan.classCounts.Team",
+                "plan.classCounts.Teams"
+              ],
+              "rationale": "No team relationship evidence.",
+              "requirementId": "team_relationship_signal",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "General state change keys available",
+              "provenance": [
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "No state-change signals were captured.",
+              "requirementId": "state_change_signals",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Occlusion/visibility evidence",
+              "provenance": [
+                "observation.clickOutcomeRelationships.outcomeCorroborated"
+              ],
+              "rationale": "Corroborated click outcome exists, but explicit visibility/occlusion classification is absent.",
+              "requirementId": "visibility_signal",
+              "status": "captured-not-classified"
+            }
+          ],
+          "stage": "Concept proposed",
+          "verificationRequirements": [
+            "correct team coloring and health updates"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "esp_player_overlay",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Player Awareness Overlay",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "loadout_information_suite.loadout_gui_reader",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Extract current loadout/menu weapon selection signals from observed GUI structures.",
+          "implementationDependencies": [
+            "gui-snapshot parser",
+            "schema normalizer"
+          ],
+          "implementationMethod": "GUI path resolver and normalized value presenter",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "gui-snapshot parser"
+          ],
+          "missingEvidence": [
+            "loadout_gui_structures"
+          ],
+          "name": "Loadout GUI reader",
+          "optionalSupportingSignals": [
+            "hud_weapon_indicators"
+          ],
+          "requiredEntities": [],
+          "requiredObservations": [
+            "loadout_gui_structures",
+            "feature_summary"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "refresh on GUI visibility/state changes"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Loadout/weapon GUI structures observed",
+              "provenance": [
+                "observation.clickTargetObservations.guiCandidates.path"
+              ],
+              "rationale": "No loadout/weapon GUI structures observed.",
+              "requirementId": "loadout_gui_structures",
+              "status": "missing"
+            },
+            {
+              "available": true,
+              "description": "Feature summary evidence available",
+              "provenance": [
+                "plan.features"
+              ],
+              "rationale": "Feature summary entries are present.",
+              "requirementId": "feature_summary",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "HUD weapon indicators observed",
+              "provenance": [
+                "observation.clickTargetObservations.guiCandidates.path"
+              ],
+              "rationale": "No HUD weapon indicator evidence.",
+              "requirementId": "hud_weapon_indicators",
+              "status": "missing"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "menu selection changes reflected in overlay"
+          ]
+        },
+        {
+          "capabilityId": "loadout_information_suite.runtime_weapon_state",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Display equipped weapon and dynamic weapon-state indicators in gameplay HUD.",
+          "implementationDependencies": [
+            "tool identity resolver"
+          ],
+          "implementationMethod": "runtime tool/HUD state merger",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": false,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "tool identity resolver"
+          ],
+          "missingEvidence": [
+            "weapon_equipped_signal",
+            "hud_weapon_indicators"
+          ],
+          "name": "Runtime weapon state indicators",
+          "optionalSupportingSignals": [
+            "weapon_state_signal"
+          ],
+          "requiredEntities": [
+            "weapon_equipped_signal"
+          ],
+          "requiredObservations": [
+            "hud_weapon_indicators"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "weapon switch updates propagated to display"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Equipped weapon/tool evidence",
+              "provenance": [
+                "plan.classCounts.Tool"
+              ],
+              "rationale": "No direct weapon/tool entity evidence.",
+              "requirementId": "weapon_equipped_signal",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "HUD weapon indicators observed",
+              "provenance": [
+                "observation.clickTargetObservations.guiCandidates.path"
+              ],
+              "rationale": "No HUD weapon indicator evidence.",
+              "requirementId": "hud_weapon_indicators",
+              "status": "missing"
+            },
+            {
+              "available": false,
+              "description": "Weapon/ammo/reload state-change evidence",
+              "provenance": [
+                "plan.observedInteractionHistory.controlType",
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "Primary firing-like input exists but no weapon-state transitions were captured/classified.",
+              "requirementId": "weapon_state_signal",
+              "status": "captured-not-classified"
+            }
+          ],
+          "stage": "Concept proposed",
+          "verificationRequirements": [
+            "equipped weapon updates during switching"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "loadout_information_suite",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Loadout and Weapon Intelligence",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "medium",
+          "description": "Track local movement vectors, jump/sprint activity, and trajectory hints.",
+          "implementationDependencies": [
+            "local-character position sampler",
+            "lightweight drawing adapter"
+          ],
+          "implementationMethod": "local position history sampling + movement action markers",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": true,
+            "Implementation ready": true,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [],
+          "missingEvidence": [],
+          "name": "Movement telemetry overlay",
+          "optionalSupportingSignals": [
+            "camera_rotation_gesture"
+          ],
+          "requiredEntities": [],
+          "requiredObservations": [
+            "movement_position_samples",
+            "movement_actions"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "position sampling must be time-ordered"
+          ],
+          "requirementResults": [
+            {
+              "available": true,
+              "description": "Player position samples available",
+              "provenance": [
+                "observation.playerPositionHistory"
+              ],
+              "rationale": "Player position samples are available.",
+              "requirementId": "movement_position_samples",
+              "status": "available"
+            },
+            {
+              "available": true,
+              "description": "Movement actions (sprint/jump) observed",
+              "provenance": [
+                "plan.observedInteractionHistory.actionKind"
+              ],
+              "rationale": "Movement actions (sprint/jump) were observed.",
+              "requirementId": "movement_actions",
+              "status": "available"
+            },
+            {
+              "available": true,
+              "description": "Camera-turn gestures observed from input intent metrics",
+              "provenance": [
+                "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"
+              ],
+              "rationale": "21 gestures include non-zero camera turn evidence.",
+              "requirementId": "camera_rotation_gesture",
+              "status": "available"
+            }
+          ],
+          "stage": "Implementation ready",
+          "verificationRequirements": [
+            "trajectory and movement state update during traversal"
+          ]
+        },
+        {
+          "capabilityId": "movement_navigation_assist.path_hinting",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "low",
+          "description": "Suggest path hints based on world regions and map geometry.",
+          "implementationDependencies": [
+            "region graph builder"
+          ],
+          "implementationMethod": "region graph approximation with obstacle-aware hints",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "region graph builder"
+          ],
+          "missingEvidence": [],
+          "name": "Path hinting",
+          "optionalSupportingSignals": [
+            "camera_state_samples"
+          ],
+          "requiredEntities": [],
+          "requiredObservations": [
+            "world_regions",
+            "map_geometry",
+            "character_spatial_positions"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "hints update with location changes"
+          ],
+          "requirementResults": [
+            {
+              "available": true,
+              "description": "World region clustering available",
+              "provenance": [
+                "plan.universalDiscovery.regions"
+              ],
+              "rationale": "17 world regions discovered.",
+              "requirementId": "world_regions",
+              "status": "available"
+            },
+            {
+              "available": true,
+              "description": "Map geometry density available",
+              "provenance": [
+                "plan.classCounts.Part",
+                "plan.classCounts.MeshPart",
+                "plan.classCounts.UnionOperation"
+              ],
+              "rationale": "Dense map geometry evidence is available.",
+              "requirementId": "map_geometry",
+              "status": "available"
+            },
+            {
+              "available": true,
+              "description": "Character/player spatial samples",
+              "provenance": [
+                "observation.playerPositionHistory"
+              ],
+              "rationale": "405 player position samples observed.",
+              "requirementId": "character_spatial_positions",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "Raw camera orientation state samples",
+              "provenance": [
+                "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees",
+                "observation.cameraOrientationSamples"
+              ],
+              "rationale": "Camera turn evidence exists via gestures, but raw camera state sample stream is empty.",
+              "requirementId": "camera_state_samples",
+              "status": "captured-not-extracted"
+            }
+          ],
+          "stage": "Evidence sufficient for a bounded implementation",
+          "verificationRequirements": [
+            "hints remain stable across movement"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "movement_navigation_assist",
+      "featureStage": "Implementation ready",
+      "featureTitle": "Navigation Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "objective_status_dashboard.reactive_match_reader",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "very-low",
+          "description": "Track objective/timer/score transitions and surface match-state changes.",
+          "implementationDependencies": [
+            "objective field mapper"
+          ],
+          "implementationMethod": "HUD/state watcher with transition timeline",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [
+            "objective field mapper"
+          ],
+          "missingEvidence": [
+            "objective_hud_signals"
+          ],
+          "name": "Reactive match reader",
+          "optionalSupportingSignals": [
+            "state_change_signals"
+          ],
+          "requiredEntities": [],
+          "requiredObservations": [
+            "objective_hud_signals",
+            "feature_summary"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [
+            "objective values must change over time"
+          ],
+          "requirementResults": [
+            {
+              "available": false,
+              "description": "Objective/timer/score HUD signals",
+              "provenance": [
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "No objective/timer/score evidence.",
+              "requirementId": "objective_hud_signals",
+              "status": "missing"
+            },
+            {
+              "available": true,
+              "description": "Feature summary evidence available",
+              "provenance": [
+                "plan.features"
+              ],
+              "rationale": "Feature summary entries are present.",
+              "requirementId": "feature_summary",
+              "status": "available"
+            },
+            {
+              "available": false,
+              "description": "General state change keys available",
+              "provenance": [
+                "plan.observedInteractionHistory.stateChanges"
+              ],
+              "rationale": "No state-change signals were captured.",
+              "requirementId": "state_change_signals",
+              "status": "missing"
+            }
+          ],
+          "stage": "Evidence partially available",
+          "verificationRequirements": [
+            "state transitions detected across match phases"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "objective_status_dashboard",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Objective and Match Status Dashboard",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "profile_and_keybind_manager.profile_persistence",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "confidence": "medium",
+          "description": "Persist keybind/settings profiles for enabled gameplay features.",
+          "implementationDependencies": [
+            "config persistence backend"
+          ],
+          "implementationMethod": "schema-validated config persistence",
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": true,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "limitations": [
+            "Read-only client-visible evidence only",
+            "No server-authoritative verification"
+          ],
+          "missingDependencies": [],
+          "missingEvidence": [],
+          "name": "Profile persistence",
+          "optionalSupportingSignals": [],
+          "requiredEntities": [],
+          "requiredObservations": [
+            "feature_summary"
+          ],
+          "requiredProperties": [],
+          "requiredTemporalRelationships": [],
+          "requirementResults": [
+            {
+              "available": true,
+              "description": "Feature summary evidence available",
+              "provenance": [
+                "plan.features"
+              ],
+              "rationale": "Feature summary entries are present.",
+              "requirementId": "feature_summary",
+              "status": "available"
+            }
+          ],
+          "stage": "Implementation dependencies satisfied",
+          "verificationRequirements": [
+            "profile save/load consistency"
+          ]
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "profile_and_keybind_manager",
+      "featureStage": "Implementation dependencies satisfied",
+      "featureTitle": "Profiles and Keybinds",
+      "featureType": "infrastructure"
+    }
+  ],
+  "requirements": [
+    {
+      "available": false,
+      "description": "Temporal relation between camera movement and combat-relevant events",
+      "kind": "temporal",
+      "provenance": [
+        "observation.inputGestureObservations",
+        "plan.observedInteractionHistory",
+        "plan.stateChanges"
+      ],
+      "rationale": "Camera movement and combat input are co-observed, but no validating state transitions were classified.",
+      "requirementId": "camera_movement_correlation",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "description": "Camera-turn gestures observed from input intent metrics",
+      "kind": "observation",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"
+      ],
+      "rationale": "21 gestures include non-zero camera turn evidence.",
+      "requirementId": "camera_rotation_gesture",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "description": "Raw camera orientation state samples",
+      "kind": "observation",
+      "provenance": [
+        "observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees",
+        "observation.cameraOrientationSamples"
+      ],
+      "rationale": "Camera turn evidence exists via gestures, but raw camera state sample stream is empty.",
+      "requirementId": "camera_state_samples",
+      "status": "captured-not-extracted"
+    },
+    {
+      "available": true,
+      "description": "Character/player spatial samples",
+      "kind": "observation",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "rationale": "405 player position samples observed.",
+      "requirementId": "character_spatial_positions",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "description": "Feature summary evidence available",
+      "kind": "summary",
+      "provenance": [
+        "plan.features"
+      ],
+      "rationale": "Feature summary entries are present.",
+      "requirementId": "feature_summary",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "description": "HUD weapon indicators observed",
+      "kind": "gui",
+      "provenance": [
+        "observation.clickTargetObservations.guiCandidates.path"
+      ],
+      "rationale": "No HUD weapon indicator evidence.",
+      "requirementId": "hud_weapon_indicators",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "description": "Input/control type distribution available",
+      "kind": "observation",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType"
+      ],
+      "rationale": "Control type distribution is present.",
+      "requirementId": "input_control_types",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "description": "Loadout/weapon GUI structures observed",
+      "kind": "gui",
+      "provenance": [
+        "observation.clickTargetObservations.guiCandidates.path"
+      ],
+      "rationale": "No loadout/weapon GUI structures observed.",
+      "requirementId": "loadout_gui_structures",
+      "status": "missing"
+    },
+    {
+      "available": true,
+      "description": "Map geometry density available",
+      "kind": "world",
+      "provenance": [
+        "plan.classCounts.Part",
+        "plan.classCounts.MeshPart",
+        "plan.classCounts.UnionOperation"
+      ],
+      "rationale": "Dense map geometry evidence is available.",
+      "requirementId": "map_geometry",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "description": "Primary mouse input events observed",
+      "kind": "observation",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType"
+      ],
+      "rationale": "11 primary mouse input events observed.",
+      "requirementId": "mouse_primary_input",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "description": "Movement actions (sprint/jump) observed",
+      "kind": "observation",
+      "provenance": [
+        "plan.observedInteractionHistory.actionKind"
+      ],
+      "rationale": "Movement actions (sprint/jump) were observed.",
+      "requirementId": "movement_actions",
+      "status": "available"
+    },
+    {
+      "available": true,
+      "description": "Player position samples available",
+      "kind": "observation",
+      "provenance": [
+        "observation.playerPositionHistory"
+      ],
+      "rationale": "Player position samples are available.",
+      "requirementId": "movement_position_samples",
+      "status": "available"
+    },
+    {
+      "available": false,
+      "description": "Objective/timer/score HUD signals",
+      "kind": "gui",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "rationale": "No objective/timer/score evidence.",
+      "requirementId": "objective_hud_signals",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "description": "Non-local player entity set available",
+      "kind": "entity",
+      "provenance": [
+        "plan.classCounts.Player",
+        "plan.classCounts.Humanoid"
+      ],
+      "rationale": "Only local/single character entity observed; opponent set is unconfirmed.",
+      "requirementId": "player_entity_set",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "description": "General state change keys available",
+      "kind": "state",
+      "provenance": [
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "rationale": "No state-change signals were captured.",
+      "requirementId": "state_change_signals",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "description": "Team relationship evidence available",
+      "kind": "entity",
+      "provenance": [
+        "plan.classCounts.Team",
+        "plan.classCounts.Teams"
+      ],
+      "rationale": "No team relationship evidence.",
+      "requirementId": "team_relationship_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "description": "Occlusion/visibility evidence",
+      "kind": "observation",
+      "provenance": [
+        "observation.clickOutcomeRelationships.outcomeCorroborated"
+      ],
+      "rationale": "Corroborated click outcome exists, but explicit visibility/occlusion classification is absent.",
+      "requirementId": "visibility_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": false,
+      "description": "Equipped weapon/tool evidence",
+      "kind": "entity",
+      "provenance": [
+        "plan.classCounts.Tool"
+      ],
+      "rationale": "No direct weapon/tool entity evidence.",
+      "requirementId": "weapon_equipped_signal",
+      "status": "missing"
+    },
+    {
+      "available": false,
+      "description": "Weapon/ammo/reload state-change evidence",
+      "kind": "state",
+      "provenance": [
+        "plan.observedInteractionHistory.controlType",
+        "plan.observedInteractionHistory.stateChanges"
+      ],
+      "rationale": "Primary firing-like input exists but no weapon-state transitions were captured/classified.",
+      "requirementId": "weapon_state_signal",
+      "status": "captured-not-classified"
+    },
+    {
+      "available": true,
+      "description": "World region clustering available",
+      "kind": "world",
+      "provenance": [
+        "plan.universalDiscovery.regions"
+      ],
+      "rationale": "17 world regions discovered.",
+      "requirementId": "world_regions",
+      "status": "available"
+    }
+  ],
+  "schemaVersion": "121.capability-evidence-contracts.1"
+}

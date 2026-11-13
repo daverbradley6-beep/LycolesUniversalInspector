@@ -828,3 +828,36 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Feature configuration schemas now enforce universal fields (`id`, type, defaults, range/choices, dependencies, runtime binding, validation, persistence) and keep non-implemented features as planned-only settings.
 - Unified GUI architecture output is single-window by contract, with integrated diagnostics/profiles/keybind sections and `separateAdminGuiAllowed=false`.
 
+
+## Update — 2026-11-13 — Milestone 2 evidence reconciliation + capability contracts
+
+- Added `tools/evidence_reconciliation_milestone.py` to reconcile collected evidence vs missing evidence and emit capability-level feasibility outputs.
+- New required outputs are produced in a versioned directory (example: `generated/phantomforces_universal_milestone_v2/`):
+  - `evidence-reconciliation-report.json`
+  - `capability-evidence-contracts.json`
+  - `reassessed-feature-feasibility.json`
+  - `targeted-inspection-plan.json`
+  - `game-understanding-improvements.json`
+  - `generation-integration-report.json`
+  - `milestone-2-summary.md`
+- Camera discrepancy is now explicitly split into evidence classes:
+  - camera input gestures / camera-turn observations
+  - camera state samples
+  - camera movement correlations
+  - verified camera-response behavior
+  This avoids treating camera gestures as equivalent to verified camera-state samples.
+- Capability contracts are now feature + capability scoped (not feature-category scoped) and include required entities/properties/observations, temporal constraints, dependencies, verification requirements, provenance, confidence, and limitations.
+- Feasibility lifecycle now supports partial feature readiness by capability stage, separating gameplay and infrastructure.
+- A targeted-inspection planner now generates actionable, read-only evidence requests from missing capability requirements.
+- Generation service integration:
+  - `tools/lycoles_generation_service.py` now invokes reconciliation artifacts for multipart evidence bundles when `capability-plan.json` exists.
+  - Job outputs include reconciliation metadata paths/summary under `analysis` and top-level `evidenceReconciliation`.
+  - Module loader now registers dynamically loaded modules in `sys.modules` for dataclass-safe imports.
+- Implemented a small read-only gameplay vertical slice artifact when available:
+  - `MovementTelemetryOverlay.lua` emitted when `movement_navigation_assist.movement_telemetry_overlay` is implementation-ready.
+- New tests:
+  - `tests/test_evidence_reconciliation_milestone.py`
+  - generation-service integration assertion added in `tests/test_lycoles_generation_service.py`
+- Regression status after Milestone 2 changes:
+  - targeted Python suites: `92 passed`
+  - Luau parser checks: `4 passed, 0 failed`

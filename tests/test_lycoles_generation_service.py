@@ -990,6 +990,36 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertEqual(listed[0].get("status"), "partial")
             self.assertTrue((root / "jobs" / "feedback-log.jsonl").is_file())
 
+    def test_job_result_includes_evidence_reconciliation_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Track movement and combat observations")
+            overlay = root / "live-observation.json"
+            make_live_observation_export(overlay)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Track movement and combat observations",
+                observation_paths=(overlay,),
+            )
+            result = service.run_sync(request)
+
+            self.assertEqual(result["status"], "succeeded")
+            reconciliation = result.get("evidenceReconciliation") or {}
+            self.assertTrue(reconciliation.get("generated"))
+            self.assertIsNone(reconciliation.get("error"))
+            files = reconciliation.get("files") or {}
+            self.assertIn("capabilityEvidenceContracts", files)
+            self.assertTrue(pathlib.Path(files["capabilityEvidenceContracts"]).is_file())
+            evidence_payload = result.get("evidence") or {}
+            self.assertIn("evidenceReconciliationOutputDir", evidence_payload)
+            self.assertTrue(pathlib.Path(evidence_payload["evidenceReconciliationOutputDir"]).is_dir())
+
+
 
 
 if __name__ == "__main__":
