@@ -933,6 +933,48 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertGreater(first["usage"]["analysis"]["tokens"], 0)
             self.assertEqual(second["usage"]["analysis"]["tokens"], 0)
 
+    def test_analysis_cache_persists_across_service_restarts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Automatically hatch the selected egg")
+
+            first_provider = CountingProvider()
+            first_service = MODULE.LycolesGenerationService(
+                output_root=root / "jobs",
+                llm_provider=first_provider,
+                provider_info=first_provider.info(),
+            )
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Automatically hatch the selected egg",
+            )
+            first = first_service.run_sync(request)
+
+            cache_path = root / "jobs" / "analysis-cache.json"
+            self.assertTrue(cache_path.is_file())
+
+            second_provider = CountingProvider()
+            second_service = MODULE.LycolesGenerationService(
+                output_root=root / "jobs",
+                llm_provider=second_provider,
+                provider_info=second_provider.info(),
+            )
+            second = second_service.run_sync(request)
+
+            self.assertEqual(first_provider.analysis_calls, 1)
+            self.assertEqual(second_provider.analysis_calls, 0)
+            self.assertFalse(first["provider"]["analysisCacheHit"])
+            self.assertTrue(second["provider"]["analysisCacheHit"])
+            self.assertEqual(first["provider"]["analysisCacheKey"], second["provider"]["analysisCacheKey"])
+
+            persisted = json.loads(cache_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted.get("schemaVersion"), "30.6.analysis-cache.1")
+            self.assertGreaterEqual(len(persisted.get("entries") or []), 1)
+
+
     def test_parts_job_emits_autonomous_plan_artifact_and_verification_states(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

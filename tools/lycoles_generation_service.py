@@ -2074,6 +2074,9 @@ class LycolesGenerationService:
         self._jobs_lock = threading.Lock()
         self._analysis_cache: dict[str, dict[str, Any]] = {}
         self._analysis_cache_lock = threading.Lock()
+        self._analysis_cache_path = self.output_root / "analysis-cache.json"
+        self._analysis_cache_max_entries = max(32, int(_env_float("LYCOLES_ANALYSIS_CACHE_MAX_ENTRIES", 256.0)))
+        self._load_analysis_cache()
         self._feedback_log_path = self.output_root / "feedback-log.jsonl"
         self._feedback_lock = threading.Lock()
         self._feedback_records: list[FeedbackRecord] = []
@@ -2082,6 +2085,62 @@ class LycolesGenerationService:
 
     def _output_dir_for(self, job_id: str) -> Path:
         return self.output_root / job_id
+
+    def _load_analysis_cache(self) -> None:
+        if not self._analysis_cache_path.is_file():
+            return
+        try:
+            payload = json.loads(self._analysis_cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        entries = payload.get("entries") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            return
+        loaded: dict[str, dict[str, Any]] = {}
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key")
+            analysis = item.get("analysis")
+            if not isinstance(key, str) or not key or not isinstance(analysis, dict):
+                continue
+            loaded[key] = analysis
+        if not loaded:
+            return
+        if len(loaded) > self._analysis_cache_max_entries:
+            trimmed = dict(list(loaded.items())[-self._analysis_cache_max_entries:])
+        else:
+            trimmed = loaded
+        with self._analysis_cache_lock:
+            self._analysis_cache = trimmed
+
+    def _persist_analysis_cache_locked(self) -> None:
+        entries = [
+            {"key": key, "analysis": value}
+            for key, value in self._analysis_cache.items()
+        ]
+        payload = {
+            "schemaVersion": "30.6.analysis-cache.1",
+            "maxEntries": self._analysis_cache_max_entries,
+            "entries": entries,
+        }
+        self._analysis_cache_path.write_text(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+    def _store_analysis_cache(self, key: str, analysis: dict[str, Any]) -> None:
+        with self._analysis_cache_lock:
+            self._analysis_cache[key] = _json_clone(analysis)
+            overflow = len(self._analysis_cache) - self._analysis_cache_max_entries
+            if overflow > 0:
+                for stale_key in list(self._analysis_cache.keys())[:overflow]:
+                    self._analysis_cache.pop(stale_key, None)
+            try:
+                self._persist_analysis_cache_locked()
+            except OSError:
+                pass
+
 
     def _feedback_signature(self, place_id: Optional[int], scan_id: Optional[str], feature_id: Optional[str], strategy_id: Optional[str]) -> str:
         return "|".join([
@@ -2225,8 +2284,7 @@ class LycolesGenerationService:
             analysis_cache_hit = True
         else:
             analysis = self.feature_analysis.analyze(bundle, usage, route_plan)
-            with self._analysis_cache_lock:
-                self._analysis_cache[analysis_cache_key] = _json_clone(analysis)
+            self._store_analysis_cache(analysis_cache_key, analysis)
 
         analysis["analysisCache"] = {
             "enabled": True,

@@ -974,3 +974,9 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `tests/test_inspector_runtime_diagnostics_runtime.py`
   - verifies diagnostics collection, bounded stage history, and helper declaration ordering.
 - Compiler pressure after recovery + diagnostics: root local pressure `170` (budget `170`) with compile-limit suite passing.
+
+- Generation service now persists analysis cache across restarts (`tools/lycoles_generation_service.py`):
+  - file: `<output_root>/analysis-cache.json` (schema `30.6.analysis-cache.1`),
+  - bounded by `LYCOLES_ANALYSIS_CACHE_MAX_ENTRIES` (default 256, minimum 32),
+  - cache hit can now survive process restarts, reducing repeated analysis-model spend for unchanged evidence signatures,
+  - covered by `tests/test_lycoles_generation_service.py::test_analysis_cache_persists_across_service_restarts`.

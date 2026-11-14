@@ -3162,3 +3162,21 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - `quest_monitor` fallback (no actionable quest select/claim evidence)
   - explicit unsupported `world_training_stations` and `proximity_interactions` when absent
   - upgraded generator metadata version `.5`
+
+## Update — 2026-11-13 — Potassium runtime recovery + persistent generation analysis cache
+
+- Inspector runtime recovery (v30.6.66, commit `3166edc5f91e611f2b7260aba905d7386004800a`):
+  - fixed startup abort root cause by ensuring a single shared `WORKFLOW_HELPERS` table lifecycle (early declaration + no later local shadow redeclare),
+  - added runtime-stage diagnostics (`RuntimeDiagnosticLabel`) and stage/failure telemetry spanning UI boot, scan request/start, collection, packaging, transmit, and startup baseline dispatch,
+  - added executable Luau runtime regressions for diagnostics behavior and helper declaration ordering (`tests/test_inspector_runtime_diagnostics_runtime.py`).
+- Validation:
+  - `node --test tests/test_luau_syntax.mjs` ✅
+  - `python3 -m pytest -q` ✅ (`1718 passed, 17 skipped, 79 subtests passed`)
+  - `python3 -m pytest -q tests/test_inspector_compiler_limits.py -vv` ✅
+  - root local pressure: `170` (budget `170`).
+- Continued autonomous pipeline work while awaiting live Potassium check:
+  - added persistent disk-backed analysis cache to `tools/lycoles_generation_service.py` (`analysis-cache.json`) so unchanged evidence jobs can reuse feature-analysis output across service restarts,
+  - bounded cache size via `LYCOLES_ANALYSIS_CACHE_MAX_ENTRIES` (default 256, floor 32),
+  - added regression `test_analysis_cache_persists_across_service_restarts` in `tests/test_lycoles_generation_service.py`.
+- Automation capability audit (local backend):
+  - `/api/automation/v1/capabilities` reports `ready=true`, cron triggers available (min interval 60s), no event sources configured in this local environment, and no existing automations currently deployed.
