@@ -953,3 +953,24 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - button/url text truncation enabled;
   - receiver row widths adjusted.
 - Compiler pressure unchanged after fix: root local pressure remains `168` (budget `170`).
+
+## Update — 2026-11-13 — v30.6.66 runtime recovery (Potassium live failure)
+
+- Live failure root cause for "tabs nearly empty" + non-working SCAN:
+  - `WORKFLOW_HELPERS.ensureReportScanContext` / `manifestExportContext` were defined at top-level **before** `WORKFLOW_HELPERS` local table declaration.
+  - This triggered top-level runtime abort (`attempt to index nil`) during script initialization.
+  - Because abort happened mid-file, early GUI pieces rendered but later tab content, callbacks, scan pipeline, and startup lifecycle wiring never initialized.
+- Structural recovery:
+  - Moved to a **single** helper table lifecycle:
+    - early declaration `local WORKFLOW_HELPERS = {}`
+    - later block uses `WORKFLOW_HELPERS = WORKFLOW_HELPERS or {}` (no shadowing redeclaration)
+  - This restores complete script execution path through tab/callback/scan initialization.
+- Added runtime diagnostics system (lightweight, fail-tolerant):
+  - always-on stage/failure ring buffers (`_G/getgenv().LycolesInspectorDiagnostics` when writable)
+  - visible header badge (`RuntimeDiagnosticLabel`) independent of tab content
+  - staged scan telemetry: `button-clicked -> scan-requested -> scan-started -> collecting -> report-built -> packaging -> packaging-complete -> transmitting/completed`
+  - explicit failure markers for blocked transmit/startup/collecting/packaging/cancel branches.
+- Added executable Luau runtime tests for diagnostics block and boot ordering:
+  - `tests/test_inspector_runtime_diagnostics_runtime.py`
+  - verifies diagnostics collection, bounded stage history, and helper declaration ordering.
+- Compiler pressure after recovery + diagnostics: root local pressure `170` (budget `170`) with compile-limit suite passing.

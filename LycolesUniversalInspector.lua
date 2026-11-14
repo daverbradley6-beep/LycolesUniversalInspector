@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.65
+-- Lycoles Universal Inspector v30.6.66
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.65"
+local VERSION = "30.6.66"
 
 local endpoint = ""
 local autoSend = true
@@ -266,6 +266,52 @@ local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityRe
 local refreshWorkflowRecorder = nil
 local refreshEvidenceControls = nil
 local scanGeneration = 0
+local WORKFLOW_HELPERS = {}
+
+-- RUNTIME_DIAGNOSTICS_BEGIN
+local runtimeDiagnostics = {
+    startedClock = os.clock(),
+    stages = {},
+    failures = {},
+    label = nil,
+}
+local function pushRuntimeStage(stage, detail)
+    local entry = {
+        stage=tostring(stage or "unknown"),
+        detail=tostring(detail or ""),
+        t=math.floor((os.clock()-runtimeDiagnostics.startedClock)*1000+0.5)/1000,
+    }
+    runtimeDiagnostics.stages[#runtimeDiagnostics.stages+1] = entry
+    if #runtimeDiagnostics.stages > 120 then table.remove(runtimeDiagnostics.stages, 1) end
+    runtimeDiagnostics.lastStage = entry.stage
+    runtimeDiagnostics.lastDetail = entry.detail
+    runtimeDiagnostics.lastAt = entry.t
+    local badge = runtimeDiagnostics.label
+    if badge and badge.Parent then badge.Text = "Runtime: " .. entry.stage end
+end
+function pushRuntimeFailure(stage, err)
+    local entry = {
+        stage=tostring(stage or "unknown"),
+        error=tostring(err or "unknown"),
+        t=math.floor((os.clock()-runtimeDiagnostics.startedClock)*1000+0.5)/1000,
+    }
+    runtimeDiagnostics.failures[#runtimeDiagnostics.failures+1] = entry
+    if #runtimeDiagnostics.failures > 80 then table.remove(runtimeDiagnostics.failures, 1) end
+    runtimeDiagnostics.lastFailure = entry
+    local badge = runtimeDiagnostics.label
+    if badge and badge.Parent then badge.Text = "Runtime error: " .. entry.stage end
+end
+pcall(function()
+    _G.LycolesInspectorDiagnostics = function() return runtimeDiagnostics end
+end)
+if type(getgenv) == "function" then
+    pcall(function()
+        getgenv().LycolesInspectorDiagnostics = function() return runtimeDiagnostics end
+    end)
+end
+pushRuntimeStage("entry", "script-loaded")
+-- RUNTIME_DIAGNOSTICS_END
+
 
 local function stopWorkflowRecording(reason)
     if not workflowRecording.active then return end
@@ -1450,6 +1496,22 @@ titleLabel = create("TextLabel", {
     ZIndex = 5
 }, panel)
 
+runtimeDiagnostics.label = create("TextLabel", {
+    Name = "RuntimeDiagnosticLabel",
+    Text = "Runtime: boot",
+    Size = UDim2.fromOffset(170, 20),
+    Position = UDim2.fromOffset(332, 4),
+    BackgroundTransparency = 1,
+    TextXAlignment = Enum.TextXAlignment.Right,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextColor3 = Color3.fromRGB(210, 210, 210),
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    ZIndex = 6
+}, panel)
+pushRuntimeStage("gui-created", "panel-header")
+
+
 local function button(label, x)
     return create("TextButton", {
         Text = label,
@@ -1809,6 +1871,8 @@ interactionToggle.ZIndex = 4
 watchToggle.Position = UDim2.fromOffset(8, 8)
 interactionToggle.Size = UDim2.fromOffset(220, 30)
 interactionToggle.Position = UDim2.fromOffset(236, 8)
+pushRuntimeStage("tabs-created", "inspector-capture-automation-settings-generated")
+
 
 local function showGeneratedScriptPane(selectedTab)
     local tab = selectedTab or "inspector"
@@ -2417,12 +2481,15 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
 end
 
 local function transmit()
+    pushRuntimeStage("transmit-invoked", "receiver-upload")
     if uploading then
         status.Text = "Upload already running"
+        pushRuntimeFailure("transmit", "already-running")
         return
     end
     if not pendingParts or #pendingParts == 0 then
         status.Text = "Scan not finished"
+        pushRuntimeFailure("transmit", "scan-not-finished")
         return
     end
     endpoint = trim(url.Text)
@@ -2432,6 +2499,7 @@ local function transmit()
         refreshLocalManifest("upload-blocked")
         refreshGeneratedHandoff("Upload blocked")
         status.Text = "Use https://HOST/ingest/KEY"
+        pushRuntimeFailure("transmit", "invalid-endpoint")
         return
     end
     local requestFn = (syn and syn.request) or http_request or request
@@ -2441,6 +2509,7 @@ local function transmit()
         refreshLocalManifest("upload-blocked")
         refreshGeneratedHandoff("Upload blocked")
         status.Text = "HTTP requests unavailable"
+        pushRuntimeFailure("transmit", "request-function-unavailable")
         return
     end
     saveEndpoint()
@@ -2453,6 +2522,7 @@ local function transmit()
         refreshLocalManifest("upload-blocked")
         refreshGeneratedHandoff("Upload blocked")
         status.Text = "Upload blocked: malformed first part"
+        pushRuntimeFailure("transmit", "malformed-first-part")
         return
     end
     local scanId = first.scanId
@@ -2469,6 +2539,7 @@ local function transmit()
             refreshLocalManifest("upload-blocked")
         refreshGeneratedHandoff("Upload blocked")
             status.Text="Upload blocked: inconsistent part "..tostring(i)
+            pushRuntimeFailure("transmit", "inconsistent-part-"..tostring(i))
             return
         end
     end
@@ -2478,6 +2549,7 @@ local function transmit()
     end
     uploadState.attempted=true
     uploadState.status="uploading"
+    pushRuntimeStage("transmitting", "parts-"..tostring(partCount))
     uploadState.acknowledgedParts=acknowledgedBefore
     uploadState.expectedParts=partCount
     uploadState.lastError=nil
@@ -2525,15 +2597,18 @@ local function transmit()
             uploadState.status="failed"
             uploadState.lastError=failed
             status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
+            pushRuntimeFailure("transmitting", failed)
         elseif succeeded == partCount then
             uploadState.status="acknowledged"
             uploadState.lastError=nil
             status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
                 .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
+            pushRuntimeStage("completed", "upload-acknowledged")
         else
             uploadState.status="incomplete"
             uploadState.lastError="not all parts acknowledged"
             status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
+            pushRuntimeFailure("transmitting", "not-all-parts-acknowledged")
         end
         refreshLocalManifest("post-upload")
         refreshGeneratedHandoff("Upload finished")
@@ -2545,6 +2620,7 @@ local function cancelActiveOperation()
         scanGeneration = scanGeneration + 1
         running = false
         status.Text = "Scan cancelled; start a new snapshot when ready"
+        pushRuntimeFailure("scan-started", "operator-cancelled")
         refreshGeneratedHandoff("Scan cancelled")
         return true
     end
@@ -2553,12 +2629,14 @@ local function cancelActiveOperation()
         uploading = false
         uploadState.status = "cancelled"
         uploadState.lastError = "operator cancelled"
+        pushRuntimeFailure("transmitting", "operator-cancelled")
         refreshLocalManifest("upload-cancelled")
         refreshGeneratedHandoff("Upload cancelled")
         status.Text = "Upload cancelled; SEND JSON to resume from acknowledged parts"
         return true
     end
     status.Text = "No active scan or upload to cancel"
+    pushRuntimeFailure("cancel", "no-active-operation")
     return false
 end
 
@@ -5413,7 +5491,7 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
-local WORKFLOW_HELPERS = {}
+WORKFLOW_HELPERS = WORKFLOW_HELPERS or {}
 do
 local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
@@ -8948,14 +9026,17 @@ local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedI
 end
 
 local function inspect(requestType, featureRequest)
+    pushRuntimeStage("scan-requested", tostring(requestType or "manual"))
     if running or uploading then
         status.Text = "Wait for current scan/upload or press SCAN to cancel"
+        pushRuntimeFailure("scan-requested", "already-running-or-uploading")
         return false
     end
     if pendingParts and #pendingParts > 0 then
         for i = 1, #pendingParts do
             if not pendingAcknowledged[i] then
                 status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
+                pushRuntimeFailure("scan-requested", "unsent-parts-remain")
                 return false
             end
         end
@@ -8969,12 +9050,15 @@ local function inspect(requestType, featureRequest)
     scanGeneration = scanGeneration + 1
     local generation = scanGeneration
     running = true
+    pushRuntimeStage("scan-started", tostring(observerStats.scanRequestType or requestType or "manual"))
     siblingContextCache = setmetatable({}, {__mode="k"})
     local profile = activeScanProfile()
     status.Text = "Scanning (" .. profile.label .. ")..."
 
     task.spawn(function()
         local scanStarted = os.clock()
+        pushRuntimeStage("collecting", profile.label)
+
         local ok, result = pcall(function()
             local report = {
                 version = VERSION,
@@ -9732,6 +9816,7 @@ local function inspect(requestType, featureRequest)
                 }
             }
 
+            pushRuntimeStage("report-built", tostring(#report.objects))
             return report
         end)
 
@@ -9739,16 +9824,20 @@ local function inspect(requestType, featureRequest)
 
         if not ok then
             status.Text = "Scan error: " .. tostring(result)
+            pushRuntimeFailure("collecting", tostring(result))
             siblingContextCache = nil
             running = false
             return
         end
         if result and result.diagnostics and result.diagnostics.scanCancelled then
             status.Text = "Scan cancelled"
+            pushRuntimeFailure("scan-started", "cancelled")
             siblingContextCache = nil
             running = false
             return
         end
+
+        pushRuntimeStage("packaging", "multipart-build")
 
         local encoded, resultData = pcall(function()
             -- Large universal scans must never be encoded as one JSON document.
@@ -9786,6 +9875,7 @@ local function inspect(requestType, featureRequest)
             return
         end
         if encoded then
+            pushRuntimeStage("packaging-complete", "manifest-and-parts-ready")
             snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
@@ -9822,9 +9912,15 @@ local function inspect(requestType, featureRequest)
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
                 .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
             refreshGeneratedHandoff("Scan complete")
-            if autoSend and validEndpoint(endpoint) then transmit() end
+            if autoSend and validEndpoint(endpoint) then
+                pushRuntimeStage("transmitting", "auto-send")
+                transmit()
+            else
+                pushRuntimeStage("completed", "scan-packaged")
+            end
         else
             status.Text = "JSON error: " .. tostring(resultData)
+            pushRuntimeFailure("packaging", tostring(resultData))
         end
         running = false
     end)
@@ -10302,7 +10398,9 @@ themeRegister(generatedStatus, {textToken="textSecondary", noBorder=true})
 themeRegister(generatedCodeOutput, {bgToken="card", textToken="textSecondary", stroke=true, corner=true, noBorder=true})
 
 themeApply()
+pushRuntimeStage("theme-applied", tostring(THEME_ACTIVE and THEME_ACTIVE.preset or "custom"))
 themeRefreshSettingsRows()
+pushRuntimeStage("settings-ready", "theme-controls")
 
 
 targetedCaptureUiRefresh = function(reason)
@@ -10506,6 +10604,7 @@ produceScript.MouseButton1Click:Connect(function()
 end)
 
 scan.MouseButton1Click:Connect(function()
+    pushRuntimeStage("button-clicked", "scan")
     if running or uploading then
         cancelActiveOperation()
     else
@@ -10656,6 +10755,8 @@ automatic.MouseButton1Click:Connect(function()
         or "Automatic uploads disabled"
 end)
 
+pushRuntimeStage("callbacks-registered", "ui-controls")
+
 if endpoint ~= "" then
     status.Text = "Saved receiver loaded"
 else
@@ -10663,13 +10764,24 @@ else
 end
 
 startWatching()
+pushRuntimeStage("watch-started", "passive-observers")
 -- Automatically attach passive listeners; users do not need to toggle INTERACT manually.
 observerStats.activationCount = observerStats.activationCount + 1
 observerStats.lastEnabledAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
 interactionToggle.Text = 'INTERACT: ON (AUTO)'
 task.spawn(function()
  local ok,err=pcall(sweepInteractionControls)
- if not ok then observerStats.bindingErrors=observerStats.bindingErrors+1; observerStats.lastSweepError=tostring(err):sub(1,250) end
+ if not ok then
+  observerStats.bindingErrors=observerStats.bindingErrors+1
+  observerStats.lastSweepError=tostring(err):sub(1,250)
+  pushRuntimeFailure("observer-sweep", err)
+ else
+  pushRuntimeStage("observer-ready", "interaction-controls")
+ end
 end)
 -- Startup scan is discovery-only; after enabling interaction recording, run SCAN again.
-inspect("startup-baseline")
+if inspect("startup-baseline") then
+    pushRuntimeStage("startup-scan-dispatched", "startup-baseline")
+else
+    pushRuntimeFailure("startup-scan", "dispatch-blocked")
+end

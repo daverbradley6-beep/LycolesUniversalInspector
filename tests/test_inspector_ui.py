@@ -111,6 +111,18 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('send.Size = UDim2.fromOffset(170, 40)', SRC)
         self.assertIn('automatic.Size = UDim2.fromOffset(268, 40)', SRC)
 
+
+    def test_runtime_diagnostics_surface_and_stage_markers_exist(self):
+        self.assertIn('Name = "RuntimeDiagnosticLabel"', SRC)
+        self.assertIn('_G.LycolesInspectorDiagnostics = function() return runtimeDiagnostics end', SRC)
+        self.assertIn('getgenv().LycolesInspectorDiagnostics = function() return runtimeDiagnostics end', SRC)
+        self.assertIn('pushRuntimeStage("entry", "script-loaded")', SRC)
+        self.assertIn('pushRuntimeStage("gui-created", "panel-header")', SRC)
+        self.assertIn('pushRuntimeStage("tabs-created", "inspector-capture-automation-settings-generated")', SRC)
+        self.assertIn('pushRuntimeStage("callbacks-registered", "ui-controls")', SRC)
+        self.assertIn('pushRuntimeStage("startup-scan-dispatched", "startup-baseline")', SRC)
+        self.assertIn('pushRuntimeFailure("collecting", tostring(result))', SRC)
+
     def test_ack_not_misrepresented_as_integrity(self):
         self.assertIn("Receiver ACK ",SRC)
         self.assertIn("verify receiver integrity separately",SRC)
