@@ -210,11 +210,175 @@ class InspectorPackagingRuntimeTests(unittest.TestCase):
         self.assertLessEqual(int(parts[3]), 105000)
         self.assertEqual(parts[4], "packaged")
 
+    def test_prepare_parts_fragments_oversized_diagnostic_items_losslessly(self):
+        out = run_luau_harness(
+            """
+            local hugeBlob = string.rep('\\"🔥', 32000)
+            local hugeArray = {}
+            for i = 1, 1800 do
+                hugeArray[i] = {index = i, token = "α" .. tostring(i), note = string.rep("q", 48)}
+            end
+            local report = {
+                version = "30.6.68",
+                placeId = 3623096087,
+                gameId = 333,
+                placeVersion = 1,
+                inspectedAt = "2026-11-14T00:00:00Z",
+                gameName = "PackagingRuntimeOversizedDiagnostic",
+                counts = {},
+                groups = {},
+                scanStats = {recorded = 2, complete = true},
+                sessionId = "session-oversized-1",
+                snapshotId = "snapshot-oversized-1",
+                parentSnapshotId = nil,
+                featureEvidence = {},
+                featureReadiness = {},
+                featureSnapshotDelta = {},
+                automationDiagnostics = {},
+                diagnostics = {complete = true},
+                objects = {
+                    {path = "Workspace.A", class = "Part", scanOrdinal = 1},
+                    {path = "Workspace.B", class = "Part", scanOrdinal = 2},
+                },
+                interactionDiagnostics = {
+                    recentInteractions = {},
+                    clickTargetObservations = {
+                        {
+                            sampleType = "click-target",
+                            path = "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+                            payload = hugeBlob,
+                            nested = {
+                                largeArray = hugeArray,
+                                mirrored = {hugeBlob, hugeBlob},
+                            },
+                        },
+                        {
+                            sampleType = "click-target",
+                            path = "LocalPlayer.PlayerGui.ScreenGui.Quests.Frame.Main.Prizes.Tabs.Playtime.Button",
+                            payload = hugeBlob,
+                            nested = {
+                                largeArray = hugeArray,
+                            },
+                        },
+                    },
+                },
+            }
+            local partsA, scanA = prepareParts(report)
+            local partsB, scanB = prepareParts(report)
+            if scanA ~= scanB then error("scan-id-changed") end
+            if #partsA ~= #partsB then error("fragmented-part-count-changed") end
+            local largest = 0
+            local markerHits = 0
+            for _, body in ipairs(partsA) do
+                if #body > largest then largest = #body end
+                if #body > MAX_PART_BYTES then error("part-limit-exceeded") end
+                if string.find(body, "30.6.interaction-diagnostics-item-fragment.1", 1, true) then
+                    markerHits = markerHits + 1
+                end
+            end
+            local metrics = report.localPerformance and report.localPerformance.packagingDiagnostics or nil
+            if type(metrics) ~= "table" then error("missing-packaging-metrics") end
+            if type(metrics.fragmentedRecordCount) ~= "number" or metrics.fragmentedRecordCount < 2 then
+                error("missing-fragmented-record-count")
+            end
+            if type(metrics.fragmentedRecordTotalFragments) ~= "number"
+                or metrics.fragmentedRecordTotalFragments < metrics.fragmentedRecordCount then
+                error("invalid-fragment-total")
+            end
+            if type(metrics.recordFragmentations) ~= "table" or #metrics.recordFragmentations < 1 then
+                error("missing-record-fragmentation-diagnostics")
+            end
+            if type(metrics.recordFragmentations[1].fieldPath) ~= "string" then
+                error("missing-record-fragment-path")
+            end
+            if type(metrics.recordFragmentations[1].encodedBytes) ~= "number"
+                or metrics.recordFragmentations[1].encodedBytes <= MAX_PART_BYTES then
+                error("encoded-bytes-not-captured")
+            end
+            print(
+                tostring(#partsA),
+                scanA,
+                tostring(largest),
+                tostring(metrics.fragmentedRecordCount),
+                tostring(metrics.fragmentedRecordTotalFragments),
+                tostring(markerHits)
+            )
+            """
+        )
+        parts = out.split()
+        self.assertGreaterEqual(len(parts), 6)
+        self.assertGreater(int(parts[0]), 3)
+        self.assertTrue(parts[1].startswith("guid-"))
+        self.assertLessEqual(int(parts[2]), 105000)
+        self.assertGreaterEqual(int(parts[3]), 2)
+        self.assertGreaterEqual(int(parts[4]), int(parts[3]))
+        self.assertGreaterEqual(int(parts[5]), 1)
+
+    def test_prepare_parts_keeps_boundary_sized_diagnostic_item_unfragmented(self):
+        out = run_luau_harness(
+            """
+            local nearLimit = string.rep("a", 22000)
+            local report = {
+                version = "30.6.68",
+                placeId = 3623096087,
+                gameId = 334,
+                placeVersion = 1,
+                inspectedAt = "2026-11-14T00:00:00Z",
+                gameName = "PackagingRuntimeBoundaryDiagnostic",
+                counts = {},
+                groups = {},
+                scanStats = {recorded = 2, complete = true},
+                sessionId = "session-boundary-1",
+                snapshotId = "snapshot-boundary-1",
+                parentSnapshotId = nil,
+                featureEvidence = {},
+                featureReadiness = {},
+                featureSnapshotDelta = {},
+                automationDiagnostics = {},
+                diagnostics = {complete = true},
+                objects = {
+                    {path = "Workspace.A", class = "Part", scanOrdinal = 1},
+                    {path = "Workspace.B", class = "Part", scanOrdinal = 2},
+                },
+                interactionDiagnostics = {
+                    recentInteractions = {},
+                    clickTargetObservations = {
+                        {
+                            sampleType = "click-target",
+                            path = "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+                            payload = nearLimit,
+                        },
+                    },
+                },
+            }
+            local parts, scanId = prepareParts(report)
+            local markerHits = 0
+            local largest = 0
+            for _, body in ipairs(parts) do
+                if #body > largest then largest = #body end
+                if #body > MAX_PART_BYTES then error("part-limit-exceeded") end
+                if string.find(body, "30.6.interaction-diagnostics-item-fragment.1", 1, true) then
+                    markerHits = markerHits + 1
+                end
+            end
+            local metrics = report.localPerformance and report.localPerformance.packagingDiagnostics or nil
+            if type(metrics) ~= "table" then error("missing-packaging-metrics") end
+            print(tostring(#parts), scanId, tostring(largest), tostring(metrics.fragmentedRecordCount), tostring(markerHits))
+            """
+        )
+        parts = out.split()
+        self.assertGreaterEqual(len(parts), 5)
+        self.assertGreaterEqual(int(parts[0]), 1)
+        self.assertTrue(parts[1].startswith("guid-"))
+        self.assertLessEqual(int(parts[2]), 105000)
+        self.assertEqual(int(parts[3]), 0)
+        self.assertEqual(int(parts[4]), 0)
+
     def test_prepare_parts_keeps_normal_summary_inline_and_deterministic(self):
         out = run_luau_harness(
             """
             local report = {
-                version = "30.6.67",
+                version = "30.6.68",
                 placeId = 3623096087,
                 gameId = 222,
                 placeVersion = 1,

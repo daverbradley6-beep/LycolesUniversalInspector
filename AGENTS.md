@@ -995,3 +995,21 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Runtime regression coverage:
   - `tests/test_inspector_packaging_runtime.py` executes real `prepareParts` Luau logic and verifies oversized summary externalization + bounded part sizes.
   - `tests/test_compile_scan.py` adds summary fragment reconstruction and sequence-mismatch fail-closed tests.
+
+## Update — 2026-11-14 — v30.6.68 oversized diagnostics record fragmentation
+
+- Live Potassium failure on v30.6.67 reproduced offline against commit `38d65d66cb12cad730272b83e983dd10d649286d` with error:
+  - `Single interaction diagnostics chunk item exceeds receiver limit (targetedCaptureSessionSummaryChunkedFragments)`
+- Root cause details:
+  - failing path: `interactionDiagnostics.targetedCaptureSessionSummaryChunkedFragments[1]`
+  - old summary fragment design stored raw JSON text in `fragment` string, which was JSON-escaped again when wrapped; this expanded payload unpredictably.
+  - reproduction sizing (Luau harness): summary fragment piece `100000` bytes -> fragment record `133378` bytes -> part `133722` bytes (> `MAX_PART_BYTES=105000`).
+- Structural fix in `prepareParts`:
+  - introduced per-item oversized diagnostics fragmentation with schema `30.6.interaction-diagnostics-item-fragment.1`.
+  - switched summary externalization fragments to hex-encoded payloads (`30.6.interaction-diagnostics-fragment-chunk.2`, `chunkEncoding=hex-utf8-json`) to remove escape-amplification risk.
+  - fragmentation preserves deterministic ordering, record identity, encoded length, and field path metadata.
+- Downstream reconstruction (`tools/compile_scan.py`):
+  - added strict fail-closed reconstruction for item fragments (missing/duplicate/corrupt/length mismatch/non-object decode all fail).
+  - added dual support for legacy raw summary fragments and new hex summary fragments.
+- Packaging diagnostics upgraded (`30.6.packaging-diagnostics.3`):
+  - tracks fragmented record count, total fragments, per-record encoded bytes + field path (bounded list), total part bytes, duration, overflow count, largest part.

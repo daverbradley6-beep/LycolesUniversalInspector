@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.67
+-- Lycoles Universal Inspector v30.6.68
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.67"
+local VERSION = "30.6.68"
 
 local endpoint = ""
 local autoSend = true
@@ -2792,7 +2792,7 @@ local function prepareParts(report)
     local history = diagnostics.recentInteractions or {}
     local summary = {}
     local packagingDiagnostics = {
-        schemaVersion = "30.6.packaging-diagnostics.2",
+        schemaVersion = "30.6.packaging-diagnostics.3",
         status = "preparing",
         maxAllowedBytes = limit,
         summaryEncodedBytes = 0,
@@ -2801,6 +2801,9 @@ local function prepareParts(report)
         generatedPartCount = 0,
         largestPartBytes = 0,
         overflowEvents = 0,
+        recordFragmentations = {},
+        fragmentedRecordCount = 0,
+        fragmentedRecordTotalFragments = 0,
     }
     local collectionChunkKeys = {
         "cursorObservationHistory",
@@ -2827,6 +2830,8 @@ local function prepareParts(report)
     local chunkedCollections={}
     local chunkedSummaryFields={}
     local diagnosticCollectionBatches={}
+    local ITEM_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-item-fragment.1"
+    local SUMMARY_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-fragment-chunk.2"
     local function sortedStringKeys(tbl)
         local keys = {}
         for key, _ in pairs(tbl) do
@@ -2834,6 +2839,92 @@ local function prepareParts(report)
         end
         table.sort(keys)
         return keys
+    end
+    local function appendFragmentationDiagnostic(fieldPath, encodedBytes, fragmentCount)
+        packagingDiagnostics.fragmentedRecordCount = packagingDiagnostics.fragmentedRecordCount + 1
+        packagingDiagnostics.fragmentedRecordTotalFragments =
+            packagingDiagnostics.fragmentedRecordTotalFragments + fragmentCount
+        if #packagingDiagnostics.recordFragmentations < 24 then
+            packagingDiagnostics.recordFragmentations[#packagingDiagnostics.recordFragmentations+1] = {
+                fieldPath = tostring(fieldPath or "unknown"):sub(1,220),
+                encodedBytes = encodedBytes,
+                fragmentCount = fragmentCount,
+            }
+        end
+    end
+    local function hexEncodeString(value)
+        local pieces = {}
+        for i = 1, #value do
+            pieces[#pieces+1] = string.format("%02x", string.byte(value, i))
+        end
+        return table.concat(pieces)
+    end
+    local function buildJsonHexFragmentRecords(options)
+        local encodedValue = options.encodedValue
+        local encodedHex = hexEncodeString(encodedValue)
+        local records = {}
+        local startIndex = 1
+        local baselinePieceChars = math.max(512, limit - 8000)
+        while startIndex <= #encodedHex do
+            local pieceChars = math.min(baselinePieceChars, #encodedHex - startIndex + 1)
+            local piece = encodedHex:sub(startIndex, startIndex + pieceChars - 1)
+            local testRecord = {
+                schemaVersion = options.schemaVersion,
+                chunkKind = options.chunkKind,
+                chunkKey = options.chunkKey,
+                collectionKey = options.collectionKey,
+                summaryField = options.summaryField,
+                recordId = options.recordId,
+                originalIndex = options.originalIndex,
+                fieldPath = options.fieldPath,
+                fragmentEncoding = "hex-utf8-json",
+                fragmentIndex = 1,
+                fragmentCount = 999999,
+                encodedLength = #encodedValue,
+                fragmentHex = piece,
+                fragmentHexLength = #piece,
+            }
+            local encodedRecord = encodeStage("diag-fragment-test-"..tostring(options.recordId), testRecord)
+            local encodedRecordBytes = #encodedRecord + 2
+            while encodedRecordBytes > limit - 1500 and #piece > 64 do
+                pieceChars = math.max(64, math.floor(#piece * 0.75))
+                piece = encodedHex:sub(startIndex, startIndex + pieceChars - 1)
+                testRecord.fragmentHex = piece
+                testRecord.fragmentHexLength = #piece
+                encodedRecord = encodeStage("diag-fragment-test-shrink-"..tostring(options.recordId), testRecord)
+                encodedRecordBytes = #encodedRecord + 2
+            end
+            if encodedRecordBytes > limit - 1500 then
+                error("Single interaction diagnostics chunk item exceeds receiver limit ("
+                    .. tostring(options.chunkKey or options.collectionKey or options.summaryField or "unknown")
+                    .. " fragment-wrapper)")
+            end
+            records[#records+1] = piece
+            startIndex = startIndex + #piece
+        end
+
+        local fragments = {}
+        local fragmentCount = #records
+        for index, piece in ipairs(records) do
+            fragments[#fragments+1] = {
+                schemaVersion = options.schemaVersion,
+                chunkKind = options.chunkKind,
+                chunkKey = options.chunkKey,
+                collectionKey = options.collectionKey,
+                summaryField = options.summaryField,
+                recordId = options.recordId,
+                originalIndex = options.originalIndex,
+                fieldPath = options.fieldPath,
+                fragmentEncoding = "hex-utf8-json",
+                fragmentIndex = index,
+                fragmentCount = fragmentCount,
+                encodedLength = #encodedValue,
+                fragmentHex = piece,
+                fragmentHexLength = #piece,
+            }
+        end
+        appendFragmentationDiagnostic(options.fieldPath, #encodedValue, fragmentCount)
+        return fragments, #encodedValue
     end
     local function queueInteractionDiagnosticsListBatches(key, values, options)
         if type(values)~="table" then return end
@@ -2847,27 +2938,49 @@ local function prepareParts(report)
         local batch={}
         local batchStart=1
         local batchBytes=0
-        for i,item in ipairs(values) do
-            local encoded=encodeStage("diag-"..key.."-item-"..i,item)
-            local estimate=#encoded+2
-            if batchBytes+estimate>limit-1500 and #batch>0 then
-                diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
-                    key=key,items=batch,start=batchStart,chunkKind=options.chunkKind,
-                    summaryField=options.summaryField
-                }
-                batch={}
-                batchStart=i
-                batchBytes=0
-            end
-            batch[#batch+1]=item
-            batchBytes=batchBytes+estimate
-        end
-        if #batch>0 then
+        local function flushBatch()
+            if #batch==0 then return end
             diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
                 key=key,items=batch,start=batchStart,chunkKind=options.chunkKind,
                 summaryField=options.summaryField
             }
+            batch={}
+            batchBytes=0
         end
+        local function enqueueRecord(record, estimate, logicalIndex)
+            if batchBytes+estimate>limit-1500 and #batch>0 then
+                flushBatch()
+                batchStart=logicalIndex
+            end
+            batch[#batch+1]=record
+            batchBytes=batchBytes+estimate
+        end
+        for i,item in ipairs(values) do
+            local encoded=encodeStage("diag-"..key.."-item-"..i,item)
+            local estimate=#encoded+2
+            if (not options.disableOversizedFragmentation) and estimate>limit-1500 then
+                local fieldPath = options.fieldPathPrefix
+                    and (options.fieldPathPrefix .. "[" .. tostring(i) .. "]")
+                    or ("interactionDiagnostics." .. tostring(key) .. "[" .. tostring(i) .. "]")
+                local fragments = buildJsonHexFragmentRecords({
+                    schemaVersion = ITEM_FRAGMENT_SCHEMA,
+                    chunkKind = "diagnostic-item-fragment",
+                    chunkKey = key,
+                    collectionKey = key,
+                    recordId = tostring(key) .. ":" .. tostring(i),
+                    originalIndex = i,
+                    fieldPath = fieldPath,
+                    encodedValue = encoded,
+                })
+                for _, fragment in ipairs(fragments) do
+                    local fragmentEncoded = encodeStage("diag-"..key.."-fragment-"..tostring(fragment.fragmentIndex), fragment)
+                    enqueueRecord(fragment, #fragmentEncoded + 2, i)
+                end
+            else
+                enqueueRecord(item, estimate, i)
+            end
+        end
+        flushBatch()
     end
     local function queueDiagnosticCollectionBatches(key, values)
         queueInteractionDiagnosticsListBatches(key, values)
@@ -2878,39 +2991,39 @@ local function prepareParts(report)
     local function queueSummaryFieldFragments(fieldKey, fieldValue)
         local chunkKey = fieldKey .. "ChunkedFragments"
         local encodedValue = encodeStage("diag-summary-field-json-"..fieldKey, fieldValue)
-        local fragments = {}
-        local fragmentMaxBytes = math.max(4096, limit - 5000)
-        local index = 1
-        local offset = 1
-        while offset <= #encodedValue do
-            local piece = encodedValue:sub(offset, offset + fragmentMaxBytes - 1)
-            fragments[#fragments+1] = {
-                fragmentIndex = index,
-                fragment = piece,
-                fragmentLength = #piece,
-            }
-            index = index + 1
-            offset = offset + fragmentMaxBytes
-        end
+        local fragments, encodedLength = buildJsonHexFragmentRecords({
+            schemaVersion = SUMMARY_FRAGMENT_SCHEMA,
+            chunkKind = "summary-fragment",
+            chunkKey = chunkKey,
+            summaryField = fieldKey,
+            recordId = "summary:" .. tostring(fieldKey),
+            originalIndex = 1,
+            fieldPath = "interactionDiagnostics." .. tostring(fieldKey),
+            encodedValue = encodedValue,
+        })
         queueInteractionDiagnosticsListBatches(chunkKey, fragments, {
             skipSummaryMarkers = true,
             chunkKind = "summary-fragment",
             summaryField = fieldKey,
+            disableOversizedFragmentation = true,
+            fieldPathPrefix = "interactionDiagnostics." .. tostring(fieldKey),
         })
         summary[fieldKey] = {}
         summary[fieldKey.."ExportMode"] = "separate-bounded-parts"
-        summary[fieldKey.."ChunkSchema"] = "30.6.interaction-diagnostics-fragment-chunk.1"
+        summary[fieldKey.."ChunkSchema"] = SUMMARY_FRAGMENT_SCHEMA
         summary[fieldKey.."ChunkKind"] = "json-fragment"
+        summary[fieldKey.."ChunkEncoding"] = "hex-utf8-json"
         summary[fieldKey.."ChunkKey"] = chunkKey
-        summary[fieldKey.."EncodedLength"] = #encodedValue
+        summary[fieldKey.."EncodedLength"] = encodedLength
         chunkedSummaryFields[#chunkedSummaryFields+1] = {
             field = fieldKey,
             chunkKey = chunkKey,
             chunkKind = "json-fragment",
-            encodedLength = #encodedValue,
+            chunkEncoding = "hex-utf8-json",
+            encodedLength = encodedLength,
             fragmentCount = #fragments,
         }
-        return #encodedValue
+        return encodedLength
     end
     local function summaryExternalizationCandidates()
         local candidates = {}
@@ -3044,8 +3157,21 @@ local function prepareParts(report)
                         historyStart=entry.historyStart+midpoint})
                 elseif entry.diag then
                     if #entry.diag<=1 then
+                        local diagPath = "interactionDiagnostics." .. tostring(entry.diagKey)
+                        local encodedItemBytes = 0
+                        if type(entry.diag[1]) == "table" then
+                            if type(entry.diag[1].fieldPath) == "string" and entry.diag[1].fieldPath ~= "" then
+                                diagPath = entry.diag[1].fieldPath
+                            end
+                            local okEncoded, encodedItem = pcall(function()
+                                return encodeStage("diag-overflow-item-size", entry.diag[1])
+                            end)
+                            if okEncoded then encodedItemBytes = #encodedItem end
+                        end
                         error("Single interaction diagnostics chunk item exceeds receiver limit ("
-                            ..tostring(entry.diagKey)..")")
+                            ..tostring(entry.diagKey).."; path="..tostring(diagPath)
+                            .."; itemBytes="..tostring(encodedItemBytes)
+                            .."; limit="..tostring(limit)..")")
                     end
                     local midpoint=math.floor(#entry.diag/2)
                     local left,right={},{}
@@ -3091,6 +3217,8 @@ local function prepareParts(report)
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
+    packagingDiagnostics.totalPartBytes = bytes
+    packagingDiagnostics.durationSeconds = report.localPerformance.serializationSeconds
     report.localPerformance.packagingDiagnostics = packagingDiagnostics
     report.interactionDiagnosticsManifestSummary = summary
     return parts, scanId, summary
@@ -10008,13 +10136,19 @@ local function inspect(requestType, featureRequest)
             local summaryBytes = packagingMetrics and packagingMetrics.summaryEncodedBytes or 0
             local maxAllowedBytes = packagingMetrics and packagingMetrics.maxAllowedBytes or MAX_PART_BYTES
             local largestPartBytes = packagingMetrics and packagingMetrics.largestPartBytes or 0
+            local overflowEvents = packagingMetrics and packagingMetrics.overflowEvents or 0
+            local fragmentedRecordCount = packagingMetrics and packagingMetrics.fragmentedRecordCount or 0
+            local fragmentedRecordTotalFragments = packagingMetrics and packagingMetrics.fragmentedRecordTotalFragments or 0
             local plannedRootCount = result.scanStats and type(result.scanStats.plannedRoots)=="table"
                 and #result.scanStats.plannedRoots or #ROOT_LABELS
             status.Text = (result.diagnostics.complete and "Snapshot complete - " or "SNAPSHOT PARTIAL - ")
                 .. #result.objects .. " entries in " .. #pendingParts .. " part(s); snapshot "
                 .. tostring(scanSeconds) .. "s; packaging " .. tostring(packageSeconds)
                 .. "s; summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
-                .. "B; largest " .. tostring(largestPartBytes) .. "B; upload " .. uploadAttemptStage()
+                .. "B; largest " .. tostring(largestPartBytes) .. "B; overflow "
+                .. tostring(overflowEvents) .. "; fragments " .. tostring(fragmentedRecordCount)
+                .. "/" .. tostring(fragmentedRecordTotalFragments)
+                .. "; upload " .. uploadAttemptStage()
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
@@ -10030,6 +10164,9 @@ local function inspect(requestType, featureRequest)
                 .. "\\nPackaging stage: prepared " .. #pendingParts .. " numbered parts"
                 .. "\\nPackaging metrics: summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
                 .. " bytes; largest part " .. tostring(largestPartBytes) .. " bytes"
+                .. "; overflow events " .. tostring(overflowEvents)
+                .. "; fragmented records " .. tostring(fragmentedRecordCount)
+                .. "/" .. tostring(fragmentedRecordTotalFragments)
                 .. "\\nUpload stage: " .. uploadAttemptStage()
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)

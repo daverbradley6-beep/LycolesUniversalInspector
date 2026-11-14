@@ -451,6 +451,77 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(len(samples.get("cameraSamples") or []),2)
             self.assertEqual(len(samples.get("timelineEvents") or []),1)
 
+    def test_chunked_interaction_summary_hex_fragments_are_reconstructed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan132","placeId":3623096087,"partCount":4,
+                  "version":"30.6.68","objects":[]}
+            payload={
+                "schemaVersion":"31.0.targeted-evidence-session.1",
+                "sessionId":"hex-summary-session",
+                "samples":{
+                    "cameraSamples":[{"kind":"camera","note":"🔥"*60}],
+                    "timelineEvents":[{"kind":"timeline","step":7}],
+                },
+            }
+            encoded=json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=False)
+            hex_payload=encoded.encode("utf-8").hex()
+            split=max(2,len(hex_payload)//2)
+            chunk_key="targetedCaptureSessionSummaryChunkedFragments"
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "targetedCaptureSessionSummary":{},
+                    "targetedCaptureSessionSummaryExportMode":"separate-bounded-parts",
+                    "targetedCaptureSessionSummaryChunkSchema":"30.6.interaction-diagnostics-fragment-chunk.2",
+                    "targetedCaptureSessionSummaryChunkKind":"json-fragment",
+                    "targetedCaptureSessionSummaryChunkEncoding":"hex-utf8-json",
+                    "targetedCaptureSessionSummaryChunkKey":chunk_key,
+                    "targetedCaptureSessionSummaryEncodedLength":len(encoded),
+                    "chunkedInteractionDiagnosticSummaryFields":[{
+                        "field":"targetedCaptureSessionSummary",
+                        "chunkKey":chunk_key,
+                        "chunkKind":"json-fragment",
+                        "chunkEncoding":"hex-utf8-json",
+                        "encodedLength":len(encoded),
+                        "fragmentCount":2,
+                    }],
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-fragment-chunk.2",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":2,
+                    "fragmentHex":hex_payload[:split],
+                    "fragmentHexLength":len(hex_payload[:split]),
+                }])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-fragment-chunk.2",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":2,
+                    "fragmentCount":2,
+                    "fragmentHex":hex_payload[split:],
+                    "fragmentHexLength":len(hex_payload[split:]),
+                }])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data,ensure_ascii=False))
+            plan=compiler.compile_scan(path)
+            rebuilt=((plan.get("interactionDiagnostics") or {}).get("targetedCaptureSessionSummary") or {})
+            self.assertEqual(rebuilt.get("sessionId"),"hex-summary-session")
+            samples=rebuilt.get("samples") or {}
+            self.assertEqual(len(samples.get("cameraSamples") or []),1)
+
     def test_chunked_interaction_summary_fragment_sequence_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp)
@@ -489,6 +560,208 @@ class ScanCompilerTests(unittest.TestCase):
             for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
                 (path/f"{idx}.json").write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,"summary fragment sequence"):
+                compiler.compile_scan(path)
+
+
+    def test_chunked_diagnostic_item_fragments_reconstruct_with_unicode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan128","placeId":3623096087,"partCount":4,
+                  "version":"30.6.68","objects":[]}
+            original={
+                "sampleType":"click-target",
+                "path":"LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+                "context":{
+                    "note":"火"*1400,
+                    "nested":{"values":[{"label":"δ","enabled":True},{"label":"λ","enabled":False}]},
+                },
+            }
+            encoded=json.dumps(original,sort_keys=True,separators=(",",":"),ensure_ascii=False)
+            hex_payload=encoded.encode("utf-8").hex()
+            split=max(2,len(hex_payload)//2)
+            fragment_one=hex_payload[:split]
+            fragment_two=hex_payload[split:]
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "clickTargetObservations":[],
+                    "clickTargetObservationsTotal":1,
+                    "clickTargetObservationsExportMode":"separate-bounded-parts",
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey="clickTargetObservations",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "chunkKind":"diagnostic-item-fragment",
+                    "chunkKey":"clickTargetObservations",
+                    "collectionKey":"clickTargetObservations",
+                    "recordId":"clickTargetObservations:1",
+                    "originalIndex":1,
+                    "fieldPath":"interactionDiagnostics.clickTargetObservations[1]",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":2,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":fragment_one,
+                    "fragmentHexLength":len(fragment_one),
+                }])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey="clickTargetObservations",
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "chunkKind":"diagnostic-item-fragment",
+                    "chunkKey":"clickTargetObservations",
+                    "collectionKey":"clickTargetObservations",
+                    "recordId":"clickTargetObservations:1",
+                    "originalIndex":1,
+                    "fieldPath":"interactionDiagnostics.clickTargetObservations[1]",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":2,
+                    "fragmentCount":2,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":fragment_two,
+                    "fragmentHexLength":len(fragment_two),
+                }])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data,ensure_ascii=False))
+            plan=compiler.compile_scan(path)
+            diagnostics=plan.get("interactionDiagnostics") or {}
+            rebuilt=(diagnostics.get("clickTargetObservations") or [{}])[0]
+            self.assertEqual(rebuilt.get("sampleType"),"click-target")
+            self.assertEqual((rebuilt.get("context") or {}).get("note"),"火"*1400)
+
+    def test_chunked_diagnostic_item_fragment_missing_piece_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan129","placeId":3623096087,"partCount":3,
+                  "version":"30.6.68","objects":[]}
+            payload={"sampleType":"cursor","blob":"X"*200}
+            encoded=json.dumps(payload,sort_keys=True,separators=(",",":"))
+            fragment=encoded.encode("utf-8").hex()
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":1,
+                })
+            chunk=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "recordId":"cursorObservationHistory:1",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":2,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":fragment,
+                    "fragmentHexLength":len(fragment),
+                }])
+            objects=dict(base,partIndex=3,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,"Missing diagnostic fragments"):
+                compiler.compile_scan(path)
+
+    def test_chunked_diagnostic_item_fragment_duplicate_sequence_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan130","placeId":3623096087,"partCount":4,
+                  "version":"30.6.68","objects":[]}
+            payload={"sampleType":"cursor","blob":"Y"*220}
+            encoded=json.dumps(payload,sort_keys=True,separators=(",",":"))
+            hex_payload=encoded.encode("utf-8").hex()
+            split=max(2,len(hex_payload)//2)
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":1,
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "recordId":"cursorObservationHistory:1",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":2,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":hex_payload[:split],
+                    "fragmentHexLength":len(hex_payload[:split]),
+                }])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "recordId":"cursorObservationHistory:1",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":2,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":hex_payload[split:],
+                    "fragmentHexLength":len(hex_payload[split:]),
+                }])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,"Malformed diagnostic fragment sequence"):
+                compiler.compile_scan(path)
+
+    def test_chunked_diagnostic_item_fragment_corrupt_hex_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan131","placeId":3623096087,"partCount":3,
+                  "version":"30.6.68","objects":[]}
+            payload={"sampleType":"cursor","blob":"Z"*64}
+            encoded=json.dumps(payload,sort_keys=True,separators=(",",":"))
+            corrupt_hex=encoded.encode("utf-8").hex()[:-2] + "gg"
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "cursorObservationHistory":[],
+                    "cursorObservationHistoryTotal":1,
+                })
+            chunk=dict(base,partIndex=2,interactionDiagnosticsChunkKey="cursorObservationHistory",
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "schemaVersion":"30.6.interaction-diagnostics-item-fragment.1",
+                    "recordId":"cursorObservationHistory:1",
+                    "fragmentEncoding":"hex-utf8-json",
+                    "fragmentIndex":1,
+                    "fragmentCount":1,
+                    "encodedLength":len(encoded),
+                    "fragmentHex":corrupt_hex,
+                    "fragmentHexLength":len(corrupt_hex),
+                }])
+            objects=dict(base,partIndex=3,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,"Corrupt diagnostic item"):
                 compiler.compile_scan(path)
 
     def test_local_manifest_must_match_multipart_identity(self):

@@ -3215,3 +3215,29 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - `python3 -m pytest -q tests/test_compile_scan.py tests/test_inspector_packaging_runtime.py tests/test_inspector_ui.py` ✅ (`79 passed`)
   - `python3 -m pytest -q` ✅ (`1722 passed, 17 skipped, 79 subtests passed`)
   - `python3 -m pytest -q tests/test_inspector_compiler_limits.py -vv` ✅
+
+## Update — 2026-11-14 — v30.6.68 oversized individual diagnostic record packaging fix
+
+- Confirmed live Potassium failure on v30.6.67:
+  - `JSON error: :3047: Single interaction diagnostics chunk item exceeds receiver limit`
+- Reproduced against pinned v30.6.67 source in Luau harness:
+  - failing chunk key: `targetedCaptureSessionSummaryChunkedFragments`
+  - failing path: `interactionDiagnostics.targetedCaptureSessionSummaryChunkedFragments[1]`
+  - measured overflow chain:
+    - summary encoded payload: `511796` bytes
+    - first fragment payload: `100000` bytes
+    - wrapped fragment record: `133378` bytes
+    - resulting part body: `133722` bytes (> 105000 safety budget)
+- Root cause:
+  - v30.6.67 summary fragmenting used raw JSON text in `fragment`; JSON re-escaping of quotes/backslashes inflated per-item bytes beyond part budget.
+- Implemented structural fix (v30.6.68):
+  - oversized individual diagnostics records are now split losslessly into deterministic hex fragments (`30.6.interaction-diagnostics-item-fragment.1`) with explicit reconstruction metadata.
+  - summary externalization moved to hex fragment schema `30.6.interaction-diagnostics-fragment-chunk.2` with `chunkEncoding=hex-utf8-json`.
+  - all fragment records are wrapper-size validated before enqueueing.
+- Downstream updates:
+  - `tools/compile_scan.py` reconstructs item fragments fail-closed and supports both legacy raw summary fragments and new hex summary fragments.
+- Added executable regressions:
+  - Luau runtime packaging tests now cover oversized nested diagnostics, large strings, large arrays, unicode payloads, deterministic repeatability, and near-boundary unfragmented behavior.
+  - compile_scan tests cover successful item-fragment reconstruction and missing/duplicate/corrupt fragment failures, plus hex summary reconstruction.
+- Packaging diagnostics extended (`30.6.packaging-diagnostics.3`):
+  - records field path, encoded bytes, fragment count, total fragments, overflow events, largest part, total bytes, duration.

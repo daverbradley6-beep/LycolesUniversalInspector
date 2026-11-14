@@ -873,6 +873,86 @@ def compile_scan(directory):
             fail("Malformed interaction diagnostics chunk item")
         diagnostics_chunks.setdefault(chunk_key,[]).append((chunk_start,chunk))
 
+    ITEM_FRAGMENT_SCHEMA="30.6.interaction-diagnostics-item-fragment.1"
+
+    def _decode_hex_utf8_json_fragment(hex_payload, context):
+        if (not isinstance(hex_payload,str) or not hex_payload
+                or len(hex_payload)%2!=0):
+            fail(f"Malformed {context} hex payload")
+        try:
+            payload=bytes.fromhex(hex_payload)
+        except ValueError:
+            fail(f"Corrupt {context} hex payload")
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            fail(f"Invalid UTF-8 in {context} hex payload")
+
+    def _reconstruct_fragmented_diagnostic_items(chunk_key, merged):
+        rebuilt=[]
+        pointer=0
+        seen_record_ids=set()
+        while pointer<len(merged):
+            item=merged[pointer]
+            if not (isinstance(item,dict) and item.get("schemaVersion")==ITEM_FRAGMENT_SCHEMA):
+                rebuilt.append(item)
+                pointer+=1
+                continue
+
+            record_id=item.get("recordId")
+            if not isinstance(record_id,str) or not record_id:
+                fail(f"Malformed diagnostic fragment record id for {chunk_key}")
+            if record_id in seen_record_ids:
+                fail(f"Duplicate diagnostic fragment record id for {chunk_key}: {record_id}")
+            seen_record_ids.add(record_id)
+
+            expected_fragment_count=item.get("fragmentCount")
+            expected_encoded_length=item.get("encodedLength")
+            if (type(expected_fragment_count) is not int or expected_fragment_count<1
+                    or type(expected_encoded_length) is not int or expected_encoded_length<0):
+                fail(f"Malformed diagnostic fragment header for {chunk_key}")
+
+            expected_index=1
+            pieces=[]
+            while pointer<len(merged):
+                fragment=merged[pointer]
+                if not (isinstance(fragment,dict)
+                        and fragment.get("schemaVersion")==ITEM_FRAGMENT_SCHEMA
+                        and fragment.get("recordId")==record_id):
+                    break
+                fragment_index=fragment.get("fragmentIndex")
+                fragment_count=fragment.get("fragmentCount")
+                fragment_encoding=fragment.get("fragmentEncoding")
+                fragment_hex=fragment.get("fragmentHex")
+                fragment_hex_length=fragment.get("fragmentHexLength")
+                if (type(fragment_index) is not int or fragment_index!=expected_index
+                        or fragment_count!=expected_fragment_count
+                        or fragment_encoding not in {None,"hex-utf8-json"}
+                        or not isinstance(fragment_hex,str)
+                        or (fragment_hex_length is not None
+                            and (type(fragment_hex_length) is not int
+                                 or fragment_hex_length!=len(fragment_hex)))):
+                    fail(f"Malformed diagnostic fragment sequence for {chunk_key}")
+                pieces.append(fragment_hex)
+                expected_index+=1
+                pointer+=1
+
+            if expected_index-1!=expected_fragment_count:
+                fail(f"Missing diagnostic fragments for {chunk_key}")
+
+            encoded_json=_decode_hex_utf8_json_fragment(
+                "".join(pieces), f"diagnostic item for {chunk_key}")
+            if len(encoded_json)!=expected_encoded_length:
+                fail(f"Diagnostic fragment length mismatch for {chunk_key}")
+            try:
+                reconstructed=json.loads(encoded_json)
+            except json.JSONDecodeError:
+                fail(f"Diagnostic fragment decode failed for {chunk_key}")
+            if not isinstance(reconstructed,dict):
+                fail(f"Diagnostic fragment decoded non-object for {chunk_key}")
+            rebuilt.append(reconstructed)
+        return rebuilt
+
     for chunk_key,segments in diagnostics_chunks.items():
         segments.sort(key=lambda entry: entry[0])
         expected_start=1
@@ -882,11 +962,12 @@ def compile_scan(directory):
                 fail(f"Interaction diagnostics chunk sequence mismatch for {chunk_key}")
             merged.extend(items)
             expected_start += len(items)
+        rebuilt=_reconstruct_fragmented_diagnostic_items(chunk_key, merged)
         declared_total=interaction_diagnostics.get(f"{chunk_key}Total")
         if declared_total is not None and (type(declared_total) is not int or declared_total<0
-                                          or declared_total!=len(merged)):
+                                          or declared_total!=len(rebuilt)):
             fail(f"Interaction diagnostics chunk total mismatch for {chunk_key}")
-        interaction_diagnostics[chunk_key]=merged
+        interaction_diagnostics[chunk_key]=rebuilt
 
     summary_chunk_fields=interaction_diagnostics.get("chunkedInteractionDiagnosticSummaryFields")
     if summary_chunk_fields is not None:
@@ -898,30 +979,65 @@ def compile_scan(directory):
             field=descriptor.get("field")
             fragment_chunk_key=descriptor.get("chunkKey")
             chunk_kind=descriptor.get("chunkKind")
+            chunk_encoding=descriptor.get("chunkEncoding")
             if (not isinstance(field,str) or not field
                     or not isinstance(fragment_chunk_key,str) or not fragment_chunk_key):
                 fail("Malformed chunked interaction summary descriptor")
             if chunk_kind not in {None,"json-fragment"}:
                 fail(f"Unsupported interaction summary chunk kind for {field}")
+            if chunk_encoding not in {None,"hex-utf8-json"}:
+                fail(f"Unsupported interaction summary chunk encoding for {field}")
             fragments=interaction_diagnostics.get(fragment_chunk_key)
             if not isinstance(fragments,list):
                 fail(f"Missing interaction summary fragments for {field}")
+            declared_fragment_count=descriptor.get("fragmentCount")
+            if declared_fragment_count is not None and (type(declared_fragment_count) is not int
+                                                        or declared_fragment_count<1
+                                                        or declared_fragment_count!=len(fragments)):
+                fail(f"Interaction summary fragment count mismatch for {field}")
+
             expected_index=1
             pieces=[]
+            mode=None
             for fragment in fragments:
                 if not isinstance(fragment,dict):
                     fail(f"Malformed interaction summary fragment for {field}")
                 fragment_index=fragment.get("fragmentIndex")
-                fragment_text=fragment.get("fragment")
-                fragment_length=fragment.get("fragmentLength")
-                if (type(fragment_index) is not int or fragment_index!=expected_index
-                        or not isinstance(fragment_text,str)
-                        or (fragment_length is not None and
-                            (type(fragment_length) is not int or fragment_length!=len(fragment_text)))):
+                if type(fragment_index) is not int or fragment_index!=expected_index:
                     fail(f"Malformed interaction summary fragment sequence for {field}")
-                pieces.append(fragment_text)
+                if isinstance(fragment.get("fragmentHex"),str):
+                    if mode is None:
+                        mode="hex"
+                    if mode!="hex":
+                        fail(f"Mixed interaction summary fragment encodings for {field}")
+                    fragment_hex=fragment.get("fragmentHex")
+                    fragment_hex_length=fragment.get("fragmentHexLength")
+                    if (fragment.get("fragmentEncoding") not in {None,"hex-utf8-json"}
+                            or (fragment_hex_length is not None
+                                and (type(fragment_hex_length) is not int
+                                     or fragment_hex_length!=len(fragment_hex)))):
+                        fail(f"Malformed interaction summary hex fragment for {field}")
+                    pieces.append(fragment_hex)
+                else:
+                    if mode is None:
+                        mode="raw"
+                    if mode!="raw":
+                        fail(f"Mixed interaction summary fragment encodings for {field}")
+                    fragment_text=fragment.get("fragment")
+                    fragment_length=fragment.get("fragmentLength")
+                    if (not isinstance(fragment_text,str)
+                            or (fragment_length is not None and
+                                (type(fragment_length) is not int or fragment_length!=len(fragment_text)))):
+                        fail(f"Malformed interaction summary fragment sequence for {field}")
+                    pieces.append(fragment_text)
                 expected_index+=1
-            encoded="".join(pieces)
+
+            if mode=="hex":
+                encoded=_decode_hex_utf8_json_fragment(
+                    "".join(pieces), f"interaction summary for {field}")
+            else:
+                encoded="".join(pieces)
+
             declared_length=descriptor.get("encodedLength")
             if declared_length is not None and (type(declared_length) is not int
                                                 or declared_length!=len(encoded)):
