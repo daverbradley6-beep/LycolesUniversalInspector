@@ -2831,6 +2831,7 @@ local function prepareParts(report)
     local chunkedSummaryFields={}
     local diagnosticCollectionBatches={}
     local ITEM_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-item-fragment.1"
+    local HISTORY_FRAGMENT_SCHEMA = "30.6.interaction-history-fragment.1"
     local SUMMARY_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-fragment-chunk.2"
     local function sortedStringKeys(tbl)
         local keys = {}
@@ -3087,21 +3088,43 @@ local function prepareParts(report)
     local currentHistory={}
     local currentStart=1
     local historyBytes=0
+    local function flushHistoryBatch()
+        if #currentHistory==0 then return end
+        historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
+        currentHistory={}
+        historyBytes=0
+    end
+    local function enqueueHistoryRecord(record, estimate, logicalIndex)
+        if historyBytes+estimate>limit-1500 and #currentHistory>0 then
+            flushHistoryBatch()
+            currentStart=logicalIndex
+        end
+        currentHistory[#currentHistory+1]=record
+        historyBytes=historyBytes+estimate
+    end
     for i,item in ipairs(history) do
         local encoded=encodeStage("history-item-"..i,item)
         local estimate=#encoded+2
-        if historyBytes+estimate>limit-1500 and #currentHistory>0 then
-            historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
-            currentHistory={}
-            currentStart=i
-            historyBytes=0
+        if estimate>limit-1500 then
+            local fragments = buildJsonHexFragmentRecords({
+                schemaVersion = HISTORY_FRAGMENT_SCHEMA,
+                chunkKind = "history-item-fragment",
+                chunkKey = "recentInteractions",
+                collectionKey = "recentInteractions",
+                recordId = "history:" .. tostring(i),
+                originalIndex = i,
+                fieldPath = "interactionDiagnostics.recentInteractions[" .. tostring(i) .. "]",
+                encodedValue = encoded,
+            })
+            for _, fragment in ipairs(fragments) do
+                local fragmentEncoded = encodeStage("history-fragment-"..tostring(fragment.fragmentIndex), fragment)
+                enqueueHistoryRecord(fragment, #fragmentEncoded + 2, i)
+            end
+        else
+            enqueueHistoryRecord(item, estimate, i)
         end
-        currentHistory[#currentHistory+1]=item
-        historyBytes=historyBytes+estimate
     end
-    if #currentHistory>0 then
-        historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
-    end
+    flushHistoryBatch()
     -- Reserve a dedicated metadata part, so object payloads cannot force
     -- large shared diagnostics into an oversized first object part.
     local payloads={{items={},meta=true}}

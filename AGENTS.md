@@ -1013,3 +1013,4 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - added dual support for legacy raw summary fragments and new hex summary fragments.
 - Packaging diagnostics upgraded (`30.6.packaging-diagnostics.3`):
   - tracks fragmented record count, total fragments, per-record encoded bytes + field path (bounded list), total part bytes, duration, overflow count, largest part.
+- Additional hardening in v30.6.68 patchline: oversized `interactionHistoryChunk` records now use schema `30.6.interaction-history-fragment.1` and are reconstructed fail-closed in `compile_scan.py`.

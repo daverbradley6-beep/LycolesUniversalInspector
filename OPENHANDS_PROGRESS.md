@@ -3241,3 +3241,6 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - compile_scan tests cover successful item-fragment reconstruction and missing/duplicate/corrupt fragment failures, plus hex summary reconstruction.
 - Packaging diagnostics extended (`30.6.packaging-diagnostics.3`):
   - records field path, encoded bytes, fragment count, total fragments, overflow events, largest part, total bytes, duration.
+- Added secondary hardening for oversized interaction-history entries:
+  - runtime emits `30.6.interaction-history-fragment.1` fragments when a single history event exceeds batch budget.
+  - compile_scan reconstructs history fragments with strict sequence, count, and hex-length validation.

@@ -874,6 +874,7 @@ def compile_scan(directory):
         diagnostics_chunks.setdefault(chunk_key,[]).append((chunk_start,chunk))
 
     ITEM_FRAGMENT_SCHEMA="30.6.interaction-diagnostics-item-fragment.1"
+    HISTORY_FRAGMENT_SCHEMA="30.6.interaction-history-fragment.1"
 
     def _decode_hex_utf8_json_fragment(hex_payload, context):
         if (not isinstance(hex_payload,str) or not hex_payload
@@ -950,6 +951,71 @@ def compile_scan(directory):
                 fail(f"Diagnostic fragment decode failed for {chunk_key}")
             if not isinstance(reconstructed,dict):
                 fail(f"Diagnostic fragment decoded non-object for {chunk_key}")
+            rebuilt.append(reconstructed)
+        return rebuilt
+
+    def _reconstruct_fragmented_history(history_items):
+        rebuilt=[]
+        pointer=0
+        seen_record_ids=set()
+        while pointer<len(history_items):
+            item=history_items[pointer]
+            if not (isinstance(item,dict) and item.get("schemaVersion")==HISTORY_FRAGMENT_SCHEMA):
+                rebuilt.append(item)
+                pointer+=1
+                continue
+
+            record_id=item.get("recordId")
+            if not isinstance(record_id,str) or not record_id:
+                fail("Malformed history fragment record id")
+            if record_id in seen_record_ids:
+                fail(f"Duplicate history fragment record id: {record_id}")
+            seen_record_ids.add(record_id)
+
+            expected_fragment_count=item.get("fragmentCount")
+            expected_encoded_length=item.get("encodedLength")
+            if (type(expected_fragment_count) is not int or expected_fragment_count<1
+                    or type(expected_encoded_length) is not int or expected_encoded_length<0):
+                fail("Malformed history fragment header")
+
+            expected_index=1
+            pieces=[]
+            while pointer<len(history_items):
+                fragment=history_items[pointer]
+                if not (isinstance(fragment,dict)
+                        and fragment.get("schemaVersion")==HISTORY_FRAGMENT_SCHEMA
+                        and fragment.get("recordId")==record_id):
+                    break
+                fragment_index=fragment.get("fragmentIndex")
+                fragment_count=fragment.get("fragmentCount")
+                fragment_encoding=fragment.get("fragmentEncoding")
+                fragment_hex=fragment.get("fragmentHex")
+                fragment_hex_length=fragment.get("fragmentHexLength")
+                if (type(fragment_index) is not int or fragment_index!=expected_index
+                        or fragment_count!=expected_fragment_count
+                        or fragment_encoding not in {None,"hex-utf8-json"}
+                        or not isinstance(fragment_hex,str)
+                        or (fragment_hex_length is not None
+                            and (type(fragment_hex_length) is not int
+                                 or fragment_hex_length!=len(fragment_hex)))):
+                    fail("Malformed history fragment sequence")
+                pieces.append(fragment_hex)
+                expected_index+=1
+                pointer+=1
+
+            if expected_index-1!=expected_fragment_count:
+                fail("Missing history fragments")
+
+            encoded_json=_decode_hex_utf8_json_fragment(
+                "".join(pieces), "history item")
+            if len(encoded_json)!=expected_encoded_length:
+                fail("History fragment length mismatch")
+            try:
+                reconstructed=json.loads(encoded_json)
+            except json.JSONDecodeError:
+                fail("History fragment decode failed")
+            if not isinstance(reconstructed,dict):
+                fail("History fragment decoded non-object")
             rebuilt.append(reconstructed)
         return rebuilt
 
@@ -1053,6 +1119,7 @@ def compile_scan(directory):
         history.extend(p.get("interactionHistoryChunk") or [])
     if not history:
         history=interaction_diagnostics.get("recentInteractions") or []
+    history=_reconstruct_fragmented_history(history)
     if len(history)>2000: fail("Interaction history exceeds 2000 events; refusing silent truncation")
     if any(not isinstance(event,dict) for event in history): fail("Malformed interaction history event")
     expected_session=metadata.get("sessionId")
