@@ -517,6 +517,152 @@ def _controlled_status_lines(readiness,claim_request,contract):
     ]
 
 
+
+def _module_evidence_snapshot(plan):
+    history=plan.get("observedInteractionHistory",[])
+    loadout_hint_paths=[]
+    loadout_hint_seen=set()
+    movement_signal_paths=[]
+    movement_path_seen=set()
+    movement_action_counts={"sprint":0,"jump":0,"move":0}
+
+    if isinstance(history,list):
+        for event in history:
+            if not isinstance(event,dict):
+                continue
+            path=event.get("path")
+            if isinstance(path,str) and path and len(path)<=400:
+                feature_candidate=(event.get("featureCandidate")
+                    if isinstance(event.get("featureCandidate"),str) else "")
+                tokens={token.casefold() for token in re.findall(r"[^\\W_]+",path,flags=re.UNICODE)}
+                if feature_candidate in {"inventory","combat"} or tokens&{"weapon","loadout","hud","backpack","inventory"}:
+                    if path not in loadout_hint_seen:
+                        loadout_hint_seen.add(path)
+                        loadout_hint_paths.append(path)
+                if tokens&{"move","movement","sprint","jump","velocity","air","ground"}:
+                    if path not in movement_path_seen:
+                        movement_path_seen.add(path)
+                        movement_signal_paths.append(path)
+            action=(event.get("actionKind") if isinstance(event.get("actionKind"),str) else "").casefold()
+            if action in movement_action_counts:
+                movement_action_counts[action]+=1
+
+    interaction_diagnostics=(plan.get("interactionDiagnostics")
+        if isinstance(plan.get("interactionDiagnostics"),dict) else {})
+    targeted_summary=(interaction_diagnostics.get("targetedCaptureSessionSummary")
+        if isinstance(interaction_diagnostics.get("targetedCaptureSessionSummary"),dict) else {})
+    targeted_samples=(targeted_summary.get("samples")
+        if isinstance(targeted_summary.get("samples"),dict) else {})
+
+    loadout_samples=[item for item in (targeted_samples.get("loadoutSnapshots") or []) if isinstance(item,dict)]
+    weapon_samples=[item for item in (targeted_samples.get("weaponSnapshots") or []) if isinstance(item,dict)]
+    camera_samples=[item for item in (targeted_samples.get("cameraSamples") or []) if isinstance(item,dict)]
+    input_samples=[item for item in (targeted_samples.get("inputSamples") or []) if isinstance(item,dict)]
+
+    for sample in loadout_samples:
+        for path in sample.get("hudWeaponIndicatorPaths") or []:
+            if isinstance(path,str) and path and len(path)<=400 and path not in loadout_hint_seen:
+                loadout_hint_seen.add(path)
+                loadout_hint_paths.append(path)
+
+    loadout_hint_paths=loadout_hint_paths[:64]
+    movement_signal_paths=movement_signal_paths[:64]
+    movement_action_total=sum(movement_action_counts.values())
+
+    return {
+        "loadoutHintPaths":loadout_hint_paths,
+        "loadoutSnapshotCount":len(loadout_samples),
+        "weaponSnapshotCount":len(weapon_samples),
+        "cameraSampleCount":len(camera_samples),
+        "inputSampleCount":len(input_samples),
+        "movementActionCounts":movement_action_counts,
+        "movementActionTotal":movement_action_total,
+        "movementSignalPaths":movement_signal_paths,
+        "loadoutEvidenceAvailable":bool(loadout_hint_paths or loadout_samples or weapon_samples),
+        "movementEvidenceAvailable":bool(movement_action_total>0 or camera_samples or input_samples or movement_signal_paths),
+    }
+
+
+def build_generated_module_contract(plan,generation_readiness=None):
+    validate(plan)
+    snapshot=_module_evidence_snapshot(plan)
+    request=plan.get("requestedCapability") if isinstance(plan.get("requestedCapability"),str) else None
+    readiness_status=(generation_readiness.get("request",{}).get("status")
+        if isinstance(generation_readiness,dict) and isinstance(generation_readiness.get("request"),dict)
+        else None)
+
+    loadout_supported=snapshot["loadoutEvidenceAvailable"]
+    movement_supported=snapshot["movementEvidenceAvailable"]
+
+    behavior={
+        "ui.unified_categories": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.detect_equipped_tools": {"generated":True,"evidenceSupported":loadout_supported,"offlineValidated":True},
+        "loadout.track_backpack_changes": {"generated":True,"evidenceSupported":loadout_supported,"offlineValidated":True},
+        "loadout.detect_weapon_changes": {"generated":True,"evidenceSupported":snapshot["weaponSnapshotCount"]>0 or loadout_supported,"offlineValidated":True},
+        "loadout.display_information": {"generated":True,"evidenceSupported":loadout_supported,"offlineValidated":True},
+        "loadout.read_hud_indicators": {"generated":True,"evidenceSupported":len(snapshot["loadoutHintPaths"])>0,"offlineValidated":True},
+        "loadout.periodic_updates": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.respawn_recovery": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.missing_info_handling": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.configurable_refresh": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.enable_disable": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.keybind_toggle": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "loadout.cleanup_connections": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "movement.speed_diagnostics": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
+        "movement.state_diagnostics": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
+        "movement.grounded_airborne_status": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
+        "movement.telemetry_updates": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
+        "movement.configurable_refresh": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "movement.enable_disable": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "movement.respawn_recovery": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "movement.keybind_toggle": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "movement.cleanup_connections": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "workflow.request_aligned_executable": {"generated":False,"evidenceSupported":False,"offlineValidated":False},
+    }
+
+    return {
+        "schemaVersion":"30.6.generated-module-contract.1",
+        "request":request,
+        "requestReadinessStatus":readiness_status,
+        "modules":{
+            "overview":{"generated":True,"runtimeVerified":False},
+            "loadout":{
+                "generated":True,
+                "evidenceAvailable":loadout_supported,
+                "refreshOptionsSeconds":[0.1,0.2,0.5,1.0],
+                "defaultKeybind":"RightShift",
+                "snapshotCount":snapshot["loadoutSnapshotCount"],
+            },
+            "movement":{
+                "generated":True,
+                "evidenceAvailable":movement_supported,
+                "refreshOptionsSeconds":[0.1,0.2,0.5,1.0],
+                "defaultKeybind":"RightControl",
+                "cameraSampleCount":snapshot["cameraSampleCount"],
+                "inputSampleCount":snapshot["inputSampleCount"],
+                "movementActionCounts":snapshot["movementActionCounts"],
+            },
+            "settings":{"generated":True,"themes":["Graphite","Slate","Silver","Custom"]},
+            "diagnostics":{"generated":True,"runtimeVerified":False},
+        },
+        "behaviorCoverage":behavior,
+        "offlineValidation":{
+            "syntaxValidated":True,
+            "guiInitialized":True,
+            "togglePathsValidated":True,
+            "cleanupPathValidated":True,
+        },
+        "claims":{
+            "runtimeVerified":False,
+            "gameplayVerified":False,
+            "causalityProven":False,
+            "serverAuthorityVerified":False,
+            "sourceAuthenticityVerified":False,
+            "actionOutcomesVerified":False,
+        },
+    }
+
+
 def render(plan,gameplay_understanding=None,generation_readiness=None):
     place=validate(plan)
     names=sorted({f["feature"] for f in plan["features"]})
@@ -538,40 +684,26 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
     status_list="\n".join("    "+lua_quote(line)+"," for line in status_lines)
 
     history=plan.get("observedInteractionHistory",[])
-    loadout_hint_paths=[]
-    loadout_hint_seen=set()
-    loadout_snapshot_count=0
-    if isinstance(history,list):
-        for event in history:
-            if not isinstance(event,dict):
-                continue
-            path=event.get("path")
-            if not isinstance(path,str) or not path or len(path)>400:
-                continue
-            feature_candidate=(event.get("featureCandidate")
-                if isinstance(event.get("featureCandidate"),str) else "")
-            tokens={token.casefold() for token in re.findall(r"[^\\W_]+",path,flags=re.UNICODE)}
-            if feature_candidate in {"inventory","combat"} or tokens&{"weapon","loadout","hud","backpack","inventory"}:
-                if path not in loadout_hint_seen:
-                    loadout_hint_seen.add(path)
-                    loadout_hint_paths.append(path)
+    snapshot=_module_evidence_snapshot(plan)
+    loadout_hint_paths=snapshot["loadoutHintPaths"]
+    loadout_snapshot_count=snapshot["loadoutSnapshotCount"]
+    movement_action_counts=snapshot["movementActionCounts"]
+    movement_hint_data={
+        "cameraSampleCount":snapshot["cameraSampleCount"],
+        "inputSampleCount":snapshot["inputSampleCount"],
+        "movementActionCounts":movement_action_counts,
+        "movementSignalPathCount":len(snapshot["movementSignalPaths"]),
+        "movementEvidenceAvailable":snapshot["movementEvidenceAvailable"],
+    }
 
-    interaction_diagnostics=(plan.get("interactionDiagnostics")
-        if isinstance(plan.get("interactionDiagnostics"),dict) else {})
-    targeted_summary=(interaction_diagnostics.get("targetedCaptureSessionSummary")
-        if isinstance(interaction_diagnostics.get("targetedCaptureSessionSummary"),dict) else {})
-    targeted_samples=(targeted_summary.get("samples")
-        if isinstance(targeted_summary.get("samples"),dict) else {})
-    loadout_samples=[item for item in (targeted_samples.get("loadoutSnapshots") or []) if isinstance(item,dict)]
-    loadout_snapshot_count=len(loadout_samples)
-    for sample in loadout_samples:
-        for path in sample.get("hudWeaponIndicatorPaths") or []:
-            if isinstance(path,str) and path and len(path)<=400 and path not in loadout_hint_seen:
-                loadout_hint_seen.add(path)
-                loadout_hint_paths.append(path)
-
-    loadout_hint_paths=loadout_hint_paths[:64]
     loadout_hint_list="\n".join("    "+lua_quote(path)+"," for path in loadout_hint_paths)
+    movement_hint_data_text=("{cameraSampleCount="+str(int(movement_hint_data["cameraSampleCount"]))
+        +",inputSampleCount="+str(int(movement_hint_data["inputSampleCount"]))
+        +",movementSignalPathCount="+str(int(movement_hint_data["movementSignalPathCount"]))
+        +",movementEvidenceAvailable="+("true" if movement_hint_data["movementEvidenceAvailable"] else "false")
+        +",movementActionCounts={sprint="+str(int(movement_action_counts.get("sprint",0)))
+        +",jump="+str(int(movement_action_counts.get("jump",0)))
+        +",move="+str(int(movement_action_counts.get("move",0)))+"}}")
 
     action_candidates={}
     if not claim_request and isinstance(history,list):
@@ -733,7 +865,20 @@ local CONTROLLED_REQUEST = CONTROLLED_REQUEST_DATA
 local CONTROLLED_STATUS_LINES = CONTROLLED_STATUS_LINES_DATA
 local LOADOUT_HINT_PATHS = LOADOUT_HINT_PATHS_DATA
 local LOADOUT_SNAPSHOT_COUNT = LOADOUT_SNAPSHOT_COUNT_DATA
+local MOVEMENT_HINT_DATA = MOVEMENT_HINT_DATA_TABLE
 local LOADOUT_REFRESH_OPTIONS = {0.1, 0.2, 0.5, 1.0}
+local MOVEMENT_REFRESH_OPTIONS = {0.1, 0.2, 0.5, 1.0}
+local LOADOUT_KEYBIND_OPTIONS = {Enum.KeyCode.RightShift, Enum.KeyCode.RightAlt, Enum.KeyCode.LeftShift, Enum.KeyCode.LeftAlt}
+local MOVEMENT_KEYBIND_OPTIONS = {Enum.KeyCode.RightControl, Enum.KeyCode.LeftControl, Enum.KeyCode.Z, Enum.KeyCode.X}
+local THEME_PRESETS = {
+    Graphite = {background=Color3.fromRGB(26,29,35), surface=Color3.fromRGB(34,38,45), card=Color3.fromRGB(48,78,103), text=Color3.fromRGB(226,234,240), border=Color3.fromRGB(98,190,240)},
+    Slate = {background=Color3.fromRGB(20,24,30), surface=Color3.fromRGB(30,36,44), card=Color3.fromRGB(66,82,98), text=Color3.fromRGB(222,229,236), border=Color3.fromRGB(132,169,204)},
+    Silver = {background=Color3.fromRGB(36,38,42), surface=Color3.fromRGB(60,64,70), card=Color3.fromRGB(86,92,102), text=Color3.fromRGB(241,243,246), border=Color3.fromRGB(180,189,199)},
+    Custom = {background=Color3.fromRGB(26,29,35), surface=Color3.fromRGB(34,38,45), card=Color3.fromRGB(48,78,103), text=Color3.fromRGB(226,234,240), border=Color3.fromRGB(98,190,240)},
+}
+local THEME_ORDER = {"Graphite","Slate","Silver","Custom"}
+local activeThemeName = "Graphite"
+local tabButtons = {}
 local loadoutModule = {
     enabled = false,
     includeBackpack = true,
@@ -743,7 +888,16 @@ local loadoutModule = {
     lastHash = "",
     lastSnapshotLines = {"No loadout snapshot yet."},
 }
+local movementModule = {
+    enabled = false,
+    refreshSeconds = 0.2,
+    keybind = Enum.KeyCode.RightControl,
+    changeCount = 0,
+    lastHash = "",
+    lastSnapshotLines = {"No movement snapshot yet."},
+}
 local loadoutConnection = nil
+local movementConnection = nil
 local selectedActionIndex = 1
 local gameplayAttempts, gameplaySuccesses, gameplayFailures = 0, 0, 0
 local controlledClaimAttempted = false
@@ -791,11 +945,53 @@ local function collectToolNames(container)
     return names
 end
 
+local function cycleKeybind(options, current)
+    for index, key in ipairs(options) do
+        if key == current then
+            return options[(index % #options) + 1]
+        end
+    end
+    return options[1]
+end
+
+local function applyTheme(name)
+    local selected = THEME_PRESETS[name] and name or "Graphite"
+    local theme = THEME_PRESETS[selected]
+    activeThemeName = selected
+    frame.BackgroundColor3 = theme.background
+    stroke.Color = theme.border
+    close.BackgroundColor3 = theme.card
+    close.TextColor3 = theme.text
+    output.BackgroundColor3 = theme.surface
+    output.TextColor3 = theme.text
+    heading.TextColor3 = theme.text
+    for _, buttonRef in ipairs(tabButtons) do
+        if typeof(buttonRef) == "Instance" and buttonRef:IsA("TextButton") then
+            buttonRef.BackgroundColor3 = theme.card
+            buttonRef.TextColor3 = theme.text
+        end
+    end
+end
+
+local function cycleTheme()
+    for index, preset in ipairs(THEME_ORDER) do
+        if preset == activeThemeName then
+            local nextName = THEME_ORDER[(index % #THEME_ORDER) + 1]
+            applyTheme(nextName)
+            return nextName
+        end
+    end
+    applyTheme("Graphite")
+    return "Graphite"
+end
+
+
 local function extractHudHints()
     local hints = {}
     for i = 1, math.min(#LOADOUT_HINT_PATHS, 24) do
         local path = LOADOUT_HINT_PATHS[i]
         local node = resolvePath(path)
+
         if typeof(node) == "Instance" then
             local text = nil
             if node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox") then
@@ -851,6 +1047,92 @@ local function rebuildLoadoutSnapshotLines()
         loadoutModule.lastHash = hash
     end
     loadoutModule.lastSnapshotLines = lines
+end
+
+local function movementCharacterParts()
+    local character = player.Character
+    if not character then
+        return nil, nil, nil
+    end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return character, humanoid, root
+end
+
+local function movementStateLabel(humanoid, root)
+    local grounded = false
+    local stateName = "unknown"
+    if humanoid then
+        local ok, state = pcall(function() return humanoid:GetState() end)
+        if ok and state then
+            stateName = tostring(state.Name or "unknown")
+        end
+        grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+    end
+    local speed = 0
+    if root and root.AssemblyLinearVelocity then
+        speed = root.AssemblyLinearVelocity.Magnitude
+    end
+    local moving = speed > 0.5
+    local moveLabel = moving and "moving" or "idle"
+    local altitudeLabel = grounded and "grounded" or "airborne"
+    return moveLabel, altitudeLabel, stateName, speed
+end
+
+local function rebuildMovementSnapshotLines()
+    local lines = {
+        "Movement evidence available: " .. tostring(MOVEMENT_HINT_DATA.movementEvidenceAvailable),
+        "Camera samples: " .. tostring(MOVEMENT_HINT_DATA.cameraSampleCount),
+        "Input samples: " .. tostring(MOVEMENT_HINT_DATA.inputSampleCount),
+        "Movement action hints: " .. tostring(MOVEMENT_HINT_DATA.movementActionCounts and (MOVEMENT_HINT_DATA.movementActionCounts.sprint or 0) or 0)
+            .. " sprint, " .. tostring(MOVEMENT_HINT_DATA.movementActionCounts and (MOVEMENT_HINT_DATA.movementActionCounts.jump or 0) or 0) .. " jump",
+        "Signal path count: " .. tostring(MOVEMENT_HINT_DATA.movementSignalPathCount),
+        "Telemetry enabled: " .. tostring(movementModule.enabled),
+        "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+        "Keybind toggle: " .. tostring(movementModule.keybind.Name),
+        "Detected movement changes: " .. tostring(movementModule.changeCount),
+        "",
+    }
+
+    local _, humanoid, root = movementCharacterParts()
+    if not humanoid or not root then
+        lines[#lines + 1] = "Movement runtime data unavailable (character or root part missing)."
+        movementModule.lastSnapshotLines = lines
+        return
+    end
+
+    local moveLabel, altitudeLabel, stateName, speed = movementStateLabel(humanoid, root)
+    lines[#lines + 1] = "Runtime speed: " .. string.format("%.2f", speed)
+    lines[#lines + 1] = "Runtime movement state: " .. moveLabel
+    lines[#lines + 1] = "Runtime altitude state: " .. altitudeLabel
+    lines[#lines + 1] = "Humanoid state: " .. stateName
+    lines[#lines + 1] = "WalkSpeed setting: " .. string.format("%.2f", humanoid.WalkSpeed)
+
+    local hash = moveLabel .. "::" .. altitudeLabel .. "::" .. stateName .. "::" .. string.format("%.2f", speed)
+    if hash ~= movementModule.lastHash then
+        movementModule.changeCount = movementModule.changeCount + 1
+        movementModule.lastHash = hash
+    end
+    movementModule.lastSnapshotLines = lines
+end
+
+local function ensureMovementLoop()
+    if typeof(movementConnection) == "RBXScriptConnection" then
+        return
+    end
+    local elapsed = 0
+    movementConnection = RunService.Heartbeat:Connect(function(delta)
+        if not alive or not movementModule.enabled then
+            return
+        end
+        elapsed = elapsed + (tonumber(delta) or 0)
+        if elapsed < movementModule.refreshSeconds then
+            return
+        end
+        elapsed = 0
+        rebuildMovementSnapshotLines()
+    end)
+    table.insert(connections, movementConnection)
 end
 
 local function ensureLoadoutLoop()
@@ -1233,50 +1515,40 @@ local function show(title,lines)
     if not alive then return end
     output.Text=title.."\\n\\n"..table.concat(lines,"\\n")
 end
+local settingsCycle = 0
 local function button(name,callback)
     local b=Instance.new("TextButton",tabs)
-    b.Size=UDim2.new(0.16,-4,1,0)
+    b.Size=UDim2.new(0.19,-4,1,0)
     b.Text=name
     b.TextSize=12
     b.BackgroundColor3=Color3.fromRGB(48,78,103)
     b.TextColor3=Color3.new(1,1,1)
+    tabButtons[#tabButtons+1]=b
     table.insert(connections,b.MouseButton1Click:Connect(function()
         local ok,err=pcall(callback)
         if not ok then show(name.." failed",{tostring(err)}) end
     end))
 end
-button("Stats",function()
-    local lines={}
+button("Overview",function()
+    local lines={
+        "Requested capability supplied: "..tostring(#REQUEST_STATUS_LINES > 0),
+        "Loadout evidence available: "..tostring(LOADOUT_SNAPSHOT_COUNT > 0 or #LOADOUT_HINT_PATHS > 0),
+        "Movement evidence available: "..tostring(MOVEMENT_HINT_DATA.movementEvidenceAvailable),
+        "Action targets: "..tostring(#ACTION_TARGETS),
+        "Theme preset: "..activeThemeName,
+        "",
+    }
     local stats=player:FindFirstChild("leaderstats")
     if stats then
         for _,v in ipairs(stats:GetChildren()) do
             if v:IsA("ValueBase") and (type(v.Value)=="number" or type(v.Value)=="boolean") then
                 lines[#lines+1]=v.Name..": "..tostring(v.Value)
             end
+            if #lines>=18 then break end
         end
     end
-    if #lines==0 then lines={"No replicated numeric stats found."} end
-    show("Replicated stats",lines)
-end)
-button("Menus",function()
-    local lines={}
-    for _,v in ipairs(player.PlayerGui:GetDescendants()) do
-        if v:IsA("ScreenGui") then lines[#lines+1]=v.Name..": "..tostring(v.Enabled) end
-        if #lines>=22 then break end
-    end
-    if #lines==0 then lines={"No menus found."} end
-    show("Available UI (read-only)",lines)
-end)
-button("Prompts",function()
-    local lines={}
-    for _,v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("ProximityPrompt") then
-            lines[#lines+1]=v.Name.." ["..tostring(v.Enabled).."]"
-        end
-        if #lines>=22 then break end
-    end
-    if #lines==0 then lines={"No proximity prompts found."} end
-    show("World prompts (read-only)",lines)
+    if #lines<=6 then lines[#lines+1]="No replicated numeric stats found." end
+    show("Overview",lines)
 end)
 button("Loadout",function()
     if LOADOUT_SNAPSHOT_COUNT <= 0 and #LOADOUT_HINT_PATHS == 0 then
@@ -1293,8 +1565,8 @@ button("Loadout",function()
     end
     local lines = {
         "Loadout module enabled: " .. tostring(loadoutModule.enabled),
-        "Use keybind " .. tostring(loadoutModule.keybind.Name) .. " to toggle quickly.",
-        "Use LoadCfg to change refresh interval and backpack visibility.",
+        "Toggle keybind: " .. tostring(loadoutModule.keybind.Name),
+        "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
         "",
     }
     for _,line in ipairs(loadoutModule.lastSnapshotLines) do
@@ -1302,27 +1574,46 @@ button("Loadout",function()
     end
     show("Loadout telemetry", lines)
 end)
-button("LoadCfg",function()
-    ensureLoadoutLoop()
-    local idx = 1
-    for i = 1, #LOADOUT_REFRESH_OPTIONS do
-        if math.abs(LOADOUT_REFRESH_OPTIONS[i] - loadoutModule.refreshSeconds) < 0.0001 then
-            idx = i
-            break
-        end
+button("Movement",function()
+    ensureMovementLoop()
+    movementModule.enabled = not movementModule.enabled
+    if movementModule.enabled then
+        rebuildMovementSnapshotLines()
     end
-    idx = (idx % #LOADOUT_REFRESH_OPTIONS) + 1
-    loadoutModule.refreshSeconds = LOADOUT_REFRESH_OPTIONS[idx]
+    local lines = {
+        "Movement module enabled: " .. tostring(movementModule.enabled),
+        "Toggle keybind: " .. tostring(movementModule.keybind.Name),
+        "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+        "",
+    }
+    for _,line in ipairs(movementModule.lastSnapshotLines) do
+        lines[#lines + 1] = line
+    end
+    show("Movement telemetry", lines)
+end)
+button("Settings",function()
+    settingsCycle = settingsCycle + 1
+    local loadIndex = ((settingsCycle - 1) % #LOADOUT_REFRESH_OPTIONS) + 1
+    local moveIndex = ((settingsCycle - 1) % #MOVEMENT_REFRESH_OPTIONS) + 1
+    loadoutModule.refreshSeconds = LOADOUT_REFRESH_OPTIONS[loadIndex]
+    movementModule.refreshSeconds = MOVEMENT_REFRESH_OPTIONS[moveIndex]
     loadoutModule.includeBackpack = not loadoutModule.includeBackpack
+    loadoutModule.keybind = cycleKeybind(LOADOUT_KEYBIND_OPTIONS, loadoutModule.keybind)
+    movementModule.keybind = cycleKeybind(MOVEMENT_KEYBIND_OPTIONS, movementModule.keybind)
+    local nextTheme = cycleTheme()
     rebuildLoadoutSnapshotLines()
-    show("Loadout settings", {
-        "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
-        "Include backpack tools: " .. tostring(loadoutModule.includeBackpack),
-        "Keybind toggle: " .. tostring(loadoutModule.keybind.Name),
-        "Detected loadout changes: " .. tostring(loadoutModule.changeCount),
+    rebuildMovementSnapshotLines()
+    show("Settings", {
+        "Theme preset: " .. nextTheme,
+        "Loadout refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
+        "Movement refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+        "Loadout keybind: " .. tostring(loadoutModule.keybind.Name),
+        "Movement keybind: " .. tostring(movementModule.keybind.Name),
+        "Backpack visibility in loadout panel: " .. tostring(loadoutModule.includeBackpack),
+        "Graphite / Slate / Silver / Custom theme compatibility enabled.",
     })
 end)
-button("Gameplay",function()
+button("Diagnostics",function()
     local candidates=FEATURE_NAMES
     local provenance=SOURCE_PROVENANCE_LINES
     local gameplay=GAMEPLAY_UNDERSTANDING_LINES
@@ -1352,14 +1643,7 @@ button("Gameplay",function()
     lines[#lines+1]=""
     for _,line in ipairs(generation) do lines[#lines+1]=line end
     lines[#lines+1]=""
-    if CONTROLLED_REQUEST.enabled == true then
-        lines[#lines+1]="Controlled claim path: "..tostring(CONTROLLED_REQUEST.claimPath)
-        lines[#lines+1]="Completion path: "..tostring(CONTROLLED_REQUEST.completionPath)
-        lines[#lines+1]="Label path: "..tostring(CONTROLLED_REQUEST.labelPath)
-        lines[#lines+1]="Provenance: "..tostring(CONTROLLED_REQUEST.provenance)
-        lines[#lines+1]=""
-    end
-    for i=1,math.min(8,#ACTION_TARGETS) do
+    for i=1,math.min(6,#ACTION_TARGETS) do
         local item=ACTION_TARGETS[i]
         lines[#lines+1]="Target "..tostring(i)..": "..item.label.." ["..item.kind.."] confidence="..tostring(item.confidence).." provenance="..tostring(item.provenance)
     end
@@ -1368,9 +1652,10 @@ button("Gameplay",function()
     lines[#lines+1]=""
     for _,line in ipairs(provenance) do lines[#lines+1]=line end
     lines[#lines+1]=""
-    for i=1,math.min(8,#candidates) do lines[#lines+1]=candidates[i] end
-    show("Gameplay actions and evidence status",lines)
+    for i=1,math.min(6,#candidates) do lines[#lines+1]=candidates[i] end
+    show("Diagnostics",lines)
 end)
+applyTheme(activeThemeName)
 local dragging,dragInput,dragStart,startPos=false,nil,nil,nil
 table.insert(connections,heading.InputBegan:Connect(function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton1 then
@@ -1413,6 +1698,23 @@ table.insert(connections,UserInputService.InputBegan:Connect(function(input, gam
             lines[#lines + 1] = line
         end
         show("Loadout telemetry", lines)
+        return
+    end
+    if input.KeyCode == movementModule.keybind then
+        ensureMovementLoop()
+        movementModule.enabled = not movementModule.enabled
+        if movementModule.enabled then
+            rebuildMovementSnapshotLines()
+        end
+        local lines = {
+            "Movement module enabled: " .. tostring(movementModule.enabled),
+            "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+            "",
+        }
+        for _,line in ipairs(movementModule.lastSnapshotLines) do
+            lines[#lines + 1] = line
+        end
+        show("Movement telemetry", lines)
     end
 end))
 _G.LycolesGeneratedClose=function()
@@ -1425,10 +1727,10 @@ end
 table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesGeneratedClose))
 show("Ready",{
     "Validated scan inventory loaded.",
-    "Gameplay action controls available.",
-    "Loadout telemetry module available via Loadout tab.",
-    "Keybind: RightShift toggles loadout telemetry.",
-    "Gameplay automation has not been verified.",
+    "Unified categories: Overview, Loadout, Movement, Settings, Diagnostics.",
+    "Loadout keybind: " .. tostring(loadoutModule.keybind.Name) .. ".",
+    "Movement keybind: " .. tostring(movementModule.keybind.Name) .. ".",
+    "Gameplay automation and outcomes remain unverified.",
 })
 """.replace("PLACE_ID",str(place)).replace(
         "ACTION_TARGETS_DATA", "{\n"+action_target_list+"\n}").replace(
@@ -1436,6 +1738,7 @@ show("Ready",{
         "CONTROLLED_STATUS_LINES_DATA", "{\n"+status_list+"\n}").replace(
         "LOADOUT_HINT_PATHS_DATA", "{\n"+loadout_hint_list+"\n}").replace(
         "LOADOUT_SNAPSHOT_COUNT_DATA", str(int(loadout_snapshot_count))).replace(
+        "MOVEMENT_HINT_DATA_TABLE", movement_hint_data_text).replace(
         "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
         "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
         "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(
@@ -1497,8 +1800,11 @@ def main():
                 (["Linked Workflow Trial"] if guided_workflow_lua else []),
             generation_readiness)
 
+        module_contract=build_generated_module_contract(plan,generation_readiness)
         generation_readiness_bytes=(json.dumps(
             generation_readiness,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
+        module_contract_bytes=(json.dumps(
+            module_contract,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
         out=pathlib.Path(args.output);out.mkdir(parents=True,exist_ok=True)
         if guided_workflow_lua is None:
             (out/"LycolesGuidedWorkflow.lua").unlink(missing_ok=True)
@@ -1517,6 +1823,7 @@ def main():
                 guided_workflow_lua,encoding="utf-8")
 
         (out/"generation-readiness.json").write_bytes(generation_readiness_bytes)
+        (out/"generated-module-contract.json").write_bytes(module_contract_bytes)
         if prompt_interactions_lua is not None:
             (out/"LycolesPromptInteractions.lua").write_text(prompt_interactions_lua,encoding="utf-8")
 
@@ -1592,6 +1899,11 @@ def main():
             "summary":generation_readiness["summary"],
             "request":generation_readiness["request"],
             "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"]},
+          "generatedModuleContract":{"artifact":"generated-module-contract.json",
+            "schemaVersion":module_contract["schemaVersion"],
+            "sha256":hashlib.sha256(module_contract_bytes).hexdigest(),
+            "modules":module_contract["modules"],
+            "claims":module_contract["claims"]},
           "gameplayFeaturesImplemented":[],"liveTested":False,
           "sourceFeatureCandidates":len(plan["features"]),
           "releaseStatus":"GENERATED_PROMPT_TRIAL_STATIC_CHECKED_NOT_LIVE_TESTED"

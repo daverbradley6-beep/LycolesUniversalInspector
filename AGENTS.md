@@ -1052,3 +1052,20 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - Real Phantom Forces scan + split observation fragments (derived from authentic combined observation export) successfully processed.
   - Service emitted warnings for split recombination + synthetic feature overlay generation and produced static-checked release outputs.
   - Reconciliation summary reported gameplay implementation-ready capabilities including `loadout_information_suite.loadout_gui_reader`.
+
+## Session notes — 2026-11-06 milestone 4.1 request-aligned fulfillment + runtime harness
+
+- Added generated module-contract artifact (`generated-module-contract.json`, schema `30.6.generated-module-contract.1`) from both `tools/generate_script.py` and `tools/build_release.py`.
+- Manifest now includes `generatedModuleContract` metadata (`artifact`, `schemaVersion`, `sha256`, module/evidence summaries, behavior claims).
+- Request alignment in `tools/lycoles_generation_service.py` is now behavior-level (`_assess_request_fulfillment`) instead of workflow-only:
+  - required behaviors derived from request terms (loadout/movement/automatic intent),
+  - behavior coverage sourced from `generated-module-contract` + workflow diagnostics,
+  - offline implementation completeness tracked separately from runtime/gameplay verification,
+  - blocker reports include `requestFulfillment` with missing/evidence-gap/offline-validation-gap behaviors.
+- Generation status rule updated to fail closed for unmet requested behavior coverage while keeping claims runtime/gameplay false.
+- Unified generated GUI categories are now validated across code/tests: `Overview`, `Loadout`, `Movement`, `Settings`, `Diagnostics`.
+- Added offline mocked runtime harness (`tools/generated_runtime_harness.py`) covering initialization, toggles, keybind handling, settings cycles, respawn updates, cleanup, and missing-data handling without claiming live verification.
+- Luau template safety reminder: never use identical replacement token for both LHS and RHS assignment in template placeholders (e.g., `MOVEMENT_HINT_DATA`); use a dedicated placeholder token (e.g., `MOVEMENT_HINT_DATA_TABLE`) to avoid accidental LHS substitution and compile breakage.
+- Validation run after milestone changes:
+  - `python3 -m pytest -q` → **1741 passed, 17 skipped, 79 subtests passed**
+  - `node tests/test_luau_syntax.mjs && node tests/test_receiver.mjs` → pass

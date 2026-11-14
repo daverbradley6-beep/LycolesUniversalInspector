@@ -736,12 +736,56 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             script_path = pathlib.Path(result["delivery"]["generatedScriptPath"])
             script = script_path.read_text(encoding="utf-8")
             self.assertIn('button("Loadout"', script)
+            self.assertIn('button("Movement"', script)
             self.assertIn("LOADOUT_SNAPSHOT_COUNT = ", script)
+
+            fulfillment = result.get("requestFulfillment") or {}
+            self.assertIn("requiredBehaviors", fulfillment)
+            self.assertFalse(fulfillment.get("runtimeVerified"))
 
             reconciliation = result.get("evidenceReconciliation") or {}
             self.assertTrue(reconciliation.get("generated"))
             summary = reconciliation.get("summary") or {}
             self.assertGreaterEqual(int(summary.get("targetedSessionsConsumed") or 0), 1)
+
+    def test_request_fulfillment_marks_offline_complete_for_loadout_movement_contract(self):
+        behavior_ids = ["ui.unified_categories"] + list(MODULE._LOADOUT_REQUIRED_BEHAVIORS) + list(MODULE._MOVEMENT_REQUIRED_BEHAVIORS)
+        module_contract = {
+            "behaviorCoverage": {
+                behavior: {"generated": True, "evidenceSupported": True, "offlineValidated": True}
+                for behavior in behavior_ids
+            }
+        }
+        fulfillment = MODULE._assess_request_fulfillment(
+            "Provide loadout and movement telemetry",
+            module_contract,
+            {"guidedWorkflowScriptGenerated": False,
+             "requestAlignedExecutionReadyWorkflowCandidates": 0,
+             "requestAlignedExecutableWorkflowAvailable": False},
+            {"summary": {"gameplayImplementationReadyCapabilities": [{"capabilityId": "loadout_information_suite.loadout_gui_reader"}]}}
+        )
+        self.assertTrue(fulfillment["offlineImplementationComplete"])
+        self.assertEqual(fulfillment["status"], "offline-implementation-complete-runtime-unverified")
+        self.assertFalse(fulfillment["runtimeVerified"])
+        self.assertIn("loadout_information_suite.loadout_gui_reader", fulfillment["implementationReadyCapabilities"])
+
+    def test_request_fulfillment_keeps_automatic_request_unmet_without_executable_workflow(self):
+        module_contract = {
+            "behaviorCoverage": {
+                "ui.unified_categories": {"generated": True, "evidenceSupported": True, "offlineValidated": True}
+            }
+        }
+        fulfillment = MODULE._assess_request_fulfillment(
+            "Automatically complete observed shop flow",
+            module_contract,
+            {"guidedWorkflowScriptGenerated": False,
+             "requestAlignedExecutionReadyWorkflowCandidates": 0,
+             "requestAlignedExecutableWorkflowAvailable": False},
+            None,
+        )
+        self.assertFalse(fulfillment["offlineImplementationComplete"])
+        self.assertIn("workflow.request_aligned_executable", fulfillment["missingBehaviors"])
+        self.assertEqual(fulfillment["status"], "request-unmet-implementation-gap")
 
     def test_hard_request_prioritizes_reasoning_generation_route(self):
         with tempfile.TemporaryDirectory() as tmp:

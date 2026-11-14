@@ -73,7 +73,7 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertTrue(manifest["universalGameplayIntelligence"]["summary"]["interactables"]>=1)
             self.assertTrue(manifest["promptInteractionTrial"]["generated"])
             self.assertTrue(manifest["promptInteractionTrial"]["automaticMovement"])
-            self.assertIn("Gameplay",manifest["implementedClientControls"])
+            self.assertIn("Overview",manifest["implementedClientControls"])
             self.assertFalse(manifest["promptInteractionTrial"]["gameplayVerified"])
             self.assertFalse(manifest["guidedWorkflowTrial"]["generated"])
             self.assertIsNone(manifest["guidedWorkflowTrial"]["artifact"])
@@ -99,6 +99,13 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("fireproximityprompt(prompt)",source)
             self.assertIn("interactionstart=",source)
             self.assertIn("interactionstop=",source)
+
+            module_contract=json.loads((base/"out"/"generated-module-contract.json").read_text())
+            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.1")
+            self.assertEqual(manifest["generatedModuleContract"]["schemaVersion"],
+                "30.6.generated-module-contract.1")
+            self.assertEqual(manifest["generatedModuleContract"]["sha256"],
+                hashlib.sha256((base/"out"/"generated-module-contract.json").read_bytes()).hexdigest())
 
             self.assertIn('_G.LycolesGameCommands={',source)
             self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
@@ -440,7 +447,7 @@ class ReleaseBuilderTests(unittest.TestCase):
             base=pathlib.Path(temp);parts=base/"parts";parts.mkdir()
             make_parts(parts)
             first=builder.build(parts,base/"out")
-            self.assertEqual(first["validation"]["expectedControls"],4)
+            self.assertEqual(first["validation"]["expectedControls"],5)
             self.assertEqual(first["implementedGameplayAutomation"],[])
             z=next((base/"out").glob("*.zip"))
             original=z.read_bytes()

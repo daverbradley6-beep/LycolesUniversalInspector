@@ -33,7 +33,7 @@ def validate_lua(lua,place_id):
         raise ValueError("Missing place guard")
     required=('local Players = game:GetService("Players")',
               'LycolesGeneratedClose','gui:Destroy()',
-              'button("Stats"','button("Menus"','button("Prompts"','button("Gameplay"')
+              'button("Overview"','button("Loadout"','button("Movement"','button("Settings"','button("Diagnostics"')
     for token in required:
         if token not in lua: raise ValueError("Missing generated component: "+token)
     # These must not appear in a diagnostic-only build, including comments.
@@ -41,9 +41,9 @@ def validate_lua(lua,place_id):
             "hookmetamethod(", "loadstring(", "setclipboard(")
     for pattern in banned:
         if pattern.lower() in lua.lower(): raise ValueError("Forbidden generated operation: "+pattern)
-    if lua.count('button("') < 4:
+    if lua.count('button("') < 5:
         raise ValueError("Unexpected number of generated controls")
-    return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
+    return {"placeGuard":True,"expectedControls":5,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
 
 
@@ -676,6 +676,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         gui_validator=load_module("validate_generated_gui.py","lycoles_gui_validator")
         gui_validation=gui_validator.validate(actions_gui_lua,sorted(set(c["action"] for c in validated_contracts["contracts"])))
     utility_lua=generator.render(plan,gameplay_understanding,generation_readiness)
+    module_contract=generator.build_generated_module_contract(plan,generation_readiness)
+    module_contract_bytes=(json.dumps(module_contract,indent=2,sort_keys=True,ensure_ascii=False)+"\n").encode("utf-8")
     prompt_generator=load_module("generate_prompt_interactions.py","lycoles_prompt_interactions")
     prompt_interactions_lua=prompt_generator.render(action_discovery)
     prompt_trial_generated=action_discovery["promptInteractions"]["trialReadyTargets"]>0
@@ -781,6 +783,12 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "requestFeatureReadiness":generation_readiness["requestFeatureReadiness"],
             "runtimeVerified":False,"gameplayVerified":False,
             "causalityProven":False,"actionOutcomesVerified":False},
+        "generatedModuleContract":{"schemaVersion":module_contract["schemaVersion"],
+            "artifact":"generated-module-contract.json",
+            "sha256":sha(module_contract_bytes),
+            "modules":module_contract["modules"],
+            "claims":module_contract["claims"]},
+
         "promptInteractionTrial":{"artifact":"LycolesPromptInteractions.lua" if prompt_trial_generated else None,
             "generated":prompt_trial_generated,"automaticMovement":prompt_trial_generated,
             "runtimeVerified":False,"gameplayVerified":False,"causalityProven":False},
@@ -828,7 +836,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
-        "implementedClientControls":["Stats","Menus","Prompts","Gameplay","Admin Commands"]+
+        "implementedClientControls":["Overview","Loadout","Movement","Settings","Diagnostics","Admin Commands"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
             (["Tool Activation Trial"] if tool_trial_generated else [])+
             (["Guided GUI Trial"] if gui_trial_generated else [])+
@@ -867,6 +875,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
       "gameplay-understanding.json":gameplay_understanding_bytes,
       "universal-gameplay-intelligence.json":universal_gameplay_intelligence_bytes,
       "generation-readiness.json":generation_readiness_bytes,
+      "generated-module-contract.json":module_contract_bytes,
 
       "action-capabilities.json":action_discovery_bytes,
 

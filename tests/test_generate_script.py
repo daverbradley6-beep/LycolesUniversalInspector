@@ -22,12 +22,13 @@ class GeneratorTests(unittest.TestCase):
     def test_generates_client_utility(self):
         result=generator.render(self.plan())
         self.assertIn("3623096087",result)
-        self.assertIn('button("Stats"',result)
-        self.assertIn('button("Menus"',result)
-        self.assertIn('button("Gameplay"',result)
+        self.assertIn('button("Overview"',result)
         self.assertIn('button("Loadout"',result)
-        self.assertIn('button("LoadCfg"',result)
+        self.assertIn('button("Movement"',result)
+        self.assertIn('button("Settings"',result)
+        self.assertIn('button("Diagnostics"',result)
         self.assertIn('RightShift',result)
+        self.assertIn('RightControl',result)
         self.assertNotIn('button("Features"',result)
         self.assertIn('activateGameplayAction',result)
         self.assertIn("Receiver payload digests: unavailable",result)
@@ -58,7 +59,39 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('LocalPlayer.PlayerGui.HUD.WeaponLabel',result)
         self.assertIn('LOADOUT_SNAPSHOT_COUNT = 1',result)
         self.assertIn('button("Loadout"',result)
+        self.assertIn('button("Settings"',result)
         self.assertIn('rebuildLoadoutSnapshotLines',result)
+
+
+    def test_generated_module_contract_tracks_loadout_and_movement_coverage(self):
+        plan=self.plan()
+        plan["requestedCapability"]="Provide loadout and movement telemetry"
+        plan["observedInteractionHistory"]=[
+            {"actionKind":"sprint","path":"LocalPlayer.PlayerGui.HUD.SpeedLabel","featureCandidate":"combat"}
+        ]
+        plan["interactionDiagnostics"]={
+            "targetedCaptureSessionSummary":{
+                "samples":{
+                    "loadoutSnapshots":[{"hudWeaponIndicatorPaths":["LocalPlayer.PlayerGui.HUD.WeaponLabel"]}],
+                    "weaponSnapshots":[{"equippedTools":["Rifle"]}],
+                    "cameraSamples":[{"fieldOfView":70}],
+                    "inputSamples":[{"inputGesturesObserved":1}],
+                }
+            }
+        }
+        contract=generator.build_generated_module_contract(plan,{"request":{"status":"evidence-only-no-replay-contract"}})
+        self.assertEqual(contract["schemaVersion"],"30.6.generated-module-contract.1")
+        self.assertTrue(contract["modules"]["loadout"]["evidenceAvailable"])
+        self.assertTrue(contract["modules"]["movement"]["evidenceAvailable"])
+        self.assertTrue(contract["behaviorCoverage"]["loadout.detect_equipped_tools"]["evidenceSupported"])
+        self.assertTrue(contract["behaviorCoverage"]["movement.speed_diagnostics"]["evidenceSupported"])
+        self.assertFalse(contract["claims"]["runtimeVerified"])
+
+    def test_generated_module_contract_flags_missing_hud_indicator_evidence(self):
+        plan=self.plan()
+        contract=generator.build_generated_module_contract(plan,{"request":{"status":"unsupported-by-current-evidence"}})
+        self.assertFalse(contract["behaviorCoverage"]["loadout.read_hud_indicators"]["evidenceSupported"])
+        self.assertFalse(contract["behaviorCoverage"]["workflow.request_aligned_executable"]["generated"])
 
     def test_gameplay_understanding_is_displayed_without_verification(self):
         result=generator.render(self.plan(),self.gameplay())
@@ -160,6 +193,7 @@ class GeneratorTests(unittest.TestCase):
             manifest=json.loads((output/"release-manifest.json").read_text())
             gameplay=json.loads((output/"gameplay-understanding.json").read_text())
             readiness=json.loads((output/"generation-readiness.json").read_text())
+            module_contract=json.loads((output/"generated-module-contract.json").read_text())
             workflows=json.loads((output/"generated-workflow-plan.json").read_text())
 
             combined=(output/"LycolesGeneratedUtility.lua").read_text()
@@ -184,6 +218,13 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(manifest["generatedWorkflowPlan"]["schemaVersion"],
                              "114.generated-workflow-plan.1")
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflows["summary"])
+            self.assertEqual(manifest["generatedModuleContract"]["schemaVersion"],
+                             "30.6.generated-module-contract.1")
+            self.assertEqual(manifest["generatedModuleContract"]["sha256"],
+                generator.hashlib.sha256((output/"generated-module-contract.json").read_bytes()).hexdigest())
+            self.assertIn("movement",manifest["generatedModuleContract"]["modules"])
+            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.1")
+
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
             self.assertEqual(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["timedEvents"],0)
             self.assertFalse(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["usedForWorkflowLinkage"])

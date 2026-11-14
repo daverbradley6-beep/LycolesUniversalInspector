@@ -168,6 +168,175 @@ def _request_requires_automatic_execution(request_text: Optional[str]) -> bool:
     return bool(tokens & _AUTOMATIC_REQUEST_TERMS)
 
 
+
+_LOADOUT_REQUEST_TERMS = {
+    "loadout", "weapon", "weapons", "inventory", "backpack", "equip", "equipped", "hud", "tool", "tools",
+}
+
+_MOVEMENT_REQUEST_TERMS = {
+    "movement", "speed", "grounded", "airborne", "jump", "sprint", "telemetry", "navigation", "velocity", "move",
+}
+
+_LOADOUT_REQUIRED_BEHAVIORS = (
+    "loadout.detect_equipped_tools",
+    "loadout.track_backpack_changes",
+    "loadout.detect_weapon_changes",
+    "loadout.display_information",
+    "loadout.read_hud_indicators",
+    "loadout.periodic_updates",
+    "loadout.respawn_recovery",
+    "loadout.missing_info_handling",
+    "loadout.configurable_refresh",
+    "loadout.enable_disable",
+    "loadout.keybind_toggle",
+    "loadout.cleanup_connections",
+)
+
+_MOVEMENT_REQUIRED_BEHAVIORS = (
+    "movement.speed_diagnostics",
+    "movement.state_diagnostics",
+    "movement.grounded_airborne_status",
+    "movement.telemetry_updates",
+    "movement.configurable_refresh",
+    "movement.enable_disable",
+    "movement.respawn_recovery",
+    "movement.keybind_toggle",
+    "movement.cleanup_connections",
+)
+
+
+def _required_behaviors_for_request(request_text: Optional[str]) -> tuple[list[str], bool]:
+    if not isinstance(request_text, str) or not request_text.strip():
+        return [], False
+    tokens = _tokenize_text(request_text)
+    automatic_required = _request_requires_automatic_execution(request_text)
+    required: list[str] = ["ui.unified_categories"]
+
+    if tokens & _LOADOUT_REQUEST_TERMS:
+        required.extend(_LOADOUT_REQUIRED_BEHAVIORS)
+    if tokens & _MOVEMENT_REQUEST_TERMS:
+        required.extend(_MOVEMENT_REQUIRED_BEHAVIORS)
+
+    if automatic_required or len(required) == 1:
+        required.append("workflow.request_aligned_executable")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for behavior in required:
+        if behavior in seen:
+            continue
+        seen.add(behavior)
+        deduped.append(behavior)
+    return deduped, automatic_required
+
+
+def _behavior_coverage_from_contract(module_contract: Optional[dict[str, Any]]) -> dict[str, dict[str, bool]]:
+    if not isinstance(module_contract, dict):
+        return {}
+    payload = module_contract.get("behaviorCoverage") if isinstance(module_contract.get("behaviorCoverage"), dict) else {}
+    coverage: dict[str, dict[str, bool]] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        coverage[key] = {
+            "generated": value.get("generated") is True,
+            "evidenceSupported": value.get("evidenceSupported") is True,
+            "offlineValidated": value.get("offlineValidated") is True,
+        }
+    return coverage
+
+
+def _assess_request_fulfillment(
+    request_text: Optional[str],
+    module_contract: Optional[dict[str, Any]],
+    executable_workflow: Optional[dict[str, Any]],
+    reconciliation_result: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    request_provided = bool(isinstance(request_text, str) and request_text.strip())
+    required_behaviors, automatic_required = _required_behaviors_for_request(request_text)
+    coverage = _behavior_coverage_from_contract(module_contract)
+
+    workflow_payload = executable_workflow if isinstance(executable_workflow, dict) else {}
+    workflow_ready = workflow_payload.get("requestAlignedExecutableWorkflowAvailable") is True
+    workflow_candidates = int(workflow_payload.get("requestAlignedExecutionReadyWorkflowCandidates") or 0)
+    coverage["workflow.request_aligned_executable"] = {
+        "generated": workflow_payload.get("guidedWorkflowScriptGenerated") is True,
+        "evidenceSupported": workflow_candidates > 0,
+        "offlineValidated": workflow_ready,
+    }
+
+    gameplay_ready_capabilities: list[str] = []
+    if isinstance(reconciliation_result, dict):
+        summary = reconciliation_result.get("summary") if isinstance(reconciliation_result.get("summary"), dict) else {}
+        ready = summary.get("gameplayImplementationReadyCapabilities") if isinstance(summary.get("gameplayImplementationReadyCapabilities"), list) else []
+        for item in ready:
+            if isinstance(item, dict) and isinstance(item.get("capabilityId"), str):
+                gameplay_ready_capabilities.append(item["capabilityId"])
+
+    behavior_assessments: list[dict[str, Any]] = []
+    missing_behaviors: list[str] = []
+    unsupported_by_evidence: list[str] = []
+    offline_unvalidated: list[str] = []
+
+    for behavior in required_behaviors:
+        state = coverage.get(behavior, {"generated": False, "evidenceSupported": False, "offlineValidated": False})
+        generated = state.get("generated") is True
+        evidence_supported = state.get("evidenceSupported") is True
+        offline_validated = state.get("offlineValidated") is True
+
+        if not generated:
+            missing_behaviors.append(behavior)
+        elif not evidence_supported:
+            unsupported_by_evidence.append(behavior)
+        elif not offline_validated:
+            offline_unvalidated.append(behavior)
+
+        behavior_assessments.append({
+            "behavior": behavior,
+            "generated": generated,
+            "evidenceSupported": evidence_supported,
+            "offlineValidated": offline_validated,
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+        })
+
+    offline_complete = bool(
+        request_provided
+        and required_behaviors
+        and not missing_behaviors
+        and not unsupported_by_evidence
+        and not offline_unvalidated
+    )
+
+    if not request_provided:
+        status = "no-request-supplied"
+    elif unsupported_by_evidence:
+        status = "request-unmet-evidence-gap"
+    elif missing_behaviors or offline_unvalidated:
+        status = "request-unmet-implementation-gap"
+    else:
+        status = "offline-implementation-complete-runtime-unverified"
+
+    return {
+        "schemaVersion": "30.6.request-fulfillment.1",
+        "requestProvided": request_provided,
+        "request": request_text,
+        "automaticExecutionRequired": automatic_required,
+        "status": status,
+        "requiredBehaviors": required_behaviors,
+        "generatedBehaviors": [item["behavior"] for item in behavior_assessments if item["generated"]],
+        "missingBehaviors": sorted(set(missing_behaviors)),
+        "unsupportedByEvidence": sorted(set(unsupported_by_evidence)),
+        "offlineValidationGaps": sorted(set(offline_unvalidated)),
+        "behaviorAssessments": behavior_assessments,
+        "offlineImplementationComplete": offline_complete,
+        "runtimeVerified": False,
+        "gameplayVerified": False,
+        "requestFulfilled": False,
+        "implementationReadyCapabilities": gameplay_ready_capabilities,
+        "claims": dict(FALSE_CLAIMS),
+    }
+
 def _load_local_module(filename: str, name: str):
     path = Path(__file__).with_name(filename)
     spec = importlib.util.spec_from_file_location(name, path)
@@ -266,6 +435,7 @@ class EvidenceBundle:
     manifest_readiness: Optional[dict[str, Any]] = None
     release_manifest: Optional[dict[str, Any]] = None
     generation_readiness: Optional[dict[str, Any]] = None
+    generated_module_contract: Optional[dict[str, Any]] = None
     generated_script: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
     normalized_observation_paths: tuple[Path, ...] = ()
@@ -1190,6 +1360,8 @@ class EvidenceProcessor:
                     readiness_path = output_dir / "generation-readiness.json"
                     script_path = output_dir / "LycolesGeneratedUtility.lua"
                     generation_readiness = json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.exists() else None
+                    module_contract_path = output_dir / "generated-module-contract.json"
+                    generated_module_contract = json.loads(module_contract_path.read_text(encoding="utf-8")) if module_contract_path.exists() else None
                     generated_script = script_path.read_text(encoding="utf-8") if script_path.exists() else None
                     return EvidenceBundle(
                         mode="multipart",
@@ -1198,6 +1370,7 @@ class EvidenceProcessor:
                         output_dir=output_dir,
                         release_manifest=manifest,
                         generation_readiness=generation_readiness,
+                        generated_module_contract=generated_module_contract,
                         generated_script=generated_script,
                         warnings=warnings,
                         normalized_observation_paths=reconciliation_observation_files,
@@ -1267,6 +1440,8 @@ class EvidenceProcessor:
         readiness_path = output_dir / "generation-readiness.json"
         script_path = output_dir / "LycolesGeneratedUtility.lua"
         generation_readiness = json.loads(readiness_path.read_text(encoding="utf-8")) if readiness_path.exists() else None
+        module_contract_path = output_dir / "generated-module-contract.json"
+        generated_module_contract = json.loads(module_contract_path.read_text(encoding="utf-8")) if module_contract_path.exists() else None
         generated_script = script_path.read_text(encoding="utf-8") if script_path.exists() else None
         return EvidenceBundle(
             mode="multipart",
@@ -1275,6 +1450,7 @@ class EvidenceProcessor:
             output_dir=output_dir,
             release_manifest=manifest,
             generation_readiness=generation_readiness,
+            generated_module_contract=generated_module_contract,
             generated_script=generated_script,
             warnings=warnings,
             normalized_observation_paths=reconciliation_observation_files,
@@ -2579,12 +2755,25 @@ class LycolesGenerationService:
             blockers.extend(str(item) for item in autonomous_plan.get("blockers") if isinstance(item, str))
         blockers = sorted(set(blockers))
         executable_workflow = delivery.get("executableWorkflow") if isinstance(delivery.get("executableWorkflow"), dict) else {}
-        request_provided = executable_workflow.get("requestedCapabilityProvided") is True
+        request_fulfillment = _assess_request_fulfillment(
+            request.requested_capability,
+            bundle.generated_module_contract,
+            executable_workflow,
+            reconciliation_result,
+        )
+        executable_workflow["requestAlignedFunctionalCoverageAvailable"] = (
+            request_fulfillment.get("offlineImplementationComplete") is True
+        )
+        executable_workflow["requestFulfillmentStatus"] = request_fulfillment.get("status")
+        delivery["requestFulfillment"] = request_fulfillment
+
+        request_provided = request_fulfillment.get("requestProvided") is True
+        request_functional_available = request_fulfillment.get("offlineImplementationComplete") is True
         request_executable_available = executable_workflow.get("requestAlignedExecutableWorkflowAvailable") is True
 
         if code is None:
             generation_status = "blocked"
-        elif request_provided and not request_executable_available:
+        elif request_provided and not request_functional_available:
             generation_status = "observational-only-request-unmet"
         elif blockers:
             generation_status = "generated-with-blockers"
@@ -2598,6 +2787,21 @@ class LycolesGenerationService:
                 for item in (executable_workflow.get("blockers") or [])
                 if isinstance(item, str)
             ]
+            workflow_blockers.extend(
+                f"missing-behavior:{item}"
+                for item in (request_fulfillment.get("missingBehaviors") or [])
+                if isinstance(item, str)
+            )
+            workflow_blockers.extend(
+                f"unsupported-by-evidence:{item}"
+                for item in (request_fulfillment.get("unsupportedByEvidence") or [])
+                if isinstance(item, str)
+            )
+            workflow_blockers.extend(
+                f"offline-validation-gap:{item}"
+                for item in (request_fulfillment.get("offlineValidationGaps") or [])
+                if isinstance(item, str)
+            )
             selected_feature = autonomous_plan.get("selectedFeature") if isinstance(autonomous_plan.get("selectedFeature"), dict) else {}
             selected_strategy = autonomous_plan.get("selectedStrategy") if isinstance(autonomous_plan.get("selectedStrategy"), dict) else {}
             strategy_missing = [
@@ -2611,6 +2815,14 @@ class LycolesGenerationService:
                 "At least one execution-ready request-aligned workflow candidate in generation readiness",
                 "Evidence-backed control pathway (GUI/proximity/tool) with path identity and outcome correlation",
             ]
+            if request_fulfillment.get("unsupportedByEvidence"):
+                minimum_additional_evidence.append(
+                    "Targeted evidence samples that satisfy unsupported behavior categories in requestFulfillment.unsupportedByEvidence"
+                )
+            if request_fulfillment.get("offlineValidationGaps"):
+                minimum_additional_evidence.append(
+                    "Offline contract checks for remaining behaviors listed in requestFulfillment.offlineValidationGaps"
+                )
             if any("workspace target path" in item for item in strategy_missing):
                 minimum_additional_evidence.append(
                     "Workspace target path(s) correlated with feature interactions for relocation/navigation strategies"
@@ -2650,6 +2862,13 @@ class LycolesGenerationService:
                 },
                 "blockers": sorted(set(blockers + workflow_blockers)),
                 "minimumAdditionalEvidence": sorted(set(minimum_additional_evidence)),
+                "requestFulfillment": {
+                    "status": request_fulfillment.get("status"),
+                    "requiredBehaviors": request_fulfillment.get("requiredBehaviors"),
+                    "missingBehaviors": request_fulfillment.get("missingBehaviors"),
+                    "unsupportedByEvidence": request_fulfillment.get("unsupportedByEvidence"),
+                    "offlineValidationGaps": request_fulfillment.get("offlineValidationGaps"),
+                },
                 "claims": dict(FALSE_CLAIMS),
             }
             blocker_path = bundle.output_dir / "generation-blockers.json"
@@ -2721,9 +2940,11 @@ class LycolesGenerationService:
                 "manifestReadinessPath": str(bundle.output_dir / "manifest-readiness-v109.json") if (bundle.output_dir / "manifest-readiness-v109.json").exists() else None,
                 "releaseManifestPath": str(bundle.output_dir / "release-manifest.json") if (bundle.output_dir / "release-manifest.json").exists() else None,
                 "generationReadinessPath": str(bundle.output_dir / "generation-readiness.json") if (bundle.output_dir / "generation-readiness.json").exists() else None,
+                "generatedModuleContractPath": str(bundle.output_dir / "generated-module-contract.json") if (bundle.output_dir / "generated-module-contract.json").exists() else None,
                 "evidenceReconciliationOutputDir": reconciliation_result.get("outputDir") if isinstance(reconciliation_result, dict) else None,
             },
             "analysis": analysis,
+            "requestFulfillment": request_fulfillment,
             "autonomousGeneration": autonomous_plan,
             "validation": validation,
             "delivery": delivery,
