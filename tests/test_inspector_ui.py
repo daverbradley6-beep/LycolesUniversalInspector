@@ -91,6 +91,26 @@ class InspectorUITests(unittest.TestCase):
         self.assertEqual(SRC.count('Name = "SettingsTab"'), 1)
         self.assertEqual(SRC.count('Name = "GeneratedScriptTab"'), 1)
 
+
+    def test_scan_context_helpers_are_wired_into_scan_and_packaging_paths(self):
+        self.assertIn('WORKFLOW_HELPERS.ensureReportScanContext = function(report)', SRC)
+        self.assertIn('WORKFLOW_HELPERS.manifestExportContext = function(report)', SRC)
+        self.assertIn('local reportScanId, generatedScanId, scanContextReason = WORKFLOW_HELPERS.ensureReportScanContext(report)', SRC)
+        self.assertIn('local scanId, generatedAtPackaging = WORKFLOW_HELPERS.ensureReportScanContext(report)', SRC)
+        self.assertIn('local targetedContext = WORKFLOW_HELPERS.manifestExportContext(report)', SRC)
+        self.assertIn('local targetedCapture = WORKFLOW_HELPERS.targetedCaptureForExport(targetedContext)', SRC)
+        self.assertNotIn('scanId=result.scanId', SRC)
+
+    def test_inspector_button_and_receiver_layout_avoid_overflow(self):
+        self.assertIn('Size = UDim2.fromOffset(110, 38)', SRC)
+        self.assertIn('copy.Position = UDim2.fromOffset(124, 8)', SRC)
+        self.assertIn('save.Position = UDim2.fromOffset(240, 8)', SRC)
+        self.assertIn('close.Position = UDim2.fromOffset(356, 8)', SRC)
+        self.assertIn('TextTruncate = Enum.TextTruncate.AtEnd', SRC)
+        self.assertIn('url.Size = UDim2.fromOffset(446, 30)', SRC)
+        self.assertIn('send.Size = UDim2.fromOffset(170, 40)', SRC)
+        self.assertIn('automatic.Size = UDim2.fromOffset(268, 40)', SRC)
+
     def test_ack_not_misrepresented_as_integrity(self):
         self.assertIn("Receiver ACK ",SRC)
         self.assertIn("verify receiver integrity separately",SRC)
@@ -239,7 +259,8 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('duplicateExportSuppressed = duplicate',SRC)
         self.assertIn('duplicateExportsSuppressed =',SRC)
         self.assertIn('lifecycleState.exportCount = lifecycleState.exportCount + 1',SRC)
-        self.assertIn('targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="manifest",scanId=result.scanId})',SRC)
+        self.assertIn('local targetedContext = WORKFLOW_HELPERS.manifestExportContext(report)',SRC)
+        self.assertIn('local targetedCapture = WORKFLOW_HELPERS.targetedCaptureForExport(targetedContext)',SRC)
         self.assertIn('targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="live-observation",scanId=baselineScanId})',SRC)
 
     def test_generated_pane_tracks_evidence_handoff_without_verification_claims(self):

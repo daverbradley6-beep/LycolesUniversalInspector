@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.64
+-- Lycoles Universal Inspector v30.6.65
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.64"
+local VERSION = "30.6.65"
 
 local endpoint = ""
 local autoSend = true
@@ -1453,13 +1453,15 @@ titleLabel = create("TextLabel", {
 local function button(label, x)
     return create("TextButton", {
         Text = label,
-        Size = UDim2.fromOffset(116, 40),
+        Size = UDim2.fromOffset(110, 38),
         Position = UDim2.fromOffset(x, 56),
         BackgroundColor3 = Color3.fromRGB(105, 105, 105),
         BorderColor3 = Color3.new(0, 0, 0),
         BorderSizePixel = 0,
         TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 14,
+        TextSize = 13,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        TextWrapped = false,
         Active = true,
         ZIndex = 4
     }, panel)
@@ -1674,7 +1676,9 @@ local url = create("TextBox", {
     PlaceholderText = "HTTPS receiver URL ending /ingest/KEY",
     Text = endpoint,
     ClearTextOnFocus = false,
-    TextSize = 13,
+    TextSize = 12,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = Color3.new(1, 1, 1),
     BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 }, config)
@@ -1684,6 +1688,8 @@ local send = create("TextButton", {
     Position = UDim2.fromOffset(12, 45),
     Text = "SEND JSON",
     TextColor3 = Color3.new(1, 1, 1),
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextWrapped = false,
     BackgroundColor3 = Color3.fromRGB(90, 90, 90),
     BorderSizePixel = 2
 }, config)
@@ -1693,6 +1699,8 @@ local automatic = create("TextButton", {
     Position = UDim2.fromOffset(208, 45),
     Text = "AUTO-SEND: ON",
     TextColor3 = Color3.new(1, 1, 1),
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextWrapped = false,
     BackgroundColor3 = Color3.fromRGB(90, 90, 90),
     BorderSizePixel = 2
 }, config)
@@ -1760,10 +1768,14 @@ config.Parent = inspectorPane
 watchToggle.Parent = automationPane
 interactionToggle.Parent = automationPane
 
+scan.Size = UDim2.fromOffset(110, 38)
+copy.Size = UDim2.fromOffset(110, 38)
+save.Size = UDim2.fromOffset(110, 38)
+close.Size = UDim2.fromOffset(110, 38)
 scan.Position = UDim2.fromOffset(8, 8)
-copy.Position = UDim2.fromOffset(128, 8)
-save.Position = UDim2.fromOffset(248, 8)
-close.Position = UDim2.fromOffset(368, 8)
+copy.Position = UDim2.fromOffset(124, 8)
+save.Position = UDim2.fromOffset(240, 8)
+close.Position = UDim2.fromOffset(356, 8)
 status.Size = UDim2.fromOffset(474, 50)
 status.Position = UDim2.fromOffset(8, 44)
 queueLabel.Size = UDim2.fromOffset(474, 18)
@@ -1772,12 +1784,12 @@ output.Size = UDim2.fromOffset(474, 120)
 output.Position = UDim2.fromOffset(8, 118)
 config.Size = UDim2.fromOffset(474, 108)
 config.Position = UDim2.fromOffset(8, 244)
-url.Size = UDim2.fromOffset(452, 30)
-url.Position = UDim2.fromOffset(10, 8)
-send.Size = UDim2.fromOffset(176, 40)
-send.Position = UDim2.fromOffset(10, 52)
-automatic.Size = UDim2.fromOffset(274, 40)
-automatic.Position = UDim2.fromOffset(188, 52)
+url.Size = UDim2.fromOffset(446, 30)
+url.Position = UDim2.fromOffset(14, 8)
+send.Size = UDim2.fromOffset(170, 40)
+send.Position = UDim2.fromOffset(14, 52)
+automatic.Size = UDim2.fromOffset(268, 40)
+automatic.Position = UDim2.fromOffset(192, 52)
 watchToggle.Size = UDim2.fromOffset(220, 30)
 
 scan.ZIndex = 4
@@ -2592,6 +2604,39 @@ local function encodeStage(stage, value)
     return encoded
 end
 
+-- SCAN_CONTEXT_HELPERS_BEGIN
+WORKFLOW_HELPERS.ensureReportScanContext = function(report)
+    if type(report) ~= "table" then
+        return HttpService:GenerateGUID(false), true, "report-unavailable"
+    end
+    local existing = report.scanId
+    if type(existing) == "string" and existing ~= "" then
+        return existing, false, "existing"
+    end
+    local generated = HttpService:GenerateGUID(false)
+    report.scanId = generated
+    return generated, true, "generated"
+end
+
+WORKFLOW_HELPERS.manifestExportContext = function(report)
+    local scanId = type(report) == "table" and report.scanId or nil
+    if type(scanId) ~= "string" or scanId == "" then
+        return {
+            kind = "manifest",
+            scanId = "none",
+            missingScanId = true,
+            diagnostic = "scan-context-uninitialized",
+        }
+    end
+    return {
+        kind = "manifest",
+        scanId = scanId,
+        missingScanId = false,
+    }
+end
+-- SCAN_CONTEXT_HELPERS_END
+
+
 refreshLocalManifest = function(phase)
     if not pendingManifest then return false end
     pendingManifest.uploadedParts = uploadState.acknowledgedParts
@@ -2605,7 +2650,9 @@ end
 
 local function prepareParts(report)
     local prepareStarted = os.clock()
-    local scanId = HttpService:GenerateGUID(false)
+    local scanId, generatedAtPackaging = WORKFLOW_HELPERS.ensureReportScanContext(report)
+    report.scanContextDiagnostics = report.scanContextDiagnostics or {}
+    report.scanContextDiagnostics.generatedAtPackaging = generatedAtPackaging == true
     local objects = report.objects
     local chunks = {}
     local chunk = {}
@@ -8932,6 +8979,7 @@ local function inspect(requestType, featureRequest)
             local report = {
                 version = VERSION,
                 sessionId = sessionId, snapshotId = HttpService:GenerateGUID(false),
+                scanId = HttpService:GenerateGUID(false),
                 placeId = game.PlaceId,
                 gameId = game.GameId,
                 placeVersion = game.PlaceVersion,
@@ -8951,6 +8999,13 @@ local function inspect(requestType, featureRequest)
                     maxCandidates = 220,
                     notes = "client-visible progression-stat candidates only"
                 }
+            }
+
+            local reportScanId, generatedScanId, scanContextReason = WORKFLOW_HELPERS.ensureReportScanContext(report)
+            report.scanContextDiagnostics = {
+                scanId = reportScanId,
+                generatedAtScanStart = generatedScanId == true,
+                reason = scanContextReason,
             }
 
             local okName, info = pcall(function()
@@ -9384,13 +9439,19 @@ local function inspect(requestType, featureRequest)
             report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
             local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
             local gestureIntentSummary=summarizeInputGestureIntents()
-            local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="manifest",scanId=result.scanId})
+            local targetedContext = WORKFLOW_HELPERS.manifestExportContext(report)
+            local targetedCapture = WORKFLOW_HELPERS.targetedCaptureForExport(targetedContext)
             report.interactionDiagnostics = {
                 scanRequestType=observerStats.scanRequestType,
                 scanInvocationCount=observerStats.scanInvocationCount,
                 scanProfile=activeScanProfileId, scanMode=profile.scanMode,
                 quickTargeted=profile.quickTargeted==true,
                 profileFilteredObjects=report.scanStats.omissions.profileFiltered,
+                scanId=reportScanId,
+                scanContextDiagnostics=report.scanContextDiagnostics,
+                targetedCaptureContext=targetedContext,
+                targetedCaptureContextMissing=targetedContext.missingScanId==true,
+
                 observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
                 callbacksFired=observerStats.callbacksFired,
@@ -9713,6 +9774,7 @@ local function inspect(requestType, featureRequest)
                     expectedParts=#parts,manifestSaved=false,manifestWriteAttempts=0,
                     localPartContentDigestsComputed=false},
                 localPerformance = result.localPerformance,
+                scanContextDiagnostics = result.scanContextDiagnostics,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
                 note = "Inspection snapshot is uploaded in numbered parts; manifest includes scan profile and coverage diagnostics"
             }

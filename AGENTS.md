@@ -932,3 +932,24 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - explicit user-visible status messaging when persistence is unavailable.
 - Automatic targeted capture lifecycle remains integrated; theme and tab operations do not restart capture sessions.
 - Compiler pressure remained within budget after changes (`root local pressure = 168`, budget `170`).
+
+## Update — 2026-11-13 — v30.6.65 scan regression hotfix (Potassium)
+
+- Root cause of Potassium runtime failure (`attempt to index nil with 'scanId'`):
+  - In `inspect`, targeted export context used `result.scanId` **inside** the scan `pcall` body before `pcall` returned.
+  - `result` at that point is the outer `pcall` result variable and is `nil` during report construction.
+  - Failing expression was the manifest targeted export call at line ~9387 in v30.6.64.
+- Structural fix:
+  - Added scan-context helpers:
+    - `WORKFLOW_HELPERS.ensureReportScanContext(report)`
+    - `WORKFLOW_HELPERS.manifestExportContext(report)`
+  - `report.scanId` is now guaranteed at scan-report construction time.
+  - `prepareParts(report)` now reuses/ensures `report.scanId` instead of creating a disconnected scan id.
+  - Manifest targeted export now uses `manifestExportContext(report)` and cannot index outer `result`.
+  - Added `scanContextDiagnostics` into interaction diagnostics and manifest metadata.
+- Added executable Luau harness tests for helper runtime behavior (`tests/test_inspector_scan_context_runtime.py`) covering generated/reused scan IDs, missing-context fallback, and no nil-index regression path.
+- GUI overflow touch-up while preserving monochrome design:
+  - inspector action buttons tightened and spaced;
+  - button/url text truncation enabled;
+  - receiver row widths adjusted.
+- Compiler pressure unchanged after fix: root local pressure remains `168` (budget `170`).
