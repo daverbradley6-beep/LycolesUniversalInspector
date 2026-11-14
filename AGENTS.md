@@ -980,3 +980,18 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - bounded by `LYCOLES_ANALYSIS_CACHE_MAX_ENTRIES` (default 256, minimum 32),
   - cache hit can now survive process restarts, reducing repeated analysis-model spend for unchanged evidence signatures,
   - covered by `tests/test_lycoles_generation_service.py::test_analysis_cache_persists_across_service_restarts`.
+
+## Update — 2026-11-13 — v30.6.67 packaging overflow recovery (Potassium live)
+
+- Live Potassium failure root cause (`Runtime error: packaging`, `Shared scan summary exceeds receiver limit`):
+  - `prepareParts` metadata part overflowed when large table-valued diagnostics fields (notably `interactionDiagnostics.targetedCaptureSessionSummary` with nested `samples`) stayed inline in the shared summary part.
+  - Existing chunking covered `recentInteractions` and selected collection keys only; unlisted large summary tables were fail-closed at the meta part size check.
+- Structural fix:
+  - Added dynamic summary externalization in `prepareParts`: when metadata part exceeds `MAX_PART_BYTES`, the largest remaining table-valued summary field is serialized into deterministic JSON fragments and emitted as additional `interactionDiagnosticsChunk` parts.
+  - Added summary descriptors (`chunkedInteractionDiagnosticSummaryFields`) and per-field metadata (`...ChunkSchema`, `...ChunkKind`, `...ChunkKey`, `...EncodedLength`) so downstream can reconstruct full values without evidence loss.
+  - Added packaging diagnostics (`report.localPerformance.packagingDiagnostics`) including summary encoded size, max allowed bytes, overflow count, externalized fields, generated part count, largest part bytes, and status.
+- Downstream compatibility:
+  - `tools/compile_scan.py` now reconstructs `json-fragment` summary fields from chunk descriptors and validates fragment sequence/length fail-closed.
+- Runtime regression coverage:
+  - `tests/test_inspector_packaging_runtime.py` executes real `prepareParts` Luau logic and verifies oversized summary externalization + bounded part sizes.
+  - `tests/test_compile_scan.py` adds summary fragment reconstruction and sequence-mismatch fail-closed tests.

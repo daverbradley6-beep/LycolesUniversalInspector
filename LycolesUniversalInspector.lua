@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.6.66
+-- Lycoles Universal Inspector v30.6.67
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,7 +13,7 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.6.66"
+local VERSION = "30.6.67"
 
 local endpoint = ""
 local autoSend = true
@@ -2791,6 +2791,17 @@ local function prepareParts(report)
     local diagnostics = report.interactionDiagnostics or {}
     local history = diagnostics.recentInteractions or {}
     local summary = {}
+    local packagingDiagnostics = {
+        schemaVersion = "30.6.packaging-diagnostics.2",
+        status = "preparing",
+        maxAllowedBytes = limit,
+        summaryEncodedBytes = 0,
+        summaryExternalizedFieldCount = 0,
+        summaryExternalizedFields = {},
+        generatedPartCount = 0,
+        largestPartBytes = 0,
+        overflowEvents = 0,
+    }
     local collectionChunkKeys = {
         "cursorObservationHistory",
         "clickTargetObservations",
@@ -2814,13 +2825,25 @@ local function prepareParts(report)
     summary.interactionDiagnosticsChunkSchema="30.6.interaction-diagnostics-chunk.1"
     summary.interactionDiagnosticsChunkMode="separate-bounded-parts"
     local chunkedCollections={}
+    local chunkedSummaryFields={}
     local diagnosticCollectionBatches={}
-    local function queueDiagnosticCollectionBatches(key, values)
+    local function sortedStringKeys(tbl)
+        local keys = {}
+        for key, _ in pairs(tbl) do
+            if type(key) == "string" then keys[#keys+1] = key end
+        end
+        table.sort(keys)
+        return keys
+    end
+    local function queueInteractionDiagnosticsListBatches(key, values, options)
         if type(values)~="table" then return end
-        summary[key]={}
-        summary[key.."Total"]=#values
-        summary[key.."ExportMode"]="separate-bounded-parts"
-        chunkedCollections[#chunkedCollections+1]=key
+        options = options or {}
+        if not options.skipSummaryMarkers then
+            summary[key]={}
+            summary[key.."Total"]=#values
+            summary[key.."ExportMode"]="separate-bounded-parts"
+            chunkedCollections[#chunkedCollections+1]=key
+        end
         local batch={}
         local batchStart=1
         local batchBytes=0
@@ -2829,7 +2852,8 @@ local function prepareParts(report)
             local estimate=#encoded+2
             if batchBytes+estimate>limit-1500 and #batch>0 then
                 diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
-                    key=key,items=batch,start=batchStart
+                    key=key,items=batch,start=batchStart,chunkKind=options.chunkKind,
+                    summaryField=options.summaryField
                 }
                 batch={}
                 batchStart=i
@@ -2840,14 +2864,85 @@ local function prepareParts(report)
         end
         if #batch>0 then
             diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
-                key=key,items=batch,start=batchStart
+                key=key,items=batch,start=batchStart,chunkKind=options.chunkKind,
+                summaryField=options.summaryField
             }
         end
+    end
+    local function queueDiagnosticCollectionBatches(key, values)
+        queueInteractionDiagnosticsListBatches(key, values)
     end
     for _, key in ipairs(collectionChunkKeys) do
         queueDiagnosticCollectionBatches(key, diagnostics[key])
     end
+    local function queueSummaryFieldFragments(fieldKey, fieldValue)
+        local chunkKey = fieldKey .. "ChunkedFragments"
+        local encodedValue = encodeStage("diag-summary-field-json-"..fieldKey, fieldValue)
+        local fragments = {}
+        local fragmentMaxBytes = math.max(4096, limit - 5000)
+        local index = 1
+        local offset = 1
+        while offset <= #encodedValue do
+            local piece = encodedValue:sub(offset, offset + fragmentMaxBytes - 1)
+            fragments[#fragments+1] = {
+                fragmentIndex = index,
+                fragment = piece,
+                fragmentLength = #piece,
+            }
+            index = index + 1
+            offset = offset + fragmentMaxBytes
+        end
+        queueInteractionDiagnosticsListBatches(chunkKey, fragments, {
+            skipSummaryMarkers = true,
+            chunkKind = "summary-fragment",
+            summaryField = fieldKey,
+        })
+        summary[fieldKey] = {}
+        summary[fieldKey.."ExportMode"] = "separate-bounded-parts"
+        summary[fieldKey.."ChunkSchema"] = "30.6.interaction-diagnostics-fragment-chunk.1"
+        summary[fieldKey.."ChunkKind"] = "json-fragment"
+        summary[fieldKey.."ChunkKey"] = chunkKey
+        summary[fieldKey.."EncodedLength"] = #encodedValue
+        chunkedSummaryFields[#chunkedSummaryFields+1] = {
+            field = fieldKey,
+            chunkKey = chunkKey,
+            chunkKind = "json-fragment",
+            encodedLength = #encodedValue,
+            fragmentCount = #fragments,
+        }
+        return #encodedValue
+    end
+    local function summaryExternalizationCandidates()
+        local candidates = {}
+        for _, key in ipairs(sortedStringKeys(summary)) do
+            if key ~= "recentInteractions"
+                and key ~= "chunkedInteractionDiagnosticCollections"
+                and key ~= "chunkedInteractionDiagnosticSummaryFields"
+                and summary[key.."ExportMode"] == nil then
+                local value = summary[key]
+                if type(value) == "table" then
+                    local encoded = encodeStage("summary-field-size-"..key, {[key] = value})
+                    candidates[#candidates+1] = {key = key, bytes = #encoded, value = value}
+                end
+            end
+        end
+        table.sort(candidates, function(a,b)
+            if a.bytes == b.bytes then return a.key < b.key end
+            return a.bytes > b.bytes
+        end)
+        return candidates
+    end
+    local function tryExternalizeLargestSummaryField()
+        local candidates = summaryExternalizationCandidates()
+        local chosen = candidates[1]
+        if not chosen then return nil, nil end
+        local bytes = queueSummaryFieldFragments(chosen.key, chosen.value)
+        packagingDiagnostics.summaryExternalizedFieldCount = packagingDiagnostics.summaryExternalizedFieldCount + 1
+        packagingDiagnostics.summaryExternalizedFields[#packagingDiagnostics.summaryExternalizedFields+1] = chosen.key
+        return chosen.key, bytes
+    end
     summary.chunkedInteractionDiagnosticCollections=chunkedCollections
+    summary.chunkedInteractionDiagnosticSummaryFields=chunkedSummaryFields
     local function makePart(items,index,total,meta,historyBatch,historyStart,diagKey,diagBatch,diagStart)
         return {
             version=report.version,placeId=report.placeId,gameId=report.gameId,
@@ -2913,9 +3008,28 @@ local function prepareParts(report)
             local body=encodeStage("size-check-"..i,
                 makePart(entry.items,i,total,entry.meta,entry.history,entry.historyStart,
                     entry.diagKey,entry.diag,entry.diagStart))
+            if entry.meta then packagingDiagnostics.summaryEncodedBytes = #body end
             if #body>limit then
+                packagingDiagnostics.overflowEvents = packagingDiagnostics.overflowEvents + 1
                 if entry.meta then
-                    error("Shared scan summary exceeds receiver limit")
+                    local previousBatchCount = #diagnosticCollectionBatches
+                    local externalizedKey, externalizedBytes = tryExternalizeLargestSummaryField()
+                    if externalizedKey == nil then
+                        error("Shared scan summary exceeds receiver limit ("
+                            .. tostring(#body) .. "/" .. tostring(limit) .. ")")
+                    end
+                    packagingDiagnostics.status = "summary-externalized"
+                    packagingDiagnostics.lastExternalizedField = externalizedKey
+                    packagingDiagnostics.lastExternalizedBytes = externalizedBytes
+                    for batchIndex = previousBatchCount + 1, #diagnosticCollectionBatches do
+                        local batch = diagnosticCollectionBatches[batchIndex]
+                        payloads[#payloads+1] = {
+                            items = {},
+                            diagKey = batch.key,
+                            diag = batch.items,
+                            diagStart = batch.start,
+                        }
+                    end
                 elseif entry.history then
                     if #entry.history<=1 then
                         error("Single history event exceeds receiver limit")
@@ -2959,19 +3073,25 @@ local function prepareParts(report)
         end
     end
     local parts={}
+    local largestPartBytes = 0
     for i,entry in ipairs(payloads) do
         local body=encodeStage("part-"..i,
             makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.historyStart,
                 entry.diagKey,entry.diag,entry.diagStart))
         if #body>limit then error("Unexpected oversized part "..i) end
+        if #body > largestPartBytes then largestPartBytes = #body end
         parts[#parts+1]=body
     end
+    packagingDiagnostics.generatedPartCount = #parts
+    packagingDiagnostics.largestPartBytes = largestPartBytes
+    packagingDiagnostics.status = "packaged"
     report.localPerformance = report.localPerformance or {}
     report.localPerformance.serializationSeconds = math.floor((os.clock()-prepareStarted)*1000+0.5)/1000
     report.localPerformance.uploadParts = #parts
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
+    report.localPerformance.packagingDiagnostics = packagingDiagnostics
     report.interactionDiagnosticsManifestSummary = summary
     return parts, scanId, summary
 end
@@ -9884,12 +10004,17 @@ local function inspect(requestType, featureRequest)
             local scanSeconds = result.scanStats and result.scanStats.performance
                 and result.scanStats.performance.scanSeconds or 0
             local packageSeconds = result.localPerformance and result.localPerformance.serializationSeconds or 0
+            local packagingMetrics = result.localPerformance and result.localPerformance.packagingDiagnostics or nil
+            local summaryBytes = packagingMetrics and packagingMetrics.summaryEncodedBytes or 0
+            local maxAllowedBytes = packagingMetrics and packagingMetrics.maxAllowedBytes or MAX_PART_BYTES
+            local largestPartBytes = packagingMetrics and packagingMetrics.largestPartBytes or 0
             local plannedRootCount = result.scanStats and type(result.scanStats.plannedRoots)=="table"
                 and #result.scanStats.plannedRoots or #ROOT_LABELS
             status.Text = (result.diagnostics.complete and "Snapshot complete - " or "SNAPSHOT PARTIAL - ")
                 .. #result.objects .. " entries in " .. #pendingParts .. " part(s); snapshot "
                 .. tostring(scanSeconds) .. "s; packaging " .. tostring(packageSeconds)
-                .. "s; upload " .. uploadAttemptStage()
+                .. "s; summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
+                .. "B; largest " .. tostring(largestPartBytes) .. "B; upload " .. uploadAttemptStage()
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
@@ -9903,6 +10028,8 @@ local function inspect(requestType, featureRequest)
                 .. "\\nRoots: " .. tostring(plannedRootCount)
                 .. "\\nSnapshot stage: " .. (result.diagnostics.complete and "complete" or "partial")
                 .. "\\nPackaging stage: prepared " .. #pendingParts .. " numbered parts"
+                .. "\\nPackaging metrics: summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
+                .. " bytes; largest part " .. tostring(largestPartBytes) .. " bytes"
                 .. "\\nUpload stage: " .. uploadAttemptStage()
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)

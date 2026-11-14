@@ -3180,3 +3180,38 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - added regression `test_analysis_cache_persists_across_service_restarts` in `tests/test_lycoles_generation_service.py`.
 - Automation capability audit (local backend):
   - `/api/automation/v1/capabilities` reports `ready=true`, cron triggers available (min interval 60s), no event sources configured in this local environment, and no existing automations currently deployed.
+
+## Update — 2026-11-13 — v30.6.67 shared-summary packaging overflow recovery
+
+- Live Potassium report from user confirmed packaging failure despite successful UI startup:
+  - header: `Runtime error: packaging`
+  - error: `Shared scan summary exceeds receiver limit`
+- Root cause (confirmed in `prepareParts`):
+  - metadata part overflow occurred before multipart object/history splitting because large table-valued summary diagnostics (especially `targetedCaptureSessionSummary` with nested `samples`) remained inline in shared summary,
+  - previous chunking only externalized `recentInteractions` + selected collection arrays; other large summary tables triggered fail-closed meta overflow.
+- Structural packaging fix (`LycolesUniversalInspector.lua`):
+  - added dynamic summary externalization at overflow point:
+    - when meta part exceeds `MAX_PART_BYTES`, externalize largest remaining table-valued summary field into deterministic JSON fragment chunks carried in `interactionDiagnosticsChunk` parts,
+    - annotate summary with reconstruction descriptors (`chunkedInteractionDiagnosticSummaryFields`) and per-field chunk metadata (`ChunkSchema`, `ChunkKind`, `ChunkKey`, `EncodedLength`),
+  - preserved existing receiver protocol primitives (`scanId`, `partIndex`, `partCount`, `objects`, existing history/diagnostic chunk fields) and deterministic multipart indexing,
+  - added `localPerformance.packagingDiagnostics` with:
+    - summary encoded bytes,
+    - max allowed bytes,
+    - generated part count,
+    - largest part bytes,
+    - overflow/externalization diagnostics,
+  - surfaced concise packaging metrics in runtime status/output text.
+- Downstream compatibility update:
+  - `tools/compile_scan.py` now reconstructs chunked summary fields (`json-fragment` kind) and validates fragment ordering/length fail-closed.
+- New executable regressions:
+  - `tests/test_inspector_packaging_runtime.py` (real Luau harness invoking `prepareParts`):
+    - normal summary path (inline, deterministic repeated scan output),
+    - oversized summary path (externalized, bounded part sizes, packaging diagnostics present),
+  - `tests/test_compile_scan.py`:
+    - summary fragment reconstruction succeeds,
+    - malformed fragment sequence fails closed.
+- Validation:
+  - `node --test tests/test_luau_syntax.mjs tests/test_receiver.mjs` ✅
+  - `python3 -m pytest -q tests/test_compile_scan.py tests/test_inspector_packaging_runtime.py tests/test_inspector_ui.py` ✅ (`79 passed`)
+  - `python3 -m pytest -q` ✅ (`1722 passed, 17 skipped, 79 subtests passed`)
+  - `python3 -m pytest -q tests/test_inspector_compiler_limits.py -vv` ✅

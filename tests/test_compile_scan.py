@@ -383,6 +383,114 @@ class ScanCompilerTests(unittest.TestCase):
             self.assertEqual(len(diagnostics.get("clickTargetObservations") or []),2)
             self.assertEqual((diagnostics.get("clickTargetObservations") or [])[1].get("id"),"click_2")
 
+
+    def test_chunked_interaction_summary_fragments_are_reconstructed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan126","placeId":3623096087,"partCount":4,
+                  "version":"30.6.67","objects":[]}
+            summary_payload={
+                "schemaVersion":"31.0.targeted-evidence-session.1",
+                "sessionId":"targeted-session-1",
+                "samples":{
+                    "cameraSamples":[{"kind":"camera","x":1},{"kind":"camera","x":2}],
+                    "timelineEvents":[{"kind":"timeline","step":1}],
+                },
+                "requestProgress":{"combat-camera-weapon-correlation":{"status":"collecting"}},
+            }
+            encoded=json.dumps(summary_payload,sort_keys=True,separators=(",",":"))
+            midpoint=max(1,len(encoded)//2)
+            first_fragment=encoded[:midpoint]
+            second_fragment=encoded[midpoint:]
+            chunk_key="targetedCaptureSessionSummaryChunkedFragments"
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "targetedCaptureSessionSummary":{},
+                    "targetedCaptureSessionSummaryExportMode":"separate-bounded-parts",
+                    "targetedCaptureSessionSummaryChunkSchema":"30.6.interaction-diagnostics-fragment-chunk.1",
+                    "targetedCaptureSessionSummaryChunkKind":"json-fragment",
+                    "targetedCaptureSessionSummaryChunkKey":chunk_key,
+                    "targetedCaptureSessionSummaryEncodedLength":len(encoded),
+                    "chunkedInteractionDiagnosticSummaryFields":[{
+                        "field":"targetedCaptureSessionSummary",
+                        "chunkKey":chunk_key,
+                        "chunkKind":"json-fragment",
+                        "encodedLength":len(encoded),
+                        "fragmentCount":2,
+                    }],
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{
+                    "fragmentIndex":1,
+                    "fragment":first_fragment,
+                    "fragmentLength":len(first_fragment),
+                }])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{
+                    "fragmentIndex":2,
+                    "fragment":second_fragment,
+                    "fragmentLength":len(second_fragment),
+                }])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            plan=compiler.compile_scan(path)
+            diagnostics=plan.get("interactionDiagnostics") or {}
+            rebuilt=diagnostics.get("targetedCaptureSessionSummary") or {}
+            self.assertEqual(rebuilt.get("schemaVersion"),"31.0.targeted-evidence-session.1")
+            samples=rebuilt.get("samples") or {}
+            self.assertEqual(len(samples.get("cameraSamples") or []),2)
+            self.assertEqual(len(samples.get("timelineEvents") or []),1)
+
+    def test_chunked_interaction_summary_fragment_sequence_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=pathlib.Path(tmp)
+            base={"scanId":"chunkscan127","placeId":3623096087,"partCount":4,
+                  "version":"30.6.67","objects":[]}
+            payload={"schemaVersion":"31.0.targeted-evidence-session.1","samples":{"cameraSamples":[{"x":1}]}}
+            encoded=json.dumps(payload,sort_keys=True,separators=(",",":"))
+            midpoint=max(1,len(encoded)//2)
+            chunk_key="targetedCaptureSessionSummaryChunkedFragments"
+            metadata=dict(base,partIndex=1,
+                scanStats={"recorded":2,"complete":True},
+                diagnostics={"complete":True,"rootAccountingValid":True},
+                featureEvidence={"rebirth":{}},
+                interactionDiagnostics={
+                    "historyTotal":0,
+                    "targetedCaptureSessionSummary":{},
+                    "targetedCaptureSessionSummaryChunkKey":chunk_key,
+                    "chunkedInteractionDiagnosticSummaryFields":[{
+                        "field":"targetedCaptureSessionSummary",
+                        "chunkKey":chunk_key,
+                        "chunkKind":"json-fragment",
+                        "encodedLength":len(encoded),
+                        "fragmentCount":2,
+                    }],
+                })
+            chunk_one=dict(base,partIndex=2,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=1,
+                interactionDiagnosticsChunk=[{"fragmentIndex":1,"fragment":encoded[:midpoint],"fragmentLength":len(encoded[:midpoint])}])
+            chunk_two=dict(base,partIndex=3,interactionDiagnosticsChunkKey=chunk_key,
+                interactionDiagnosticsChunkStart=2,
+                interactionDiagnosticsChunk=[{"fragmentIndex":3,"fragment":encoded[midpoint:],"fragmentLength":len(encoded[midpoint:])}])
+            objects=dict(base,partIndex=4,objects=[
+                {"path":"Workspace.A","class":"Part","scanOrdinal":1},
+                {"path":"Workspace.B","class":"Part","scanOrdinal":1},
+            ])
+            for idx,data in enumerate((metadata,chunk_one,chunk_two,objects),1):
+                (path/f"{idx}.json").write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,"summary fragment sequence"):
+                compiler.compile_scan(path)
+
     def test_local_manifest_must_match_multipart_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=pathlib.Path(tmp);self.parts(path)

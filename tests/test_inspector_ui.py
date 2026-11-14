@@ -190,9 +190,11 @@ class InspectorUITests(unittest.TestCase):
     def test_shared_summary_overflow_is_partitioned_into_chunk_parts(self):
         self.assertIn('summary.interactionDiagnosticsChunkMode="separate-bounded-parts"',SRC)
         self.assertIn('chunkedInteractionDiagnosticCollections=chunkedCollections',SRC)
+        self.assertIn('chunkedInteractionDiagnosticSummaryFields=chunkedSummaryFields',SRC)
         self.assertIn('interactionDiagnosticsChunkKey=diagKey',SRC)
         self.assertIn('interactionDiagnosticsChunk=diagBatch',SRC)
         self.assertIn('interactionDiagnosticsChunkStart=diagStart',SRC)
+        self.assertIn('summary[fieldKey.."ChunkSchema"] = "30.6.interaction-diagnostics-fragment-chunk.1"',SRC)
         self.assertIn('Single interaction diagnostics chunk item exceeds receiver limit (',SRC)
         self.assertNotIn('Shared scan summary exceeds receiver limit without interaction history',SRC)
         self.assertIn('local parts, reportScanId, interactionDiagnosticsSummary = prepareParts(result)',SRC)

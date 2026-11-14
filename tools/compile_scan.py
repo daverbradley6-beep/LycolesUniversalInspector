@@ -888,6 +888,49 @@ def compile_scan(directory):
             fail(f"Interaction diagnostics chunk total mismatch for {chunk_key}")
         interaction_diagnostics[chunk_key]=merged
 
+    summary_chunk_fields=interaction_diagnostics.get("chunkedInteractionDiagnosticSummaryFields")
+    if summary_chunk_fields is not None:
+        if not isinstance(summary_chunk_fields,list):
+            fail("Malformed chunked interaction summary descriptor")
+        for descriptor in summary_chunk_fields:
+            if not isinstance(descriptor,dict):
+                fail("Malformed chunked interaction summary descriptor")
+            field=descriptor.get("field")
+            fragment_chunk_key=descriptor.get("chunkKey")
+            chunk_kind=descriptor.get("chunkKind")
+            if (not isinstance(field,str) or not field
+                    or not isinstance(fragment_chunk_key,str) or not fragment_chunk_key):
+                fail("Malformed chunked interaction summary descriptor")
+            if chunk_kind not in {None,"json-fragment"}:
+                fail(f"Unsupported interaction summary chunk kind for {field}")
+            fragments=interaction_diagnostics.get(fragment_chunk_key)
+            if not isinstance(fragments,list):
+                fail(f"Missing interaction summary fragments for {field}")
+            expected_index=1
+            pieces=[]
+            for fragment in fragments:
+                if not isinstance(fragment,dict):
+                    fail(f"Malformed interaction summary fragment for {field}")
+                fragment_index=fragment.get("fragmentIndex")
+                fragment_text=fragment.get("fragment")
+                fragment_length=fragment.get("fragmentLength")
+                if (type(fragment_index) is not int or fragment_index!=expected_index
+                        or not isinstance(fragment_text,str)
+                        or (fragment_length is not None and
+                            (type(fragment_length) is not int or fragment_length!=len(fragment_text)))):
+                    fail(f"Malformed interaction summary fragment sequence for {field}")
+                pieces.append(fragment_text)
+                expected_index+=1
+            encoded="".join(pieces)
+            declared_length=descriptor.get("encodedLength")
+            if declared_length is not None and (type(declared_length) is not int
+                                                or declared_length!=len(encoded)):
+                fail(f"Interaction summary fragment length mismatch for {field}")
+            try:
+                interaction_diagnostics[field]=json.loads(encoded)
+            except json.JSONDecodeError:
+                fail(f"Interaction summary fragment decode failed for {field}")
+
     interaction_observation_summary=_interaction_observation_summary(interaction_diagnostics)
     history=[]
     for p in ordered:
