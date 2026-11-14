@@ -1,0 +1,59 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false
+  },
+  "identityLinkage": {
+    "allowsDynamicObservationEmbedding": true,
+    "requiresBaselineScanId": true,
+    "requiresPlaceId": true
+  },
+  "requiredTopLevelFields": [
+    "schemaVersion",
+    "exportKind",
+    "sessionId",
+    "placeId",
+    "baselineScanId",
+    "requestIds",
+    "requestProgress",
+    "samples",
+    "collectionLimitations",
+    "errors"
+  ],
+  "sampleCollections": {
+    "cameraCorrelations": {
+      "maxItems": 640
+    },
+    "cameraSamples": {
+      "maxItems": 900
+    },
+    "characterEntities": {
+      "maxItems": 420
+    },
+    "entityEvents": {
+      "maxItems": 240
+    },
+    "inputSamples": {
+      "maxItems": 900
+    },
+    "loadoutSnapshots": {
+      "maxItems": 420
+    },
+    "matchStateSamples": {
+      "maxItems": 520
+    },
+    "timelineEvents": {
+      "chunkable": true
+    },
+    "transitions": {
+      "maxItems": 420
+    },
+    "weaponSnapshots": {
+      "maxItems": 520
+    }
+  },
+  "schemaVersion": "122.targeted-evidence-schema.1",
+  "sessionSchemaVersion": "31.0.targeted-evidence-session.1"
+}

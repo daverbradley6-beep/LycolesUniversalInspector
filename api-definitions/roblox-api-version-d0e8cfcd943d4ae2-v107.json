@@ -1,0 +1,406 @@
+{
+  "members": [
+    {
+      "member": "Value",
+      "memberType": "Property",
+      "ownerClass": "BoolValue",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "BoolValue",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Name",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ClickDetector",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "GetService",
+      "memberType": "Function",
+      "ownerClass": "ServiceProvider",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "DataModel",
+      "writeSecurity": null
+    },
+    {
+      "member": "PlaceId",
+      "memberType": "Property",
+      "ownerClass": "DataModel",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated",
+        "ReadOnly"
+      ],
+      "targetClass": "DataModel",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Visible",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ImageButton",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "ClassName",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated",
+        "ReadOnly"
+      ],
+      "targetClass": "Instance",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "GetChildren",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "Instance",
+      "writeSecurity": null
+    },
+    {
+      "member": "Name",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "Instance",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Value",
+      "memberType": "Property",
+      "ownerClass": "IntValue",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "IntValue",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Value",
+      "memberType": "Property",
+      "ownerClass": "NumberValue",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "NumberValue",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "WaitForChild",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "CanYield",
+        "CustomLuaState"
+      ],
+      "targetClass": "Player",
+      "writeSecurity": null
+    },
+    {
+      "member": "FindFirstChild",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "PlayerGui",
+      "writeSecurity": null
+    },
+    {
+      "member": "LocalPlayer",
+      "memberType": "Property",
+      "ownerClass": "Players",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated",
+        "ReadOnly"
+      ],
+      "targetClass": "Players",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Enabled",
+      "memberType": "Property",
+      "ownerClass": "ProximityPrompt",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ProximityPrompt",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Destroy",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScreenGui",
+      "writeSecurity": null
+    },
+    {
+      "member": "Enabled",
+      "memberType": "Property",
+      "ownerClass": "LayerCollector",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScreenGui",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Name",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScreenGui",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Parent",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated"
+      ],
+      "targetClass": "ScreenGui",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "ResetOnSpawn",
+      "memberType": "Property",
+      "ownerClass": "LayerCollector",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScreenGui",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "CanvasSize",
+      "memberType": "Property",
+      "ownerClass": "ScrollingFrame",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScrollingFrame",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Parent",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated"
+      ],
+      "targetClass": "ScrollingFrame",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Position",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScrollingFrame",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Size",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "ScrollingFrame",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Value",
+      "memberType": "Property",
+      "ownerClass": "StringValue",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "StringValue",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "GetPropertyChangedSignal",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextBox",
+      "writeSecurity": null
+    },
+    {
+      "member": "Name",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextBox",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Parent",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated"
+      ],
+      "targetClass": "TextBox",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "PlaceholderText",
+      "memberType": "Property",
+      "ownerClass": "TextBox",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextBox",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Size",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextBox",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Text",
+      "memberType": "Property",
+      "ownerClass": "TextBox",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextBox",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Activated",
+      "memberType": "Event",
+      "ownerClass": "GuiButton",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextButton",
+      "writeSecurity": null
+    },
+    {
+      "member": "Parent",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated"
+      ],
+      "targetClass": "TextButton",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Size",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextButton",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Text",
+      "memberType": "Property",
+      "ownerClass": "TextButton",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextButton",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Visible",
+      "memberType": "Property",
+      "ownerClass": "GuiObject",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextButton",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Text",
+      "memberType": "Property",
+      "ownerClass": "TextLabel",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "TextLabel",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Name",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "Tool",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "AbsoluteContentSize",
+      "memberType": "Property",
+      "ownerClass": "UIGridStyleLayout",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated",
+        "ReadOnly"
+      ],
+      "targetClass": "UIListLayout",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "GetPropertyChangedSignal",
+      "memberType": "Function",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "UIListLayout",
+      "writeSecurity": null
+    },
+    {
+      "member": "Padding",
+      "memberType": "Property",
+      "ownerClass": "UIListLayout",
+      "readSecurity": "None",
+      "tags": [],
+      "targetClass": "UIListLayout",
+      "writeSecurity": "None"
+    },
+    {
+      "member": "Parent",
+      "memberType": "Property",
+      "ownerClass": "Instance",
+      "readSecurity": "None",
+      "tags": [
+        "NotReplicated"
+      ],
+      "targetClass": "UIListLayout",
+      "writeSecurity": "None"
+    }
+  ],
+  "schemaVersion": "107.roblox-api-snapshot",
+  "source": {
+    "channel": "QTStudio",
+    "formatVersion": 1,
+    "sha256": "02276f872886a6bc29e2e05a2e551a8c92c0e1745276520f4203d52a15679856",
+    "url": "https://setup.rbxcdn.com/version-d0e8cfcd943d4ae2-API-Dump.json",
+    "version": "version-d0e8cfcd943d4ae2"
+  }
+}

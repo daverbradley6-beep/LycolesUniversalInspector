@@ -1,5 +1,5 @@
 
--- Lycoles Universal Inspector v30.0.0
+-- Lycoles Universal Inspector v30.6.68
 -- Universal read-only Roblox inspector.
 -- Receiver URL is stored locally, never in the public repository.
 
@@ -13,77 +13,461 @@ if type(_G.LycolesInspectorClose) == "function" then
 end
 
 local CONFIG_FILE = "LycolesInspectorReceiver.txt"
-local VERSION = "30.0.0"
+local VERSION = "30.6.68"
 
 local endpoint = ""
-local autoSend = true
+local autoSend = false
 local last = nil
 local pendingParts = nil
+local pendingManifest = nil
 local MAX_PART_BYTES = 105000
 local running = false
 local uploading = false
 local uploadGeneration = 0
 local pendingAcknowledged = {}
-local MAX_UPLOAD_ATTEMPTS = 3
-local MAX_CONCURRENT_UPLOADS = 3
-local SCAN_YIELD_BUDGET_SECONDS = 0.012
+local uploadState = {
+    attempted=false,status="not-attempted",acknowledgedParts=0,
+    expectedParts=0,lastError=nil
+}
+local function uploadAttemptStage()
+    if uploadState.status=="configuration-error" then
+        return uploadState.attempted and "attempted-previously-currently-blocked"
+            or "blocked-before-attempt"
+    end
+    if uploadState.status=="cancelled" then
+        return uploadState.attempted and "attempted-cancelled" or "cancelled-before-attempt"
+    end
+    if uploadState.attempted then return "attempted" end
+    return "not-attempted"
+end
+local function receiverReportStatus()
+    if uploadState.expectedParts>0
+        and uploadState.acknowledgedParts==uploadState.expectedParts then
+        return "acknowledged-awaiting-integrity"
+    end
+    if uploadState.status=="uploading" then return "upload-in-progress" end
+    if uploadState.status=="cancelled" and uploadState.acknowledgedParts==0 then
+        return "upload-cancelled"
+    end
+    if uploadState.acknowledgedParts>0 then return "partially-acknowledged" end
+    if uploadState.status=="failed" or uploadState.status=="incomplete" then
+        return "upload-incomplete"
+    end
+    if uploadState.status=="configuration-error" then return "configuration-blocked" end
+    return "unavailable"
+end
+
+local refreshLocalManifest = nil
+local function uploadSnapshot(phase)
+    local digests = {}
+    for partIndex,ack in pairs(pendingAcknowledged) do
+        if type(partIndex)=="number" and type(ack)=="table"
+            and type(ack.sha256)=="string" and ack.sha256:match("^[a-f0-9]+$")
+            and #ack.sha256==64 then
+            digests[#digests+1]={partIndex=partIndex,sha256=ack.sha256}
+        end
+    end
+    table.sort(digests,function(a,b) return a.partIndex < b.partIndex end)
+    return {
+        reportGenerated = pendingParts ~= nil or uploadState.expectedParts > 0,
+        manifestSnapshotPhase = phase,
+        uploadAttempted = uploadState.attempted,
+        uploadAttemptStatus = uploadAttemptStage(),
+        uploadStatus = uploadState.status,
+        receiverReportStatus = receiverReportStatus(),
+        downstreamAvailabilityStatus = "not-validated",
+        acknowledgedParts = uploadState.acknowledgedParts,
+        expectedParts = uploadState.expectedParts,
+        acknowledgedPartDigests = digests,
+        acknowledgedDigestParts = #digests,
+        lastError = uploadState.lastError,
+        receiverIntegrityVerified = false,
+        downstreamReportAvailable = false,
+        note = "Receiver acknowledgements require separate integrity verification before downstream use"
+    }
+end
 local UPLOAD_RETRY_DELAYS = {1, 3, 6}
+local LIMITS = {
+    uploadAttempts = 3,
+    maxConcurrentUploads = 1,
+    scanYieldBudgetSeconds = 0.012,
+    watchIntervalSeconds = 30,
+    watchBatchSize = 1500,
+    maxStateSnapshotCandidates = 1000,
+    maxInteractionHistory = 180,
+    maxPendingActions = 24,
+    maxStateChanges = 24,
+    maxGuiChanges = 16,
+    maxTransactionSignatures = 2000,
+    maxPendingGuiReveals = 100,
+    guiRevealFollowupSeconds = 15,
+    followupLinkMaxAgeSeconds = 6,
+    followupLinkMinContextOverlap = 3,
+    workflowRecordingSeconds = 60,
+    maxWorkflowRecordingEvents = 8,
+    maxInputObservationQueue = 96,
+    inputQueueFrameBudgetSeconds = 0.003,
+    inputQueueMaxPerFrame = 4,
+    inputQueueBackpressureWatermark = 48,
+    inputQueueCriticalWatermark = 80,
+    inputObservationIdleSeconds = 1.2,
+    stateSnapshotDefaultCandidateBudget = 260,
+    maxPlayerPositionHistory = 720,
+    maxEventPositionSnapshots = 1400,
+    maxNearbyWorldObjects = 16,
+    nearbyWorldObjectRadiusStuds = 42,
+    spatialZoneCandidateLimit = 80,
+    spatialZoneRefreshSeconds = 6,
+    minAdaptivePositionSampleSeconds = 0.15,
+    maxAdaptivePositionSampleSeconds = 1.1,
+    minAdaptivePositionDistanceStuds = 2.5,
+    teleportDiscontinuityStuds = 120,
+    maxCursorObservationHistory = 520,
+    maxClickTargetObservations = 320,
+    maxClickOutcomeRelationships = 320,
+    maxInputGestureObservations = 360,
+    maxCharacterOrientationSamples = 900,
+    maxCameraOrientationSamples = 900,
+    cursorMovementSampleSeconds = 0.35,
+    cursorMovementMinPixels = 6,
+    inputGestureCameraSampleSeconds = 0.12,
+    inputGestureClickMaxDurationSeconds = 0.34,
+    inputGestureHeldMinDurationSeconds = 0.3,
+    inputGestureDragMinDisplacementPixels = 18,
+    inputGestureCameraTurnMinDegrees = 8,
+    inputGestureCameraDragMinDegrees = 16,
+    clickLinkMaxAgeSeconds = 0.9,
+    clickRaycastDistanceStuds = 700,
+    maxClickGuiCandidates = 8,
+    maxClickDiagnosticSamples = 18,
+    maxTargetedRequests = 12,
+    targetedCaptureTickSeconds = 0.35,
+    targetedCaptureDefaultDurationSeconds = 240,
+    maxTargetedEntitySnapshots = 420,
+    maxTargetedEntityEvents = 240,
+    maxTargetedCameraSamples = 900,
+    maxTargetedCameraCorrelations = 640,
+    maxTargetedInputSamples = 900,
+    maxTargetedWeaponSnapshots = 520,
+    maxTargetedLoadoutSnapshots = 420,
+    maxTargetedMatchStateSamples = 520,
+    maxTargetedTransitions = 420,
+    maxTargetedSessionErrors = 180,
+    maxTargetedProgressLogs = 240,
+}
 local alive = true
 local watchEnabled = true
 local watchConnections = {}
+generationUi = _G.LycolesGenerationUi or {ready=false}
+_G.LycolesGenerationUi = generationUi
+
 local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
 local lastGameName = nil
-local WATCH_INTERVAL = 30
+local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
+local QUICK_ROOT_LABELS = {"ReplicatedStorage", "Workspace", "PlayerGui", "LocalPlayer", "Character"}
+
 local watchSeen = {}
 local watchSkippedCharacters = 0
 local watchUploaded = 0
 local changeQueue = {}
 local changeCount = 0
+local pendingObservationEvents = 0
 local observed = setmetatable({}, {__mode = "k"})
+local stateSnapshotCandidates = {}
+local stateSnapshotCandidateSeen = setmetatable({}, {__mode = "k"})
 local changeUploaded = 0
-local WATCH_BATCH = 1500
 local interactionObserveEnabled = true
 local AUTO_EVIDENCE_ENABLED = true
-local AUTO_EVIDENCE_IDLE_SECONDS = 12
+local OBSERVATION_IDLE_OPTIONS = {8, 12, 20, 30}
+local observationIdleIndex = 2
+local SCAN_PROFILES = {
+    full = {
+        label = "FULL", scanMode = "universal-snapshot-v4.1", rootLabels = ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 4, defaultObservationSeconds = 12, quickTargeted = false,
+        recordingPolicy = "full-client-visible-root-inventory"
+    },
+    quick = {
+        label = "QUICK", scanMode = "quick-targeted-snapshot-v1", rootLabels = QUICK_ROOT_LABELS,
+        requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true},
+        maxAutomaticRescans = 1, defaultObservationSeconds = 8, quickTargeted = true,
+        recordingPolicy = "targeted-client-visible-evidence-not-full-inventory"
+    }
+}
+local activeScanProfileId = "full"
+local AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
 local AUTO_EVIDENCE_COOLDOWN_SECONDS = 45
-local AUTO_EVIDENCE_MAX_RESCANS = 4
+local AUTO_EVIDENCE_MAX_RESCANS = SCAN_PROFILES[activeScanProfileId].maxAutomaticRescans
 local autoEvidenceLastInteraction = 0
 local autoEvidenceLastScan = 0
 local autoEvidenceLastSequence = 0
 local autoEvidenceRescans = 0
 local autoEvidenceLastFailure = nil
 local interactionObserved = setmetatable({}, {__mode = "k"})
+local universalInputObserved = setmetatable({}, {__mode = "k"})
 local interactionObservedCount = 0
 local interactionEventCount = 0
 local attributedInteractionCount = 0
+playerPositionHistory = {}
+eventPositionSnapshots = {}
+spatialLocationHistory = {}
+cursorObservationHistory = {}
+clickTargetObservations = {}
+clickOutcomeRelationships = {}
+inputGestureObservations = {}
+characterOrientationSamples = {}
+cameraOrientationSamples = {}
+
+spatialCharacterGeneration = 0
+spatialSampleSequence = 0
+cursorObservationSequence = 0
+clickObservationSequence = 0
+inputGestureSequence = 0
+orientationSampleSequence = 0
+spatialLastValidSample = nil
+spatialZoneContextCache = {updatedClock = 0, candidates = {}}
+clickOutcomeById = {}
+clickTargetById = {}
+inputGestureById = {}
+gestureByClickObservationId = {}
+spatialStats = {
+    samplesCaptured = 0,
+    samplesSkipped = 0,
+    invalidSamples = 0,
+    teleportsDetected = 0,
+    respawnGenerations = 0,
+    eventSnapshotsRecorded = 0,
+    nearbyWorldObjectLookups = 0,
+    nearbyWorldObjectFailures = 0,
+    cursorSamplesCaptured = 0,
+    clickTargetsCaptured = 0,
+    clickOutcomeLinks = 0,
+    inputGesturesCaptured = 0,
+    characterOrientationCaptured = 0,
+    cameraOrientationCaptured = 0,
+}
+
 local unattributedInteractionCount = 0
 local interactionHistory = {}
-local MAX_INTERACTION_HISTORY = 180
-local MAX_PENDING_ACTIONS = 24
 local OBSERVATION_WINDOWS = {0.35, 1.25, 3.0}
-local MAX_STATE_CHANGES = 24
-local MAX_GUI_CHANGES = 16
 local transactionEvidenceSeen = {}
 local transactionEvidenceCount = 0
-local MAX_TRANSACTION_SIGNATURES = 2000
 local pendingActions = {}
-local workflowStats = {linkedConfirmations=0, cancelled=0, expired=0, completedCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0}
-local scanInvocationCount = 0
-local scanRequestType = "startup-baseline"
-local observerStats = {listenersAttached=0, callbacksFired=0, stateDeltaEvents=0, bindingErrors=0, sweepCompleted=false, sweepScanned=0, lastEventPath=nil, activationCount=0, deactivationCount=0, lastEnabledAt=nil, lastDisabledAt=nil, lastDisabledReason=nil, lastSweepError=nil, sweepStartedAt=nil, sweepFinishedAt=nil, lastCallbackAt=nil}
+local pendingGuiReveals = {}
+local workflowStats = {linkedConfirmations=0, linkedFollowups=0, cancelled=0, expired=0, completedCandidates=0, backfilledOutcomeCandidates=0, guiTransitions=0, observationFailures=0, classifiedByContext=0, actionOutcomesCorroborated=0, multiWindowSamples=0, uniqueStateEvents=0, uniqueGuiEvents=0, travelCandidates=0, rewardClaimGuiCandidates=0, guiRevealCandidates=0, guiRevealFollowups=0, guiRevealCandidatesExpired=0, guiRevealCandidatesDropped=0}
 local sessionId = HttpService:GenerateGUID(false)
+local sessionStartedClock = os.clock()
+local workflowRecording = {
+    active=false,id=nil,startedClock=nil,startedElapsed=nil,eventCount=0,
+    source=nil,automatic=false
+}
+local workflowRecordingStats = {started=0,stopped=0,durationExpired=0,capacityReached=0,
+    recordedEvents=0,lastRecordedEventCount=0,lastStopReason=nil,
+    automaticStarts=0,manualStarts=0}
+local refreshWorkflowRecorder = nil
+local refreshEvidenceControls = nil
+local scanGeneration = 0
+local WORKFLOW_HELPERS = {}
+
+-- RUNTIME_DIAGNOSTICS_BEGIN
+local runtimeDiagnostics = {
+    startedClock = os.clock(),
+    stages = {},
+    failures = {},
+    label = nil,
+}
+local function pushRuntimeStage(stage, detail)
+    local entry = {
+        stage=tostring(stage or "unknown"),
+        detail=tostring(detail or ""),
+        t=math.floor((os.clock()-runtimeDiagnostics.startedClock)*1000+0.5)/1000,
+    }
+    runtimeDiagnostics.stages[#runtimeDiagnostics.stages+1] = entry
+    if #runtimeDiagnostics.stages > 120 then table.remove(runtimeDiagnostics.stages, 1) end
+    runtimeDiagnostics.lastStage = entry.stage
+    runtimeDiagnostics.lastDetail = entry.detail
+    runtimeDiagnostics.lastAt = entry.t
+    local badge = runtimeDiagnostics.label
+    if badge and badge.Parent then badge.Text = "Runtime: " .. entry.stage end
+end
+function pushRuntimeFailure(stage, err)
+    local entry = {
+        stage=tostring(stage or "unknown"),
+        error=tostring(err or "unknown"),
+        t=math.floor((os.clock()-runtimeDiagnostics.startedClock)*1000+0.5)/1000,
+    }
+    runtimeDiagnostics.failures[#runtimeDiagnostics.failures+1] = entry
+    if #runtimeDiagnostics.failures > 80 then table.remove(runtimeDiagnostics.failures, 1) end
+    runtimeDiagnostics.lastFailure = entry
+    local badge = runtimeDiagnostics.label
+    if badge and badge.Parent then badge.Text = "Runtime error: " .. entry.stage end
+end
+pcall(function()
+    _G.LycolesInspectorDiagnostics = function() return runtimeDiagnostics end
+end)
+if type(getgenv) == "function" then
+    pcall(function()
+        getgenv().LycolesInspectorDiagnostics = function() return runtimeDiagnostics end
+    end)
+end
+pushRuntimeStage("entry", "script-loaded")
+-- RUNTIME_DIAGNOSTICS_END
+
+
+local function stopWorkflowRecording(reason)
+    if not workflowRecording.active then return end
+    workflowRecording.active=false
+    workflowRecording.id=nil
+    workflowRecording.startedClock=nil
+    workflowRecording.startedElapsed=nil
+    workflowRecording.source=nil
+    workflowRecording.automatic=false
+    workflowRecordingStats.lastRecordedEventCount=workflowRecording.eventCount
+    workflowRecording.eventCount=0
+    workflowRecordingStats.stopped=workflowRecordingStats.stopped+1
+    workflowRecordingStats.lastStopReason=reason
+    if reason=="duration-limit" then
+        workflowRecordingStats.durationExpired=workflowRecordingStats.durationExpired+1
+    elseif reason=="event-limit" then
+        workflowRecordingStats.capacityReached=workflowRecordingStats.capacityReached+1
+    end
+    if refreshWorkflowRecorder then refreshWorkflowRecorder(reason) end
+end
+local function startWorkflowRecording(source)
+    if workflowRecording.active then return false end
+    local linkageSource=source=="automatic-activity-window"
+        and "automatic-activity-window" or "explicit-user-armed-recording"
+    local startedClock=os.clock()
+    workflowRecording.active=true
+    workflowRecording.source=linkageSource
+    workflowRecording.automatic=linkageSource=="automatic-activity-window"
+    workflowRecording.id=(workflowRecording.automatic and "auto-recorded-" or "user-recorded-")
+        ..HttpService:GenerateGUID(false)
+    workflowRecording.startedClock=startedClock
+    workflowRecording.startedElapsed=math.floor((startedClock-sessionStartedClock)*1000+0.5)/1000
+    workflowRecording.eventCount=0
+    workflowRecordingStats.started=workflowRecordingStats.started+1
+    if workflowRecording.automatic then
+        workflowRecordingStats.automaticStarts=workflowRecordingStats.automaticStarts+1
+    else
+        workflowRecordingStats.manualStarts=workflowRecordingStats.manualStarts+1
+    end
+    local recordingId=workflowRecording.id
+    task.delay(LIMITS.workflowRecordingSeconds,function()
+        if alive and workflowRecording.active and workflowRecording.id==recordingId then
+            stopWorkflowRecording("duration-limit")
+        end
+    end)
+    if refreshWorkflowRecorder then refreshWorkflowRecorder("started") end
+    return true
+end
+local function ensureWorkflowRecordingForActivity(source)
+    if workflowRecording.active then return true end
+    return startWorkflowRecording(source or "automatic-activity-window")
+end
+local function recordWorkflowInteraction(activationClock,sessionElapsedSeconds,source)
+    if not ensureWorkflowRecordingForActivity(source) then return nil end
+    if activationClock-workflowRecording.startedClock>LIMITS.workflowRecordingSeconds then
+        stopWorkflowRecording("duration-limit")
+        if not ensureWorkflowRecordingForActivity(source) then return nil end
+    end
+    workflowRecording.eventCount=workflowRecording.eventCount+1
+    workflowRecordingStats.recordedEvents=workflowRecordingStats.recordedEvents+1
+    local linkageSource=workflowRecording.source or "explicit-user-armed-recording"
+    local explicitUserArmed=linkageSource=="explicit-user-armed-recording"
+    local result={recordingId=workflowRecording.id,order=workflowRecording.eventCount,
+        startedElapsedSeconds=workflowRecording.startedElapsed,
+        maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+        maxEvents=LIMITS.maxWorkflowRecordingEvents,
+        linkageSource=linkageSource,explicitUserArmed=explicitUserArmed,
+        automaticWindow=not explicitUserArmed,
+        establishesOrdering=true,causalityProven=false,runtimeVerified=false,gameplayVerified=false}
+    if workflowRecording.eventCount>=LIMITS.maxWorkflowRecordingEvents then
+        stopWorkflowRecording("event-limit")
+    elseif refreshWorkflowRecorder then
+        refreshWorkflowRecorder("event-recorded")
+    end
+    return result
+end
+
+local observerStats = {
+    listenersAttached=0, callbacksFired=0,
+    objectInteractionCallbacksFired=0,inputInteractionCallbacksFired=0,
+    objectCallbacksAttributed=0,objectCallbacksUnattributed=0,
+    inputCallbacksAttributed=0,inputCallbacksUnattributed=0,
+    stateDeltaEvents=0, bindingErrors=0,
+    sweepCompleted=false, sweepScanned=0, lastEventPath=nil,
+    activationCount=0, deactivationCount=0, lastEnabledAt=nil,lastDisabledAt=nil,
+    lastDisabledReason=nil,lastSweepError=nil,sweepStartedAt=nil,sweepFinishedAt=nil,
+    lastCallbackAt=nil,preActivationListenersAttached=0,preActivationCaptures=0,
+    preActivationBaselinesUsed=0,callbackBaselinesUsed=0,stalePreActivationCaptures=0,
+    preActivationCaptureFailures=0,inputEventsCaptured=0,inputEventsDropped=0,
+    inputEventWindowsCompleted=0,inputEventWindowFailures=0,toolEquipsObserved=0,
+    toolUnequipsObserved=0,movementEventsObserved=0,animationEventsObserved=0,
+    lastInputEventAt=nil,inputBindingReady=false,
+    inputQueueEnqueued=0,inputQueueProcessed=0,inputQueueDropped=0,inputQueuePeak=0,
+    inputQueueOverBudgetFrames=0,inputQueueBackpressureActivations=0,
+    queueFrameCount=0,queueFrameSecondsTotal=0,queueFramePeakSeconds=0,
+    callbacksThisSecond=0,callbacksPeakPerSecond=0,lastCallbackSecond=nil,
+    stateSnapshotCalls=0,stateSnapshotSeconds=0,stateSnapshotPeakSeconds=0,
+    clickInputsObserved=0,clickInputsProcessed=0,clickInputsGameProcessed=0,
+    clickCaptureAttempts=0,clickCapturesRecorded=0,clickCaptureFailures=0,
+    clickCaptureComponentFailures=0,clickTargetsResolved=0,clickTargetsUnresolved=0,
+    clickInspectorOwned=0,
+    clickLinksAttempted=0,clickLinksMatched=0,clickLinksMissed=0,
+    clickLinksAmbiguous=0,clickLinksExpired=0,clickLinksPruned=0,
+    clickLinksMissedMissingSource=0,clickLinksMissedNoEligibleCandidate=0,
+    inputGesturesStarted=0,inputGesturesCompleted=0,inputGesturesInterrupted=0,
+    inputGestureClickCandidates=0,inputGestureCameraDragCandidates=0,
+    inputGestureHeldCandidates=0,inputGestureGuiInteractionCandidates=0,
+    inputGestureWorldInteractionCandidates=0,inputGestureAmbiguousInputs=0,
+    inputGestureLikelyCameraMovements=0,inputGestureLikelyGameplayInteractions=0,
+    clickCaptureFailureStageCounts={},clickCaptureFailureReasonCounts={},
+    clickCaptureFailureSamples={},clickCaptureComponentFailureSamples={},
+    clickLinkMissReasonCounts={},clickLinkMissSamples={},
+    scanInvocationCount=0,scanRequestType="startup-baseline"
+}
 local snapshotId = nil
+local inputObserverState = {
+    captureByKey = {},
+    buttonsDown = {},
+    lastMovementCapture = 0,
+    lastSequence = 0,
+    recent = {},
+    movementBaseline = nil,
+    queue = {},
+    queueHead = 1,
+    queueTail = 0,
+    phase = "idle",
+    phaseSince = os.clock(),
+    phaseTransitions = 0,
+    phaseReason = "startup",
+    lastActivityClock = 0,
+    lastMeaningfulActionClock = 0,
+    backpressureActive = false,
+    backpressureCount = 0,
+    pendingClicks = {},
+    pendingClickHead = 1,
+    pendingClickTail = 0,
+    activePointerGestures = {},
+    lastCursorSampleClock = 0,
+    lastCursorSamplePosition = nil,
+}
+
 local observationSequence = 0
 -- Feature candidates are based on the final object name, not arbitrary ancestor
 -- paths. This prevents 'LiveRequest' being classified as a quest.
+local EVIDENCE_HELPERS = {}
+do
 local FEATURE_TERMS = {
  training={"training","gym","strength","agility","treadmill"},
+ progression={"progression","bubble","capacity","blow","farm"},
  rebirth={"rebirth"}, pets={"pet","hatch","egg"},
- shops={"shop","purchase","store"}, travel={"teleport","portal"},
+ shops={"shop","purchase","store","sell","upgrade"}, travel={"teleport","portal"},
  bosses={"boss","arena"}, quests={"quest","mission"},
- combat={"combat","attack","damage"}, inventory={"inventory","equip"},
+ combat={"combat","attack","damage","weapon","gun","ammo","reload","shoot"}, inventory={"inventory","equip"},
  rewards={"reward","claim"}
 }
 -- Readiness is evidence-based: discovery never implies a working feature.
@@ -122,6 +506,64 @@ local function interactionGuiContext(obj)
     end
     return context
 end
+
+local function guiControlSnapshot(obj)
+    local text,interactable="",nil
+    pcall(function() text=obj.Text end)
+    pcall(function() interactable=obj.Interactable end)
+    local ancestorVisible,screenEnabled,withinScrollingBounds=true,true,true
+    local current=obj.Parent
+    while current do
+        if current:IsA("GuiObject") then
+            if not current.Visible then ancestorVisible=false end
+            if current:IsA("ScrollingFrame") then
+                local targetPosition,targetSize=obj.AbsolutePosition,obj.AbsoluteSize
+                local framePosition,frameSize=current.AbsolutePosition,current.AbsoluteSize
+                local intersects=targetPosition.X+targetSize.X>framePosition.X
+                    and targetPosition.Y+targetSize.Y>framePosition.Y
+                    and targetPosition.X<framePosition.X+frameSize.X
+                    and targetPosition.Y<framePosition.Y+frameSize.Y
+                if not intersects then withinScrollingBounds=false end
+            end
+        elseif current:IsA("ScreenGui") and not current.Enabled then
+            screenEnabled=false
+        end
+        if current:IsA("PlayerGui") then break end
+        current=current.Parent
+    end
+    local visible=obj.Visible and ancestorVisible and screenEnabled
+    return {controlClass=obj.ClassName,text=tostring(text or ""):sub(1,100):gsub("[%c]"," "),
+        visible=obj.Visible,active=obj.Active,selectable=obj.Selectable,
+        autoButtonColor=obj.AutoButtonColor,interactable=interactable,
+        ancestorVisible=ancestorVisible,screenEnabled=screenEnabled,
+        withinScrollingBounds=withinScrollingBounds,effectiveVisible=visible}
+end
+
+local function interactionPathIdentity(obj,root,label)
+    local identity,current={},obj
+    while current and current~=root and #identity<20 do
+        local ordinal=1
+        local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(label) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>400 then return nil end
+    return identity
+end
+
+
 -- Capture nearby GUI state without collecting text, input contents or private data.
 local function safeNearbyGuiState(obj)
     local result, count = {}, 0
@@ -146,7 +588,7 @@ local function safeNearbyGuiState(obj)
             end
             local key=table.concat(segments,"/"):sub(1,180)
             if key ~= "" and not key:lower():find("password",1,true) then
-                result[key] = {visible=node.Visible}
+                result[key] = {visible=node.Visible,node=node}
                 if node:IsA("GuiButton") then
                     result[key].active=node.Active
                 end
@@ -156,31 +598,120 @@ local function safeNearbyGuiState(obj)
     end
     return result
 end
+local function guiTransitionIdentity(sample,fallbackPath)
+    local node=sample and sample.node
+    local guiRoot=player:FindFirstChildOfClass("PlayerGui")
+    if not node or not guiRoot then return fallbackPath,nil end
+    local pathIdentity=interactionPathIdentity(node,guiRoot,"PlayerGui")
+    if not pathIdentity then return fallbackPath,nil end
+    local names={}
+    for _,segment in ipairs(pathIdentity) do names[#names+1]=segment.name end
+    local path=table.concat(names,".")
+    if path:lower():find("password",1,true) then return fallbackPath,nil end
+    return path,pathIdentity
+end
+
+local function guiChangeLess(a,b)
+    if a.path~=b.path then return a.path<b.path end
+    local left,right=a.pathIdentity or {},b.pathIdentity or {}
+    for index=1,math.min(#left,#right) do
+        if left[index].className~=right[index].className then
+            return left[index].className<right[index].className
+        end
+        if left[index].ordinal~=right[index].ordinal then
+            return left[index].ordinal<right[index].ordinal
+        end
+    end
+    return #left<#right
+end
+
 local function compareNearbyGuiState(before, after)
     local changes={}
     for key, value in pairs(before) do
         local nextValue=after[key]
         if nextValue and (value.visible ~= nextValue.visible or value.active ~= nextValue.active) then
-            changes[#changes+1]={path=key,beforeVisible=value.visible,afterVisible=nextValue.visible,
+            local path,pathIdentity=guiTransitionIdentity(nextValue,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                beforeVisible=value.visible,afterVisible=nextValue.visible,
                 beforeActive=value.active,afterActive=nextValue.active}
-            if #changes >= 16 then break end
         end
     end
     for key, value in pairs(after) do
-        if not before[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="appeared",afterVisible=value.visible,afterActive=value.active}
+        if not before[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="appeared",afterVisible=value.visible,afterActive=value.active}
         end
     end
     for key, value in pairs(before) do
-        if not after[key] and #changes < 16 then
-            changes[#changes+1]={path=key,transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
+        if not after[key] then
+            local path,pathIdentity=guiTransitionIdentity(value,key)
+            changes[#changes+1]={path=path,pathIdentity=pathIdentity,
+                transition="disappeared",beforeVisible=value.visible,beforeActive=value.active}
         end
     end
-    table.sort(changes,function(a,b) return a.path < b.path end)
+    table.sort(changes,guiChangeLess)
+    while #changes>LIMITS.maxGuiChanges do table.remove(changes) end
     return changes
 end
-local function safeInteractionState()
-    local state, count = {}, 0
+local function stateValueIdentity(obj,root)
+    local identity,current={},obj
+    while current and current~=root and #identity<6 do
+        local ordinal=1 local parent=current.Parent
+        if parent then
+            for _,sibling in ipairs(parent:GetChildren()) do
+                if sibling==current then break end
+                if sibling.Name==current.Name and sibling.ClassName==current.ClassName then ordinal=ordinal+1 end
+            end
+        end
+        local currentName=tostring(current.Name) local currentClass=tostring(current.ClassName)
+        if #currentName>100 or #currentClass>100 then return nil end
+        table.insert(identity,1,{name=currentName,className=currentClass,ordinal=ordinal})
+        current=parent
+    end
+    local rootName=tostring(root.Name) local rootClass=tostring(root.ClassName)
+    if current~=root or #rootName>100 or #rootClass>100 then return nil end
+    table.insert(identity,1,{name=rootName,className=rootClass,ordinal=1})
+    local names={} for _,segment in ipairs(identity) do names[#names+1]=segment.name end
+    if #table.concat(names,".")>180 then return nil end
+    return identity
+end
+
+local function safeInteractionState(options)
+    local started=os.clock()
+    options=type(options)=="table" and options or {}
+    local candidateBudget=options.candidateBudget or LIMITS.maxStateSnapshotCandidates
+    if type(candidateBudget)~="number" or candidateBudget<24 then candidateBudget=24 end
+    candidateBudget=math.floor(candidateBudget)
+    if candidateBudget>LIMITS.maxStateSnapshotCandidates then
+        candidateBudget=LIMITS.maxStateSnapshotCandidates
+    end
+    local includeHudSignals=options.includeHudSignals~=false
+    local includeInventory=options.includeInventory~=false
+    local hudSignalLimit=type(options.hudSignalLimit)=="number"
+        and math.max(0,math.floor(options.hudSignalLimit)) or 28
+    local state,identities,count = {},{},0
+    local function addState(key,value,identity)
+        if count>=candidateBudget then return end
+        if type(key)~="string" or #key==0 or #key>220 then return end
+        local valueType=type(value)
+        if valueType=="number" then
+            if value~=value or math.abs(value)>1e12 then return end
+        elseif valueType~="boolean" and valueType~="string" then
+            return
+        end
+        if valueType=="string" and #value>120 then
+            value=value:sub(1,120)
+        end
+        if state[key]==nil then
+            state[key]=value
+            identities[key]=identity
+            count=count+1
+        else
+            identities[key]=nil
+        end
+    end
+
     local roots = {}
     for _, name in ipairs({"leaderstats", "Data"}) do
         local root = player:FindFirstChild(name)
@@ -190,8 +721,8 @@ local function safeInteractionState()
         if root then
             local items = root:GetDescendants()
             for _, obj in ipairs(items) do
-                if count >= 1000 then break end
-                if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") then
+                if count >= candidateBudget then break end
+                if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("BoolValue") or obj:IsA("StringValue") then
                     local segments = {}
                     local parent = obj
                     while parent and parent ~= root and #segments < 6 do
@@ -204,16 +735,134 @@ local function safeInteractionState()
                         or low:find("auth",1,true) or low:find("password",1,true)
                         or low:find("userid",1,true)) then
                         local v = obj.Value
-                        if type(v) == "boolean" or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
-                            state[key] = v
-                            count = count + 1
+                        if type(v) == "boolean" or type(v)=="string"
+                            or (type(v) == "number" and v == v and math.abs(v) <= 1e12) then
+                            addState(key,v,stateValueIdentity(obj,root))
                         end
                     end
                 end
             end
         end
     end
-    return state
+    for _,candidate in ipairs(stateSnapshotCandidates) do
+        if count>=candidateBudget then break end
+        local obj=candidate.object
+        local ok,value=pcall(function() return obj.Value end)
+        if ok and (type(value)=="boolean" or type(value)=="string" or (type(value)=="number"
+            and value==value and math.abs(value)<=1e12)) then
+            addState(candidate.path,value,nil)
+        end
+    end
+
+    local character=player.Character
+    if character then
+        local humanoid=character:FindFirstChildOfClass("Humanoid")
+        local rootPart=character:FindFirstChild("HumanoidRootPart")
+        if humanoid then
+            addState("Character.Humanoid.Health",math.floor(humanoid.Health*100+0.5)/100,nil)
+            addState("Character.Humanoid.MaxHealth",math.floor(humanoid.MaxHealth*100+0.5)/100,nil)
+            addState("Character.Humanoid.WalkSpeed",math.floor(humanoid.WalkSpeed*100+0.5)/100,nil)
+            addState("Character.Humanoid.JumpPower",math.floor(humanoid.JumpPower*100+0.5)/100,nil)
+            addState("Character.Humanoid.Sit",humanoid.Sit,nil)
+            addState("Character.Humanoid.MoveDirectionMagnitude",
+                math.floor(humanoid.MoveDirection.Magnitude*100+0.5)/100,nil)
+            local stateType=humanoid:GetState()
+            addState("Character.Humanoid.State",stateType and stateType.Name or "Unknown",nil)
+            addState("Character.Humanoid.FloorMaterial",tostring(humanoid.FloorMaterial),nil)
+            local animator=humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                local tracks={}
+                local okTracks,playing=pcall(function() return animator:GetPlayingAnimationTracks() end)
+                if okTracks and type(playing)=="table" then
+                    for _,track in ipairs(playing) do
+                        if #tracks>=6 then break end
+                        if track and track.Animation then
+                            local animationId=tostring(track.Animation.AnimationId or "")
+                            if #animationId>0 then tracks[#tracks+1]=animationId:sub(1,80) end
+                        end
+                    end
+                end
+                table.sort(tracks)
+                if #tracks>0 then
+                    addState("Character.Humanoid.ActiveAnimationCount",#tracks,nil)
+                    addState("Character.Humanoid.ActiveAnimations",table.concat(tracks,","),nil)
+                end
+            end
+        end
+        if rootPart then
+            addState("Character.RootPart.VelocityMagnitude",
+                math.floor(rootPart.AssemblyLinearVelocity.Magnitude*100+0.5)/100,nil)
+        end
+        local equippedTools={}
+        for _,child in ipairs(character:GetChildren()) do
+            if child:IsA("Tool") then
+                equippedTools[#equippedTools+1]=child.Name:sub(1,60)
+            end
+        end
+        table.sort(equippedTools)
+        addState("Character.Tools.EquippedCount",#equippedTools,nil)
+        if #equippedTools>0 then
+            addState("Character.Tools.EquippedNames",table.concat(equippedTools,","),nil)
+        end
+    end
+
+    local backpack=player:FindFirstChildOfClass("Backpack")
+    if includeInventory and backpack then
+        local names={}
+        for _,child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then names[#names+1]=child.Name:sub(1,60) end
+            if #names>=24 then break end
+        end
+        table.sort(names)
+        addState("Backpack.Tools.Count",#names,nil)
+        if #names>0 then addState("Backpack.Tools.Sample",table.concat(names,","),nil) end
+    end
+
+    local gui=player:FindFirstChildOfClass("PlayerGui")
+    if gui and includeHudSignals and hudSignalLimit>0 and count<candidateBudget then
+        local scanned,signals=0,0
+        for _,node in ipairs(gui:GetDescendants()) do
+            scanned=scanned+1
+            if scanned>3600 or signals>=hudSignalLimit or count>=candidateBudget then break end
+            if node:IsA("GuiObject") and (node:IsA("TextLabel") or node:IsA("TextButton")) then
+                local text=tostring(node.Text or ""):gsub("[%c]"," ")
+                if #text>0 and #text<=48 and text:find("%d") then
+                    local parts={}
+                    local parent=node
+                    local steps=0
+                    while parent and parent~=gui and steps<6 do
+                        parts[#parts+1]=parent.Name
+                        parent=parent.Parent
+                        steps=steps+1
+                    end
+                    local path=table.concat(parts,"."):lower()
+                    if not (path:find("chat",1,true) or path:find("whisper",1,true)
+                        or path:find("message",1,true) or path:find("name",1,true)) then
+                        local matches=path:find("ammo",1,true) or path:find("health",1,true)
+                            or path:find("hp",1,true) or path:find("score",1,true)
+                            or path:find("kill",1,true) or path:find("coin",1,true)
+                            or path:find("gem",1,true) or path:find("cash",1,true)
+                            or path:find("currency",1,true) or path:find("round",1,true)
+                            or path:find("weapon",1,true) or path:find("clip",1,true)
+                            or path:find("mag",1,true) or path:find("reload",1,true)
+                        if matches then
+                            local key=("HUD.Signal."..path):sub(1,200)
+                            addState(key,text:sub(1,48),nil)
+                            signals=signals+1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local elapsed=os.clock()-started
+    observerStats.stateSnapshotCalls=observerStats.stateSnapshotCalls+1
+    observerStats.stateSnapshotSeconds=observerStats.stateSnapshotSeconds+elapsed
+    if elapsed>observerStats.stateSnapshotPeakSeconds then
+        observerStats.stateSnapshotPeakSeconds=elapsed
+    end
+    return state,identities
 end
 -- v5.5: stable, unique relative paths and change-only inventory evidence.
 local function inventoryGuiPath(obj,gui)
@@ -342,11 +991,13 @@ local function buildReadiness(evidence, observedCount)
             discovered = discovered,
             observed = featureInteractions[feature] ~= nil and featureInteractions[feature].count > 0,
             observedStateChange = featureInteractions[feature] ~= nil and featureInteractions[feature].stateChanges > 0,
+            temporalStateChanges = featureInteractions[feature] and featureInteractions[feature].temporalStateChanges or 0,
+            observableOutcomeCandidates = featureInteractions[feature] and featureInteractions[feature].outcomeCandidates or 0,
             interactionEvidence = featureInteractions[feature],
             implemented = false,
             tested = false,
             readiness = not discovered and "not-discovered"
-                or (featureInteractions[feature] and featureInteractions[feature].stateChanges > 0 and "state-change-candidate-needs-validation")
+                or (featureInteractions[feature] and featureInteractions[feature].outcomeCandidates > 0 and "observable-outcome-candidate-needs-causal-validation")
                 or (featureInteractions[feature] and featureInteractions[feature].count > 0 and "interaction-observed-needs-state-verification")
                 or "needs-observed-interaction",
             controllerCandidates = item.counts.controllers,
@@ -358,7 +1009,7 @@ local function buildReadiness(evidence, observedCount)
                 "Implement the feature in the game-specific script",
                 "Execute and verify the implementation"
             },
-            note = "Unattributed interaction count is not feature verification",
+            note = "Only feature-consistent observable changes become candidates; temporal correlation is not causation or verification",
             unattributedInteractionEvents = unattributedInteractionCount or 0
         }
     end
@@ -367,11 +1018,29 @@ end
 
 local function buildFeatureEvidence(objects)
     local features = {}
+    local decorativeWorldClasses={Part=true,MeshPart=true,UnionOperation=true,TrussPart=true,
+        WedgePart=true,CornerWedgePart=true,Model=true,ParticleEmitter=true,
+        Trail=true,Beam=true,Smoke=true,Fire=true,Sparkles=true,Decal=true,Texture=true}
+    local function contextualSignal(pathLower,className,kind)
+        if kind~="world" then return true end
+        if pathLower:find("button",1,true) or pathLower:find("prompt",1,true)
+            or pathLower:find("detector",1,true) or pathLower:find("menu",1,true)
+            or pathLower:find("shop",1,true) or pathLower:find("quest",1,true)
+            or pathLower:find("inventory",1,true) or pathLower:find("leaderstats",1,true)
+            or pathLower:find("data",1,true) or pathLower:find("value",1,true)
+            or pathLower:find("controller",1,true) or pathLower:find("remote",1,true)
+            or pathLower:find("tool",1,true) then
+            return true
+        end
+        if decorativeWorldClasses[className] then return false end
+        return false
+    end
+
     for name in pairs(FEATURE_TERMS) do
         features[name] = {
             counts={controllers=0,remotes=0,gui=0,values=0,world=0},
             examples={}, status="not-discovered",
-            confidence="object-name-candidate-only", serverVerified=false,
+            confidence="context-bounded-name-candidate-only", serverVerified=false,
             missingEvidence={"Observed normal interaction","Before/after state verification","Authorised implementation test"}
         }
     end
@@ -392,15 +1061,18 @@ local function buildFeatureEvidence(objects)
         elseif class=="RemoteEvent" or class=="RemoteFunction" or class=="UnreliableRemoteEvent" then kind="remotes"
         elseif class=="TextButton" or class=="ImageButton" or class=="ProximityPrompt" or class=="ClickDetector" then kind="gui"
         elseif class=="IntValue" or class=="NumberValue" or class=="BoolValue" or class=="StringValue" then kind="values" end
+        local pathLower=path:lower()
         for name,terms in pairs(FEATURE_TERMS) do
             for _,term in ipairs(terms) do
                 if tokens[term] or tokens[term.."s"] or
                    (term=="rebirth" and tokens.rebirthing) then
-                    local item=features[name]
-                    item.counts[kind]=item.counts[kind]+1
-                    item.status="candidate-needs-verification"
-                    if #item.examples < 6 then
-                        item.examples[#item.examples+1]={path=path:sub(1,220),class=class,kind=kind}
+                    if contextualSignal(pathLower,class,kind) then
+                        local item=features[name]
+                        item.counts[kind]=item.counts[kind]+1
+                        item.status="candidate-needs-verification"
+                        if #item.examples < 6 then
+                            item.examples[#item.examples+1]={path=path:sub(1,220),class=class,kind=kind}
+                        end
                     end
                     break
                 end
@@ -409,11 +1081,87 @@ local function buildFeatureEvidence(objects)
     end
     return features
 end
-local ROOT_LABELS = {"ReplicatedStorage", "ReplicatedFirst", "Workspace", "PlayerGui", "LocalPlayer", "Character", "Lighting", "Teams", "SoundService"}
+
+EVIDENCE_HELPERS.featureForName = featureForName
+EVIDENCE_HELPERS.interactionGuiContext = interactionGuiContext
+EVIDENCE_HELPERS.guiControlSnapshot = guiControlSnapshot
+EVIDENCE_HELPERS.interactionPathIdentity = interactionPathIdentity
+EVIDENCE_HELPERS.safeNearbyGuiState = safeNearbyGuiState
+EVIDENCE_HELPERS.compareNearbyGuiState = compareNearbyGuiState
+EVIDENCE_HELPERS.safeInteractionState = safeInteractionState
+EVIDENCE_HELPERS.safeInventorySummary = safeInventorySummary
+EVIDENCE_HELPERS.compareInventoryGuiSamples = compareInventoryGuiSamples
+EVIDENCE_HELPERS.compareFeatureSnapshots = compareFeatureSnapshots
+EVIDENCE_HELPERS.buildReadiness = buildReadiness
+EVIDENCE_HELPERS.buildFeatureEvidence = buildFeatureEvidence
+EVIDENCE_HELPERS.featureInteractions = featureInteractions
+end
 
 local function trim(value)
     return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
+local QUICK_PROFILE_PATH_TERMS = {
+    "egg", "hatch", "pet", "shop", "sell", "quest", "reward", "rebirth",
+    "portal", "teleport", "travel", "inventory", "equip", "upgrade", "currency",
+    "coins", "gems", "gold", "bubble", "capacity", "train", "index"
+}
+
+local function activeScanProfile()
+    return SCAN_PROFILES[activeScanProfileId] or SCAN_PROFILES.full
+end
+
+local function setObservationIdleSeconds(seconds)
+    for i, value in ipairs(OBSERVATION_IDLE_OPTIONS) do
+        if value == seconds then
+            observationIdleIndex = i
+            break
+        end
+    end
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+end
+
+local function applyScanProfile(profileId)
+    activeScanProfileId = profileId == "quick" and "quick" or "full"
+    local profile = activeScanProfile()
+    AUTO_EVIDENCE_MAX_RESCANS = profile.maxAutomaticRescans
+    setObservationIdleSeconds(profile.defaultObservationSeconds)
+    autoEvidenceRescans = 0
+    autoEvidenceLastFailure = nil
+    autoEvidenceLastScan = 0
+    if refreshEvidenceControls then refreshEvidenceControls("profile-changed") end
+end
+
+local function cycleObservationIdleSeconds()
+    observationIdleIndex = (observationIdleIndex % #OBSERVATION_IDLE_OPTIONS) + 1
+    AUTO_EVIDENCE_IDLE_SECONDS = OBSERVATION_IDLE_OPTIONS[observationIdleIndex]
+    if refreshEvidenceControls then refreshEvidenceControls("observation-seconds") end
+end
+
+local function quickPathHint(path)
+    local lower = string.lower(path)
+    for _, token in ipairs(QUICK_PROFILE_PATH_TERMS) do
+        if lower:find(token, 1, true) then return true end
+    end
+    return false
+end
+
+local function shouldRecordObjectForProfile(profile, obj, path, label)
+    if not profile or profile.quickTargeted ~= true then return true end
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent")
+        or obj:IsA("ProximityPrompt") or obj:IsA("ClickDetector")
+        or obj:IsA("Tool") or obj:IsA("ValueBase")
+        or obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
+        return true
+    end
+    if label == "PlayerGui" and (obj:IsA("LayerCollector") or obj:IsA("GuiObject")) then
+        return true
+    end
+    return quickPathHint(path)
+end
+
+applyScanProfile(activeScanProfileId)
+
+
 
 local function validEndpoint(value)
     if type(value) ~= "string" then return false end
@@ -454,42 +1202,405 @@ local function create(className, properties, parent)
     return item
 end
 
+THEME_SCHEMA_VERSION = 1
+THEME_CONFIG_FOLDER = "LycolesInspector"
+THEME_CONFIG_SUBFOLDER = "LycolesInspector/settings"
+THEME_CONFIG_PATH = "LycolesInspector/settings/theme.json"
+THEME_PRESETS = {
+    Graphite = {
+        backgroundShade = 36, surfaceShade = 48, cardShade = 58, elevatedShade = 68,
+        buttonShade = 74, borderBrightness = 86, borderOpacity = 0.45,
+        cornerRadius = 8, textBrightness = 242, textSecondaryBrightness = 193,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 10,
+    },
+    Slate = {
+        backgroundShade = 44, surfaceShade = 58, cardShade = 70, elevatedShade = 78,
+        buttonShade = 84, borderBrightness = 102, borderOpacity = 0.38,
+        cornerRadius = 8, textBrightness = 240, textSecondaryBrightness = 198,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 9,
+    },
+    Silver = {
+        backgroundShade = 66, surfaceShade = 86, cardShade = 104, elevatedShade = 120,
+        buttonShade = 134, borderBrightness = 162, borderOpacity = 0.32,
+        cornerRadius = 8, textBrightness = 246, textSecondaryBrightness = 214,
+        textScale = 1.0, uiScale = 1.0, buttonHoverBrightness = 8,
+    },
+}
+THEME_DEFAULT_PRESET = "Graphite"
+THEME_ACTIVE = {}
+THEME_REGISTRY = {}
+THEME_PANE_REGISTRY = {}
+THEME_BASE_TEXT_SIZE = {}
+THEME_BUTTON_HOVER_BINDINGS = {}
+THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable"
+THEME_STATUS_LABEL = nil
+THEME_PANEL_SCALE = nil
+THEME_SELECTED_TAB = "inspector"
+
+function themeClamp(value, minimum, maximum)
+    local n = tonumber(value)
+    if not n then return minimum end
+    if n < minimum then return minimum end
+    if n > maximum then return maximum end
+    return n
+end
+
+function themeShade(brightness)
+    local v = math.floor(themeClamp(brightness, 0, 255) + 0.5)
+    return Color3.fromRGB(v, v, v)
+end
+
+function themeCopyTable(source)
+    local out = {}
+    for k, v in pairs(source or {}) do
+        out[k] = v
+    end
+    return out
+end
+
+function themePresetNames()
+    return {"Graphite", "Slate", "Silver", "Custom"}
+end
+
+function themeNormalize(raw)
+    local base = themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET])
+    local incoming = type(raw) == "table" and raw or {}
+    base.backgroundShade = themeClamp(incoming.backgroundShade or base.backgroundShade, 0, 255)
+    base.surfaceShade = themeClamp(incoming.surfaceShade or base.surfaceShade, 0, 255)
+    base.cardShade = themeClamp(incoming.cardShade or base.cardShade, 0, 255)
+    base.elevatedShade = themeClamp(incoming.elevatedShade or base.elevatedShade, 0, 255)
+    base.buttonShade = themeClamp(incoming.buttonShade or base.buttonShade, 0, 255)
+    base.borderBrightness = themeClamp(incoming.borderBrightness or base.borderBrightness, 0, 255)
+    base.borderOpacity = themeClamp(incoming.borderOpacity or base.borderOpacity, 0.05, 1.0)
+    base.cornerRadius = themeClamp(incoming.cornerRadius or base.cornerRadius, 0, 24)
+    base.textBrightness = themeClamp(incoming.textBrightness or base.textBrightness, 110, 255)
+    base.textSecondaryBrightness = themeClamp(incoming.textSecondaryBrightness or base.textSecondaryBrightness, 90, 255)
+    base.textScale = themeClamp(incoming.textScale or base.textScale, 0.7, 1.35)
+    base.uiScale = themeClamp(incoming.uiScale or base.uiScale, 0.85, 1.25)
+    base.buttonHoverBrightness = themeClamp(incoming.buttonHoverBrightness or base.buttonHoverBrightness, 0, 40)
+    base.preset = type(incoming.preset) == "string" and incoming.preset or THEME_DEFAULT_PRESET
+    return base
+end
+
+function themePalette()
+    local t = THEME_ACTIVE
+    return {
+        background = themeShade(t.backgroundShade),
+        surface = themeShade(t.surfaceShade),
+        card = themeShade(t.cardShade),
+        elevated = themeShade(t.elevatedShade),
+        button = themeShade(t.buttonShade),
+        border = themeShade(t.borderBrightness),
+        text = themeShade(t.textBrightness),
+        textSecondary = themeShade(t.textSecondaryBrightness),
+        highlight = themeShade(themeClamp(t.textBrightness + 6, 0, 255)),
+    }
+end
+
+function themeBrightnessDelta(color, delta)
+    local function c(v)
+        return themeClamp(math.floor((v * 255) + delta + 0.5), 0, 255)
+    end
+    return Color3.fromRGB(c(color.R), c(color.G), c(color.B))
+end
+
+function themeEnsureCorner(instance)
+    local corner = instance:FindFirstChild("ThemeCorner")
+    if not corner then
+        corner = Instance.new("UICorner")
+        corner.Name = "ThemeCorner"
+        corner.Parent = instance
+    end
+    corner.CornerRadius = UDim.new(0, math.floor(themeClamp(THEME_ACTIVE.cornerRadius, 0, 24) + 0.5))
+end
+
+function themeEnsureStroke(instance)
+    local stroke = instance:FindFirstChild("ThemeStroke")
+    if not stroke then
+        stroke = Instance.new("UIStroke")
+        stroke.Name = "ThemeStroke"
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Parent = instance
+    end
+    local palette = themePalette()
+    stroke.Color = palette.border
+    stroke.Thickness = 1
+    stroke.Transparency = 1 - themeClamp(THEME_ACTIVE.borderOpacity, 0.05, 1.0)
+end
+
+function themeRegister(instance, spec)
+    if not instance or type(spec) ~= "table" then return end
+    THEME_REGISTRY[#THEME_REGISTRY + 1] = {instance = instance, spec = spec}
+    if spec.paneKey then THEME_PANE_REGISTRY[spec.paneKey] = instance end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox"))
+        and THEME_BASE_TEXT_SIZE[instance] == nil then
+        THEME_BASE_TEXT_SIZE[instance] = instance.TextSize
+    end
+    if spec.corner then themeEnsureCorner(instance) end
+    if spec.stroke then themeEnsureStroke(instance) end
+    if spec.hover and instance:IsA("TextButton") and not THEME_BUTTON_HOVER_BINDINGS[instance] then
+        local hoverSpec = spec
+        local enterConn = instance.MouseEnter:Connect(function()
+            local palette = themePalette()
+            local token = hoverSpec.hoverToken or hoverSpec.bgToken or "button"
+            local base = palette[token] or palette.button
+            instance.BackgroundColor3 = themeBrightnessDelta(base, THEME_ACTIVE.buttonHoverBrightness)
+        end)
+        local leaveConn = instance.MouseLeave:Connect(function()
+            themeApply()
+        end)
+        THEME_BUTTON_HOVER_BINDINGS[instance] = {enter = enterConn, leave = leaveConn}
+    end
+end
+
+function themeApplyToInstance(instance, spec, palette)
+    if not instance or not instance.Parent then return end
+    if spec.corner then themeEnsureCorner(instance) end
+    if spec.stroke then themeEnsureStroke(instance) end
+    if spec.bgToken and instance:IsA("GuiObject") then
+        instance.BackgroundColor3 = palette[spec.bgToken] or instance.BackgroundColor3
+    end
+    if spec.textToken and (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox")) then
+        instance.TextColor3 = palette[spec.textToken] or instance.TextColor3
+    end
+    if instance:IsA("TextBox") then
+        instance.PlaceholderColor3 = palette.textSecondary
+    end
+    if instance:IsA("GuiObject") and spec.noBorder then
+        instance.BorderSizePixel = 0
+    end
+    if (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox"))
+        and THEME_BASE_TEXT_SIZE[instance] ~= nil then
+        instance.TextSize = math.floor(THEME_BASE_TEXT_SIZE[instance] * themeClamp(THEME_ACTIVE.textScale, 0.7, 1.35) + 0.5)
+    end
+end
+
+function themeRefreshTabVisuals()
+    local palette = themePalette()
+    local selected = THEME_SELECTED_TAB or "inspector"
+    if inspectorTab then inspectorTab.BackgroundColor3 = (selected == "inspector") and palette.elevated or palette.button end
+    if captureTab then captureTab.BackgroundColor3 = (selected == "capture") and palette.elevated or palette.button end
+    if automationTab then automationTab.BackgroundColor3 = (selected == "automation") and palette.elevated or palette.button end
+    if settingsTab then settingsTab.BackgroundColor3 = (selected == "settings") and palette.elevated or palette.button end
+    if generatedScriptTab then generatedScriptTab.BackgroundColor3 = (selected == "generated") and palette.elevated or palette.button end
+end
+
+function themeApply()
+    local palette = themePalette()
+    for _, entry in ipairs(THEME_REGISTRY) do
+        themeApplyToInstance(entry.instance, entry.spec, palette)
+    end
+    themeRefreshTabVisuals()
+    if THEME_PANEL_SCALE then
+        THEME_PANEL_SCALE.Scale = themeClamp(THEME_ACTIVE.uiScale, 0.85, 1.25)
+    end
+    if THEME_STATUS_LABEL and THEME_STATUS_LABEL.Parent then
+        THEME_STATUS_LABEL.TextColor3 = palette.textSecondary
+    end
+end
+
+function themeApplyPreset(presetName)
+    local selected = tostring(presetName or THEME_DEFAULT_PRESET)
+    if selected ~= "Custom" and THEME_PRESETS[selected] then
+        THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[selected]))
+        THEME_ACTIVE.preset = selected
+    elseif selected == "Custom" then
+        THEME_ACTIVE.preset = "Custom"
+    end
+    themeApply()
+end
+
+function themePersistenceSupported()
+    return type(readfile) == "function" and type(writefile) == "function" and type(makefolder) == "function"
+end
+
+function themeLoadFromDisk()
+    if not themePersistenceSupported() then
+        THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+        return false, "unsupported"
+    end
+    if type(isfile) == "function" and not isfile(THEME_CONFIG_PATH) then
+        return false, "missing"
+    end
+    local okRead, body = pcall(readfile, THEME_CONFIG_PATH)
+    if not okRead then
+        local message = tostring(body)
+        local lower = message:lower()
+        if lower:find("not found", 1, true)
+            or lower:find("no such", 1, true)
+            or lower:find("exist", 1, true) then
+            return false, "missing"
+        end
+        return false, message
+    end
+    local okDecode, payload = pcall(function() return HttpService:JSONDecode(body) end)
+    if not okDecode or type(payload) ~= "table" then
+        THEME_LAST_SAVE_MESSAGE = "Theme file is malformed; defaults restored"
+        return false, "malformed"
+    end
+    local loaded = payload.theme or payload
+    THEME_ACTIVE = themeNormalize(loaded)
+    if not THEME_PRESETS[THEME_ACTIVE.preset or ""] then THEME_ACTIVE.preset = "Custom" end
+    return true, "loaded"
+end
+
+function themeSaveToDisk()
+    if not themePersistenceSupported() then
+        THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+        return false, "unsupported"
+    end
+    pcall(makefolder, THEME_CONFIG_FOLDER)
+    pcall(makefolder, THEME_CONFIG_SUBFOLDER)
+    local payload = {
+        schemaVersion = THEME_SCHEMA_VERSION,
+        savedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        theme = themeNormalize(THEME_ACTIVE),
+    }
+    local okEncode, body = pcall(function() return HttpService:JSONEncode(payload) end)
+    if not okEncode then
+        THEME_LAST_SAVE_MESSAGE = "Theme encode failed"
+        return false, tostring(body)
+    end
+    local okWrite, err = pcall(writefile, THEME_CONFIG_PATH, body)
+    if not okWrite then
+        THEME_LAST_SAVE_MESSAGE = "Theme save failed"
+        return false, tostring(err)
+    end
+    THEME_LAST_SAVE_MESSAGE = "Theme saved to " .. THEME_CONFIG_PATH
+    return true, "saved"
+end
+
+THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+
+
 local panel = create("Frame", {
     Size = UDim2.fromOffset(510, 460),
     Position = UDim2.new(0.5, -255, 0.5, -220),
     BackgroundColor3 = Color3.fromRGB(55, 55, 55),
     BorderColor3 = Color3.new(0, 0, 0),
-    BorderSizePixel = 3,
-    Active = true
+    BorderSizePixel = 0,
+    Active = true,
+    ClipsDescendants = true
 }, gui)
 
-create("TextLabel", {
+headerBackground = create("Frame", {
+    Name = "HeaderBackground", Size = UDim2.new(1, 0, 0, 48),
+    BackgroundColor3 = Color3.fromRGB(80, 80, 80), BorderSizePixel = 0,
+    ZIndex = 4
+}, panel)
+titleLabel = create("TextLabel", {
     Text = "Lycoles Universal Inspector v" .. VERSION,
-    Size = UDim2.new(1, -50, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+    Size = UDim2.fromOffset(320, 48), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
     TextXAlignment = Enum.TextXAlignment.Left,
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
-    Font = Enum.Font.GothamBold
+    Font = Enum.Font.GothamBold,
+    ZIndex = 5
 }, panel)
+
+runtimeDiagnostics.label = create("TextLabel", {
+    Name = "RuntimeDiagnosticLabel",
+    Text = "Runtime: boot",
+    Size = UDim2.fromOffset(170, 20),
+    Position = UDim2.fromOffset(332, 4),
+    BackgroundTransparency = 1,
+    TextXAlignment = Enum.TextXAlignment.Right,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextColor3 = Color3.fromRGB(210, 210, 210),
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    ZIndex = 6
+}, panel)
+pushRuntimeStage("gui-created", "panel-header")
+
 
 local function button(label, x)
     return create("TextButton", {
         Text = label,
-        Size = UDim2.fromOffset(116, 40),
+        Size = UDim2.fromOffset(110, 38),
         Position = UDim2.fromOffset(x, 56),
         BackgroundColor3 = Color3.fromRGB(105, 105, 105),
         BorderColor3 = Color3.new(0, 0, 0),
-        BorderSizePixel = 2,
+        BorderSizePixel = 0,
         TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 14,
-        Active = true
+        TextSize = 13,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        TextWrapped = false,
+        Active = true,
+        ZIndex = 4
     }, panel)
 end
 
+inspectorTab = create("TextButton", {
+    Name = "InspectorTab", Text = "Inspector",
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(8, 52),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
+}, panel)
+captureTab = create("TextButton", {
+    Name = "CaptureTab", Text = "Capture",
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(106, 52),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
+}, panel)
+automationTab = create("TextButton", {
+    Name = "AutomationTab", Text = "Automation",
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(204, 52),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
+}, panel)
+settingsTab = create("TextButton", {
+    Name = "SettingsTab", Text = "Settings",
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(302, 52),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
+}, panel)
+generatedScriptTab = create("TextButton", {
+    Name = "GeneratedScriptTab", Text = "Generated",
+    Size = UDim2.fromOffset(94, 28), Position = UDim2.fromOffset(400, 52),
+    BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+    TextColor3 = Color3.new(1, 1, 1), TextSize = 11, ZIndex = 6,
+    TextTruncate = Enum.TextTruncate.AtEnd
+}, panel)
+
+local tabContentArea = create("Frame", {
+    Name = "TabContentArea", Size = UDim2.fromOffset(498, 356),
+    Position = UDim2.fromOffset(6, 84), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, ZIndex = 2
+}, panel)
+inspectorPane = create("ScrollingFrame", {
+    Name = "InspectorPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = true,
+    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+capturePane = create("ScrollingFrame", {
+    Name = "CapturePane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 520), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+automationPane = create("ScrollingFrame", {
+    Name = "AutomationPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 420), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+settingsPane = create("ScrollingFrame", {
+    Name = "SettingsPane", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.fromOffset(0, 0),
+    BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+    CanvasSize = UDim2.fromOffset(0, 980), ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.Y,
+    AutomaticCanvasSize = Enum.AutomaticSize.None, ZIndex = 3
+}, tabContentArea)
+
 -- Draggable panel and compact minimised launcher.
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local dragging = false
 local dragStart, panelStart
 local header = panel:FindFirstChildOfClass("TextLabel")
@@ -547,17 +1658,25 @@ local mini = create("TextButton", {
     Active = true
 }, gui)
 minimise.MouseButton1Click:Connect(function()
-    panel.Visible = false
-    mini.Visible = true
+    if generationUi.ready and generationUi.hideAllWindows then
+        generationUi.hideAllWindows()
+    else
+        panel.Visible = false
+        mini.Visible = true
+    end
 end)
 mini.MouseButton1Click:Connect(function()
-    mini.Visible = false
-    panel.Visible = true
+    if generationUi.ready and generationUi.restoreWindows then
+        generationUi.restoreWindows()
+    else
+        mini.Visible = false
+        panel.Visible = true
+    end
 end)
 
 local scan = button("SCAN", 12)
 local copy = button("COPY JSON", 136)
-local save = button("SAVE JSON", 260)
+local save = button("SAVE REPORT", 260)
 local close = button("CLOSE", 384)
 local watchToggle = create("TextButton", {
     Text = "WATCH: ON", Size = UDim2.fromOffset(116, 28),
@@ -630,42 +1749,1511 @@ local url = create("TextBox", {
     PlaceholderText = "HTTPS receiver URL ending /ingest/KEY",
     Text = endpoint,
     ClearTextOnFocus = false,
-    TextSize = 13,
+    TextSize = 12,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = Color3.new(1, 1, 1),
     BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 }, config)
 
 local send = create("TextButton", {
-    Size = UDim2.fromOffset(180, 38),
-    Position = UDim2.fromOffset(12, 45),
-    Text = "SEND JSON",
+    Name = "FinishGenerateButton",
+    Size = UDim2.fromOffset(278, 40),
+    Position = UDim2.fromOffset(14, 52),
+    Text = "FINISH INSPECTION & GENERATE SCRIPT",
     TextColor3 = Color3.new(1, 1, 1),
-    BackgroundColor3 = Color3.fromRGB(90, 90, 90),
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextWrapped = false,
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150),
     BorderSizePixel = 2
 }, config)
 
 local automatic = create("TextButton", {
-    Size = UDim2.fromOffset(290, 38),
-    Position = UDim2.fromOffset(208, 45),
-    Text = "AUTO-SEND: ON",
+    Name = "OpenGeneratorButton",
+    Size = UDim2.fromOffset(168, 40),
+    Position = UDim2.fromOffset(292, 52),
+    Text = "OPEN GENERATOR",
     TextColor3 = Color3.new(1, 1, 1),
-    BackgroundColor3 = Color3.fromRGB(90, 90, 90),
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    TextWrapped = false,
+    BackgroundColor3 = Color3.fromRGB(72, 92, 116),
     BorderSizePixel = 2
 }, config)
 
+local generatedScriptPane = create("ScrollingFrame", {
+    Name = "GeneratedScriptPane", Size = UDim2.new(1, 0, 1, 0),
+    Position = UDim2.fromOffset(0, 0), BackgroundColor3 = Color3.fromRGB(45, 48, 54),
+    BorderSizePixel = 0, Visible = false, ZIndex = 3,
+    CanvasSize = UDim2.fromOffset(0, 440), ScrollBarThickness = 6,
+    ScrollingDirection = Enum.ScrollingDirection.Y, AutomaticCanvasSize = Enum.AutomaticSize.None
+}, tabContentArea)
+create("TextLabel", {
+    Text = "Request an evidence-grounded client utility",
+    Size = UDim2.fromOffset(486, 30), Position = UDim2.fromOffset(12, 10),
+    BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1),
+    TextXAlignment = Enum.TextXAlignment.Left, TextSize = 15, ZIndex = 8
+}, generatedScriptPane)
+local featureRequestInput = create("TextBox", {
+    Name = "FeatureRequest", Text = "",
+    PlaceholderText = "Describe the client-visible capability to generate",
+    Size = UDim2.fromOffset(486, 72), Position = UDim2.fromOffset(12, 46),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.new(1, 1, 1),
+    PlaceholderColor3 = Color3.fromRGB(165, 172, 180), TextSize = 13,
+    TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
+    TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+    ZIndex = 8
+}, generatedScriptPane)
+local produceScript = create("TextButton", {
+    Name = "ProduceScript", Text = "PRODUCE SCRIPT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(12, 128),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+local loadGeneratedResult = create("TextButton", {
+    Name = "LoadGeneratedResult", Text = "LOAD RESULT",
+    Size = UDim2.fromOffset(180, 38), Position = UDim2.fromOffset(204, 128),
+    BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+
+local generatedStatus = create("TextLabel", {
+    Name = "GenerationStatus",
+    Text = "No generated script is loaded. Enter a request to capture it with the next full scan.\n\nGeneration and static validation run offline from complete numbered parts. Gameplay remains unverified.",
+    Size = UDim2.fromOffset(486, 112), Position = UDim2.fromOffset(12, 176),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(215, 224, 232),
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, TextSize = 13, ZIndex = 8
+}, generatedScriptPane)
+local generatedCodeOutput = create("TextBox", {
+    Name = "GeneratedCodeOutput", Text = "-- Generated Luau becomes available only after offline compilation and validation.",
+    Size = UDim2.fromOffset(486, 78), Position = UDim2.fromOffset(12, 302),
+    BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
+    TextSize = 11, Font = Enum.Font.Code, TextWrapped = true, MultiLine = true,
+    TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 8
+}, generatedScriptPane)
+scan.Parent = inspectorPane
+copy.Parent = inspectorPane
+save.Parent = inspectorPane
+close.Parent = inspectorPane
+status.Parent = inspectorPane
+queueLabel.Parent = inspectorPane
+output.Parent = inspectorPane
+config.Parent = inspectorPane
+watchToggle.Parent = automationPane
+interactionToggle.Parent = automationPane
+
+scan.Size = UDim2.fromOffset(110, 38)
+copy.Size = UDim2.fromOffset(110, 38)
+save.Size = UDim2.fromOffset(110, 38)
+close.Size = UDim2.fromOffset(110, 38)
+scan.Position = UDim2.fromOffset(8, 8)
+copy.Position = UDim2.fromOffset(124, 8)
+save.Position = UDim2.fromOffset(240, 8)
+close.Position = UDim2.fromOffset(356, 8)
+status.Size = UDim2.fromOffset(474, 50)
+status.Position = UDim2.fromOffset(8, 44)
+queueLabel.Size = UDim2.fromOffset(474, 18)
+queueLabel.Position = UDim2.fromOffset(8, 96)
+output.Size = UDim2.fromOffset(474, 120)
+output.Position = UDim2.fromOffset(8, 118)
+config.Size = UDim2.fromOffset(474, 108)
+config.Position = UDim2.fromOffset(8, 244)
+url.Size = UDim2.fromOffset(446, 30)
+url.Position = UDim2.fromOffset(14, 8)
+send.Size = UDim2.fromOffset(278, 40)
+send.Position = UDim2.fromOffset(14, 52)
+automatic.Size = UDim2.fromOffset(168, 40)
+automatic.Position = UDim2.fromOffset(292, 52)
+watchToggle.Size = UDim2.fromOffset(220, 30)
+
+scan.ZIndex = 4
+copy.ZIndex = 4
+save.ZIndex = 4
+close.ZIndex = 4
+status.ZIndex = 4
+queueLabel.ZIndex = 4
+output.ZIndex = 4
+config.ZIndex = 4
+url.ZIndex = 4
+send.ZIndex = 4
+automatic.ZIndex = 4
+watchToggle.ZIndex = 4
+interactionToggle.ZIndex = 4
+
+watchToggle.Position = UDim2.fromOffset(8, 8)
+interactionToggle.Size = UDim2.fromOffset(220, 30)
+interactionToggle.Position = UDim2.fromOffset(236, 8)
+pushRuntimeStage("tabs-created", "inspector-capture-automation-settings-generated")
+
+
+local function showGeneratedScriptPane(selectedTab)
+    local tab = selectedTab or "inspector"
+    inspectorPane.Visible = tab == "inspector"
+    capturePane.Visible = tab == "capture"
+    automationPane.Visible = tab == "automation"
+    settingsPane.Visible = tab == "settings"
+    generatedScriptPane.Visible = tab == "generated"
+    THEME_SELECTED_TAB = tab
+    themeRefreshTabVisuals()
+end
+inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("inspector") end)
+captureTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("capture") end)
+automationTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("automation") end)
+settingsTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("settings") end)
+
+generatedScriptTab.MouseButton1Click:Connect(function()
+    if generationUi.ready and generationUi.session and generationUi.session.sessionId
+        and generationUi.openGeneratorIfReady then
+        generationUi.openGeneratorIfReady()
+    else
+        showGeneratedScriptPane("generated")
+    end
+end)
+showGeneratedScriptPane("inspector")
+local function refreshGeneratedHandoff(phase)
+    if not pendingManifest then return end
+    local requestText=pendingManifest.featureRequest
+    local requestLine="Request (not evidence): none"
+    if type(requestText)=="string" and requestText~="" then
+        requestLine="Request (not evidence): "..requestText:sub(1,96)
+    end
+    local exported=pendingManifest.localExport
+    local exportLine="Local export: not attempted"
+    if type(exported)=="table" then
+        local manifestState=exported.manifestSaved==true and "saved"
+            or (exported.manifestSaved==false and "not saved" or "unknown")
+        exportLine="Local export: "..tostring(exported.status).." "
+            ..tostring(exported.exportedParts or 0).."/"..tostring(exported.expectedParts or 0)
+            .." parts; manifest "..manifestState
+    end
+    local attemptLine="Upload: "..uploadAttemptStage()
+    if uploadState.attempted then
+        attemptLine=attemptLine.."; status "..tostring(uploadState.status)
+    elseif uploadState.status=="configuration-error" then
+        attemptLine=attemptLine.."; "..tostring(uploadState.lastError or "configuration unavailable")
+    end
+    local downstreamLine="Downstream: not validated; save complete local parts or upload"
+    if type(exported)=="table" and exported.status=="complete"
+        and exported.manifestSaved==true then
+        downstreamLine="Downstream: local files claimed complete; import and validate offline"
+    elseif receiverReportStatus()=="acknowledged-awaiting-integrity" then
+        downstreamLine="Downstream: receiver integrity verification required"
+    end
+    local snapshotLine = "Snapshot: pending"
+    local profileLine = "Scan profile: unknown"
+    if type(pendingManifest.scanStats)=="table" then
+        snapshotLine = "Snapshot: "..(pendingManifest.scanStats.complete==true and "complete" or "partial")
+        profileLine = "Scan profile: "..tostring(pendingManifest.scanStats.profile or "unknown")
+    end
+    generatedStatus.Text=tostring(phase or "Evidence handoff").."\n"..requestLine
+        .."\n"..profileLine
+        .."\n"..snapshotLine
+        .."\nEvidence: scan "..tostring(pendingManifest.scanId).."; "
+        ..tostring(uploadState.expectedParts).." numbered parts"
+        .."\n"..exportLine
+        .."\n"..attemptLine
+        .."\nReceiver: "..receiverReportStatus().."; ACK "
+        ..tostring(uploadState.acknowledgedParts).."/"..tostring(uploadState.expectedParts)
+        .."; integrity unverified"
+        .."\n"..downstreamLine
+        .."\nGeneration: offline compilation/validation pending; gameplay unverified"
+end
+
+do
+    local function initializeGenerationUi()
+    local generatorSession = {
+        sessionId = nil,
+        inspection = nil,
+        recommendations = {},
+        selected = {},
+        scripts = {},
+        scriptIndex = 0,
+        pendingJobId = nil,
+        activeView = "inspector",
+        hidden = false,
+        analysisStatus = "idle",
+        lastError = nil,
+    }
+
+    local backend = {
+        sessions = {},
+        jobs = {},
+        sessionCounter = 0,
+        jobCounter = 0,
+        provider = "mock-provider-v1",
+        anthropicAdapter = {
+            provider = "anthropic-claude-adapter",
+            configured = false,
+            reason = "Requires secure server-side credentialed backend",
+        },
+    }
+
+    local function safeLower(value)
+        return type(value) == "string" and value:lower() or ""
+    end
+
+    local function titleCase(value)
+        if type(value) ~= "string" or value == "" then return "Unknown" end
+        local transformed = value:gsub("[_%-]", " ")
+        local words = {}
+        for token in transformed:gmatch("%S+") do
+            words[#words + 1] = token:sub(1, 1):upper() .. token:sub(2):lower()
+        end
+        return #words > 0 and table.concat(words, " ") or "Unknown"
+    end
+
+    local function sanitizeId(value)
+        local text = tostring(value or "feature")
+        text = text:gsub("[^%w]+", "_")
+        text = text:gsub("_+", "_")
+        text = text:gsub("^_", ""):gsub("_$", "")
+        return text ~= "" and text:sub(1, 80) or "feature"
+    end
+
+    function backend:deriveRecommendations(snapshot)
+        local list = {}
+        local seen = {}
+        local evidence = snapshot and snapshot.featureEvidence
+        if type(evidence) == "table" then
+            for featureName, featureData in pairs(evidence) do
+                if type(featureName) == "string" and featureName ~= "" then
+                    local id = "recommendation_" .. sanitizeId(featureName)
+                    if not seen[id] then
+                        seen[id] = true
+                        local count = 0
+                        if type(featureData) == "table" then
+                            count = tonumber(featureData.interactionEvents)
+                                or tonumber(featureData.observedEvents)
+                                or tonumber(featureData.count)
+                                or 0
+                        end
+                        list[#list + 1] = {
+                            id = id,
+                            label = titleCase(featureName) .. " utility controls",
+                            supported = true,
+                            confidence = "evidence-backed-candidate",
+                            reason = "Observed feature evidence entries: " .. tostring(math.max(0, math.floor(count + 0.5))),
+                        }
+                    end
+                end
+            end
+        end
+
+        local diagnostics = snapshot and snapshot.interactionDiagnostics
+        local readiness = diagnostics and diagnostics.requestedCapabilityAssessment
+        if type(readiness) == "table" and type(readiness.blockers) == "table" and #readiness.blockers > 0 then
+            list[#list + 1] = {
+                id = "recommendation_blockers",
+                label = "Resolve observed workflow blockers",
+                supported = false,
+                confidence = "uncertain",
+                reason = "Evidence indicates unresolved blockers for full request fulfillment",
+            }
+        end
+
+        if #list == 0 then
+            list[1] = {
+                id = "recommendation_custom_request",
+                label = "Custom request from available evidence",
+                supported = false,
+                confidence = "uncertain",
+                reason = "No high-confidence feature families were discovered in this snapshot",
+            }
+        end
+
+        table.sort(list, function(a, b)
+            local left = safeLower(a.label)
+            local right = safeLower(b.label)
+            if left == right then return safeLower(a.id) < safeLower(b.id) end
+            return left < right
+        end)
+        return list
+    end
+
+    function backend:submitInspection(snapshot, callback)
+        self.sessionCounter = self.sessionCounter + 1
+        local sessionId = "inspection-session-" .. tostring(self.sessionCounter)
+        local recommendations = self:deriveRecommendations(snapshot)
+        local payload = {
+            sessionId = sessionId,
+            gameName = snapshot and snapshot.gameName or "Unknown",
+            placeId = snapshot and snapshot.placeId or game.PlaceId,
+            scanId = snapshot and snapshot.scanId or "unknown",
+            analysisStatus = "analysis-complete-mock",
+            analysisSummary = "Mock evidence analysis complete. Recommendations are evidence-scoped candidates only.",
+            recommendations = recommendations,
+            provider = self.provider,
+            runtimeVerified = false,
+            gameplayVerified = false,
+        }
+        self.sessions[sessionId] = payload
+        task.spawn(function()
+            task.wait(0.08)
+            callback(true, payload)
+        end)
+    end
+
+    function backend:getGameplayAnalysis(sessionId, callback)
+        local session = self.sessions[sessionId]
+        task.spawn(function()
+            task.wait(0.04)
+            if not session then
+                callback(false, {error = "unknown-inspection-session"})
+                return
+            end
+            callback(true, {
+                sessionId = sessionId,
+                gameName = session.gameName,
+                placeId = session.placeId,
+                scanId = session.scanId,
+                analysisStatus = session.analysisStatus,
+                analysisSummary = session.analysisSummary,
+                runtimeVerified = false,
+                gameplayVerified = false,
+            })
+        end)
+    end
+
+    function backend:getRecommendations(sessionId, callback)
+        local session = self.sessions[sessionId]
+        task.spawn(function()
+            task.wait(0.05)
+            if not session then
+                callback(false, {error = "unknown-inspection-session"})
+                return
+            end
+            callback(true, {
+                sessionId = sessionId,
+                recommendations = session.recommendations,
+                analysisStatus = session.analysisStatus,
+                analysisSummary = session.analysisSummary,
+                runtimeVerified = false,
+                gameplayVerified = false,
+            })
+        end)
+    end
+
+    function backend:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
+        local session = self.sessions[sessionId]
+        if not session then
+            callback(false, {error = "unknown-inspection-session"})
+            return
+        end
+        self.jobCounter = self.jobCounter + 1
+        local jobId = "generation-job-" .. tostring(self.jobCounter)
+        self.jobs[jobId] = {
+            jobId = jobId,
+            sessionId = sessionId,
+            status = "queued",
+            selectedFeatures = selectedFeatures,
+            customRequest = customRequest,
+            createdAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            result = nil,
+        }
+        task.spawn(function()
+            task.wait(0.1)
+            local job = self.jobs[jobId]
+            if not job then return end
+            job.status = "running"
+            task.wait(0.15)
+            local featureLines = {}
+            for _, item in ipairs(selectedFeatures) do
+                if type(item) == "string" then featureLines[#featureLines + 1] = "-- selected: " .. item end
+            end
+            if #featureLines == 0 then
+                featureLines[1] = "-- selected: custom-request-only"
+            end
+            local scriptLines = {
+                "-- Lycoles generated script (mock provider output)",
+                "-- Evidence-scoped candidate utility. Runtime/gameplay outcomes are unverified.",
+                "local Players = game:GetService(\"Players\")",
+                "local player = Players.LocalPlayer",
+                "if not player then return end",
+                "",
+            }
+            for _, line in ipairs(featureLines) do scriptLines[#scriptLines + 1] = line end
+            scriptLines[#scriptLines + 1] = "-- custom-request: " .. (customRequest ~= "" and customRequest or "none")
+            scriptLines[#scriptLines + 1] = "local function describe()"
+            scriptLines[#scriptLines + 1] = "    return \"Generated candidate utility from inspection evidence\""
+            scriptLines[#scriptLines + 1] = "end"
+            scriptLines[#scriptLines + 1] = "print(describe())"
+            job.result = {
+                script = table.concat(scriptLines, "\n"),
+                validation = {
+                    syntaxValid = true,
+                    runtimeVerified = false,
+                    gameplayVerified = false,
+                    note = "Mock provider output for UI workflow testing only",
+                },
+                provider = self.provider,
+                generatedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            }
+            job.status = "completed"
+        end)
+        callback(true, {jobId = jobId, status = "queued", provider = self.provider})
+    end
+
+    function backend:pollGeneration(jobId, callback)
+        task.spawn(function()
+            task.wait(0.04)
+            local job = self.jobs[jobId]
+            if not job then
+                callback(false, {error = "unknown-generation-job"})
+                return
+            end
+            callback(true, {
+                jobId = jobId,
+                status = job.status,
+                sessionId = job.sessionId,
+            })
+        end)
+    end
+
+    function backend:getGenerationResult(jobId, callback)
+        task.spawn(function()
+            task.wait(0.03)
+            local job = self.jobs[jobId]
+            if not job then
+                callback(false, {error = "unknown-generation-job"})
+                return
+            end
+            if job.status ~= "completed" or type(job.result) ~= "table" then
+                callback(false, {error = "generation-not-complete"})
+                return
+            end
+            callback(true, job.result)
+        end)
+    end
+
+    function backend:requestRevision(sessionId, selectedFeatures, customRequest, callback)
+        self:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
+    end
+
+    local generatorWindow = create("Frame", {
+        Name = "FeatureGeneratorWindow", Size = UDim2.fromOffset(520, 420),
+        Position = UDim2.new(0.5, -260, 0.5, -210), BackgroundColor3 = Color3.fromRGB(55, 55, 55),
+        BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, Visible = false, ZIndex = 20,
+    }, gui)
+    local generatorHeader = create("TextLabel", {
+        Name = "GeneratorHeader", Text = "Lycoles | Feature Selection", Size = UDim2.fromOffset(470, 34),
+        Position = UDim2.fromOffset(10, 8), BackgroundTransparency = 1,
+        TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 16, ZIndex = 21,
+    }, generatorWindow)
+    local generatorMinimize = create("TextButton", {
+        Name = "GeneratorMinimize", Text = "_", Size = UDim2.fromOffset(32, 28),
+        Position = UDim2.new(1, -40, 0, 8), BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+        TextColor3 = Color3.new(1, 1, 1), TextSize = 18, ZIndex = 21,
+    }, generatorWindow)
+    local generatorGameLabel = create("TextLabel", {
+        Name = "GeneratorGameLabel", Text = "Game: unknown", Size = UDim2.fromOffset(494, 20),
+        Position = UDim2.fromOffset(12, 46), BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(226, 234, 240), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorStatusLabel = create("TextLabel", {
+        Name = "GeneratorStatusLabel", Text = "Analysis status: waiting for inspection handoff", Size = UDim2.fromOffset(494, 28),
+        Position = UDim2.fromOffset(12, 66), BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(210, 220, 230), TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local recommendationContainer = create("ScrollingFrame", {
+        Name = "RecommendationContainer", Size = UDim2.fromOffset(494, 168), Position = UDim2.fromOffset(12, 98),
+        BackgroundColor3 = Color3.fromRGB(35, 35, 35), BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 1,
+        ScrollBarThickness = 6, CanvasSize = UDim2.fromOffset(0, 168), AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ZIndex = 21,
+    }, generatorWindow)
+    local customRequestInput = create("TextBox", {
+        Name = "GeneratorCustomRequest", Text = "", PlaceholderText = "Optional custom instructions for script generation",
+        Size = UDim2.fromOffset(494, 72), Position = UDim2.fromOffset(12, 274),
+        BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.new(1, 1, 1),
+        PlaceholderColor3 = Color3.fromRGB(165, 172, 180), TextSize = 12,
+        TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 21,
+    }, generatorWindow)
+    local generatorButton = create("TextButton", {
+        Name = "GeneratorGenerateButton", Text = "GENERATE SCRIPT", Size = UDim2.fromOffset(176, 34), Position = UDim2.fromOffset(12, 356),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorOpenResults = create("TextButton", {
+        Name = "GeneratorOpenResults", Text = "OPEN RESULTS", Size = UDim2.fromOffset(150, 34), Position = UDim2.fromOffset(198, 356),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorBackInspector = create("TextButton", {
+        Name = "GeneratorBackInspector", Text = "BACK TO INSPECTOR", Size = UDim2.fromOffset(158, 34), Position = UDim2.fromOffset(348, 356),
+        BackgroundColor3 = Color3.fromRGB(80, 80, 80), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+
+    local resultWindow = create("Frame", {
+        Name = "GeneratedScriptWindow", Size = UDim2.fromOffset(560, 450),
+        Position = UDim2.new(0.5, -280, 0.5, -225), BackgroundColor3 = Color3.fromRGB(55, 55, 55),
+        BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, Visible = false, ZIndex = 22,
+    }, gui)
+    local resultHeader = create("TextLabel", {
+        Name = "ResultHeader", Text = "Lycoles | Generated Script", Size = UDim2.fromOffset(510, 34),
+        Position = UDim2.fromOffset(10, 8), BackgroundTransparency = 1,
+        TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 16, ZIndex = 23,
+    }, resultWindow)
+    local resultMinimize = create("TextButton", {
+        Name = "ResultMinimize", Text = "_", Size = UDim2.fromOffset(32, 28),
+        Position = UDim2.new(1, -40, 0, 8), BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+        TextColor3 = Color3.new(1, 1, 1), TextSize = 18, ZIndex = 23,
+    }, resultWindow)
+    local resultStatus = create("TextLabel", {
+        Name = "ResultStatus", Text = "No generation job has completed yet.", Size = UDim2.fromOffset(534, 36), Position = UDim2.fromOffset(12, 46),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(226, 234, 240), TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultVersion = create("TextLabel", {
+        Name = "ResultVersion", Text = "Version: none", Size = UDim2.fromOffset(260, 20), Position = UDim2.fromOffset(12, 84),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205, 216, 228), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultCode = create("TextBox", {
+        Name = "ResultCode", Text = "-- Generated script will appear here after completion.",
+        Size = UDim2.fromOffset(534, 260), Position = UDim2.fromOffset(12, 108),
+        BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
+        TextSize = 11, Font = Enum.Font.Code, TextWrapped = false, MultiLine = true,
+        TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, ClearTextOnFocus = false, ZIndex = 23,
+    }, resultWindow)
+    local resultPrev = create("TextButton", {
+        Name = "ResultPreviousVersion", Text = "PREV VERSION", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(12, 378),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultNext = create("TextButton", {
+        Name = "ResultNextVersion", Text = "NEXT VERSION", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(136, 378),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultCopy = create("TextButton", {
+        Name = "ResultCopy", Text = "COPY SCRIPT", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(260, 378),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultSave = create("TextButton", {
+        Name = "ResultSave", Text = "SAVE SCRIPT", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(384, 378),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultBack = create("TextButton", {
+        Name = "ResultBackToGenerator", Text = "BACK TO GENERATOR", Size = UDim2.fromOffset(162, 34), Position = UDim2.fromOffset(384, 414),
+        BackgroundColor3 = Color3.fromRGB(80, 80, 80), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+
+    local recommendationRows = {}
+
+    local function setWindowVisibility(view)
+        local active = view or generatorSession.activeView
+        generatorSession.activeView = active
+        if generatorSession.hidden then
+            panel.Visible = false
+            generatorWindow.Visible = false
+            resultWindow.Visible = false
+            mini.Visible = true
+            return
+        end
+        panel.Visible = active == "inspector"
+        generatorWindow.Visible = active == "generator"
+        resultWindow.Visible = active == "results"
+        mini.Visible = false
+    end
+
+    local function hideAllWindows()
+        generatorSession.hidden = true
+        setWindowVisibility(generatorSession.activeView)
+    end
+
+    local function restoreWindows()
+        generatorSession.hidden = false
+        setWindowVisibility(generatorSession.activeView)
+    end
+
+    local function attachDrag(frameRef, headerRef)
+        local dragState = {active = false, start = nil, origin = nil, input = nil}
+        headerRef.Active = true
+        table.insert(watchConnections, headerRef.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.input = input
+            end
+        end))
+        table.insert(watchConnections, headerRef.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.active = true
+                dragState.start = input.Position
+                dragState.origin = frameRef.Position
+            end
+        end))
+        table.insert(watchConnections, UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.active = false
+            end
+        end))
+        table.insert(watchConnections, UserInputService.InputChanged:Connect(function(input)
+            if not dragState.active or not dragState.start then return end
+            if input ~= dragState.input and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local delta = input.Position - dragState.start
+            frameRef.Position = UDim2.new(
+                dragState.origin.X.Scale, dragState.origin.X.Offset + delta.X,
+                dragState.origin.Y.Scale, dragState.origin.Y.Offset + delta.Y
+            )
+        end))
+    end
+
+    attachDrag(generatorWindow, generatorHeader)
+    attachDrag(resultWindow, resultHeader)
+
+    local function renderRecommendations()
+        for _, row in ipairs(recommendationRows) do
+            if row and row.Destroy then pcall(function() row:Destroy() end) end
+        end
+        recommendationRows = {}
+        local y = 4
+        local recommendations = generatorSession.recommendations
+        if type(recommendations) ~= "table" then recommendations = {} end
+        if #recommendations == 0 then
+            local empty = create("TextLabel", {
+                Name = "RecommendationEmpty", Text = "No recommendations available yet.",
+                Size = UDim2.fromOffset(472, 22), Position = UDim2.fromOffset(8, y),
+                BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205, 214, 224),
+                TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 22,
+            }, recommendationContainer)
+            recommendationRows[1] = empty
+            recommendationContainer.CanvasSize = UDim2.fromOffset(0, 34)
+            return
+        end
+        for _, item in ipairs(recommendations) do
+            if type(item) == "table" then
+                local id = tostring(item.id or "unknown")
+                local selected = generatorSession.selected[id] == true
+                local toggle = create("TextButton", {
+                    Name = "Recommendation_" .. sanitizeId(id),
+                    Text = (selected and "[x] " or "[ ] ") .. tostring(item.label or id),
+                    Size = UDim2.fromOffset(472, 22), Position = UDim2.fromOffset(8, y),
+                    BackgroundColor3 = item.supported and Color3.fromRGB(60, 84, 106) or Color3.fromRGB(74, 74, 74),
+                    TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left,
+                    TextSize = 12, ZIndex = 22,
+                }, recommendationContainer)
+                table.insert(watchConnections, toggle.MouseButton1Click:Connect(function()
+                    if not item.supported then return end
+                    local current = generatorSession.selected[id] == true
+                    generatorSession.selected[id] = not current
+                    renderRecommendations()
+                end))
+                recommendationRows[#recommendationRows + 1] = toggle
+                y = y + 24
+                local reason = create("TextLabel", {
+                    Name = "Reason_" .. sanitizeId(id), Text = "- " .. tostring(item.reason or "evidence uncertain"),
+                    Size = UDim2.fromOffset(466, 18), Position = UDim2.fromOffset(14, y),
+                    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(188, 198, 209),
+                    TextXAlignment = Enum.TextXAlignment.Left, TextSize = 11, ZIndex = 22,
+                }, recommendationContainer)
+                recommendationRows[#recommendationRows + 1] = reason
+                y = y + 20
+            end
+        end
+        recommendationContainer.CanvasSize = UDim2.fromOffset(0, math.max(168, y + 4))
+    end
+
+    local function updateGeneratorSummary(summaryLine)
+        local inspection = generatorSession.inspection
+        local gameName = inspection and tostring(inspection.gameName or "Unknown") or "Unknown"
+        local scanId = inspection and tostring(inspection.scanId or "unknown") or "unknown"
+        generatorGameLabel.Text = "Game: " .. gameName .. " | Scan: " .. scanId
+        generatorStatusLabel.Text = "Analysis status: " .. tostring(generatorSession.analysisStatus)
+            .. "\n" .. tostring(summaryLine or "Recommendations are evidence-backed candidates; gameplay is unverified.")
+    end
+
+    local function updateResultView()
+        local scripts = generatorSession.scripts
+        if #scripts == 0 then
+            resultVersion.Text = "Version: none"
+            resultStatus.Text = "No generated script versions available yet."
+            resultCode.Text = "-- Generated script will appear here after completion."
+            return
+        end
+        generatorSession.scriptIndex = math.clamp(generatorSession.scriptIndex, 1, #scripts)
+        local entry = scripts[generatorSession.scriptIndex]
+        resultVersion.Text = "Version " .. tostring(generatorSession.scriptIndex) .. "/" .. tostring(#scripts)
+            .. " | Provider: " .. tostring(entry.provider or "mock")
+        resultStatus.Text = tostring(entry.statusLine or "Generation completed")
+        resultCode.Text = tostring(entry.script or "-- unavailable")
+    end
+
+    local function collectSelectedFeatureLabels()
+        local labels = {}
+        for _, item in ipairs(generatorSession.recommendations) do
+            if type(item) == "table" and generatorSession.selected[tostring(item.id or "")] == true then
+                labels[#labels + 1] = tostring(item.label or item.id)
+            end
+        end
+        table.sort(labels)
+        return labels
+    end
+
+    local function validateFinishedInspection()
+        if not pendingManifest or type(pendingManifest) ~= "table" then
+            return false, "No inspection snapshot is available yet. Run SCAN first."
+        end
+        if type(pendingManifest.scanStats) == "table" and pendingManifest.scanStats.complete ~= true then
+            return false, "Snapshot is partial. Run a complete scan before generation handoff."
+        end
+        if type(pendingManifest.scanId) ~= "string" or pendingManifest.scanId == "" then
+            return false, "Inspection snapshot is missing scan identity."
+        end
+        if type(pendingParts) ~= "table" or #pendingParts == 0 then
+            return false, "Inspection parts are missing. Complete a scan before handoff."
+        end
+        for index, part in ipairs(pendingParts) do
+            if type(part) ~= "string" or #part == 0 or #part > MAX_PART_BYTES then
+                return false, "Inspection part " .. tostring(index) .. " is invalid for generation handoff."
+            end
+        end
+        return true, nil
+    end
+
+    local function startGenerationHandoff()
+        local ok, err = validateFinishedInspection()
+        if not ok then
+            status.Text = err
+            return
+        end
+        local snapshot = {
+            gameName = pendingManifest.gameName,
+            placeId = pendingManifest.placeId,
+            scanId = pendingManifest.scanId,
+            partCount = #pendingParts,
+            featureEvidence = pendingManifest.featureEvidence,
+            featureReadiness = pendingManifest.featureReadiness,
+            interactionDiagnostics = pendingManifest.interactionDiagnostics,
+            scanStats = pendingManifest.scanStats,
+            inspectedAt = pendingManifest.inspectedAt,
+            reportTransport = pendingManifest.reportTransport,
+            localExport = pendingManifest.localExport,
+        }
+        status.Text = "Finalizing inspection snapshot and transferring to generator..."
+        backend:submitInspection(snapshot, function(success, payload)
+            if not success or type(payload) ~= "table" then
+                status.Text = "Generation handoff failed: snapshot preserved; retry after checking evidence readiness."
+                return
+            end
+            generatorSession.sessionId = payload.sessionId
+            generatorSession.inspection = snapshot
+            generatorSession.recommendations = payload.recommendations or {}
+            generatorSession.analysisStatus = payload.analysisStatus or "analysis-complete-mock"
+            generatorSession.selected = generatorSession.selected or {}
+            updateGeneratorSummary(payload.analysisSummary)
+            renderRecommendations()
+            refreshGeneratedHandoff("Inspection handoff complete")
+            generatorSession.hidden = false
+            setWindowVisibility("generator")
+            status.Text = "Inspection handoff complete. Generator window opened."
+        end)
+    end
+
+    local function openGeneratorIfReady()
+        if not generatorSession.sessionId then
+            status.Text = "Generator session unavailable. Finish inspection handoff first."
+            return
+        end
+        backend:getGameplayAnalysis(generatorSession.sessionId, function(analysisOk, analysisPayload)
+            if analysisOk and type(analysisPayload) == "table" then
+                generatorSession.analysisStatus = analysisPayload.analysisStatus or generatorSession.analysisStatus
+                updateGeneratorSummary(analysisPayload.analysisSummary)
+            end
+            backend:getRecommendations(generatorSession.sessionId, function(success, payload)
+                if success and type(payload) == "table" then
+                    generatorSession.recommendations = payload.recommendations or {}
+                    generatorSession.analysisStatus = payload.analysisStatus or generatorSession.analysisStatus
+                    updateGeneratorSummary(payload.analysisSummary)
+                    renderRecommendations()
+                end
+                generatorSession.hidden = false
+                setWindowVisibility("generator")
+            end)
+        end)
+    end
+
+    local function pollGeneration(jobId)
+        backend:pollGeneration(jobId, function(success, state)
+            if not success or type(state) ~= "table" then
+                resultStatus.Text = "Generation status failed: " .. tostring(state and state.error or "unknown")
+                generatorSession.pendingJobId = nil
+                return
+            end
+            if state.status == "completed" then
+                backend:getGenerationResult(jobId, function(resultOk, resultPayload)
+                    if not resultOk or type(resultPayload) ~= "table" then
+                        resultStatus.Text = "Generation result retrieval failed: " .. tostring(resultPayload and resultPayload.error or "unknown")
+                        generatorSession.pendingJobId = nil
+                        return
+                    end
+                    generatorSession.pendingJobId = nil
+                    local selectedLabels = collectSelectedFeatureLabels()
+                    local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
+                    local statusLine = "Validation: syntax=" .. tostring(resultPayload.validation and resultPayload.validation.syntaxValid == true)
+                        .. " | runtime=false | gameplay=false"
+                    generatorSession.scripts[#generatorSession.scripts + 1] = {
+                        script = resultPayload.script,
+                        provider = resultPayload.provider,
+                        generatedAt = resultPayload.generatedAt,
+                        selectedFeatures = selectedLabels,
+                        customRequest = requestText,
+                        statusLine = statusLine,
+                    }
+                    generatorSession.scriptIndex = #generatorSession.scripts
+                    updateResultView()
+                end)
+                return
+            end
+            resultStatus.Text = "Generation status: " .. tostring(state.status) .. " (mock async provider)"
+            task.delay(0.15, function()
+                if alive and generatorSession.pendingJobId == jobId then pollGeneration(jobId) end
+            end)
+        end)
+    end
+
+    local function startGenerationRequest(isRevision)
+        if not generatorSession.sessionId then
+            updateGeneratorSummary("Generator session unavailable. Finish inspection handoff first.")
+            return
+        end
+        local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
+        customRequestInput.Text = requestText
+        local selectedLabels = collectSelectedFeatureLabels()
+        if #selectedLabels == 0 and requestText == "" then
+            updateGeneratorSummary("Select evidence-supported features or enter a custom request first.")
+            return
+        end
+        resultStatus.Text = "Generation status: queued"
+        resultCode.Text = "-- Waiting for generation job completion..."
+        resultVersion.Text = "Version: pending"
+        generatorSession.hidden = false
+        setWindowVisibility("results")
+        local callback = function(success, payload)
+            if not success or type(payload) ~= "table" then
+                resultStatus.Text = "Generation request failed: " .. tostring(payload and payload.error or "unknown")
+                return
+            end
+            generatorSession.pendingJobId = payload.jobId
+            resultStatus.Text = "Generation status: queued (" .. tostring(payload.jobId) .. ")"
+            pollGeneration(payload.jobId)
+        end
+        if isRevision then
+            backend:requestRevision(generatorSession.sessionId, selectedLabels, requestText, callback)
+        else
+            backend:requestGeneration(generatorSession.sessionId, selectedLabels, requestText, callback)
+        end
+    end
+
+    table.insert(watchConnections, generatorButton.MouseButton1Click:Connect(function()
+        startGenerationRequest(#generatorSession.scripts > 0)
+    end))
+    table.insert(watchConnections, generatorOpenResults.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("results")
+        updateResultView()
+    end))
+    table.insert(watchConnections, generatorBackInspector.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("inspector")
+    end))
+    table.insert(watchConnections, resultBack.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("generator")
+    end))
+    table.insert(watchConnections, resultPrev.MouseButton1Click:Connect(function()
+        if #generatorSession.scripts == 0 then return end
+        generatorSession.scriptIndex = math.max(1, generatorSession.scriptIndex - 1)
+        updateResultView()
+    end))
+    table.insert(watchConnections, resultNext.MouseButton1Click:Connect(function()
+        if #generatorSession.scripts == 0 then return end
+        generatorSession.scriptIndex = math.min(#generatorSession.scripts, generatorSession.scriptIndex + 1)
+        updateResultView()
+    end))
+    table.insert(watchConnections, resultCopy.MouseButton1Click:Connect(function()
+        if type(setclipboard) ~= "function" then
+            resultStatus.Text = "Copy unavailable in this executor"
+            return
+        end
+        local ok = pcall(setclipboard, resultCode.Text)
+        resultStatus.Text = ok and "Script copied to clipboard" or "Copy failed"
+    end))
+    table.insert(watchConnections, resultSave.MouseButton1Click:Connect(function()
+        if type(writefile) ~= "function" then
+            resultStatus.Text = "Save unavailable in this executor"
+            return
+        end
+        local index = math.max(1, generatorSession.scriptIndex)
+        local filename = "LycolesGeneratedScript_" .. tostring(game.PlaceId) .. "_v" .. tostring(index) .. ".lua"
+        local ok, err = pcall(writefile, filename, resultCode.Text)
+        resultStatus.Text = ok and ("Saved script to " .. filename) or ("Save failed: " .. tostring(err))
+    end))
+    table.insert(watchConnections, generatorMinimize.MouseButton1Click:Connect(hideAllWindows))
+    table.insert(watchConnections, resultMinimize.MouseButton1Click:Connect(hideAllWindows))
+    table.insert(watchConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode ~= Enum.KeyCode.RightShift then return end
+        if generatorSession.hidden then
+            restoreWindows()
+        else
+            hideAllWindows()
+        end
+    end))
+
+    generationUi.ready = true
+    generationUi.startGenerationHandoff = startGenerationHandoff
+    generationUi.openGeneratorIfReady = openGeneratorIfReady
+    generationUi.hideAllWindows = hideAllWindows
+    generationUi.restoreWindows = restoreWindows
+    generationUi.setWindowVisibility = setWindowVisibility
+    generationUi.session = generatorSession
+    generationUi.backendContract = {
+        submitInspection = true,
+        retrieveGameplayAnalysis = true,
+        retrieveRecommendations = true,
+        submitGenerationRequest = true,
+        pollGenerationStatus = true,
+        retrieveGeneratedScript = true,
+        requestRevision = true,
+        provider = backend.provider,
+        anthropicAdapter = backend.anthropicAdapter,
+    }
+
+    _G.LycolesGenerationSession = function()
+        return {
+            sessionId = generatorSession.sessionId,
+            activeView = generatorSession.activeView,
+            hidden = generatorSession.hidden,
+            recommendationCount = #generatorSession.recommendations,
+            generatedVersionCount = #generatorSession.scripts,
+            pendingJobId = generatorSession.pendingJobId,
+            provider = backend.provider,
+            anthropicConfigured = backend.anthropicAdapter.configured,
+        }
+    end
+
+    updateGeneratorSummary("Finish inspection handoff to unlock generation recommendations.")
+    renderRecommendations()
+    updateResultView()
+    end
+
+    initializeGenerationUi()
+end
+
+do
+local function boundedResultText(value,limit)
+    return type(value)=="string" and #value>=1 and #value<=limit
+        and value:find("[%c]")==nil
+end
+local function boundedResultInteger(value,maximum)
+    return type(value)=="number" and value>=0 and value<=maximum and value%1==0
+end
+local function falseResultClaims(claims)
+    return type(claims)=="table" and claims.sourceAuthenticityVerified==false
+        and claims.causalityProven==false and claims.serverAuthorityVerified==false
+        and claims.runtimeVerified==false and claims.gameplayVerified==false
+        and claims.actionOutcomesVerified==false
+end
+local function validateWorkflowSelection(selection)
+    if type(selection)~="table" or type(selection.available)~="boolean"
+        or type(selection.candidates)~="table" or #selection.candidates>20
+        or not boundedResultInteger(selection.totalCandidates,1000000)
+        or not boundedResultInteger(selection.shownCandidates,20)
+        or not boundedResultInteger(selection.omittedCandidates,1000000)
+        or selection.shownCandidates~=#selection.candidates
+        or selection.totalCandidates~=#selection.candidates+selection.omittedCandidates then
+        return false
+    end
+    local diagnostics=selection.planningDiagnostics
+    if diagnostics~=nil then
+        local fields={"transactionGroups","linkedTransactions","singletonTransactions",
+            "multiEventTransactions","transactionsWithInsufficientGenerationReadySteps",
+            "partiallyMappedTransactions","transactionsOverStepBound","workflowCandidates",
+            "unlinkedEvents","executionReadyWorkflows"}
+        local statuses={
+            ["execution-ready-candidates"]=true,["review-only-candidates"]=true,
+            ["no-multi-step-generation-ready-contract"]=true,
+            ["singleton-transactions-only"]=true,["no-explicit-linkage"]=true,
+            ["no-interaction-events"]=true}
+        if type(diagnostics)~="table" or statuses[diagnostics.status]~=true
+            or diagnostics.readinessImpact~="limitations-only"
+            or diagnostics.causalityProven~=false or diagnostics.runtimeVerified~=false
+            or diagnostics.gameplayVerified~=false then return false end
+        for _,field in ipairs(fields) do
+            if not boundedResultInteger(diagnostics[field],10000000) then return false end
+        end
+        if diagnostics.transactionGroups~=diagnostics.singletonTransactions
+                +diagnostics.multiEventTransactions
+            or diagnostics.linkedTransactions~=diagnostics.multiEventTransactions
+            or diagnostics.workflowCandidates~=selection.totalCandidates
+            or diagnostics.transactionsWithInsufficientGenerationReadySteps
+                >diagnostics.multiEventTransactions
+            or diagnostics.partiallyMappedTransactions>diagnostics.workflowCandidates
+            or diagnostics.transactionsOverStepBound>diagnostics.workflowCandidates
+            or diagnostics.executionReadyWorkflows>diagnostics.workflowCandidates then return false end
+        local expected
+        if diagnostics.executionReadyWorkflows>0 then expected="execution-ready-candidates"
+        elseif diagnostics.workflowCandidates>0 then expected="review-only-candidates"
+        elseif diagnostics.multiEventTransactions>0 then
+            expected="no-multi-step-generation-ready-contract"
+        elseif diagnostics.singletonTransactions>0 then expected="singleton-transactions-only"
+        elseif diagnostics.unlinkedEvents>0 then expected="no-explicit-linkage"
+        else expected="no-interaction-events" end
+        if diagnostics.status~=expected then return false end
+    end
+
+    local selectedId=selection.selectedCandidateId
+    if selectedId~=nil and not boundedResultText(selectedId,120) then return false end
+    local validReason={
+        ["selected-highest-ranked-execution-ready-candidate"]=true,
+        ["not-execution-ready"]=true,["lower-request-evidence-score"]=true,
+        ["more-user-involvement-tiebreak"]=true,["stable-identity-tiebreak"]=true
+    }
+    local validMode={["review-only"]=true,["mixed-guided"]=true,["bounded-automatic"]=true}
+    local selectedCount=0
+    for _,item in ipairs(selection.candidates) do
+        if type(item)~="table" or not boundedResultText(item.candidateId,120)
+            or not boundedResultInteger(item.requestScore,10000)
+            or type(item.matchedTerms)~="table" or #item.matchedTerms>128
+            or validMode[item.executionMode]~=true or type(item.executionReady)~="boolean"
+            or type(item.selected)~="boolean" or validReason[item.selectionReason]~=true then
+            return false
+        end
+        local previous=nil
+        for _,term in ipairs(item.matchedTerms) do
+            if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                or previous~=nil and term<=previous then return false end
+            previous=term
+        end
+        if (item.requestScore>0)~=(#item.matchedTerms>0) then return false end
+        if item.selected then
+            selectedCount=selectedCount+1
+            if item.candidateId~=selectedId
+                or item.selectionReason~="selected-highest-ranked-execution-ready-candidate" then
+                return false
+            end
+        end
+    end
+    if selectedCount~=(selectedId~=nil and 1 or 0) then return false end
+    if selection.available==false and (selection.totalCandidates~=0 or selectedId~=nil) then
+        return false
+    end
+    return true
+end
+local function validateGuidedFeedbackCorrelation(correlation,selectedWorkflowId)
+    if correlation==nil then return true end
+    if type(correlation)~="table" or type(correlation.available)~="boolean"
+        or not falseResultClaims(correlation.claims) then return false end
+    if correlation.available==false then
+        return correlation.readinessImpact=="none" and boundedResultText(correlation.reason,160)
+    end
+    if correlation.schemaVersion~="116.guided-workflow-feedback-aggregate.1"
+        or correlation.readinessImpact~="informational-only"
+        or correlation.candidateId~=selectedWorkflowId
+        or not boundedResultText(correlation.candidateId,160)
+        or type(correlation.workflowPlanSHA256)~="string"
+        or #correlation.workflowPlanSHA256~=64
+        or correlation.workflowPlanSHA256:match("^[a-f0-9]+$")==nil
+        or type(correlation.completeSequenceRecurrenceObserved)~="boolean"
+        or type(correlation.summary)~="table" or type(correlation.steps)~="table"
+        or #correlation.steps<1 or #correlation.steps>64 then return false end
+    local summary=correlation.summary
+    local summaryFields={"sessions","runs","submittedEntries","activationEventsObserved",
+        "expectedChangesObserved","completeClientObservationSequences",
+        "sessionsWithCompleteClientObservationSequence","stepsWithStatusConflict"}
+    for _,field in ipairs(summaryFields) do
+        if not boundedResultInteger(summary[field],1000000) then return false end
+    end
+    if correlation.completeSequenceRecurrenceObserved
+            ~=(summary.sessionsWithCompleteClientObservationSequence>=2)
+        or summary.sessions<1
+        or summary.sessionsWithCompleteClientObservationSequence>summary.sessions
+        or summary.completeClientObservationSequences>summary.runs
+        or summary.expectedChangesObserved>summary.activationEventsObserved
+        or summary.activationEventsObserved>summary.submittedEntries then return false end
+    local validStatus={["expected-change-observed"]=true,["outcome-not-observed"]=true,
+        ["activation-timeout"]=true,["control-or-state-unavailable"]=true,
+        ["metadata-drift"]=true,["state-unreadable"]=true}
+    local validExpected={increased=true,decreased=true,changed=true}
+    local validScalar={boolean=true,number=true,string=true}
+    local totalAttempts,totalActivations,totalChanges,totalConflicts=0,0,0,0
+    for index,step in ipairs(correlation.steps) do
+        if type(step)~="table" or step.stepSequence~=index
+            or not boundedResultText(step.targetPath,512)
+            or not boundedResultText(step.outcomeKey,256)
+            or validExpected[step.expected]~=true or type(step.statuses)~="table"
+            or type(step.observedScalarTypes)~="table"
+            or type(step.statusConflictObserved)~="boolean"
+            or type(step.statusConflictAcrossSessions)~="boolean"
+            or type(step.scalarTypeConflictObserved)~="boolean"
+            or type(step.expectedDirectionAcrossMultipleSessions)~="boolean" then return false end
+        local countFields={"attempts","sessionsObserved","activationEventsObserved",
+            "expectedChangesObserved","sessionsWithExpectedChange"}
+        for _,field in ipairs(countFields) do
+            if not boundedResultInteger(step[field],1000000) then return false end
+        end
+        local statusKinds,statusCount=0,0
+        for statusValue,count in pairs(step.statuses) do
+            if validStatus[statusValue]~=true or not boundedResultInteger(count,1000000)
+                or count<1 then return false end
+            statusKinds=statusKinds+1;statusCount=statusCount+count
+        end
+        local previous=nil
+        for _,scalarType in ipairs(step.observedScalarTypes) do
+            if validScalar[scalarType]~=true or previous~=nil and scalarType<=previous then return false end
+            previous=scalarType
+        end
+        if statusCount~=step.attempts
+            or step.expectedChangesObserved>step.activationEventsObserved
+            or step.activationEventsObserved>step.attempts
+            or step.sessionsWithExpectedChange>step.sessionsObserved
+            or step.statusConflictObserved~=(statusKinds>1)
+            or step.scalarTypeConflictObserved~=(#step.observedScalarTypes>1)
+            or step.expectedDirectionAcrossMultipleSessions~=(step.sessionsWithExpectedChange>=2) then
+            return false
+        end
+        totalAttempts=totalAttempts+step.attempts
+        totalActivations=totalActivations+step.activationEventsObserved
+        totalChanges=totalChanges+step.expectedChangesObserved
+        if step.statusConflictObserved then totalConflicts=totalConflicts+1 end
+    end
+    return totalAttempts==summary.submittedEntries
+        and totalActivations==summary.activationEventsObserved
+        and totalChanges==summary.expectedChangesObserved
+        and totalConflicts==summary.stepsWithStatusConflict
+end
+
+local function validateGeneratedObservationBaseline(value,workflow)
+    if value==nil then return true end
+    if type(value)~="table" or value.readinessImpact~="limitations-only"
+        or value.causalityProven~=false or value.runtimeVerified~=false
+        or value.gameplayVerified~=false or type(value.possibleSynchronousLoss)~="boolean" then
+        return false
+    end
+    local total=workflow and value.steps or value.events
+    local pre=workflow and value.preActivationSteps or value.preActivationEvents
+    local callback=workflow and value.activationCallbackSteps or value.activationCallbackEvents
+    local unknown=workflow and value.unknownTimingSteps or value.unknownTimingEvents
+    if not boundedResultInteger(total,2000) or total<1
+        or not boundedResultInteger(pre,2000) or not boundedResultInteger(callback,2000)
+        or not boundedResultInteger(unknown,2000) or total~=pre+callback+unknown
+        or value.possibleSynchronousLoss~=(callback>0 or unknown>0) then return false end
+    local expected=unknown>0 and "timing-unknown" or callback>0 and "callback-fallback-present"
+        or workflow and "pre-activation-baseline-available-for-all-steps"
+        or "pre-activation-baseline-available-for-all-observations"
+    return value.classification==expected
+end
+
+local function validateInteractionObservationCoverage(value)
+    if value==nil then return true end
+    if type(value)~="table" or type(value.available)~="boolean"
+        or value.readinessImpact~="limitations-only" or value.causalityProven~=false
+        or value.runtimeVerified~=false or value.gameplayVerified~=false
+        or type(value.limitations)~="table" or #value.limitations>8 then return false end
+    for _,item in ipairs(value.limitations) do if not boundedResultText(item,160) then return false end end
+    if value.available==false then
+        return value.classification=="unavailable-legacy" and value.evidenceLossPossible==nil
+    end
+    local counts={value.callbacksFired,value.preActivationBaselinesUsed,value.callbackBaselinesUsed,
+        value.pendingObservationEvents,value.observationWindowsExpected,
+        value.observationWindowsCompleted,value.observationWindowsFailed}
+    for _,count in ipairs(counts) do if not boundedResultInteger(count,10000000) then return false end end
+    if value.preActivationCaptureFailures~=nil
+        and not boundedResultInteger(value.preActivationCaptureFailures,10000000) then return false end
+    if value.observationWindowAccountingValid~=true
+        or type(value.evidenceLossPossible)~="boolean"
+        or value.preActivationBaselinesUsed+value.callbackBaselinesUsed~=value.callbacksFired
+        or value.observationWindowsCompleted+value.observationWindowsFailed
+            +value.pendingObservationEvents~=value.observationWindowsExpected then return false end
+    local knownPossible=value.callbackBaselinesUsed>0 or value.pendingObservationEvents>0
+        or value.observationWindowsFailed>0
+    local possible=value.evidenceLossPossible
+    if value.preActivationCaptureFailures~=nil then
+        possible=knownPossible or value.preActivationCaptureFailures>0
+    end
+    if knownPossible and value.evidenceLossPossible~=true then return false end
+    local expected=possible and "possible-evidence-loss"
+        or value.callbacksFired==0 and "accounted-no-interactions"
+        or "accounted-pre-activation-observation"
+    return value.evidenceLossPossible==possible and value.classification==expected
+end
+
+
+local function validateGeneratedReadiness(result)
+    if result.schemaVersion=="110.generated-result.1" then return true,nil end
+    if result.schemaVersion~="113.generated-result.1" then return false,nil end
+    local readiness=result.generationReadiness
+    if type(readiness)~="table" or readiness.schemaVersion~="113.generation-readiness.1"
+        or readiness.placeId~=result.placeId or readiness.scanId~=result.scanId then
+        return false,nil
+    end
+    local claims=readiness.claims
+    if type(claims)~="table" or claims.sourceAuthenticityVerified~=false
+        or claims.causalityProven~=false or claims.serverAuthorityVerified~=false
+        or claims.runtimeVerified~=false or claims.gameplayVerified~=false
+        or claims.actionOutcomesVerified~=false then
+        return false,nil
+    end
+    local workflowSelection=readiness.workflowSelection
+    if not validateWorkflowSelection(workflowSelection)
+        or not validateGuidedFeedbackCorrelation(readiness.guidedWorkflowFeedbackCorrelation,
+            workflowSelection.selectedCandidateId)
+        or not validateInteractionObservationCoverage(readiness.interactionObservationCoverage) then
+        return false,nil
+    end
+    local request=readiness.request
+    local validStatus={
+        ["no-capability-requested"]=true,["generated-bounded-subset"]=true,
+        ["evidence-only-no-replay-contract"]=true,["unsupported-by-current-evidence"]=true
+    }
+    if type(request)~="table" or request.request~=result.requestedCapability
+        or validStatus[request.status]~=true
+        or request.fullRequestImplemented~=false or request.implementationReady~=false
+        or request.runtimeVerified~=false or request.gameplayVerified~=false
+        or request.causalityProven~=false or request.actionOutcomesVerified~=false
+        or type(request.generatedSubsetAvailable)~="boolean"
+        or type(request.supportedSubset)~="table" or #request.supportedSubset>16
+        or type(request.matchedGeneratedCapabilityIds)~="table"
+        or #request.matchedGeneratedCapabilityIds>64 then
+        return false,nil
+    end
+    for _,item in ipairs(request.supportedSubset) do
+        if not boundedResultText(item,160) then return false,nil end
+    end
+    local matchedSeen={}
+    for _,item in ipairs(request.matchedGeneratedCapabilityIds) do
+        if not boundedResultText(item,80) or matchedSeen[item] then return false,nil end
+        matchedSeen[item]=true
+    end
+    local generated=readiness.generatedCapabilities
+    local unavailable=readiness.unavailableRequestedBehavior
+    local discovery=readiness.discoveryOnlyCapabilities
+    if type(generated)~="table" or #generated>64 or type(unavailable)~="table"
+        or #unavailable>16 or type(discovery)~="table" or #discovery>16 then
+        return false,nil
+    end
+    local generatedSeen={}
+    local workflowCapabilityId=nil
+    local validStepKind={["guided-gui-activation-trial"]=true,
+        ["official-tool-activation-trial"]=true,["proximity-prompt-trial"]=true}
+    for _,item in ipairs(generated) do
+        if type(item)~="table" or not boundedResultText(item.id,80) or generatedSeen[item.id]
+            or item.runtimeVerified~=false or item.gameplayVerified~=false
+            or item.causalityProven~=false or item.actionOutcomeVerified~=false then
+            return false,nil
+        end
+        local workflowKind=item.kind=="mixed-action-workflow-trial"
+        if not validateGeneratedObservationBaseline(item.observationBaseline,workflowKind) then
+            return false,nil
+        end
+        if workflowKind then
+            local expectedMode=item.manualGuiActivationRequired and "mixed-guided" or "bounded-automatic"
+            if workflowCapabilityId~=nil or not boundedResultText(item.candidateId,120)
+                or not boundedResultText(item.transactionId,200)
+                or item.executionMode~=expectedMode
+                or not boundedResultInteger(item.stepCount,64) or item.stepCount<2
+                or item.observationBaseline~=nil and item.observationBaseline.steps~=item.stepCount
+                or type(item.stepKinds)~="table" or #item.stepKinds~=item.stepCount
+                or type(item.targetPaths)~="table" or #item.targetPaths~=item.stepCount
+                or type(item.requestMatchedTerms)~="table" or #item.requestMatchedTerms>128
+                or not boundedResultInteger(item.requestMatchScore,10000)
+                or type(item.manualGuiActivationRequired)~="boolean"
+                or item.automaticallyExecutable~=(not item.manualGuiActivationRequired)
+                or item.operatorStartRequired~=true or item.stopOnFirstUnobservedOutcome~=true then
+                return false,nil
+            end
+            for index,stepKind in ipairs(item.stepKinds) do
+                if validStepKind[stepKind]~=true
+                    or not boundedResultText(item.targetPaths[index],500) then return false,nil end
+            end
+            local previous=nil
+            for _,term in ipairs(item.requestMatchedTerms) do
+                if not boundedResultText(term,80) or term:match("^[a-z0-9]+$")==nil
+                    or previous~=nil and term<=previous then return false,nil end
+                previous=term
+            end
+            if (item.requestMatchScore>0)~=(#item.requestMatchedTerms>0) then return false,nil end
+            workflowCapabilityId=item.candidateId
+        else
+            if validStepKind[item.kind]~=true
+                or item.kind=="guided-gui-activation-trial" and
+                    (item.automaticActivation~=false or item.manualActivationRequired~=true
+                        or item.exactControlHighlighting~=true)
+                or not boundedResultText(item.targetLabel,120)
+                or not boundedResultText(item.selectedOutcomeKey,200)
+                or (item.expectedChange~="increased" and item.expectedChange~="decreased"
+                    and item.expectedChange~="changed") then return false,nil end
+        end
+        generatedSeen[item.id]=true
+    end
+    if workflowCapabilityId~=workflowSelection.selectedCandidateId then return false,nil end
+    local generatedStatus=request.status=="generated-bounded-subset"
+    if ((result.requestedCapability==nil)~=(request.status=="no-capability-requested"))
+        or generatedStatus~=request.generatedSubsetAvailable
+        or generatedStatus~=(#request.matchedGeneratedCapabilityIds>0)
+        or generatedStatus~=(#request.supportedSubset>0) then return false,nil end
+    for identifier in pairs(matchedSeen) do
+        if not generatedSeen[identifier] then return false,nil end
+    end
+
+    for _,item in ipairs(unavailable) do
+        if type(item)~="table" or not boundedResultText(item.id,80)
+            or item.status~="unavailable" then return false,nil end
+    end
+    for _,item in ipairs(discovery) do
+        if type(item)~="table" or not boundedResultText(item.family,80)
+            or type(item.candidateCount)~="number" or item.candidateCount<0
+            or item.candidateCount>1000000 or item.candidateCount%1~=0
+            or type(item.observedCount)~="number" or item.observedCount<0
+            or item.observedCount>item.candidateCount or item.observedCount%1~=0
+            or item.replayContractAvailable~=false then return false,nil end
+    end
+    return true,readiness
+end
+
+loadGeneratedResult.MouseButton1Click:Connect(function()
+    if type(readfile)~="function" then
+        generatedStatus.Text="Result loading unavailable: readfile is not supported."
+        return
+    end
+    local filename="Lycoles-"..tostring(game.PlaceId).."-generated-result.json"
+    local readOk,raw=pcall(readfile,filename)
+    if not readOk or type(raw)~="string" or #raw>1200000 then
+        generatedStatus.Text="Result load failed: expected bounded file "..filename
+        return
+    end
+    local decodeOk,result=pcall(function() return HttpService:JSONDecode(raw) end)
+    local code=decodeOk and type(result)=="table" and result.generatedCode or nil
+    local schemaValid=decodeOk and type(result)=="table" and
+        (result.schemaVersion=="110.generated-result.1"
+            or result.schemaVersion=="113.generated-result.1")
+    local readinessValid,readiness=false,nil
+    if schemaValid then readinessValid,readiness=validateGeneratedReadiness(result) end
+    local valid=schemaValid and readinessValid
+        and result.placeId==game.PlaceId and type(result.scanId)=="string"
+        and result.staticValidationPassed==true and result.packageAuthenticityVerified==false
+        and result.runtimeVerified==false and result.gameplayVerified==false
+        and result.executionAuthorized==false and type(code)=="string" and #code<=1000000
+        and code:find("assert(game.PlaceId == "..tostring(game.PlaceId),1,true)~=nil
+    if not valid then
+        generatedStatus.Text="Result rejected: schema, place guard, readiness, or verification claims are invalid."
+        return
+    end
+    generatedCodeOutput.Text=code
+    if readiness then
+        local generated=readiness.generatedCapabilities
+        local unavailable={}
+        for index,item in ipairs(readiness.unavailableRequestedBehavior) do
+            if index>4 then break end unavailable[#unavailable+1]=item.id
+        end
+        local details={"Loaded display-only result for scan "..result.scanId,
+            "Readiness: "..readiness.request.status,
+            "Generated bounded capabilities: "..tostring(#generated),
+            "Full request implemented: false | Runtime/gameplay verified: false"}
+        local coverage=readiness.interactionObservationCoverage
+        if type(coverage)=="table" then
+            if coverage.available then
+                details[#details+1]="Observation coverage: "..coverage.classification.." | pre="
+                    ..tostring(coverage.preActivationBaselinesUsed).." callback="
+                    ..tostring(coverage.callbackBaselinesUsed).." | causality unproven"
+            else
+                details[#details+1]="Observation coverage: unavailable for legacy evidence"
+            end
+        end
+        local planning=readiness.workflowSelection.planningDiagnostics
+        if type(planning)=="table" then
+            details[#details+1]="Workflow planning: "..planning.status.." | shared="
+                ..tostring(planning.multiEventTransactions).." singleton="
+                ..tostring(planning.singletonTransactions).." unlinked="
+                ..tostring(planning.unlinkedEvents).." | limitations only"
+        end
+
+        local workflowCapability=nil
+        local singleCapability=nil
+        for _,item in ipairs(generated) do
+            if item.kind=="mixed-action-workflow-trial" then workflowCapability=item
+            elseif singleCapability==nil then singleCapability=item end
+        end
+        if workflowCapability then
+            details[#details+1]="Workflow: "..workflowCapability.candidateId.." | "
+                ..workflowCapability.executionMode.." | "..tostring(workflowCapability.stepCount).." steps"
+        elseif singleCapability then
+            details[#details+1]="Evidence: "..singleCapability.targetLabel.." -> "
+                ..singleCapability.selectedOutcomeKey.." "..singleCapability.expectedChange
+        else
+            details[#details+1]="Evidence: no generated replay capability"
+        end
+        local selectedCapability=workflowCapability or singleCapability
+        local selectedBaseline=selectedCapability and selectedCapability.observationBaseline or nil
+        if type(selectedBaseline)=="table" then
+            details[#details+1]="Selected evidence baseline: "..selectedBaseline.classification
+                .." | limitations only; not causal proof"
+        end
+
+        local correlation=readiness.guidedWorkflowFeedbackCorrelation
+        if type(correlation)=="table" and correlation.available then
+            local summary=correlation.summary
+            details[#details+1]="Workflow feedback: "..tostring(summary.sessions).." sessions | "
+                ..tostring(summary.completeClientObservationSequences)
+                .." complete client-observation sequences | informational only"
+            local statusOrder={"expected-change-observed","outcome-not-observed",
+                "activation-timeout","control-or-state-unavailable","metadata-drift","state-unreadable"}
+            for index,step in ipairs(correlation.steps) do
+                if index>4 then break end
+                local statuses={}
+                for _,statusValue in ipairs(statusOrder) do
+                    local count=step.statuses[statusValue]
+                    if type(count)=="number" and count>0 then
+                        statuses[#statuses+1]=statusValue.."="..tostring(count)
+                    end
+                end
+                local path=step.targetPath
+                if #path>72 then path=path:sub(1,69).."..." end
+                details[#details+1]="Step "..tostring(index).." "..path..": "
+                    ..(#statuses>0 and table.concat(statuses,", ") or "not observed")
+                    .." | expected changes "..tostring(step.expectedChangesObserved)
+                    .."/"..tostring(step.attempts)
+            end
+            if #correlation.steps>4 then
+                details[#details+1]="Workflow feedback: "..tostring(#correlation.steps-4)
+                    .." additional steps omitted from this display"
+            end
+        elseif type(correlation)=="table" then
+            details[#details+1]="Workflow feedback: unavailable ("..correlation.reason..")"
+        end
+        details[#details+1]="Unsupported: "
+            ..(#unavailable>0 and table.concat(unavailable,", ") or "see packaged limitations")
+        details[#details+1]="Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+        generatedStatus.TextSize=11
+        generatedStatus.Text=table.concat(details,"\n")
+    else
+        generatedStatus.Text="Loaded legacy display-only offline result for scan "..result.scanId
+            ..". Static validation is package-reported; package authenticity, runtime, execution, and gameplay remain unverified."
+    end
+    showGeneratedScriptPane("generated")
+end)
+end
+
 _G.LycolesInspectorClose = function()
+    stopWorkflowRecording("inspector-closed")
+    if type(_G.LycolesStopTargetedCapture)=="function" then
+        pcall(_G.LycolesStopTargetedCapture,"inspector-closed")
+    end
     alive = false
     uploadGeneration = uploadGeneration + 1
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
     dragEndConnection:Disconnect()
     dragMoveConnection:Disconnect()
+    generationUi.ready = false
+    generationUi.session = nil
+    generationUi.backendContract = nil
+    _G.LycolesGenerationUi = nil
+    _G.LycolesGenerationSession = nil
     gui:Destroy()
 end
 
 -- Return a verified acknowledgement; never log the secret-bearing endpoint.
 local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCount)
     local lastError = "request not attempted"
-    for attempt = 1, MAX_UPLOAD_ATTEMPTS do
+    for attempt = 1, LIMITS.uploadAttempts do
         if not alive then return false, "inspector closed" end
         local ok, response = pcall(requestFn, {
             Url = receiver, Method = "POST",
@@ -679,15 +3267,17 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
             end)
             if decodedOk and type(ack) == "table" and ack.ok == true
                 and ack.scanId == scanId and ack.partIndex == partIndex
-                and ack.partCount == partCount and type(ack.id) == "string" then
-                return true, ack.id
+                and ack.partCount == partCount and type(ack.id) == "string"
+                and type(ack.sha256) == "string" and #ack.sha256 == 64
+                and ack.sha256:match("^[a-f0-9]+$") then
+                return true, {id=ack.id,sha256=ack.sha256}
             end
             lastError = "invalid acknowledgement"
         else
             lastError = "HTTP " .. tostring(code or "request error")
         end
         warn("Lycoles upload attempt failed", partIndex, attempt, lastError)
-        if attempt < MAX_UPLOAD_ATTEMPTS then
+        if attempt < LIMITS.uploadAttempts then
             task.wait(UPLOAD_RETRY_DELAYS[attempt])
         end
     end
@@ -695,22 +3285,35 @@ local function uploadPart(requestFn, receiver, body, scanId, partIndex, partCoun
 end
 
 local function transmit()
+    pushRuntimeStage("transmit-invoked", "receiver-upload")
     if uploading then
         status.Text = "Upload already running"
+        pushRuntimeFailure("transmit", "already-running")
         return
     end
     if not pendingParts or #pendingParts == 0 then
         status.Text = "Scan not finished"
+        pushRuntimeFailure("transmit", "scan-not-finished")
         return
     end
     endpoint = trim(url.Text)
     if not validEndpoint(endpoint) then
+        uploadState.status="configuration-error"
+        uploadState.lastError="invalid receiver endpoint"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Use https://HOST/ingest/KEY"
+        pushRuntimeFailure("transmit", "invalid-endpoint")
         return
     end
     local requestFn = (syn and syn.request) or http_request or request
     if type(requestFn) ~= "function" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="HTTP requests unavailable"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "HTTP requests unavailable"
+        pushRuntimeFailure("transmit", "request-function-unavailable")
         return
     end
     saveEndpoint()
@@ -718,7 +3321,12 @@ local function transmit()
     local parts = pendingParts
     local firstOk, first = pcall(function() return HttpService:JSONDecode(parts[1]) end)
     if not firstOk or type(first)~="table" then
+        uploadState.status="configuration-error"
+        uploadState.lastError="malformed first part"
+        refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
         status.Text = "Upload blocked: malformed first part"
+        pushRuntimeFailure("transmit", "malformed-first-part")
         return
     end
     local scanId = first.scanId
@@ -730,10 +3338,27 @@ local function transmit()
         if not ok or type(item)~="table" or item.scanId~=scanId
             or item.partIndex~=i or item.partCount~=partCount
             or item.placeId~=game.PlaceId then
+            uploadState.status="configuration-error"
+            uploadState.lastError="inconsistent part "..tostring(i)
+            refreshLocalManifest("upload-blocked")
+        refreshGeneratedHandoff("Upload blocked")
             status.Text="Upload blocked: inconsistent part "..tostring(i)
+            pushRuntimeFailure("transmit", "inconsistent-part-"..tostring(i))
             return
         end
     end
+    local acknowledgedBefore=0
+    for i=1,partCount do
+        if pendingAcknowledged[i] then acknowledgedBefore=acknowledgedBefore+1 end
+    end
+    uploadState.attempted=true
+    uploadState.status="uploading"
+    pushRuntimeStage("transmitting", "parts-"..tostring(partCount))
+    uploadState.acknowledgedParts=acknowledgedBefore
+    uploadState.expectedParts=partCount
+    uploadState.lastError=nil
+    refreshLocalManifest("upload-started")
+    refreshGeneratedHandoff("Upload started")
     uploading = true
     uploadGeneration = uploadGeneration + 1
     local generation = uploadGeneration
@@ -743,7 +3368,8 @@ local function transmit()
         for i = 1, partCount do
             if pendingAcknowledged[i] then succeeded = succeeded + 1 end
         end
-        local workers = math.min(MAX_CONCURRENT_UPLOADS, partCount)
+        uploadState.acknowledgedParts=succeeded
+        local workers = math.min(LIMITS.maxConcurrentUploads, partCount)
         for _ = 1, workers do
             active = active + 1
             task.spawn(function()
@@ -759,6 +3385,7 @@ local function transmit()
                         end
                         pendingAcknowledged[i] = message
                         succeeded = succeeded + 1
+                        uploadState.acknowledgedParts=succeeded
                         status.Text = "Receiver ACK " .. succeeded .. "/" .. partCount .. " parts"
                     end
                 end
@@ -769,16 +3396,54 @@ local function transmit()
         uploading = false
         if not alive or generation ~= uploadGeneration then return end
         local elapsed = math.floor((os.clock()-started)*100)/100
+        uploadState.acknowledgedParts=succeeded
         if failed then
-            status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
+            uploadState.status="failed"
+            uploadState.lastError=failed
+            status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry upload with receiver tooling"
+            pushRuntimeFailure("transmitting", failed)
         elseif succeeded == partCount then
+            uploadState.status="acknowledged"
+            uploadState.lastError=nil
             status.Text = "Upload acknowledged: " .. succeeded .. "/" .. partCount
                 .. " parts in " .. tostring(elapsed) .. "s; verify receiver integrity separately"
+            pushRuntimeStage("completed", "upload-acknowledged")
         else
-            status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
+            uploadState.status="incomplete"
+            uploadState.lastError="not all parts acknowledged"
+            status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry upload with receiver tooling"
+            pushRuntimeFailure("transmitting", "not-all-parts-acknowledged")
         end
+        refreshLocalManifest("post-upload")
+        refreshGeneratedHandoff("Upload finished")
     end)
 end
+
+local function cancelActiveOperation()
+    if running then
+        scanGeneration = scanGeneration + 1
+        running = false
+        status.Text = "Scan cancelled; start a new snapshot when ready"
+        pushRuntimeFailure("scan-started", "operator-cancelled")
+        refreshGeneratedHandoff("Scan cancelled")
+        return true
+    end
+    if uploading then
+        uploadGeneration = uploadGeneration + 1
+        uploading = false
+        uploadState.status = "cancelled"
+        uploadState.lastError = "operator cancelled"
+        pushRuntimeFailure("transmitting", "operator-cancelled")
+        refreshLocalManifest("upload-cancelled")
+        refreshGeneratedHandoff("Upload cancelled")
+        status.Text = "Upload cancelled; resume with receiver upload tooling when ready"
+        return true
+    end
+    status.Text = "No active scan or upload to cancel"
+    pushRuntimeFailure("cancel", "no-active-operation")
+    return false
+end
+
 
 -- Convert inspection data to JSON-safe primitives without circular references.
 local function jsonSafe(value, active, depth)
@@ -821,9 +3486,55 @@ local function encodeStage(stage, value)
     return encoded
 end
 
+-- SCAN_CONTEXT_HELPERS_BEGIN
+WORKFLOW_HELPERS.ensureReportScanContext = function(report)
+    if type(report) ~= "table" then
+        return HttpService:GenerateGUID(false), true, "report-unavailable"
+    end
+    local existing = report.scanId
+    if type(existing) == "string" and existing ~= "" then
+        return existing, false, "existing"
+    end
+    local generated = HttpService:GenerateGUID(false)
+    report.scanId = generated
+    return generated, true, "generated"
+end
+
+WORKFLOW_HELPERS.manifestExportContext = function(report)
+    local scanId = type(report) == "table" and report.scanId or nil
+    if type(scanId) ~= "string" or scanId == "" then
+        return {
+            kind = "manifest",
+            scanId = "none",
+            missingScanId = true,
+            diagnostic = "scan-context-uninitialized",
+        }
+    end
+    return {
+        kind = "manifest",
+        scanId = scanId,
+        missingScanId = false,
+    }
+end
+-- SCAN_CONTEXT_HELPERS_END
+
+
+refreshLocalManifest = function(phase)
+    if not pendingManifest then return false end
+    pendingManifest.uploadedParts = uploadState.acknowledgedParts
+    pendingManifest.reportTransport = uploadSnapshot(phase)
+    local ok, encoded = pcall(function()
+        return encodeStage("scan-manifest-refresh", pendingManifest)
+    end)
+    if ok then last=encoded end
+    return ok
+end
+
 local function prepareParts(report)
     local prepareStarted = os.clock()
-    local scanId = HttpService:GenerateGUID(false)
+    local scanId, generatedAtPackaging = WORKFLOW_HELPERS.ensureReportScanContext(report)
+    report.scanContextDiagnostics = report.scanContextDiagnostics or {}
+    report.scanContextDiagnostics.generatedAtPackaging = generatedAtPackaging == true
     local objects = report.objects
     local chunks = {}
     local chunk = {}
@@ -884,17 +3595,278 @@ local function prepareParts(report)
     local diagnostics = report.interactionDiagnostics or {}
     local history = diagnostics.recentInteractions or {}
     local summary = {}
+    local packagingDiagnostics = {
+        schemaVersion = "30.6.packaging-diagnostics.3",
+        status = "preparing",
+        maxAllowedBytes = limit,
+        summaryEncodedBytes = 0,
+        summaryExternalizedFieldCount = 0,
+        summaryExternalizedFields = {},
+        generatedPartCount = 0,
+        largestPartBytes = 0,
+        overflowEvents = 0,
+        recordFragmentations = {},
+        fragmentedRecordCount = 0,
+        fragmentedRecordTotalFragments = 0,
+    }
+    local collectionChunkKeys = {
+        "cursorObservationHistory",
+        "clickTargetObservations",
+        "clickOutcomeRelationships",
+        "inputGestureObservations",
+        "characterOrientationSamples",
+        "cameraOrientationSamples",
+        "playerPositionHistory",
+        "eventPositionSnapshots",
+        "spatialLocationHistory",
+        "targetedCaptureTimelineEvents",
+    }
+    local collectionChunkLookup = {}
+    for _, key in ipairs(collectionChunkKeys) do collectionChunkLookup[key] = true end
     for k,v in pairs(diagnostics) do
-        if k~="recentInteractions" then summary[k]=v end
+        if k~="recentInteractions" and not collectionChunkLookup[k] then summary[k]=v end
     end
     summary.recentInteractions={}
     summary.historyExportMode="separate-bounded-parts"
     summary.historyTotal=#history
-    local function makePart(items,index,total,meta,historyBatch,historyStart)
+    summary.interactionDiagnosticsChunkSchema="30.6.interaction-diagnostics-chunk.1"
+    summary.interactionDiagnosticsChunkMode="separate-bounded-parts"
+    local chunkedCollections={}
+    local chunkedSummaryFields={}
+    local diagnosticCollectionBatches={}
+    local ITEM_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-item-fragment.1"
+    local HISTORY_FRAGMENT_SCHEMA = "30.6.interaction-history-fragment.1"
+    local SUMMARY_FRAGMENT_SCHEMA = "30.6.interaction-diagnostics-fragment-chunk.2"
+    local function sortedStringKeys(tbl)
+        local keys = {}
+        for key, _ in pairs(tbl) do
+            if type(key) == "string" then keys[#keys+1] = key end
+        end
+        table.sort(keys)
+        return keys
+    end
+    local function appendFragmentationDiagnostic(fieldPath, encodedBytes, fragmentCount)
+        packagingDiagnostics.fragmentedRecordCount = packagingDiagnostics.fragmentedRecordCount + 1
+        packagingDiagnostics.fragmentedRecordTotalFragments =
+            packagingDiagnostics.fragmentedRecordTotalFragments + fragmentCount
+        if #packagingDiagnostics.recordFragmentations < 24 then
+            packagingDiagnostics.recordFragmentations[#packagingDiagnostics.recordFragmentations+1] = {
+                fieldPath = tostring(fieldPath or "unknown"):sub(1,220),
+                encodedBytes = encodedBytes,
+                fragmentCount = fragmentCount,
+            }
+        end
+    end
+    local function hexEncodeString(value)
+        local pieces = {}
+        for i = 1, #value do
+            pieces[#pieces+1] = string.format("%02x", string.byte(value, i))
+        end
+        return table.concat(pieces)
+    end
+    local function buildJsonHexFragmentRecords(options)
+        local encodedValue = options.encodedValue
+        local encodedHex = hexEncodeString(encodedValue)
+        local records = {}
+        local startIndex = 1
+        local baselinePieceChars = math.max(512, limit - 8000)
+        while startIndex <= #encodedHex do
+            local pieceChars = math.min(baselinePieceChars, #encodedHex - startIndex + 1)
+            local piece = encodedHex:sub(startIndex, startIndex + pieceChars - 1)
+            local testRecord = {
+                schemaVersion = options.schemaVersion,
+                chunkKind = options.chunkKind,
+                chunkKey = options.chunkKey,
+                collectionKey = options.collectionKey,
+                summaryField = options.summaryField,
+                recordId = options.recordId,
+                originalIndex = options.originalIndex,
+                fieldPath = options.fieldPath,
+                fragmentEncoding = "hex-utf8-json",
+                fragmentIndex = 1,
+                fragmentCount = 999999,
+                encodedLength = #encodedValue,
+                fragmentHex = piece,
+                fragmentHexLength = #piece,
+            }
+            local encodedRecord = encodeStage("diag-fragment-test-"..tostring(options.recordId), testRecord)
+            local encodedRecordBytes = #encodedRecord + 2
+            while encodedRecordBytes > limit - 1500 and #piece > 64 do
+                pieceChars = math.max(64, math.floor(#piece * 0.75))
+                piece = encodedHex:sub(startIndex, startIndex + pieceChars - 1)
+                testRecord.fragmentHex = piece
+                testRecord.fragmentHexLength = #piece
+                encodedRecord = encodeStage("diag-fragment-test-shrink-"..tostring(options.recordId), testRecord)
+                encodedRecordBytes = #encodedRecord + 2
+            end
+            if encodedRecordBytes > limit - 1500 then
+                error("Single interaction diagnostics chunk item exceeds receiver limit ("
+                    .. tostring(options.chunkKey or options.collectionKey or options.summaryField or "unknown")
+                    .. " fragment-wrapper)")
+            end
+            records[#records+1] = piece
+            startIndex = startIndex + #piece
+        end
+
+        local fragments = {}
+        local fragmentCount = #records
+        for index, piece in ipairs(records) do
+            fragments[#fragments+1] = {
+                schemaVersion = options.schemaVersion,
+                chunkKind = options.chunkKind,
+                chunkKey = options.chunkKey,
+                collectionKey = options.collectionKey,
+                summaryField = options.summaryField,
+                recordId = options.recordId,
+                originalIndex = options.originalIndex,
+                fieldPath = options.fieldPath,
+                fragmentEncoding = "hex-utf8-json",
+                fragmentIndex = index,
+                fragmentCount = fragmentCount,
+                encodedLength = #encodedValue,
+                fragmentHex = piece,
+                fragmentHexLength = #piece,
+            }
+        end
+        appendFragmentationDiagnostic(options.fieldPath, #encodedValue, fragmentCount)
+        return fragments, #encodedValue
+    end
+    local function queueInteractionDiagnosticsListBatches(key, values, options)
+        if type(values)~="table" then return end
+        options = options or {}
+        if not options.skipSummaryMarkers then
+            summary[key]={}
+            summary[key.."Total"]=#values
+            summary[key.."ExportMode"]="separate-bounded-parts"
+            chunkedCollections[#chunkedCollections+1]=key
+        end
+        local batch={}
+        local batchStart=1
+        local batchBytes=0
+        local function flushBatch()
+            if #batch==0 then return end
+            diagnosticCollectionBatches[#diagnosticCollectionBatches+1]={
+                key=key,items=batch,start=batchStart,chunkKind=options.chunkKind,
+                summaryField=options.summaryField
+            }
+            batch={}
+            batchBytes=0
+        end
+        local function enqueueRecord(record, estimate, logicalIndex)
+            if batchBytes+estimate>limit-1500 and #batch>0 then
+                flushBatch()
+                batchStart=logicalIndex
+            end
+            batch[#batch+1]=record
+            batchBytes=batchBytes+estimate
+        end
+        for i,item in ipairs(values) do
+            local encoded=encodeStage("diag-"..key.."-item-"..i,item)
+            local estimate=#encoded+2
+            if (not options.disableOversizedFragmentation) and estimate>limit-1500 then
+                local fieldPath = options.fieldPathPrefix
+                    and (options.fieldPathPrefix .. "[" .. tostring(i) .. "]")
+                    or ("interactionDiagnostics." .. tostring(key) .. "[" .. tostring(i) .. "]")
+                local fragments = buildJsonHexFragmentRecords({
+                    schemaVersion = ITEM_FRAGMENT_SCHEMA,
+                    chunkKind = "diagnostic-item-fragment",
+                    chunkKey = key,
+                    collectionKey = key,
+                    recordId = tostring(key) .. ":" .. tostring(i),
+                    originalIndex = i,
+                    fieldPath = fieldPath,
+                    encodedValue = encoded,
+                })
+                for _, fragment in ipairs(fragments) do
+                    local fragmentEncoded = encodeStage("diag-"..key.."-fragment-"..tostring(fragment.fragmentIndex), fragment)
+                    enqueueRecord(fragment, #fragmentEncoded + 2, i)
+                end
+            else
+                enqueueRecord(item, estimate, i)
+            end
+        end
+        flushBatch()
+    end
+    local function queueDiagnosticCollectionBatches(key, values)
+        queueInteractionDiagnosticsListBatches(key, values)
+    end
+    for _, key in ipairs(collectionChunkKeys) do
+        queueDiagnosticCollectionBatches(key, diagnostics[key])
+    end
+    local function queueSummaryFieldFragments(fieldKey, fieldValue)
+        local chunkKey = fieldKey .. "ChunkedFragments"
+        local encodedValue = encodeStage("diag-summary-field-json-"..fieldKey, fieldValue)
+        local fragments, encodedLength = buildJsonHexFragmentRecords({
+            schemaVersion = SUMMARY_FRAGMENT_SCHEMA,
+            chunkKind = "summary-fragment",
+            chunkKey = chunkKey,
+            summaryField = fieldKey,
+            recordId = "summary:" .. tostring(fieldKey),
+            originalIndex = 1,
+            fieldPath = "interactionDiagnostics." .. tostring(fieldKey),
+            encodedValue = encodedValue,
+        })
+        queueInteractionDiagnosticsListBatches(chunkKey, fragments, {
+            skipSummaryMarkers = true,
+            chunkKind = "summary-fragment",
+            summaryField = fieldKey,
+            disableOversizedFragmentation = true,
+            fieldPathPrefix = "interactionDiagnostics." .. tostring(fieldKey),
+        })
+        summary[fieldKey] = {}
+        summary[fieldKey.."ExportMode"] = "separate-bounded-parts"
+        summary[fieldKey.."ChunkSchema"] = SUMMARY_FRAGMENT_SCHEMA
+        summary[fieldKey.."ChunkKind"] = "json-fragment"
+        summary[fieldKey.."ChunkEncoding"] = "hex-utf8-json"
+        summary[fieldKey.."ChunkKey"] = chunkKey
+        summary[fieldKey.."EncodedLength"] = encodedLength
+        chunkedSummaryFields[#chunkedSummaryFields+1] = {
+            field = fieldKey,
+            chunkKey = chunkKey,
+            chunkKind = "json-fragment",
+            chunkEncoding = "hex-utf8-json",
+            encodedLength = encodedLength,
+            fragmentCount = #fragments,
+        }
+        return encodedLength
+    end
+    local function summaryExternalizationCandidates()
+        local candidates = {}
+        for _, key in ipairs(sortedStringKeys(summary)) do
+            if key ~= "recentInteractions"
+                and key ~= "chunkedInteractionDiagnosticCollections"
+                and key ~= "chunkedInteractionDiagnosticSummaryFields"
+                and summary[key.."ExportMode"] == nil then
+                local value = summary[key]
+                if type(value) == "table" then
+                    local encoded = encodeStage("summary-field-size-"..key, {[key] = value})
+                    candidates[#candidates+1] = {key = key, bytes = #encoded, value = value}
+                end
+            end
+        end
+        table.sort(candidates, function(a,b)
+            if a.bytes == b.bytes then return a.key < b.key end
+            return a.bytes > b.bytes
+        end)
+        return candidates
+    end
+    local function tryExternalizeLargestSummaryField()
+        local candidates = summaryExternalizationCandidates()
+        local chosen = candidates[1]
+        if not chosen then return nil, nil end
+        local bytes = queueSummaryFieldFragments(chosen.key, chosen.value)
+        packagingDiagnostics.summaryExternalizedFieldCount = packagingDiagnostics.summaryExternalizedFieldCount + 1
+        packagingDiagnostics.summaryExternalizedFields[#packagingDiagnostics.summaryExternalizedFields+1] = chosen.key
+        return chosen.key, bytes
+    end
+    summary.chunkedInteractionDiagnosticCollections=chunkedCollections
+    summary.chunkedInteractionDiagnosticSummaryFields=chunkedSummaryFields
+    local function makePart(items,index,total,meta,historyBatch,historyStart,diagKey,diagBatch,diagStart)
         return {
             version=report.version,placeId=report.placeId,gameId=report.gameId,
             placeVersion=report.placeVersion,inspectedAt=report.inspectedAt,
             gameName=report.gameName,scanId=scanId,partIndex=index,partCount=total,
+            featureRequest=meta and report.featureRequest or nil,
             counts=meta and report.counts or nil,
             groups=meta and report.groups or nil,
             scanStats=meta and report.scanStats or nil,
@@ -908,6 +3880,9 @@ local function prepareParts(report)
             diagnostics=meta and report.diagnostics or nil,
             interactionHistoryChunk=historyBatch,
             interactionHistoryStart=historyStart,
+            interactionDiagnosticsChunkKey=diagKey,
+            interactionDiagnosticsChunk=diagBatch,
+            interactionDiagnosticsChunkStart=diagStart,
             objects=items
         }
     end
@@ -917,26 +3892,51 @@ local function prepareParts(report)
     local currentHistory={}
     local currentStart=1
     local historyBytes=0
+    local function flushHistoryBatch()
+        if #currentHistory==0 then return end
+        historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
+        currentHistory={}
+        historyBytes=0
+    end
+    local function enqueueHistoryRecord(record, estimate, logicalIndex)
+        if historyBytes+estimate>limit-1500 and #currentHistory>0 then
+            flushHistoryBatch()
+            currentStart=logicalIndex
+        end
+        currentHistory[#currentHistory+1]=record
+        historyBytes=historyBytes+estimate
+    end
     for i,item in ipairs(history) do
         local encoded=encodeStage("history-item-"..i,item)
         local estimate=#encoded+2
-        if historyBytes+estimate>limit-1500 and #currentHistory>0 then
-            historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
-            currentHistory={}
-            currentStart=i
-            historyBytes=0
+        if estimate>limit-1500 then
+            local fragments = buildJsonHexFragmentRecords({
+                schemaVersion = HISTORY_FRAGMENT_SCHEMA,
+                chunkKind = "history-item-fragment",
+                chunkKey = "recentInteractions",
+                collectionKey = "recentInteractions",
+                recordId = "history:" .. tostring(i),
+                originalIndex = i,
+                fieldPath = "interactionDiagnostics.recentInteractions[" .. tostring(i) .. "]",
+                encodedValue = encoded,
+            })
+            for _, fragment in ipairs(fragments) do
+                local fragmentEncoded = encodeStage("history-fragment-"..tostring(fragment.fragmentIndex), fragment)
+                enqueueHistoryRecord(fragment, #fragmentEncoded + 2, i)
+            end
+        else
+            enqueueHistoryRecord(item, estimate, i)
         end
-        currentHistory[#currentHistory+1]=item
-        historyBytes=historyBytes+estimate
     end
-    if #currentHistory>0 then
-        historyBatches[#historyBatches+1]={items=currentHistory,start=currentStart}
-    end
+    flushHistoryBatch()
     -- Reserve a dedicated metadata part, so object payloads cannot force
     -- large shared diagnostics into an oversized first object part.
     local payloads={{items={},meta=true}}
     for _,batch in ipairs(historyBatches) do
-        payloads[#payloads+1]={items={},history=batch.items,start=batch.start}
+        payloads[#payloads+1]={items={},history=batch.items,historyStart=batch.start}
+    end
+    for _,batch in ipairs(diagnosticCollectionBatches) do
+        payloads[#payloads+1]={items={},diagKey=batch.key,diag=batch.items,diagStart=batch.start}
     end
     for _,items in ipairs(chunks) do payloads[#payloads+1]={items=items} end
     local changed=true
@@ -946,10 +3946,30 @@ local function prepareParts(report)
         for i=1,total do
             local entry=payloads[i]
             local body=encodeStage("size-check-"..i,
-                makePart(entry.items,i,total,entry.meta,entry.history,entry.start))
+                makePart(entry.items,i,total,entry.meta,entry.history,entry.historyStart,
+                    entry.diagKey,entry.diag,entry.diagStart))
+            if entry.meta then packagingDiagnostics.summaryEncodedBytes = #body end
             if #body>limit then
+                packagingDiagnostics.overflowEvents = packagingDiagnostics.overflowEvents + 1
                 if entry.meta then
-                    error("Shared scan summary exceeds receiver limit without interaction history")
+                    local previousBatchCount = #diagnosticCollectionBatches
+                    local externalizedKey, externalizedBytes = tryExternalizeLargestSummaryField()
+                    if externalizedKey == nil then
+                        error("Shared scan summary exceeds receiver limit ("
+                            .. tostring(#body) .. "/" .. tostring(limit) .. ")")
+                    end
+                    packagingDiagnostics.status = "summary-externalized"
+                    packagingDiagnostics.lastExternalizedField = externalizedKey
+                    packagingDiagnostics.lastExternalizedBytes = externalizedBytes
+                    for batchIndex = previousBatchCount + 1, #diagnosticCollectionBatches do
+                        local batch = diagnosticCollectionBatches[batchIndex]
+                        payloads[#payloads+1] = {
+                            items = {},
+                            diagKey = batch.key,
+                            diag = batch.items,
+                            diagStart = batch.start,
+                        }
+                    end
                 elseif entry.history then
                     if #entry.history<=1 then
                         error("Single history event exceeds receiver limit")
@@ -959,8 +3979,35 @@ local function prepareParts(report)
                     for j,v in ipairs(entry.history) do
                         if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
                     end
-                    payloads[i]={items={},history=left,start=entry.start}
-                    table.insert(payloads,i+1,{items={},history=right,start=entry.start+midpoint})
+                    payloads[i]={items={},history=left,historyStart=entry.historyStart}
+                    table.insert(payloads,i+1,{items={},history=right,
+                        historyStart=entry.historyStart+midpoint})
+                elseif entry.diag then
+                    if #entry.diag<=1 then
+                        local diagPath = "interactionDiagnostics." .. tostring(entry.diagKey)
+                        local encodedItemBytes = 0
+                        if type(entry.diag[1]) == "table" then
+                            if type(entry.diag[1].fieldPath) == "string" and entry.diag[1].fieldPath ~= "" then
+                                diagPath = entry.diag[1].fieldPath
+                            end
+                            local okEncoded, encodedItem = pcall(function()
+                                return encodeStage("diag-overflow-item-size", entry.diag[1])
+                            end)
+                            if okEncoded then encodedItemBytes = #encodedItem end
+                        end
+                        error("Single interaction diagnostics chunk item exceeds receiver limit ("
+                            ..tostring(entry.diagKey).."; path="..tostring(diagPath)
+                            .."; itemBytes="..tostring(encodedItemBytes)
+                            .."; limit="..tostring(limit)..")")
+                    end
+                    local midpoint=math.floor(#entry.diag/2)
+                    local left,right={},{}
+                    for j,v in ipairs(entry.diag) do
+                        if j<=midpoint then left[#left+1]=v else right[#right+1]=v end
+                    end
+                    payloads[i]={items={},diagKey=entry.diagKey,diag=left,diagStart=entry.diagStart}
+                    table.insert(payloads,i+1,{items={},diagKey=entry.diagKey,
+                        diag=right,diagStart=entry.diagStart+midpoint})
                 else
                     if #entry.items<=1 then
                         error("Single object exceeds receiver limit")
@@ -979,24 +4026,34 @@ local function prepareParts(report)
         end
     end
     local parts={}
+    local largestPartBytes = 0
     for i,entry in ipairs(payloads) do
         local body=encodeStage("part-"..i,
-            makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.start))
+            makePart(entry.items,i,#payloads,entry.meta,entry.history,entry.historyStart,
+                entry.diagKey,entry.diag,entry.diagStart))
         if #body>limit then error("Unexpected oversized part "..i) end
+        if #body > largestPartBytes then largestPartBytes = #body end
         parts[#parts+1]=body
     end
+    packagingDiagnostics.generatedPartCount = #parts
+    packagingDiagnostics.largestPartBytes = largestPartBytes
+    packagingDiagnostics.status = "packaged"
     report.localPerformance = report.localPerformance or {}
     report.localPerformance.serializationSeconds = math.floor((os.clock()-prepareStarted)*1000+0.5)/1000
     report.localPerformance.uploadParts = #parts
     local bytes = 0
     for _, body in ipairs(parts) do bytes = bytes + #body end
     report.localPerformance.uploadBytes = bytes
-    return parts
+    packagingDiagnostics.totalPartBytes = bytes
+    packagingDiagnostics.durationSeconds = report.localPerformance.serializationSeconds
+    report.localPerformance.packagingDiagnostics = packagingDiagnostics
+    report.interactionDiagnosticsManifestSummary = summary
+    return parts, scanId, summary
 end
 
 -- Dynamic discovery records newly replicated instances without accessing script source.
 -- Changes are uploaded as independent, searchable delta scans.
-local function watchPath(obj, root, label)
+function watchPath(obj, root, label)
     local names, current = {}, obj
     while current and current ~= root do
         table.insert(names, 1, current.Name)
@@ -1006,11 +4063,2161 @@ local function watchPath(obj, root, label)
     return label .. "." .. table.concat(names, ".")
 end
 
-local function watchVec(v)
+function watchVec(v)
     return {x = math.floor(v.X * 100) / 100,
         y = math.floor(v.Y * 100) / 100,
         z = math.floor(v.Z * 100) / 100}
 end
+
+spatialOverlapParams = nil
+pcall(function()
+    spatialOverlapParams = OverlapParams.new()
+    spatialOverlapParams.FilterType = Enum.RaycastFilterType.Blacklist
+    spatialOverlapParams.MaxParts = 64
+end)
+
+clickRaycastParams = nil
+pcall(function()
+    clickRaycastParams = RaycastParams.new()
+    clickRaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    clickRaycastParams.IgnoreWater = true
+end)
+
+function clampNumber(value,minValue,maxValue)
+    if value<minValue then return minValue end
+    if value>maxValue then return maxValue end
+    return value
+end
+
+function roundNumber(value,precision)
+    local scale = 10 ^ (precision or 3)
+    return math.floor(value * scale + 0.5) / scale
+end
+
+function appendCapped(list,maxCount,item)
+    list[#list+1] = item
+    if #list > maxCount then
+        table.remove(list,1)
+    end
+end
+
+function sanitizeDiagnosticText(value,maxLen)
+    local text=tostring(value or "unknown")
+    text=string.gsub(text,"[%c]+"," ")
+    text=string.gsub(text,"%s+"," ")
+    text=string.gsub(text,"%b<>","<value>")
+    local limit=maxLen or 180
+    if #text>limit then text=text:sub(1,limit) end
+    return text
+end
+
+function incrementDiagnosticCounter(counter,key)
+    if type(counter)~="table" then return end
+    local normalized=sanitizeDiagnosticText(key,72)
+    counter[normalized]=(counter[normalized] or 0)+1
+end
+
+function recordClickCaptureComponentFailure(stage,reason,buttonName,inputType)
+    observerStats.clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures+1
+    local stageLabel=sanitizeDiagnosticText(stage,40)
+    local reasonLabel=sanitizeDiagnosticText(reason,180)
+    appendCapped(observerStats.clickCaptureComponentFailureSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        stage=stageLabel,
+        reason=reasonLabel,
+        button=tostring(buttonName or "unknown"):sub(1,40),
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+    })
+end
+
+function recordClickCaptureFailure(stage,reason,buttonName,inputType)
+    observerStats.clickCaptureFailures=observerStats.clickCaptureFailures+1
+    local stageLabel=sanitizeDiagnosticText(stage,40)
+    local reasonLabel=sanitizeDiagnosticText(reason,180)
+    incrementDiagnosticCounter(observerStats.clickCaptureFailureStageCounts,stageLabel)
+    incrementDiagnosticCounter(observerStats.clickCaptureFailureReasonCounts,reasonLabel)
+    appendCapped(observerStats.clickCaptureFailureSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        stage=stageLabel,
+        reason=reasonLabel,
+        button=tostring(buttonName or "unknown"):sub(1,40),
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+    })
+end
+
+function recordClickLinkMiss(reason,targetPath,button,pendingBefore,pendingAfter,rankedCount)
+    observerStats.clickLinksMissed=observerStats.clickLinksMissed+1
+    local reasonLabel=sanitizeDiagnosticText(reason,72)
+    if reasonLabel=="no-pending-click-source" or reasonLabel=="pending-clicks-expired-or-pruned" then
+        observerStats.clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource+1
+    else
+        observerStats.clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate+1
+    end
+    incrementDiagnosticCounter(observerStats.clickLinkMissReasonCounts,reasonLabel)
+    appendCapped(observerStats.clickLinkMissSamples,LIMITS.maxClickDiagnosticSamples,{
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        reason=reasonLabel,
+        targetPath=sanitizeDiagnosticText(targetPath or "",220),
+        button=tostring(button or "unknown"):sub(1,40),
+        pendingBefore=type(pendingBefore)=="number" and pendingBefore or 0,
+        pendingAfter=type(pendingAfter)=="number" and pendingAfter or 0,
+        rankedCandidates=type(rankedCount)=="number" and rankedCount or 0,
+    })
+end
+
+function sessionElapsed(nowClock)
+    local value = (nowClock or os.clock()) - sessionStartedClock
+    return roundNumber(value,3)
+end
+
+local transientOutcomeTokens = {
+    "humanoid.activeanimation","humanoid.activeanimations","humanoid.movedirection",
+    "humanoid.floormaterial","humanoid.walkspeed","humanoid.jumppower",
+    "velocitymagnitude","rootpart.velocity",".position",".cframe",
+}
+
+function isMeaningfulGameplayStateKey(key)
+    if type(key)~="string" or key=="" then return false end
+    local lower=string.lower(key)
+    for _,token in ipairs(transientOutcomeTokens) do
+        if string.find(lower,token,1,true) then return false end
+    end
+    if string.find(lower,"camera.",1,true)==1 then return false end
+    return true
+end
+
+function normalizeHeadingDegrees(value)
+    if type(value)~="number" or value~=value then return nil end
+    local heading=value % 360
+    if heading<0 then heading=heading+360 end
+    return roundNumber(heading,2)
+end
+
+function headingFromLookVector(lookVector)
+    if typeof(lookVector)~="Vector3" then return nil end
+    local horizontal=Vector3.new(lookVector.X,0,lookVector.Z)
+    local magnitude=horizontal.Magnitude
+    if magnitude<1e-5 then return nil end
+    local heading=math.deg(math.atan2(horizontal.X,-horizontal.Z))
+    return normalizeHeadingDegrees(heading)
+end
+
+function compassLabelForHeading(heading)
+    if type(heading)~="number" then return nil end
+    local labels={"N","NE","E","SE","S","SW","W","NW"}
+    local index=math.floor(((heading+22.5)%360)/45)+1
+    return labels[index]
+end
+
+function cameraCharacterHeadingDelta(cameraHeading,characterHeading)
+    if type(cameraHeading)~="number" or type(characterHeading)~="number" then return nil end
+    local delta=((cameraHeading-characterHeading+540)%360)-180
+    return roundNumber(delta,2)
+end
+
+function orientationSample(
+    source,position,lookVector,elapsed,characterGeneration,characterId,worldContext)
+    local heading=headingFromLookVector(lookVector)
+    local forward=nil
+    if typeof(lookVector)=="Vector3" then
+        local magnitude=lookVector.Magnitude
+        if magnitude>1e-5 then
+            forward={
+                x=roundNumber(lookVector.X/magnitude,4),
+                y=roundNumber(lookVector.Y/magnitude,4),
+                z=roundNumber(lookVector.Z/magnitude,4),
+            }
+        end
+    end
+    return {
+        id="orientation_"..tostring(orientationSampleSequence+1),
+        source=tostring(source or "unknown"):sub(1,80),
+        sampledAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=elapsed,
+        characterGeneration=characterGeneration,
+        characterId=characterId,
+        worldPosition=position and watchVec(position) or nil,
+        forward=forward,
+        headingDegrees=heading,
+        compass=compassLabelForHeading(heading),
+        worldContext=worldContext,
+    }
+end
+
+function cursorInset()
+    local ok,topLeft,bottomRight=pcall(function() return GuiService:GetGuiInset() end)
+    if not ok or typeof(topLeft)~="Vector2" or typeof(bottomRight)~="Vector2" then
+        return nil
+    end
+    return {
+        topLeft={x=roundNumber(topLeft.X,2),y=roundNumber(topLeft.Y,2)},
+        bottomRight={x=roundNumber(bottomRight.X,2),y=roundNumber(bottomRight.Y,2)},
+    }
+end
+
+function captureCursorObservation(reason,inputType,forceRecord)
+    local observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local elapsed=sessionElapsed(os.clock())
+    local camera=workspace.CurrentCamera
+    local viewportSize=(camera and camera.ViewportSize) or nil
+    local viewportX=viewportSize and viewportSize.X or nil
+    local viewportY=viewportSize and viewportSize.Y or nil
+    local available=false
+    local screenX=nil
+    local screenY=nil
+    local location=nil
+    local ok=pcall(function()
+        location=UserInputService:GetMouseLocation()
+    end)
+    if ok and typeof(location)=="Vector2" then
+        screenX=roundNumber(location.X,2)
+        screenY=roundNumber(location.Y,2)
+        available=true
+    end
+    local normalizedX=nil
+    local normalizedY=nil
+    if available and type(viewportX)=="number" and type(viewportY)=="number"
+        and viewportX>0 and viewportY>0 then
+        normalizedX=roundNumber(clampNumber(screenX/viewportX,0,1),4)
+        normalizedY=roundNumber(clampNumber(screenY/viewportY,0,1),4)
+    end
+    local observation={
+        id="cursor_"..tostring(cursorObservationSequence+1),
+        observedAt=observedAt,
+        sessionElapsedSeconds=elapsed,
+        reason=tostring(reason or "unspecified"):sub(1,80),
+        cursorAvailable=available,
+        inputType=tostring(inputType or "unknown"):sub(1,60),
+        screen={x=screenX,y=screenY},
+        normalizedViewport={x=normalizedX,y=normalizedY},
+        viewportSize=(type(viewportX)=="number" and type(viewportY)=="number")
+            and {width=roundNumber(viewportX,2),height=roundNumber(viewportY,2)} or nil,
+        guiInset=cursorInset(),
+        coordinateSpace="absolute-screen-pixels-and-normalized-viewport",
+    }
+
+    if forceRecord then
+        cursorObservationSequence=cursorObservationSequence+1
+        observation.id="cursor_"..tostring(cursorObservationSequence)
+        appendCapped(cursorObservationHistory,LIMITS.maxCursorObservationHistory,observation)
+        spatialStats.cursorSamplesCaptured=spatialStats.cursorSamplesCaptured+1
+    end
+    return observation
+end
+
+function appendClickOutcome(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    clickOutcomeRelationships[#clickOutcomeRelationships+1]=entry
+    clickOutcomeById[entry.id]=entry
+    if #clickOutcomeRelationships>LIMITS.maxClickOutcomeRelationships then
+        local removed=table.remove(clickOutcomeRelationships,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            clickOutcomeById[removed.id]=nil
+        end
+    end
+end
+
+function headingDeltaMagnitude(fromHeading,toHeading)
+    if type(fromHeading)~="number" or type(toHeading)~="number" then return nil end
+    local delta=((toHeading-fromHeading+540)%360)-180
+    return math.abs(roundNumber(delta,2))
+end
+
+function appendInputGestureObservation(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    inputGestureObservations[#inputGestureObservations+1]=entry
+    inputGestureById[entry.id]=entry
+    if #inputGestureObservations>LIMITS.maxInputGestureObservations then
+        local removed=table.remove(inputGestureObservations,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            inputGestureById[removed.id]=nil
+            if type(removed.clickObservationId)=="string" then
+                gestureByClickObservationId[removed.clickObservationId]=nil
+            end
+        end
+    end
+end
+
+function gestureOrientationSnapshot(reason)
+    local elapsed=sessionElapsed(os.clock())
+    local _,rootPart,_=resolveCharacterSpatialContext()
+    local camera=workspace.CurrentCamera
+    local cameraHeading=nil
+    local characterHeading=nil
+    if camera and typeof(camera.CFrame)=="CFrame" then
+        cameraHeading=headingFromLookVector(camera.CFrame.LookVector)
+    end
+    if rootPart and typeof(rootPart.CFrame)=="CFrame" then
+        characterHeading=headingFromLookVector(rootPart.CFrame.LookVector)
+    end
+    return {
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=elapsed,
+        reason=tostring(reason or "gesture"):sub(1,80),
+        cameraHeadingDegrees=cameraHeading,
+        characterHeadingDegrees=characterHeading,
+        cameraCharacterHeadingDeltaDegrees=cameraCharacterHeadingDelta(cameraHeading,characterHeading),
+    }
+end
+
+function resolveClickOutcomeForObservation(clickObservationId)
+    if type(clickObservationId)~="string" then return nil end
+    return clickOutcomeById["click-outcome-"..clickObservationId]
+end
+
+function classifyInputGestureIntent(gesture,clickObservation,relation)
+    local metrics=(type(gesture)=="table" and type(gesture.metrics)=="table") and gesture.metrics or {}
+    local mouseButton=(type(gesture)=="table" and type(gesture.mouseButton)=="string") and gesture.mouseButton or nil
+    local isRightButton=mouseButton=="MouseButton2"
+    local isLeftButton=mouseButton=="MouseButton1"
+
+    local duration=type(metrics.durationSeconds)=="number" and metrics.durationSeconds or 0
+    local displacement=type(metrics.cursorDisplacementPixels)=="number" and metrics.cursorDisplacementPixels or 0
+    local cumulativeCursor=type(metrics.cumulativeCursorTravelPixels)=="number" and metrics.cumulativeCursorTravelPixels or 0
+    if cumulativeCursor>displacement then displacement=cumulativeCursor end
+    local movementSamples=type(metrics.movementSamples)=="number" and metrics.movementSamples or 0
+    local inputChangedMovementSamples=type(metrics.inputChangedMovementSamples)=="number"
+        and metrics.inputChangedMovementSamples or 0
+    local relativeDeltaMovementSamples=type(metrics.relativeDeltaMovementSamples)=="number"
+        and metrics.relativeDeltaMovementSamples or 0
+    local maxCursorDelta=type(metrics.maxCursorDeltaPixels)=="number" and metrics.maxCursorDeltaPixels or 0
+    local pointerMovementObserved=(metrics.pointerMovementObserved==true)
+        or movementSamples>0 or cumulativeCursor>0 or maxCursorDelta>0
+
+    local cameraTurn=type(metrics.cameraHeadingDeltaDegrees)=="number" and metrics.cameraHeadingDeltaDegrees or 0
+    local cumulativeTurn=type(metrics.cameraCumulativeTurnDegrees)=="number" and metrics.cameraCumulativeTurnDegrees or 0
+    if cumulativeTurn>cameraTurn then cameraTurn=cumulativeTurn end
+    local cameraSamples=type(metrics.cameraSampleCount)=="number" and metrics.cameraSampleCount or 0
+    local cameraSamplesWithoutPointerMovement=type(metrics.cameraSamplesWithoutPointerMovement)=="number"
+        and metrics.cameraSamplesWithoutPointerMovement or 0
+    local cameraRotationWithoutPointerEvidence=(cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and not pointerMovementObserved
+
+    local rightButtonCameraControlHypothesis=isRightButton
+        and cameraTurn>=LIMITS.inputGestureCameraTurnMinDegrees
+        and (pointerMovementObserved or cameraSamplesWithoutPointerMovement>0
+            or relativeDeltaMovementSamples>0 or cameraSamples>=2)
+    local leftButtonHighTurnWithoutMovement=isLeftButton
+        and cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees
+        and cameraRotationWithoutPointerEvidence
+
+    local heldThreshold=math.max(LIMITS.inputGestureHeldMinDurationSeconds,
+        LIMITS.inputGestureClickMaxDurationSeconds+0.28)
+    local physicalDragCandidate=pointerMovementObserved and (
+        displacement>=LIMITS.inputGestureDragMinDisplacementPixels
+        or maxCursorDelta>=(LIMITS.inputGestureDragMinDisplacementPixels*0.6)
+    )
+    local cameraTurnDragLike=(cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees)
+        and (pointerMovementObserved or rightButtonCameraControlHypothesis
+            or leftButtonHighTurnWithoutMovement)
+
+    local clickCandidate=(duration<=LIMITS.inputGestureClickMaxDurationSeconds)
+        and not physicalDragCandidate
+        and displacement<(LIMITS.inputGestureDragMinDisplacementPixels*0.75)
+        and cameraTurn<LIMITS.inputGestureCameraTurnMinDegrees
+        and not rightButtonCameraControlHypothesis
+    local heldInputCandidate=(duration>=heldThreshold)
+        and not clickCandidate and not physicalDragCandidate
+    local dragCandidate=physicalDragCandidate or cameraTurnDragLike
+
+    local targetClassification=type(clickObservation)=="table" and clickObservation.targetClassification or nil
+    local guiTargetConfirmed=targetClassification=="confirmed-gui-target"
+    local worldTargetConfirmed=targetClassification=="confirmed-world-target"
+    local unresolvedTarget=targetClassification=="unresolved-target"
+    local ambiguousTarget=(targetClassification=="ambiguous-target")
+        or unresolvedTarget or targetClassification==nil
+
+    local callbackObserved=type(relation)=="table" and relation.interactionCallbackObserved==true
+    local callbackAttributed=callbackObserved
+    if type(relation)=="table" and type(relation.interactionCallbackAttributed)=="boolean" then
+        callbackAttributed=relation.interactionCallbackAttributed==true
+    end
+    local callbackAttributionMissing=callbackObserved and not callbackAttributed
+    local stateAssociated=type(relation)=="table" and relation.stateChangeTemporallyAssociated==true
+    local meaningfulOutcome=type(relation)=="table" and relation.meaningfulGameplayOutcomeObserved==true
+    local corroborated=type(relation)=="table" and relation.outcomeCorroborated==true
+    local corroboratedTemporalOnly=corroborated and not callbackAttributed and not meaningfulOutcome
+    local temporalOnlyStateAssociation=stateAssociated and not callbackAttributed
+        and not meaningfulOutcome and not corroborated
+    local weakTemporalPromotionSignal=temporalOnlyStateAssociation
+        or corroboratedTemporalOnly or callbackAttributionMissing
+
+    local worldRaycastObserved=(type(clickObservation)=="table"
+        and type(clickObservation.raycastTarget)=="table"
+        and type(clickObservation.raycastTarget.path)=="string")
+    local worldRaycastOnly=worldTargetConfirmed and worldRaycastObserved
+        and not callbackAttributed and not meaningfulOutcome and not corroborated
+        and not guiTargetConfirmed
+
+    local cameraControlDominant=(cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees)
+        and (rightButtonCameraControlHypothesis or leftButtonHighTurnWithoutMovement
+            or cameraRotationWithoutPointerEvidence or dragCandidate)
+    local worldPromotionBlockedByCamera=cameraControlDominant and weakTemporalPromotionSignal
+        and not callbackAttributed and not meaningfulOutcome and not guiTargetConfirmed
+
+    local guiInteractionCandidate=guiTargetConfirmed and (clickCandidate or heldInputCandidate
+        or dragCandidate or callbackAttributed or stateAssociated or meaningfulOutcome or corroborated)
+    local worldInteractionCandidate=worldTargetConfirmed and not worldRaycastOnly
+        and not worldPromotionBlockedByCamera
+        and (clickCandidate
+            or (heldInputCandidate and not cameraControlDominant)
+            or callbackAttributed
+            or meaningfulOutcome
+            or (corroborated and not corroboratedTemporalOnly)
+            or (dragCandidate and (callbackAttributed or meaningfulOutcome)))
+
+    local cameraDragCandidate=cameraTurnDragLike
+        and not guiTargetConfirmed
+        and not callbackAttributed
+        and not meaningfulOutcome
+        and not (corroborated and not corroboratedTemporalOnly)
+
+    local cameraScore=0
+    if cameraTurn>=LIMITS.inputGestureCameraDragMinDegrees then cameraScore=cameraScore+0.36 end
+    if pointerMovementObserved then cameraScore=cameraScore+0.2 end
+    if rightButtonCameraControlHypothesis then cameraScore=cameraScore+0.28 end
+    if cameraRotationWithoutPointerEvidence then cameraScore=cameraScore+0.14 end
+    if worldRaycastOnly then cameraScore=cameraScore+0.08 end
+    if weakTemporalPromotionSignal and cameraControlDominant then cameraScore=cameraScore+0.07 end
+    if callbackAttributed or meaningfulOutcome then cameraScore=cameraScore-0.24 end
+    if guiTargetConfirmed then cameraScore=cameraScore-0.18 end
+    cameraScore=clampNumber(cameraScore,0,1)
+
+    local gameplayScore=0
+    if clickCandidate then gameplayScore=gameplayScore+0.26 end
+    if heldInputCandidate then gameplayScore=gameplayScore+0.12 end
+    if guiTargetConfirmed then gameplayScore=gameplayScore+0.34 end
+    if worldTargetConfirmed then gameplayScore=gameplayScore+0.16 end
+    if callbackAttributed then gameplayScore=gameplayScore+0.26 end
+    if meaningfulOutcome then gameplayScore=gameplayScore+0.24 end
+    if corroborated and not corroboratedTemporalOnly then gameplayScore=gameplayScore+0.14 end
+    if stateAssociated and not weakTemporalPromotionSignal then gameplayScore=gameplayScore+0.05 end
+    if worldRaycastOnly then gameplayScore=gameplayScore-0.24 end
+    if worldPromotionBlockedByCamera then gameplayScore=gameplayScore-0.26 end
+    if rightButtonCameraControlHypothesis and not callbackAttributed and not meaningfulOutcome then
+        gameplayScore=gameplayScore-0.14
+    end
+    gameplayScore=clampNumber(gameplayScore,0,1)
+
+    local likelyCameraMovement=(cameraScore>=0.56)
+        and (cameraDragCandidate or cameraRotationWithoutPointerEvidence
+            or rightButtonCameraControlHypothesis)
+    local likelyGameplayInteraction=(gameplayScore>=0.56)
+        and (guiInteractionCandidate or worldInteractionCandidate
+            or callbackAttributed or meaningfulOutcome)
+
+    local competingIntentSignals=likelyCameraMovement and likelyGameplayInteraction
+
+    local ambiguousInput=ambiguousTarget
+        or competingIntentSignals
+        or cameraRotationWithoutPointerEvidence
+        or (worldRaycastOnly and likelyCameraMovement)
+        or worldPromotionBlockedByCamera
+        or (not guiInteractionCandidate and not worldInteractionCandidate
+            and not clickCandidate and not heldInputCandidate and not cameraDragCandidate)
+
+    local physicalGestureKind="press-release"
+    if type(gesture)=="table" and gesture.interrupted==true then
+        physicalGestureKind="interrupted"
+    elseif physicalDragCandidate then
+        physicalGestureKind="drag"
+    elseif heldInputCandidate then
+        physicalGestureKind="hold"
+    elseif clickCandidate then
+        physicalGestureKind="click"
+    end
+
+    local primaryIntent="ambiguous-input"
+    if competingIntentSignals then
+        primaryIntent="ambiguous-competing-hypotheses"
+    elseif likelyCameraMovement and not likelyGameplayInteraction then
+        primaryIntent="camera-manipulation-candidate"
+    elseif guiInteractionCandidate then
+        primaryIntent="gui-interaction-candidate"
+    elseif worldInteractionCandidate then
+        primaryIntent="world-interaction-candidate"
+    elseif heldInputCandidate then
+        primaryIntent="held-input-candidate"
+    elseif clickCandidate then
+        primaryIntent="click-candidate"
+    elseif cameraRotationWithoutPointerEvidence then
+        primaryIntent="camera-rotation-uncertain"
+    end
+
+    local primaryConfidence=math.max(cameraScore,gameplayScore)
+    if ambiguousInput and math.abs(cameraScore-gameplayScore)<=0.2 then
+        primaryConfidence=math.max(primaryConfidence,0.52)
+    end
+
+    return {
+        schemaVersion="30.6.input-gesture-intent.3",
+        primaryIntent=primaryIntent,
+        clickCandidate=clickCandidate,
+        cameraDragCandidate=cameraDragCandidate,
+        heldInputCandidate=heldInputCandidate,
+        guiInteractionCandidate=guiInteractionCandidate,
+        worldInteractionCandidate=worldInteractionCandidate,
+        ambiguousInput=ambiguousInput,
+        likelyCameraMovement=likelyCameraMovement,
+        likelyGameplayInteraction=likelyGameplayInteraction,
+        inputContextSignals={
+            mouseButton=mouseButton,
+            rightButtonInput=isRightButton,
+            leftButtonInput=isLeftButton,
+            rightButtonCameraControlHypothesis=rightButtonCameraControlHypothesis,
+        },
+        physicalGesture={
+            kind=physicalGestureKind,
+            durationSeconds=roundNumber(duration,4),
+            pointerMovementObserved=pointerMovementObserved,
+            movementSamples=movementSamples,
+            inputChangedMovementSamples=inputChangedMovementSamples,
+            relativeDeltaMovementSamples=relativeDeltaMovementSamples,
+            displacementPixels=roundNumber(displacement,2),
+            cameraTurnDegrees=roundNumber(cameraTurn,2),
+            interrupted=type(gesture)=="table" and gesture.interrupted==true,
+        },
+        confidence={
+            cameraManipulationScore=roundNumber(cameraScore,3),
+            gameplayInteractionScore=roundNumber(gameplayScore,3),
+            primaryIntentConfidence=roundNumber(primaryConfidence,3),
+        },
+        targetAndOutcomeSignals={
+            guiTargetConfirmed=guiTargetConfirmed,
+            worldTargetConfirmed=worldTargetConfirmed,
+            worldRaycastOnly=worldRaycastOnly,
+            callbackObserved=callbackObserved,
+            callbackAttributed=callbackAttributed,
+            callbackAttributionMissing=callbackAttributionMissing,
+            stateChangeTemporallyAssociated=stateAssociated,
+            meaningfulGameplayOutcomeObserved=meaningfulOutcome,
+            outcomeCorroborated=corroborated,
+            corroboratedTemporalOnly=corroboratedTemporalOnly,
+            temporalOnlyStateAssociation=temporalOnlyStateAssociation,
+            weakTemporalPromotionSignal=weakTemporalPromotionSignal,
+            worldPromotionBlockedByCamera=worldPromotionBlockedByCamera,
+            targetAmbiguous=ambiguousTarget,
+            pointerMovementObserved=pointerMovementObserved,
+            cameraRotationWithoutPointerEvidence=cameraRotationWithoutPointerEvidence,
+            competingIntentSignals=competingIntentSignals,
+            cameraSamples=cameraSamples,
+            cameraSamplesWithoutPointerMovement=cameraSamplesWithoutPointerMovement,
+        },
+        note="Intent hypotheses are bounded observational signals and do not prove gameplay outcomes",
+    }
+end
+
+function compactInputGestureIntent(intent)
+    if type(intent)~="table" then return nil end
+    local signals=type(intent.targetAndOutcomeSignals)=="table" and intent.targetAndOutcomeSignals or {}
+    local confidence=type(intent.confidence)=="table" and intent.confidence or {}
+    local physical=type(intent.physicalGesture)=="table" and intent.physicalGesture or {}
+    local context=type(intent.inputContextSignals)=="table" and intent.inputContextSignals or {}
+    return {
+        schemaVersion=intent.schemaVersion,
+        primaryIntent=intent.primaryIntent,
+        clickCandidate=intent.clickCandidate==true,
+        cameraDragCandidate=intent.cameraDragCandidate==true,
+        heldInputCandidate=intent.heldInputCandidate==true,
+        guiInteractionCandidate=intent.guiInteractionCandidate==true,
+        worldInteractionCandidate=intent.worldInteractionCandidate==true,
+        ambiguousInput=intent.ambiguousInput==true,
+        likelyCameraMovement=intent.likelyCameraMovement==true,
+        likelyGameplayInteraction=intent.likelyGameplayInteraction==true,
+        inputContextSignals={
+            mouseButton=type(context.mouseButton)=="string" and context.mouseButton or nil,
+            rightButtonInput=context.rightButtonInput==true,
+            leftButtonInput=context.leftButtonInput==true,
+            rightButtonCameraControlHypothesis=context.rightButtonCameraControlHypothesis==true,
+        },
+        confidence={
+            cameraManipulationScore=confidence.cameraManipulationScore,
+            gameplayInteractionScore=confidence.gameplayInteractionScore,
+            primaryIntentConfidence=confidence.primaryIntentConfidence,
+        },
+        physicalGesture={
+            kind=physical.kind,
+            pointerMovementObserved=physical.pointerMovementObserved==true,
+            movementSamples=physical.movementSamples,
+            inputChangedMovementSamples=physical.inputChangedMovementSamples,
+            relativeDeltaMovementSamples=physical.relativeDeltaMovementSamples,
+            durationSeconds=physical.durationSeconds,
+        },
+        targetAndOutcomeSignals={
+            guiTargetConfirmed=signals.guiTargetConfirmed==true,
+            worldTargetConfirmed=signals.worldTargetConfirmed==true,
+            worldRaycastOnly=signals.worldRaycastOnly==true,
+            callbackObserved=signals.callbackObserved==true,
+            callbackAttributed=signals.callbackAttributed==true,
+            callbackAttributionMissing=signals.callbackAttributionMissing==true,
+            stateChangeTemporallyAssociated=signals.stateChangeTemporallyAssociated==true,
+            meaningfulGameplayOutcomeObserved=signals.meaningfulGameplayOutcomeObserved==true,
+            outcomeCorroborated=signals.outcomeCorroborated==true,
+            corroboratedTemporalOnly=signals.corroboratedTemporalOnly==true,
+            temporalOnlyStateAssociation=signals.temporalOnlyStateAssociation==true,
+            weakTemporalPromotionSignal=signals.weakTemporalPromotionSignal==true,
+            worldPromotionBlockedByCamera=signals.worldPromotionBlockedByCamera==true,
+            targetAmbiguous=signals.targetAmbiguous==true,
+            cameraRotationWithoutPointerEvidence=signals.cameraRotationWithoutPointerEvidence==true,
+            competingIntentSignals=signals.competingIntentSignals==true,
+        },
+    }
+end
+
+function incrementInputGestureIntentCounters(intent)
+    if type(intent)~="table" then return end
+    if intent.clickCandidate then observerStats.inputGestureClickCandidates=observerStats.inputGestureClickCandidates+1 end
+    if intent.cameraDragCandidate then observerStats.inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates+1 end
+    if intent.heldInputCandidate then observerStats.inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates+1 end
+    if intent.guiInteractionCandidate then observerStats.inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates+1 end
+    if intent.worldInteractionCandidate then observerStats.inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates+1 end
+    if intent.ambiguousInput then observerStats.inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs+1 end
+    if intent.likelyCameraMovement then observerStats.inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements+1 end
+    if intent.likelyGameplayInteraction then observerStats.inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions+1 end
+end
+
+function applyInputGestureIntent(gesture,intent,clickObservation,relation)
+    if type(gesture)~="table" or type(intent)~="table" then return end
+    gesture.intent=intent
+    local compactIntent=compactInputGestureIntent(intent)
+    if type(clickObservation)=="table" then
+        clickObservation.inputGestureId=gesture.id
+        clickObservation.inputIntent=compactIntent or intent
+    end
+    if type(relation)=="table" then
+        relation.inputGestureId=gesture.id
+        relation.inputIntent=compactIntent or intent
+        relation.provenance=type(relation.provenance)=="table" and relation.provenance or {}
+        relation.provenance.inputGestureId=gesture.id
+        relation.provenance.inputGesturePrimaryIntent=intent.primaryIntent
+        relation.provenance.inputGesturePrimaryConfidence=(type(intent.confidence)=="table")
+            and intent.confidence.primaryIntentConfidence or nil
+    end
+end
+
+function refreshGestureIntentForClick(clickObservationId)
+    if type(clickObservationId)~="string" then return end
+    local gestureId=gestureByClickObservationId[clickObservationId]
+    if type(gestureId)~="string" then return end
+    local gesture=inputGestureById[gestureId]
+    if type(gesture)~="table" then return end
+    local clickObservation=clickTargetById[clickObservationId]
+    local relation=resolveClickOutcomeForObservation(clickObservationId)
+    local intent=classifyInputGestureIntent(gesture,clickObservation,relation)
+    applyInputGestureIntent(gesture,intent,clickObservation,relation)
+end
+
+function summarizeInputGestureIntents()
+    local summary={
+        total=#inputGestureObservations,
+        completedGestures=0,
+        interruptedGestures=0,
+        clickCandidates=0,
+        cameraDragCandidates=0,
+        heldInputCandidates=0,
+        guiInteractionCandidates=0,
+        worldInteractionCandidates=0,
+        ambiguousInputs=0,
+        likelyCameraMovements=0,
+        likelyGameplayInteractions=0,
+        cameraRotationWithoutPointerEvidence=0,
+        competingIntentSignals=0,
+        rightButtonCameraControlHypotheses=0,
+        temporalOnlyStateAssociations=0,
+        corroboratedTemporalOnly=0,
+        worldPromotionBlockedByCamera=0,
+        byPrimaryIntent={},
+        byPhysicalGestureKind={},
+        openGestures=0,
+    }
+    for _,gesture in ipairs(inputGestureObservations) do
+        if type(gesture)=="table" then
+            if gesture.interrupted==true then
+                summary.interruptedGestures=summary.interruptedGestures+1
+            else
+                summary.completedGestures=summary.completedGestures+1
+            end
+        end
+        local intent=(type(gesture)=="table" and type(gesture.intent)=="table") and gesture.intent or nil
+        if intent then
+            if intent.clickCandidate then summary.clickCandidates=summary.clickCandidates+1 end
+            if intent.cameraDragCandidate then summary.cameraDragCandidates=summary.cameraDragCandidates+1 end
+            if intent.heldInputCandidate then summary.heldInputCandidates=summary.heldInputCandidates+1 end
+            if intent.guiInteractionCandidate then summary.guiInteractionCandidates=summary.guiInteractionCandidates+1 end
+            if intent.worldInteractionCandidate then summary.worldInteractionCandidates=summary.worldInteractionCandidates+1 end
+            if intent.ambiguousInput then summary.ambiguousInputs=summary.ambiguousInputs+1 end
+            if intent.likelyCameraMovement then summary.likelyCameraMovements=summary.likelyCameraMovements+1 end
+            if intent.likelyGameplayInteraction then summary.likelyGameplayInteractions=summary.likelyGameplayInteractions+1 end
+            local signals=(type(intent.targetAndOutcomeSignals)=="table") and intent.targetAndOutcomeSignals or {}
+            local context=(type(intent.inputContextSignals)=="table") and intent.inputContextSignals or {}
+            if signals.cameraRotationWithoutPointerEvidence==true then
+                summary.cameraRotationWithoutPointerEvidence=summary.cameraRotationWithoutPointerEvidence+1
+            end
+            if signals.competingIntentSignals==true then
+                summary.competingIntentSignals=summary.competingIntentSignals+1
+            end
+            if context.rightButtonCameraControlHypothesis==true then
+                summary.rightButtonCameraControlHypotheses=summary.rightButtonCameraControlHypotheses+1
+            end
+            if signals.temporalOnlyStateAssociation==true then
+                summary.temporalOnlyStateAssociations=summary.temporalOnlyStateAssociations+1
+            end
+            if signals.corroboratedTemporalOnly==true then
+                summary.corroboratedTemporalOnly=summary.corroboratedTemporalOnly+1
+            end
+            if signals.worldPromotionBlockedByCamera==true then
+                summary.worldPromotionBlockedByCamera=summary.worldPromotionBlockedByCamera+1
+            end
+            local primary=tostring(intent.primaryIntent or "unknown")
+            summary.byPrimaryIntent[primary]=(summary.byPrimaryIntent[primary] or 0)+1
+            local physical=(type(intent.physicalGesture)=="table") and intent.physicalGesture or {}
+            local physicalKind=tostring(physical.kind or "unknown")
+            summary.byPhysicalGestureKind[physicalKind]=(summary.byPhysicalGestureKind[physicalKind] or 0)+1
+        end
+    end
+    for _,active in pairs(inputObserverState.activePointerGestures) do
+        if type(active)=="table" then summary.openGestures=summary.openGestures+1 end
+    end
+    summary.counterAlignment={
+        capturedByRecords=summary.total,
+        capturedBySpatialStats=spatialStats.inputGesturesCaptured,
+        completedByRecords=summary.completedGestures,
+        completedByObserverStats=observerStats.inputGesturesCompleted,
+        interruptedByRecords=summary.interruptedGestures,
+        interruptedByObserverStats=observerStats.inputGesturesInterrupted,
+        openGestureCount=summary.openGestures,
+        startedByObserverStats=observerStats.inputGesturesStarted,
+    }
+    return summary
+end
+
+function beginPointerGesture(buttonName,inputType)
+    local button=tostring(buttonName or "unknown"):sub(1,40)
+    local existing=inputObserverState.activePointerGestures[button]
+    if type(existing)=="table" then
+        observerStats.inputGesturesInterrupted=observerStats.inputGesturesInterrupted+1
+        existing.completionReason="restarted-before-release"
+        existing.interrupted=true
+        local interruptedNow=os.clock()
+        existing.endedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+        existing.endSessionElapsedSeconds=sessionElapsed(interruptedNow)
+        existing.metrics=existing.metrics or {}
+        existing.metrics.durationSeconds=roundNumber(math.max(0,(interruptedNow-(existing.startedClock or interruptedNow))),4)
+        existing.endOrientation=gestureOrientationSnapshot("gesture-interrupted-"..button)
+        local startHeading=existing.startOrientation and existing.startOrientation.cameraHeadingDegrees or nil
+        local endHeading=existing.endOrientation and existing.endOrientation.cameraHeadingDegrees or nil
+        local interruptedHeadingDelta=headingDeltaMagnitude(startHeading,endHeading)
+        if type(interruptedHeadingDelta)=="number" then
+            existing.metrics.cameraHeadingDeltaDegrees=interruptedHeadingDelta
+        end
+        local existingClick=(type(existing.clickObservationId)=="string") and clickTargetById[existing.clickObservationId] or nil
+        local existingRelation=resolveClickOutcomeForObservation(existing.clickObservationId)
+        local existingIntent=classifyInputGestureIntent(existing,existingClick,existingRelation)
+        applyInputGestureIntent(existing,existingIntent,existingClick,existingRelation)
+        incrementInputGestureIntentCounters(existingIntent)
+        appendInputGestureObservation(existing)
+        inputObserverState.activePointerGestures[button]=nil
+        spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
+    end
+
+    local nowClock=os.clock()
+    local inputLabel=tostring(inputType or buttonName or "unknown"):sub(1,60)
+    local cursorObservation=nil
+    local cursorOk,cursorValue=pcall(function()
+        return captureCursorObservation("gesture-start-"..button,inputLabel,true)
+    end)
+    if cursorOk and type(cursorValue)=="table" then cursorObservation=cursorValue end
+    local orientation=gestureOrientationSnapshot("gesture-start-"..button)
+
+    inputGestureSequence=inputGestureSequence+1
+    local gestureId="gesture_"..tostring(inputGestureSequence)
+    local startScreen=(cursorObservation and type(cursorObservation.screen)=="table") and cursorObservation.screen or nil
+    local gesture={
+        id=gestureId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        startedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        startedClock=nowClock,
+        startSessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=button,
+        inputType=inputLabel,
+        startCursorObservationId=cursorObservation and cursorObservation.id or nil,
+        clickObservationId=nil,
+        completionReason="in-progress",
+        interrupted=false,
+        startScreen=(type(startScreen)=="table") and {x=startScreen.x,y=startScreen.y} or nil,
+        endScreen=nil,
+        startOrientation=orientation,
+        endOrientation=nil,
+        metrics={
+            durationSeconds=0,
+            cursorDisplacementPixels=nil,
+            cumulativeCursorTravelPixels=0,
+            maxCursorDeltaPixels=0,
+            movementSamples=0,
+            inputChangedMovementSamples=0,
+            relativeDeltaMovementSamples=0,
+            pointerMovementObserved=false,
+            cameraHeadingDeltaDegrees=nil,
+            cameraCumulativeTurnDegrees=0,
+            maxCameraTurnStepDegrees=0,
+            cameraSampleCount=1,
+            cameraSamplesWithoutPointerMovement=0,
+            cameraTurnDerivedFromBoundaryOnly=false,
+            cameraRotationWithoutPointerMovement=false,
+            lastCameraHeadingDegrees=orientation and orientation.cameraHeadingDegrees or nil,
+            lastCameraSampleClock=nowClock,
+        },
+    }
+    observerStats.inputGesturesStarted=observerStats.inputGesturesStarted+1
+    inputObserverState.activePointerGestures[button]=gesture
+    inputGestureById[gestureId]=gesture
+    return gesture
+end
+
+function sampleActivePointerGestureCameraHeading(nowClock,reasonLabel)
+    local now=type(nowClock)=="number" and nowClock or os.clock()
+    local label=tostring(reasonLabel or "gesture-sample")
+    for button,gesture in pairs(inputObserverState.activePointerGestures) do
+        if type(gesture)=="table" then
+            gesture.metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+            local metrics=gesture.metrics
+            if now-(metrics.lastCameraSampleClock or 0)>=LIMITS.inputGestureCameraSampleSeconds then
+                local orientation=gestureOrientationSnapshot(label.."-"..button)
+                local heading=orientation and orientation.cameraHeadingDegrees or nil
+                if type(heading)=="number" and type(metrics.lastCameraHeadingDegrees)=="number" then
+                    local step=headingDeltaMagnitude(metrics.lastCameraHeadingDegrees,heading) or 0
+                    metrics.cameraCumulativeTurnDegrees=roundNumber((metrics.cameraCumulativeTurnDegrees or 0)+step,2)
+                    if step>(metrics.maxCameraTurnStepDegrees or 0) then
+                        metrics.maxCameraTurnStepDegrees=roundNumber(step,2)
+                    end
+                end
+                if type(heading)=="number" then
+                    metrics.lastCameraHeadingDegrees=heading
+                end
+                metrics.lastCameraSampleClock=now
+                metrics.cameraSampleCount=(metrics.cameraSampleCount or 0)+1
+                if not (metrics.pointerMovementObserved==true or (metrics.movementSamples or 0)>0) then
+                    metrics.cameraSamplesWithoutPointerMovement=(metrics.cameraSamplesWithoutPointerMovement or 0)+1
+                end
+            end
+        end
+    end
+end
+
+function applyPointerDeltaToActiveGestures(delta,sourceLabel)
+    if typeof(delta)~="Vector2" then return end
+    local magnitude=delta.Magnitude
+    local source=tostring(sourceLabel or "unknown")
+    for _,gesture in pairs(inputObserverState.activePointerGestures) do
+        if type(gesture)=="table" then
+            gesture.metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+            local metrics=gesture.metrics
+            metrics.movementSamples=(metrics.movementSamples or 0)+1
+            if source=="input-changed" then
+                metrics.inputChangedMovementSamples=(metrics.inputChangedMovementSamples or 0)+1
+            elseif source=="relative-heartbeat" then
+                metrics.relativeDeltaMovementSamples=(metrics.relativeDeltaMovementSamples or 0)+1
+            end
+            if magnitude>0 then metrics.pointerMovementObserved=true end
+            metrics.cumulativeCursorTravelPixels=roundNumber((metrics.cumulativeCursorTravelPixels or 0)+magnitude,2)
+            if magnitude>(metrics.maxCursorDeltaPixels or 0) then
+                metrics.maxCursorDeltaPixels=roundNumber(magnitude,2)
+            end
+        end
+    end
+end
+
+function sampleActivePointerGesturesRelativeDelta(nowClock)
+    local hasActive=false
+    for _,gesture in pairs(inputObserverState.activePointerGestures) do
+        if type(gesture)=="table" then hasActive=true break end
+    end
+    if not hasActive then return end
+    local pointerDown=inputObserverState.buttonsDown.MouseButton1
+        or inputObserverState.buttonsDown.MouseButton2
+    if not pointerDown then return end
+    local ok,deltaOrErr=pcall(function() return UserInputService:GetMouseDelta() end)
+    if not ok or typeof(deltaOrErr)~="Vector2" then return end
+    if deltaOrErr.Magnitude<=0 then return end
+    applyPointerDeltaToActiveGestures(deltaOrErr,"relative-heartbeat")
+    local now=type(nowClock)=="number" and nowClock or os.clock()
+    sampleActivePointerGestureCameraHeading(now,"gesture-relative-delta")
+end
+
+function updateActivePointerGesturesFromMouseDelta(delta,nowClock)
+    if typeof(delta)~="Vector2" then return end
+    local now=type(nowClock)=="number" and nowClock or os.clock()
+    applyPointerDeltaToActiveGestures(delta,"input-changed")
+    sampleActivePointerGestureCameraHeading(now,"gesture-move")
+end
+
+function finalizePointerGesture(buttonName,inputType,reason)
+    local button=tostring(buttonName or "unknown"):sub(1,40)
+    local gesture=inputObserverState.activePointerGestures[button]
+    if type(gesture)~="table" then return nil end
+    inputObserverState.activePointerGestures[button]=nil
+
+    local nowClock=os.clock()
+    local inputLabel=tostring(inputType or buttonName or "unknown"):sub(1,60)
+    local endCursor=nil
+    local cursorOk,cursorValue=pcall(function()
+        return captureCursorObservation("gesture-end-"..button,inputLabel,true)
+    end)
+    if cursorOk and type(cursorValue)=="table" then endCursor=cursorValue end
+    local endOrientation=gestureOrientationSnapshot("gesture-end-"..button)
+
+    gesture.endedAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    gesture.endSessionElapsedSeconds=sessionElapsed(nowClock)
+    gesture.completionReason=tostring(reason or "input-ended"):sub(1,80)
+    gesture.endCursorObservationId=endCursor and endCursor.id or nil
+    gesture.endOrientation=endOrientation
+
+    local metrics=type(gesture.metrics)=="table" and gesture.metrics or {}
+    local startedClock=type(gesture.startedClock)=="number" and gesture.startedClock or nowClock
+    metrics.durationSeconds=roundNumber(math.max(0,nowClock-startedClock),4)
+
+    local endScreen=(endCursor and type(endCursor.screen)=="table") and endCursor.screen or nil
+    gesture.endScreen=(type(endScreen)=="table") and {x=endScreen.x,y=endScreen.y} or nil
+    local startScreen=(type(gesture.startScreen)=="table") and gesture.startScreen or nil
+    if type(startScreen)=="table" and type(endScreen)=="table"
+        and type(startScreen.x)=="number" and type(startScreen.y)=="number"
+        and type(endScreen.x)=="number" and type(endScreen.y)=="number" then
+        local dx=endScreen.x-startScreen.x
+        local dy=endScreen.y-startScreen.y
+        metrics.cursorDisplacementPixels=roundNumber(math.sqrt(dx*dx+dy*dy),2)
+    end
+
+    local startHeading=gesture.startOrientation and gesture.startOrientation.cameraHeadingDegrees or nil
+    local endHeading=endOrientation and endOrientation.cameraHeadingDegrees or nil
+    local headingDelta=headingDeltaMagnitude(startHeading,endHeading)
+    if type(headingDelta)=="number" then metrics.cameraHeadingDeltaDegrees=headingDelta end
+
+    local movementSamples=type(metrics.movementSamples)=="number" and metrics.movementSamples or 0
+    local cumulativeCursor=type(metrics.cumulativeCursorTravelPixels)=="number" and metrics.cumulativeCursorTravelPixels or 0
+    local maxCursorDelta=type(metrics.maxCursorDeltaPixels)=="number" and metrics.maxCursorDeltaPixels or 0
+    metrics.pointerMovementObserved=(metrics.pointerMovementObserved==true)
+        or movementSamples>0 or cumulativeCursor>0 or maxCursorDelta>0
+    local cumulativeTurn=type(metrics.cameraCumulativeTurnDegrees)=="number" and metrics.cameraCumulativeTurnDegrees or 0
+    local resolvedTurn=type(headingDelta)=="number" and headingDelta or 0
+    if cumulativeTurn>resolvedTurn then resolvedTurn=cumulativeTurn end
+    metrics.cameraTurnDerivedFromBoundaryOnly=(type(headingDelta)=="number")
+        and (headingDelta>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and (cumulativeTurn<=0)
+    metrics.cameraRotationWithoutPointerMovement=(resolvedTurn>=LIMITS.inputGestureCameraTurnMinDegrees)
+        and not (metrics.pointerMovementObserved==true)
+
+    gesture.metrics=metrics
+
+    local clickObservation=(type(gesture.clickObservationId)=="string")
+        and clickTargetById[gesture.clickObservationId] or nil
+    local relation=resolveClickOutcomeForObservation(gesture.clickObservationId)
+    local intent=classifyInputGestureIntent(gesture,clickObservation,relation)
+    applyInputGestureIntent(gesture,intent,clickObservation,relation)
+
+    appendInputGestureObservation(gesture)
+    observerStats.inputGesturesCompleted=observerStats.inputGesturesCompleted+1
+    spatialStats.inputGesturesCaptured=spatialStats.inputGesturesCaptured+1
+    incrementInputGestureIntentCounters(intent)
+    return gesture
+end
+
+function appendClickTarget(entry)
+    if type(entry)~="table" or type(entry.id)~="string" then return end
+    clickTargetObservations[#clickTargetObservations+1]=entry
+    clickTargetById[entry.id]=entry
+    if #clickTargetObservations>LIMITS.maxClickTargetObservations then
+        local removed=table.remove(clickTargetObservations,1)
+        if type(removed)=="table" and type(removed.id)=="string" then
+            clickTargetById[removed.id]=nil
+        end
+    end
+end
+
+function enqueuePendingClick(clickId,clock,button,targetPath)
+    local tail=inputObserverState.pendingClickTail+1
+    inputObserverState.pendingClickTail=tail
+    inputObserverState.pendingClicks[tail]={
+        id=clickId,clock=clock,button=button,targetPath=targetPath,consumed=false
+    }
+    while inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1>36 do
+        inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+        inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+    end
+end
+
+function prunePendingClicks(nowClock)
+    while inputObserverState.pendingClickHead<=inputObserverState.pendingClickTail do
+        local item=inputObserverState.pendingClicks[inputObserverState.pendingClickHead]
+        if not item then
+            observerStats.clickLinksPruned=observerStats.clickLinksPruned+1
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        elseif item.consumed then
+            observerStats.clickLinksPruned=observerStats.clickLinksPruned+1
+            inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        elseif nowClock-item.clock>LIMITS.clickLinkMaxAgeSeconds then
+            observerStats.clickLinksExpired=observerStats.clickLinksExpired+1
+            inputObserverState.pendingClicks[inputObserverState.pendingClickHead]=nil
+            inputObserverState.pendingClickHead=inputObserverState.pendingClickHead+1
+        else
+            break
+        end
+    end
+    if inputObserverState.pendingClickHead>inputObserverState.pendingClickTail then
+        inputObserverState.pendingClickHead=1
+        inputObserverState.pendingClickTail=0
+    end
+end
+
+function resolveRecentPendingClick(targetPath,button)
+    local now=os.clock()
+    observerStats.clickLinksAttempted=observerStats.clickLinksAttempted+1
+    local pendingBefore=math.max(0,inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1)
+    prunePendingClicks(now)
+    local pendingAfter=math.max(0,inputObserverState.pendingClickTail-inputObserverState.pendingClickHead+1)
+    local ranked={}
+    local best=nil
+    local bestIndex=nil
+    for index=inputObserverState.pendingClickTail,inputObserverState.pendingClickHead,-1 do
+        local item=inputObserverState.pendingClicks[index]
+        if item and not item.consumed and now-item.clock<=LIMITS.clickLinkMaxAgeSeconds then
+            local score=0
+            if type(button)=="string" and type(item.button)=="string" and button==item.button then
+                score=score+3
+            end
+            if type(targetPath)=="string" and type(item.targetPath)=="string" then
+                if targetPath==item.targetPath then
+                    score=score+5
+                elseif string.find(targetPath,item.targetPath,1,true)
+                    or string.find(item.targetPath,targetPath,1,true) then
+                    score=score+2
+                end
+            end
+            score=score-(now-item.clock)
+            ranked[#ranked+1]={id=item.id,score=score,index=index}
+            if not best or score>best.score then
+                best={score=score,id=item.id}
+                bestIndex=index
+            end
+        end
+    end
+    if bestIndex then
+        inputObserverState.pendingClicks[bestIndex].consumed=true
+        prunePendingClicks(now)
+        observerStats.clickLinksMatched=observerStats.clickLinksMatched+1
+        local ambiguous={}
+        for _,candidate in ipairs(ranked) do
+            if candidate.id~=best.id and (best.score-candidate.score)<=1.25 then
+                ambiguous[#ambiguous+1]=candidate.id
+            end
+        end
+        local relation=clickOutcomeById["click-outcome-"..best.id]
+        if type(relation)=="table" then
+            relation.clickLinkDiagnostics={
+                linkMethod="pending-window-score",
+                resolutionScore=roundNumber(best.score,4),
+                evaluatedCandidates=#ranked,
+            }
+        end
+        if #ambiguous>0 then
+            observerStats.clickLinksAmbiguous=observerStats.clickLinksAmbiguous+1
+            if type(relation)=="table" then
+                relation.ambiguousAssociation=true
+                relation.ambiguousCandidateClickObservationIds=ambiguous
+            end
+        end
+        return best.id
+    end
+    local missReason="no-pending-click-source"
+    if pendingBefore>0 and pendingAfter==0 then
+        missReason="pending-clicks-expired-or-pruned"
+    elseif pendingAfter>0 then
+        missReason="no-eligible-pending-click-candidate"
+    end
+    recordClickLinkMiss(missReason,targetPath,button,pendingBefore,pendingAfter,#ranked)
+    return nil
+end
+
+function summarizeGuiHitCandidate(guiObject)
+    if not guiObject or not guiObject:IsA("GuiObject") then return nil end
+    local playerGui=player:FindFirstChildOfClass("PlayerGui")
+    local path=playerGui and watchPath(guiObject,playerGui,"LocalPlayer.PlayerGui")
+    if not path then path=tostring(guiObject:GetFullName()):sub(1,380) end
+    local absolutePosition=guiObject.AbsolutePosition
+    local absoluteSize=guiObject.AbsoluteSize
+    return {
+        path=path,
+        class=guiObject.ClassName,
+        name=tostring(guiObject.Name):sub(1,80),
+        visible=guiObject.Visible,
+        active=guiObject.Active,
+        selectable=guiObject.Selectable,
+        interactable=(guiObject:IsA("GuiButton") and guiObject.Active)
+            or guiObject:IsA("GuiButton")
+            or guiObject.Selectable,
+        zIndex=guiObject.ZIndex,
+        absoluteRect={
+            x=roundNumber(absolutePosition.X,2),
+            y=roundNumber(absolutePosition.Y,2),
+            width=roundNumber(absoluteSize.X,2),
+            height=roundNumber(absoluteSize.Y,2),
+        },
+    }
+end
+
+function collectGuiHitCandidatesAtPosition(x,y)
+    local playerGui=player and player:FindFirstChildOfClass("PlayerGui")
+    local inset=cursorInset()
+    local variants={{label="raw-screen",x=x,y=y}}
+    if type(inset)=="table" and type(inset.topLeft)=="table"
+        and type(inset.topLeft.x)=="number" and type(inset.topLeft.y)=="number" then
+        local insetX=inset.topLeft.x
+        local insetY=inset.topLeft.y
+        if math.abs(insetX)>0.01 or math.abs(insetY)>0.01 then
+            variants[#variants+1]={label="minus-gui-inset",x=x-insetX,y=y-insetY}
+            variants[#variants+1]={label="plus-gui-inset",x=x+insetX,y=y+insetY}
+        end
+    end
+
+    local seen={}
+    local candidates={}
+    local attemptCount=0
+    local firstFailure=nil
+    local apiAvailable=true
+    local firstMatchedVariant=nil
+
+    for _,variant in ipairs(variants) do
+        if type(variant.x)=="number" and type(variant.y)=="number" then
+            attemptCount=attemptCount+1
+            local ok,guiObjects=pcall(function()
+                if not playerGui or type(playerGui.GetGuiObjectsAtPosition)~="function" then
+                    error("PlayerGui.GetGuiObjectsAtPosition unavailable")
+                end
+                return playerGui:GetGuiObjectsAtPosition(variant.x,variant.y)
+            end)
+            if ok and type(guiObjects)=="table" then
+                if #guiObjects>0 and not firstMatchedVariant then
+                    firstMatchedVariant=variant.label
+                end
+                for _,guiObject in ipairs(guiObjects) do
+                    if typeof(guiObject)=="Instance" and guiObject:IsA("GuiObject") and not seen[guiObject] then
+                        seen[guiObject]=true
+                        candidates[#candidates+1]={instance=guiObject,hitVariant=variant.label}
+                    end
+                end
+            else
+                local reason=ok and "gui-hit-test-returned-non-table" or tostring(guiObjects)
+                if string.find(reason,"GetGuiObjectsAtPosition",1,true)
+                    and (string.find(reason,"not a valid member",1,true)
+                        or string.find(reason,"unavailable",1,true)) then
+                    apiAvailable=false
+                end
+                firstFailure=firstFailure or reason
+            end
+        end
+    end
+
+    local failed=(#candidates==0) and firstFailure~=nil
+    return {
+        attempted=attemptCount>0,
+        attempts=attemptCount,
+        candidates=candidates,
+        failed=failed,
+        failure=firstFailure,
+        apiAvailable=apiAvailable,
+        matchedVariant=firstMatchedVariant,
+        playerGuiAvailable=playerGui~=nil,
+        guiInset=inset,
+    }
+end
+
+
+
+
+function isInspectorOwnedPath(path)
+    if type(path)~="string" then return false end
+    return string.find(path,"LycolesUniversalInspector",1,true)~=nil
+end
+
+function classifyClickTargetScope(topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)
+    local topPath=topmostInteractive and topmostInteractive.path or nil
+    local rayPath=raycastTarget and raycastTarget.path or nil
+    local topInspector=isInspectorOwnedPath(topPath)
+    local rayInspector=isInspectorOwnedPath(rayPath)
+
+    if topInspector then
+        if rayPath and not rayInspector then
+            return "mixed-inspector-and-world","inspector-owned-target"
+        end
+        return "inspector-ui","inspector-owned-target"
+    end
+    if rayInspector then
+        return "inspector-world","inspector-owned-target"
+    end
+
+    if topPath then
+        return "game-ui","confirmed-gui-target"
+    end
+    if rayPath then
+        if guiHitTestFailed or not guiHitTestReliable then
+            return "ambiguous","ambiguous-target"
+        end
+        return "world","confirmed-world-target"
+    end
+    return "unresolved","unresolved-target"
+end
+
+
+function createFallbackClickTargetObservation(buttonName,inputType,gestureId,failureStage,failureReason)
+    local nowClock=os.clock()
+    local buttonLabel=tostring(buttonName or "unknown"):sub(1,40)
+    local inputLabel=tostring(inputType or "unknown"):sub(1,60)
+    local cursorObservation={id=nil,cursorAvailable=false,screen={x=nil,y=nil},normalizedViewport={x=nil,y=nil},viewportSize=nil}
+    local cursorOk,cursorResult=pcall(function()
+        return captureCursorObservation("click-fallback-"..buttonLabel,inputLabel,true)
+    end)
+    if cursorOk and type(cursorResult)=="table" then
+        cursorObservation=cursorResult
+    else
+        recordClickCaptureComponentFailure("cursor-capture-fallback",cursorOk and "cursor-observation-non-table" or cursorResult,buttonLabel,inputLabel)
+    end
+
+    clickObservationSequence=clickObservationSequence+1
+    local clickId="click_"..tostring(clickObservationSequence)
+    local observation={
+        id=clickId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=buttonLabel,
+        inputType=inputLabel,
+        inputGestureId=type(gestureId)=="string" and gestureId or nil,
+        cursorObservationId=cursorObservation.id,
+        cursor=cursorObservation,
+        guiCandidates={},
+        topmostGuiTarget=nil,
+        raycastTarget=nil,
+        inspectorOwnedTarget=false,
+        targetScope="unresolved",
+        targetClassification="unresolved-target",
+        targetResolution={status="unresolved",classification="unresolved-target",
+            unresolved=true,ambiguous=false,inspectorOwnedTarget=false,
+            confirmedGuiTarget=false,confirmedWorldTarget=false},
+        playerPositionAtClick=nil,
+        characterOrientationAtClick=nil,
+        cameraOrientationAtClick=nil,
+        cameraCharacterHeadingDeltaDegrees=nil,
+        pipelineDiagnostics={
+            captureAttempted=true,
+            fallbackUsed=true,
+            failureStage=sanitizeDiagnosticText(failureStage or "capture-wrapper",40),
+            failureReason=sanitizeDiagnosticText(failureReason or "unknown",180),
+            guiHitTestAttempted=false,
+            guiHitTestSucceeded=false,
+            raycastAttempted=false,
+            raycastSucceeded=false,
+            targetClassification="unresolved-target",
+            ambiguousTarget=false,
+            unresolvedTarget=true,
+            componentFailures={{
+                stage=sanitizeDiagnosticText(failureStage or "capture-wrapper",40),
+                reason=sanitizeDiagnosticText(failureReason or "unknown",180),
+            }},
+        },
+        targetIdentificationConfidence={
+            level="unavailable",score=0,overlapDetected=false,
+            cursorAvailable=cursorObservation.cursorAvailable==true,
+        },
+        missingEvidence={
+            "Target capture fallback used",
+            "No topmost interactive GUI target determined",
+            "No raycast world hit determined",
+            "Fallback reason: "..sanitizeDiagnosticText(failureReason or "unknown",180),
+        },
+    }
+    appendClickTarget(observation)
+    observerStats.clickCapturesRecorded=observerStats.clickCapturesRecorded+1
+    spatialStats.clickTargetsCaptured=spatialStats.clickTargetsCaptured+1
+    observerStats.clickTargetsUnresolved=observerStats.clickTargetsUnresolved+1
+
+    local relationship={
+        id="click-outcome-"..clickId,
+        clickObservationId=clickId,
+        clickObserved=true,
+        targetIdentified=false,
+        interactionCallbackObserved=false,
+        interactionCallbackAttributed=false,
+        stateChangeTemporallyAssociated=false,
+        meaningfulGameplayOutcomeObserved=false,
+        outcomeCorroborated=false,
+        reproduciblyLiveValidated=false,
+        causalityProven=false,
+        stage="click-observed-unresolved",
+        status="pending-followup-observation",
+        missingEvidence={
+            "No interaction callback linked yet",
+            "No post-click state evidence linked yet",
+            "No controlled live validation proving reproducible outcome",
+            "Click target unresolved at capture time",
+        },
+        provenance={
+            cursorObservationId=cursorObservation.id,
+            inputGestureId=type(gestureId)=="string" and gestureId or nil,
+            guiCandidateCount=0,
+            confidence="unavailable",
+            targetScope="unresolved",
+            targetClassification="unresolved-target",
+        },
+        verificationStages={
+            clickObserved=true,targetIdentified=false,
+            interactionCallbackObserved=false,interactionCallbackAttributed=false,
+            stateChangeObserved=false,
+            temporallyAssociated=false,multiSignalCorroborated=false,
+            reproduciblyValidated=false,causalityProven=false,
+        },
+        linkedInteractionSequences={},
+        linkedTransactionIds={},
+    }
+    appendClickOutcome(relationship)
+    enqueuePendingClick(clickId,nowClock,buttonLabel,nil)
+    return observation
+end
+
+function captureClickTargetObservation(buttonName,input,gestureId)
+    observerStats.clickCaptureAttempts=observerStats.clickCaptureAttempts+1
+    local nowClock=os.clock()
+    local inputType=tostring(input and input.UserInputType and input.UserInputType.Name or "unknown")
+    local buttonLabel=tostring(buttonName or "unknown"):sub(1,40)
+    local componentFailures={}
+    local function noteComponentFailure(stage,reason)
+        local stageLabel=sanitizeDiagnosticText(stage,40)
+        local reasonLabel=sanitizeDiagnosticText(reason,180)
+        if #componentFailures<LIMITS.maxClickDiagnosticSamples then
+            componentFailures[#componentFailures+1]={stage=stageLabel,reason=reasonLabel}
+        end
+        recordClickCaptureComponentFailure(stageLabel,reasonLabel,buttonLabel,inputType)
+    end
+
+    local cursorObservation=nil
+    local cursorCaptureSucceeded=false
+    do
+        local ok,result=pcall(function()
+            return captureCursorObservation("click-"..buttonLabel,inputType,true)
+        end)
+        if ok and type(result)=="table" then
+            cursorObservation=result
+            cursorCaptureSucceeded=true
+        else
+            noteComponentFailure("cursor-capture",ok and "cursor-observation-non-table" or result)
+            cursorObservation={
+                id=nil,cursorAvailable=false,
+                screen={x=nil,y=nil},normalizedViewport={x=nil,y=nil},viewportSize=nil,
+            }
+        end
+    end
+
+    local screen=(type(cursorObservation.screen)=="table") and cursorObservation.screen or {}
+    local x=type(screen.x)=="number" and screen.x or nil
+    local y=type(screen.y)=="number" and screen.y or nil
+
+    local guiCandidates={}
+    local guiHitTestAttempted=type(x)=="number" and type(y)=="number"
+    local guiHitTestSucceeded=false
+    local guiHitTestFailure=nil
+    local guiHitTestReliable=false
+    local guiHitTestApiAvailable=true
+    local guiHitTestCoordinateSpace=nil
+    local guiHitTestAttempts=0
+    if guiHitTestAttempted then
+        local ok,hitResult=pcall(function()
+            return collectGuiHitCandidatesAtPosition(x,y)
+        end)
+        if ok and type(hitResult)=="table" then
+            guiHitTestApiAvailable=hitResult.apiAvailable~=false
+            guiHitTestCoordinateSpace=hitResult.matchedVariant
+            guiHitTestAttempts=type(hitResult.attempts)=="number" and hitResult.attempts or 0
+            local candidateEntries=type(hitResult.candidates)=="table" and hitResult.candidates or nil
+            if candidateEntries then
+                guiHitTestSucceeded=hitResult.failed~=true
+                for _,candidateEntry in ipairs(candidateEntries) do
+                    if #guiCandidates>=LIMITS.maxClickGuiCandidates then break end
+                    local guiObject=(type(candidateEntry)=="table") and candidateEntry.instance or candidateEntry
+                    local candidateOk,candidateOrErr=pcall(function()
+                        return summarizeGuiHitCandidate(guiObject)
+                    end)
+                    if candidateOk and type(candidateOrErr)=="table" then
+                        candidateOrErr.hitTestCoordinateSpace=(type(candidateEntry)=="table")
+                            and candidateEntry.hitVariant or nil
+                        guiCandidates[#guiCandidates+1]=candidateOrErr
+                    elseif not candidateOk then
+                        guiHitTestFailure=guiHitTestFailure or candidateOrErr
+                    end
+                end
+            else
+                guiHitTestFailure=guiHitTestFailure or "gui-hit-test-returned-non-table"
+            end
+            if type(hitResult.failure)=="string" then
+                guiHitTestFailure=guiHitTestFailure or hitResult.failure
+            end
+            guiHitTestReliable=guiHitTestApiAvailable and not (hitResult.failed==true)
+        else
+            guiHitTestFailure=ok and "gui-hit-test-helper-returned-non-table" or hitResult
+            guiHitTestReliable=false
+        end
+    elseif cursorCaptureSucceeded then
+        guiHitTestFailure="cursor-screen-unavailable"
+    end
+    local guiHitTestFailed=guiHitTestAttempted and not guiHitTestReliable
+    if guiHitTestFailure then noteComponentFailure("gui-hit-test",guiHitTestFailure) end
+
+    local topmostInteractive=nil
+    for _,candidate in ipairs(guiCandidates) do
+        if candidate.interactable and candidate.visible~=false then
+            topmostInteractive=candidate
+            break
+        end
+    end
+
+    local raycastTarget=nil
+    local raycastAttempted=false
+    local raycastSucceeded=false
+    local raycastFailure=nil
+    if type(x)=="number" and type(y)=="number" then
+        local camera=workspace.CurrentCamera
+        if camera then
+            local ok,ray=pcall(function()
+                return camera:ViewportPointToRay(x,y)
+            end)
+            if ok and ray then
+                raycastAttempted=true
+                local ignoreList=player.Character and {player.Character} or {}
+                if clickRaycastParams then
+                    clickRaycastParams.FilterDescendantsInstances=ignoreList
+                end
+                local result=nil
+                local hitOk,hitErr=pcall(function()
+                    if clickRaycastParams then
+                        result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds,clickRaycastParams)
+                    else
+                        result=workspace:Raycast(ray.Origin,ray.Direction*LIMITS.clickRaycastDistanceStuds)
+                    end
+                end)
+                if hitOk then
+                    raycastSucceeded=result and result.Instance~=nil
+                    if raycastSucceeded then
+                        local anchor=result.Instance
+                        if anchor.Parent and anchor.Parent:IsA("Model") then anchor=anchor.Parent end
+                        local targetPath=watchPath(anchor,workspace,"Workspace")
+                            or watchPath(result.Instance,workspace,"Workspace")
+                        raycastTarget={
+                            path=targetPath,
+                            class=anchor and anchor.ClassName or nil,
+                            hitPosition=(result and result.Position and typeof(result.Position)=="Vector3") and watchVec(result.Position) or nil,
+                            hitNormal=(result and result.Normal and typeof(result.Normal)=="Vector3") and watchVec(result.Normal) or nil,
+                        }
+                    end
+                else
+                    raycastFailure=hitErr
+                    noteComponentFailure("world-raycast",hitErr)
+                end
+            else
+                raycastFailure=ray
+                noteComponentFailure("viewport-point-to-ray",ray)
+            end
+        elseif cursorCaptureSucceeded then
+            raycastFailure="current-camera-unavailable"
+            noteComponentFailure("world-raycast-camera",raycastFailure)
+        end
+    end
+
+    local targetScope,targetClassification=classifyClickTargetScope(
+        topmostInteractive,raycastTarget,guiHitTestReliable,guiHitTestFailed)
+    local inspectorOwnedTarget=targetClassification=="inspector-owned-target"
+    local targetAmbiguous=targetClassification=="ambiguous-target"
+    local targetIdentified=(targetClassification=="confirmed-gui-target"
+        or targetClassification=="confirmed-world-target"
+        or inspectorOwnedTarget)
+
+    local confidence="low"
+    local score=0.22
+    if topmostInteractive then score=score+0.44 end
+    if #guiCandidates>1 then score=score-0.07 end
+    if raycastTarget then score=score+0.25 end
+    if not cursorObservation.cursorAvailable then score=score-0.2 end
+    if inspectorOwnedTarget then score=score-0.12 end
+    if not guiHitTestReliable then score=score-0.17 end
+    if targetAmbiguous then score=score-0.22 end
+    score=clampNumber(score,0,0.98)
+    if score>=0.78 then confidence="high"
+    elseif score>=0.5 then confidence="medium"
+    elseif score<=0.2 then confidence="unavailable" end
+    if targetAmbiguous and confidence=="high" then confidence="medium" end
+
+    clickObservationSequence=clickObservationSequence+1
+    local clickId="click_"..tostring(clickObservationSequence)
+    local clickPositionSample=nil
+    do
+        local ok,sampleOrErr=pcall(function()
+            local sample,_=capturePlayerPositionSample("click-observation",true)
+            return sample
+        end)
+        if ok and type(sampleOrErr)=="table" then
+            clickPositionSample=sampleOrErr
+        else
+            noteComponentFailure("orientation-capture",ok and "orientation-sample-unavailable" or sampleOrErr)
+        end
+    end
+
+    local missingEvidence={}
+    if not cursorObservation.cursorAvailable then
+        missingEvidence[#missingEvidence+1]="Cursor position unavailable"
+    end
+    if not topmostInteractive then
+        missingEvidence[#missingEvidence+1]="No topmost interactive GUI target determined"
+    end
+    if not raycastTarget then
+        missingEvidence[#missingEvidence+1]="No raycast world hit determined"
+    end
+    if guiHitTestAttempted and not guiHitTestReliable then
+        missingEvidence[#missingEvidence+1]="GUI hit testing unavailable or failed; world raycast is non-confirmatory"
+    end
+    if targetAmbiguous then
+        missingEvidence[#missingEvidence+1]="Target classification is ambiguous between GUI and world"
+    end
+    if inspectorOwnedTarget then
+        missingEvidence[#missingEvidence+1]="Inspector-owned UI target; excluded from gameplay correlation"
+    end
+    if #componentFailures>0 then
+        for idx,item in ipairs(componentFailures) do
+            if idx>4 then break end
+            if type(item)=="table" then
+                missingEvidence[#missingEvidence+1]=("Component failure [%s]: %s"):format(
+                    tostring(item.stage or "unknown"),tostring(item.reason or "unknown"))
+            end
+        end
+    end
+    local observation={
+        id=clickId,
+        observedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds=sessionElapsed(nowClock),
+        mouseButton=buttonLabel,
+        inputType=inputType,
+        inputGestureId=type(gestureId)=="string" and gestureId or nil,
+        cursorObservationId=cursorObservation.id,
+        cursor=cursorObservation,
+        guiCandidates=guiCandidates,
+        topmostGuiTarget=topmostInteractive,
+        raycastTarget=raycastTarget,
+        inspectorOwnedTarget=inspectorOwnedTarget,
+        targetScope=targetScope,
+        targetClassification=targetClassification,
+        targetResolution={
+            status=targetIdentified and "identified" or "unresolved",
+            classification=targetClassification,
+            unresolved=not targetIdentified,
+            ambiguous=targetAmbiguous,
+            inspectorOwnedTarget=inspectorOwnedTarget,
+            confirmedGuiTarget=targetClassification=="confirmed-gui-target",
+            confirmedWorldTarget=targetClassification=="confirmed-world-target",
+        },
+        playerPositionAtClick=clickPositionSample and clickPositionSample.position or nil,
+        characterOrientationAtClick=clickPositionSample and clickPositionSample.characterOrientation or nil,
+        cameraOrientationAtClick=clickPositionSample and clickPositionSample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees=clickPositionSample and clickPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
+        pipelineDiagnostics={
+            captureAttempted=true,
+            cursorCaptureSucceeded=cursorCaptureSucceeded,
+            guiHitTestAttempted=guiHitTestAttempted,
+            guiHitTestSucceeded=guiHitTestSucceeded,
+            guiHitTestReliable=guiHitTestReliable,
+            guiHitTestFailed=guiHitTestFailed,
+            guiHitTestApiAvailable=guiHitTestApiAvailable,
+            guiHitTestCoordinateSpace=guiHitTestCoordinateSpace,
+            guiHitTestAttempts=guiHitTestAttempts,
+            guiHitTestFailure=guiHitTestFailure and sanitizeDiagnosticText(guiHitTestFailure,180) or nil,
+            raycastAttempted=raycastAttempted,
+            raycastSucceeded=raycastSucceeded,
+            raycastFailure=raycastFailure and sanitizeDiagnosticText(raycastFailure,180) or nil,
+            targetClassification=targetClassification,
+            ambiguousTarget=targetAmbiguous,
+            unresolvedTarget=not targetIdentified,
+            failureStage=(#componentFailures>0 and componentFailures[1].stage) or nil,
+            failureReason=(#componentFailures>0 and componentFailures[1].reason) or nil,
+            componentFailures=componentFailures,
+        },
+        targetIdentificationConfidence={
+            level=confidence,
+            score=roundNumber(score,3),
+            overlapDetected=#guiCandidates>1,
+            cursorAvailable=cursorObservation.cursorAvailable,
+        },
+        missingEvidence=missingEvidence,
+    }
+    appendClickTarget(observation)
+    observerStats.clickCapturesRecorded=observerStats.clickCapturesRecorded+1
+    spatialStats.clickTargetsCaptured=spatialStats.clickTargetsCaptured+1
+
+    if targetIdentified then
+        observerStats.clickTargetsResolved=observerStats.clickTargetsResolved+1
+    else
+        observerStats.clickTargetsUnresolved=observerStats.clickTargetsUnresolved+1
+    end
+    if inspectorOwnedTarget then
+        observerStats.clickInspectorOwned=observerStats.clickInspectorOwned+1
+    end
+
+    local stage="click-observed"
+    if targetAmbiguous then stage="target-ambiguous" end
+    if targetIdentified then stage="target-identified" end
+    if inspectorOwnedTarget then stage="target-identified-inspector-owned" end
+
+    local relationshipStatus="pending-followup-observation"
+    if targetAmbiguous then relationshipStatus="pending-ambiguous-target" end
+    if inspectorOwnedTarget then relationshipStatus="inspector-owned-non-gameplay" end
+
+    local relationship={
+        id="click-outcome-"..clickId,
+        clickObservationId=clickId,
+        clickObserved=true,
+        targetIdentified=targetIdentified,
+        interactionCallbackObserved=false,
+        interactionCallbackAttributed=false,
+        stateChangeTemporallyAssociated=false,
+        meaningfulGameplayOutcomeObserved=false,
+        outcomeCorroborated=false,
+        reproduciblyLiveValidated=false,
+        causalityProven=false,
+        stage=stage,
+        status=relationshipStatus,
+        missingEvidence={
+            "No interaction callback linked yet",
+            "No post-click state evidence linked yet",
+            "No controlled live validation proving reproducible outcome",
+        },
+        provenance={
+            cursorObservationId=cursorObservation.id,
+            inputGestureId=type(gestureId)=="string" and gestureId or nil,
+            guiCandidateCount=#guiCandidates,
+            confidence=confidence,
+            targetScope=targetScope,
+            targetClassification=targetClassification,
+        },
+        verificationStages={
+            clickObserved=true,
+            targetIdentified=targetIdentified,
+            interactionCallbackObserved=false,
+            interactionCallbackAttributed=false,
+            stateChangeObserved=false,
+            temporallyAssociated=false,
+            multiSignalCorroborated=false,
+            reproduciblyValidated=false,
+            causalityProven=false,
+        },
+        linkedInteractionSequences={},
+        linkedTransactionIds={},
+    }
+    appendClickOutcome(relationship)
+    if not inspectorOwnedTarget then
+        local correlationTargetPath=nil
+        if targetClassification=="confirmed-gui-target" then
+            correlationTargetPath=topmostInteractive and topmostInteractive.path or nil
+        elseif targetClassification=="confirmed-world-target" then
+            correlationTargetPath=raycastTarget and raycastTarget.path or nil
+        end
+        enqueuePendingClick(clickId,nowClock,tostring(buttonName or "unknown"),correlationTargetPath)
+    end
+    return observation
+end
+
+function updateClickOutcomeFromHistory(clickId,historyItem,callbackObserved)
+    if type(clickId)~="string" then return end
+    local relation=clickOutcomeById["click-outcome-"..clickId]
+    if type(relation)~="table" then return end
+    local callbackAttributed=false
+    if callbackObserved and type(historyItem)=="table" then
+        local attribution=tostring(historyItem.attribution or "")
+        callbackAttributed=attribution~="unattributed" and attribution~="unattributed-input"
+    elseif callbackObserved then
+        callbackAttributed=true
+    end
+    if callbackObserved then relation.interactionCallbackObserved=true end
+    if callbackAttributed then relation.interactionCallbackAttributed=true end
+    relation.provenance=type(relation.provenance)=="table" and relation.provenance or {}
+    if callbackObserved then
+        relation.provenance.callbackAttributionStatus=callbackAttributed and "attributed" or "unattributed"
+    end
+    if type(historyItem)=="table" then
+        if type(historyItem.sequence)=="number" then
+            local seen=false
+            for _,seq in ipairs(relation.linkedInteractionSequences) do
+                if seq==historyItem.sequence then seen=true break end
+            end
+            if not seen then
+                relation.linkedInteractionSequences[#relation.linkedInteractionSequences+1]=historyItem.sequence
+            end
+        end
+        if type(historyItem.transactionId)=="string" then
+            local txSeen=false
+            for _,tx in ipairs(relation.linkedTransactionIds) do
+                if tx==historyItem.transactionId then txSeen=true break end
+            end
+            if not txSeen then
+                relation.linkedTransactionIds[#relation.linkedTransactionIds+1]=historyItem.transactionId
+            end
+        end
+        local stateChanges=historyItem.stateChanges or {}
+        if type(stateChanges)=="table" and #stateChanges>0 then
+            relation.stateChangeTemporallyAssociated=true
+        end
+        local meaningful=0
+        for _,change in ipairs(stateChanges) do
+            if type(change)=="table" and isMeaningfulGameplayStateKey(change.key) then
+                meaningful=meaningful+1
+            end
+        end
+        if meaningful>0 then relation.meaningfulGameplayOutcomeObserved=true end
+        if (historyItem.clientStateCorroborated==true) or meaningful>=2 then
+            relation.outcomeCorroborated=true
+        end
+    end
+    local stateChangeObserved=relation.stateChangeTemporallyAssociated
+    local temporallyAssociated=relation.stateChangeTemporallyAssociated
+    local multiSignalCorroborated=relation.outcomeCorroborated
+
+    local stage="click-observed"
+    if relation.targetIdentified then stage="target-identified" end
+    if relation.interactionCallbackObserved and not relation.interactionCallbackAttributed then
+        stage="interaction-callback-unattributed"
+    elseif relation.interactionCallbackObserved then
+        stage="interaction-callback-observed"
+    end
+    if stateChangeObserved then stage="state-change-observed" end
+    if temporallyAssociated then stage="temporally-associated" end
+    if multiSignalCorroborated then stage="multi-signal-corroborated" end
+    if relation.reproduciblyLiveValidated then stage="reproducibly-validated" end
+    if relation.causalityProven then stage="causality-proven" end
+
+    relation.stage=stage
+    relation.status=(stage=="reproducibly-validated" or stage=="causality-proven")
+        and "live-validated" or "observational-only"
+    relation.verificationStages={
+        clickObserved=true,
+        targetIdentified=relation.targetIdentified==true,
+        interactionCallbackObserved=relation.interactionCallbackObserved==true,
+        interactionCallbackAttributed=relation.interactionCallbackAttributed==true,
+        stateChangeObserved=stateChangeObserved==true,
+        temporallyAssociated=temporallyAssociated==true,
+        multiSignalCorroborated=multiSignalCorroborated==true,
+        reproduciblyValidated=relation.reproduciblyLiveValidated==true,
+        causalityProven=relation.causalityProven==true,
+    }
+    local missing={}
+    if not relation.interactionCallbackObserved then
+        missing[#missing+1]="No interaction callback linked yet"
+    elseif not relation.interactionCallbackAttributed then
+        missing[#missing+1]="Linked callback exists but interaction feature attribution is unresolved"
+    end
+    if not relation.stateChangeTemporallyAssociated then
+        missing[#missing+1]="No post-click state evidence linked yet"
+    end
+    if not relation.meaningfulGameplayOutcomeObserved then
+        missing[#missing+1]="No gameplay-relevant outcome signal observed"
+    end
+    if not relation.outcomeCorroborated then
+        missing[#missing+1]="Outcome corroboration threshold not reached"
+    end
+    if not relation.reproduciblyLiveValidated then
+        missing[#missing+1]="No controlled live validation proving reproducible outcome"
+    end
+    relation.missingEvidence=missing
+    refreshGestureIntentForClick(relation.clickObservationId)
+    spatialStats.clickOutcomeLinks=spatialStats.clickOutcomeLinks+1
+end
+
+
+function inferSpatialPurpose(featureCandidate,path,actionKind)
+    local candidate = string.lower(tostring(featureCandidate or ""))
+    local lowPath = string.lower(tostring(path or ""))
+    local lowAction = string.lower(tostring(actionKind or ""))
+    local combined = candidate .. "|" .. lowPath .. "|" .. lowAction
+    if string.find(combined,"sell",1,true) or string.find(combined,"convert",1,true)
+        or string.find(combined,"trade",1,true) then
+        return "selling-or-conversion"
+    end
+    if string.find(combined,"egg",1,true) or string.find(combined,"hatch",1,true) then
+        return "egg-hatching-or-purchase"
+    end
+    if string.find(combined,"pet",1,true) or string.find(combined,"companion",1,true)
+        or string.find(combined,"equip",1,true) then
+        return "pets-or-equipment"
+    end
+    if string.find(combined,"shop",1,true) or string.find(combined,"upgrade",1,true)
+        or string.find(combined,"buy",1,true) then
+        return "shops-or-upgrades"
+    end
+    if string.find(combined,"reward",1,true) or string.find(combined,"claim",1,true)
+        or string.find(combined,"quest",1,true) then
+        return "rewards-or-quests"
+    end
+    if string.find(combined,"train",1,true) or string.find(combined,"strength",1,true)
+        or string.find(combined,"progress",1,true) then
+        return "training-or-progression"
+    end
+    if string.find(combined,"teleport",1,true) or string.find(combined,"portal",1,true)
+        or string.find(combined,"travel",1,true) then
+        return "teleport-or-travel"
+    end
+    return "uncategorized"
+end
+
+function resolveCharacterSpatialContext()
+    local character = player.Character
+    if not character then return nil,nil,nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        local primaryPart = character.PrimaryPart
+        if primaryPart and primaryPart:IsA("BasePart") then
+            rootPart = primaryPart
+        else
+            rootPart = character:FindFirstChildWhichIsA("BasePart")
+        end
+    end
+    return character,rootPart,humanoid
+end
+
+function refreshSpatialZoneCandidates(nowClock)
+    if nowClock-spatialZoneContextCache.updatedClock < LIMITS.spatialZoneRefreshSeconds then return end
+    spatialZoneContextCache.updatedClock = nowClock
+    spatialZoneContextCache.candidates = {}
+    local roots = workspace:GetChildren()
+    local limit = LIMITS.spatialZoneCandidateLimit
+    for _,obj in ipairs(roots) do
+        if #spatialZoneContextCache.candidates >= limit then break end
+        local className = obj.ClassName
+        if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart") then
+            local nameLower = string.lower(obj.Name)
+            if string.find(nameLower,"world",1,true) or string.find(nameLower,"zone",1,true)
+                or string.find(nameLower,"area",1,true) or string.find(nameLower,"island",1,true)
+                or string.find(nameLower,"portal",1,true) or string.find(nameLower,"shop",1,true)
+                or string.find(nameLower,"reward",1,true) or string.find(nameLower,"egg",1,true)
+                or string.find(nameLower,"quest",1,true) then
+                local anchorPosition = nil
+                if obj:IsA("BasePart") then
+                    anchorPosition = obj.Position
+                elseif obj:IsA("Model") then
+                    local okPivot,pivot = pcall(function() return obj:GetPivot() end)
+                    if okPivot then anchorPosition = pivot.Position end
+                end
+                if anchorPosition then
+                    spatialZoneContextCache.candidates[#spatialZoneContextCache.candidates+1] = {
+                        path = watchPath(obj,workspace,"Workspace") or ("Workspace."..obj.Name),
+                        className = className,
+                        name = obj.Name,
+                        position = anchorPosition,
+                    }
+                end
+            end
+        end
+    end
+end
+
+function resolveSpatialWorldContext(position,nowClock)
+    if not position then return nil end
+    refreshSpatialZoneCandidates(nowClock)
+    local nearest = nil
+    for _,candidate in ipairs(spatialZoneContextCache.candidates) do
+        local distance = (candidate.position-position).Magnitude
+        if not nearest or distance<nearest.distance then
+            nearest = {
+                path = candidate.path,
+                className = candidate.className,
+                name = candidate.name,
+                distance = distance,
+            }
+        end
+    end
+    if nearest and nearest.distance <= 320 then
+        return {
+            path = string.sub(nearest.path,1,320),
+            className = nearest.className,
+            name = string.sub(nearest.name,1,80),
+            distanceStuds = roundNumber(nearest.distance,2),
+        }
+    end
+    return nil
+end
+
+function capturePlayerPositionSample(reason,forceSample)
+    local nowClock = os.clock()
+    local character,rootPart,humanoid = resolveCharacterSpatialContext()
+    local elapsed = sessionElapsed(nowClock)
+    local base = {
+        sampledAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        sessionElapsedSeconds = elapsed,
+        reason = tostring(reason or "unspecified"):sub(1,80),
+        snapshotSequence = spatialSampleSequence + 1,
+        characterGeneration = spatialCharacterGeneration,
+        characterId = character and (character.Name .. "#" .. tostring(spatialCharacterGeneration)) or nil,
+        interpolated = false,
+    }
+
+    if not rootPart then
+        spatialStats.invalidSamples = spatialStats.invalidSamples + 1
+        base.positionValid = false
+        base.invalidReason = character and "root-part-unavailable" or "character-unavailable"
+        if forceSample then
+            spatialSampleSequence = spatialSampleSequence + 1
+            base.snapshotSequence = spatialSampleSequence
+            appendCapped(playerPositionHistory,LIMITS.maxPlayerPositionHistory,base)
+            spatialStats.samplesCaptured = spatialStats.samplesCaptured + 1
+            return base,nil
+        end
+        return nil,nil
+    end
+
+    local rawPosition = rootPart.Position
+    local velocity = rootPart.AssemblyLinearVelocity or rootPart.Velocity
+    local speed = velocity and velocity.Magnitude or 0
+    local interval = LIMITS.maxAdaptivePositionSampleSeconds
+    if speed >= 80 then interval = 0.15
+    elseif speed >= 45 then interval = 0.22
+    elseif speed >= 22 then interval = 0.35
+    elseif speed >= 8 then interval = 0.55
+    else interval = 0.9 end
+    interval = clampNumber(interval,LIMITS.minAdaptivePositionSampleSeconds,LIMITS.maxAdaptivePositionSampleSeconds)
+
+    if not forceSample and spatialLastValidSample then
+        local deltaSeconds = nowClock-spatialLastValidSample.clock
+        local moved = (rawPosition-spatialLastValidSample.position).Magnitude
+        if spatialLastValidSample.characterGeneration==spatialCharacterGeneration
+            and deltaSeconds < interval
+            and moved < LIMITS.minAdaptivePositionDistanceStuds then
+            spatialStats.samplesSkipped = spatialStats.samplesSkipped + 1
+            return nil,nil
+        end
+    end
+
+    local sample = {
+        sampledAt = base.sampledAt,
+        sessionElapsedSeconds = elapsed,
+        reason = base.reason,
+        snapshotSequence = base.snapshotSequence,
+        characterGeneration = spatialCharacterGeneration,
+        characterId = base.characterId,
+        positionValid = true,
+        position = watchVec(rawPosition),
+        speedStudsPerSecond = roundNumber(speed,3),
+        characterState = humanoid and tostring(humanoid:GetState().Name) or "unknown",
+        interpolated = false,
+        sampleKind = "sampled",
+    }
+
+    if velocity and speed > 0.01 then
+        sample.directionUnit = {
+            x = roundNumber(velocity.X/speed,3),
+            y = roundNumber(velocity.Y/speed,3),
+            z = roundNumber(velocity.Z/speed,3),
+        }
+    end
+
+    sample.worldContext = resolveSpatialWorldContext(rawPosition,nowClock)
+
+    local characterOrientation=orientationSample(
+        "character-root-forward",rawPosition,rootPart.CFrame.LookVector,elapsed,
+        spatialCharacterGeneration,base.characterId,sample.worldContext)
+    local camera=workspace.CurrentCamera
+    local cameraPosition=(camera and camera.CFrame and camera.CFrame.Position) or nil
+    local cameraOrientation=orientationSample(
+        "camera-look-forward",cameraPosition,camera and camera.CFrame and camera.CFrame.LookVector or nil,
+        elapsed,spatialCharacterGeneration,base.characterId,sample.worldContext)
+    local headingDelta=cameraCharacterHeadingDelta(
+        cameraOrientation and cameraOrientation.headingDegrees or nil,
+        characterOrientation and characterOrientation.headingDegrees or nil)
+    sample.characterOrientation=characterOrientation
+    sample.cameraOrientation=cameraOrientation
+    sample.cameraCharacterHeadingDeltaDegrees=headingDelta
+
+    if spatialLastValidSample and spatialLastValidSample.characterGeneration==spatialCharacterGeneration then
+        local deltaSeconds = nowClock-spatialLastValidSample.clock
+        local moved = (rawPosition-spatialLastValidSample.position).Magnitude
+        if deltaSeconds <= 2.5 and moved >= LIMITS.teleportDiscontinuityStuds then
+            sample.discontinuity = {
+                deltaSeconds = roundNumber(deltaSeconds,3),
+                distanceStuds = roundNumber(moved,2),
+                likelyTeleport = true,
+                reason = "large-discontinuous-displacement",
+            }
+            spatialStats.teleportsDetected = spatialStats.teleportsDetected + 1
+        end
+    end
+
+    spatialSampleSequence = spatialSampleSequence + 1
+    orientationSampleSequence = orientationSampleSequence + 1
+    sample.snapshotSequence = spatialSampleSequence
+    if sample.characterOrientation then
+        sample.characterOrientation.id="character-orientation-"..tostring(orientationSampleSequence)
+        appendCapped(characterOrientationSamples,LIMITS.maxCharacterOrientationSamples,sample.characterOrientation)
+        spatialStats.characterOrientationCaptured=spatialStats.characterOrientationCaptured+1
+    end
+    if sample.cameraOrientation then
+        sample.cameraOrientation.id="camera-orientation-"..tostring(orientationSampleSequence)
+        sample.cameraOrientation.cameraToCharacterHeadingDeltaDegrees=sample.cameraCharacterHeadingDeltaDegrees
+        appendCapped(cameraOrientationSamples,LIMITS.maxCameraOrientationSamples,sample.cameraOrientation)
+        spatialStats.cameraOrientationCaptured=spatialStats.cameraOrientationCaptured+1
+    end
+    appendCapped(playerPositionHistory,LIMITS.maxPlayerPositionHistory,sample)
+    spatialStats.samplesCaptured = spatialStats.samplesCaptured + 1
+    spatialLastValidSample = {
+        clock = nowClock,
+        position = rawPosition,
+        characterGeneration = spatialCharacterGeneration,
+        sequence = spatialSampleSequence,
+    }
+    return sample,rawPosition
+end
+
+function captureNearbyWorldObjects(position)
+    if not position then return {} end
+    spatialStats.nearbyWorldObjectLookups = spatialStats.nearbyWorldObjectLookups + 1
+    local nearbyParts = nil
+    local ok = pcall(function()
+        if spatialOverlapParams then
+            spatialOverlapParams.FilterDescendantsInstances = player.Character and {player.Character} or {}
+            nearbyParts = workspace:GetPartBoundsInRadius(
+                position,
+                LIMITS.nearbyWorldObjectRadiusStuds,
+                spatialOverlapParams
+            )
+        else
+            nearbyParts = workspace:GetPartBoundsInRadius(position,LIMITS.nearbyWorldObjectRadiusStuds)
+        end
+    end)
+    if not ok or type(nearbyParts)~="table" then
+        spatialStats.nearbyWorldObjectFailures = spatialStats.nearbyWorldObjectFailures + 1
+        nearbyParts = {}
+    end
+
+    local dedupe = {}
+    local result = {}
+    for _,part in ipairs(nearbyParts) do
+        if #result >= LIMITS.maxNearbyWorldObjects then break end
+        if part and part:IsA("BasePart") and part:IsDescendantOf(workspace) then
+            local anchor = part
+            if part.Parent and part.Parent:IsA("Model") then anchor = part.Parent end
+            local path = watchPath(anchor,workspace,"Workspace") or watchPath(part,workspace,"Workspace")
+            if path then
+                path=tostring(path):gsub("%.$","")
+            end
+            local lowPath=path and string.lower(path) or nil
+            local pathDepth=path and select(2,string.gsub(path,"%.",""))+1 or 0
+            if path and lowPath~="workspace" and pathDepth>1 and not dedupe[path] then
+                dedupe[path] = true
+                local low = string.lower(path)
+                local mechanisms = {}
+                local score = 0
+                local hasPrompt = false
+                local hasClick = false
+                if anchor:IsA("Model") or anchor:IsA("Folder") then
+                    local okPrompt,prompt = pcall(function() return anchor:FindFirstChildWhichIsA("ProximityPrompt",true) end)
+                    if okPrompt and prompt then hasPrompt = true end
+                    local okClick,click = pcall(function() return anchor:FindFirstChildWhichIsA("ClickDetector",true) end)
+                    if okClick and click then hasClick = true end
+                elseif anchor:IsA("BasePart") then
+                    hasPrompt = anchor:FindFirstChildOfClass("ProximityPrompt") ~= nil
+                    hasClick = anchor:FindFirstChildOfClass("ClickDetector") ~= nil
+                end
+                if hasPrompt then mechanisms[#mechanisms+1] = "prompt"; score = score + 6 end
+                if hasClick then mechanisms[#mechanisms+1] = "click"; score = score + 5 end
+                if part:FindFirstChildOfClass("TouchTransmitter") then
+                    mechanisms[#mechanisms+1] = "touch"; score = score + 4
+                end
+                if string.find(low,"shop",1,true) or string.find(low,"egg",1,true)
+                    or string.find(low,"reward",1,true) or string.find(low,"quest",1,true)
+                    or string.find(low,"sell",1,true) or string.find(low,"portal",1,true)
+                    or string.find(low,"train",1,true) then
+                    score = score + 2
+                end
+                local distance = (part.Position-position).Magnitude
+                result[#result+1] = {
+                    path = string.sub(path,1,400),
+                    class = anchor.ClassName,
+                    sourceScope = "workspace-active",
+                    distanceStuds = roundNumber(distance,2),
+                    position = watchVec(part.Position),
+                    interactionMechanisms = mechanisms,
+                    actionableScore = score,
+                }
+            end
+        end
+    end
+
+    table.sort(result,function(a,b)
+        if a.actionableScore ~= b.actionableScore then return a.actionableScore > b.actionableScore end
+        if a.distanceStuds ~= b.distanceStuds then return a.distanceStuds < b.distanceStuds end
+        return a.path < b.path
+    end)
+
+    if #result > LIMITS.maxNearbyWorldObjects then
+        while #result > LIMITS.maxNearbyWorldObjects do table.remove(result) end
+    end
+    return result
+end
+
+function registerEventPositionSnapshot(historyItem,phase,sample,windowSeconds)
+    if not historyItem or type(phase)~="string" then return end
+    local snapshot = {
+        interactionSequence = historyItem.sequence,
+        transactionId = historyItem.transactionId,
+        sessionId = sessionId,
+        phase = string.sub(phase,1,60),
+        windowSeconds = windowSeconds,
+        sampled = sample and sample.positionValid == true or false,
+        interpolated = false,
+        sessionElapsedSeconds = sample and sample.sessionElapsedSeconds or historyItem.sessionElapsedSeconds,
+        characterGeneration = sample and sample.characterGeneration or spatialCharacterGeneration,
+        characterId = sample and sample.characterId or nil,
+        worldContext = sample and sample.worldContext or nil,
+        position = sample and sample.position or nil,
+        speedStudsPerSecond = sample and sample.speedStudsPerSecond or nil,
+        directionUnit = sample and sample.directionUnit or nil,
+        characterState = sample and sample.characterState or nil,
+        discontinuity = sample and sample.discontinuity or nil,
+        characterOrientation = sample and sample.characterOrientation or nil,
+        cameraOrientation = sample and sample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees = sample and sample.cameraCharacterHeadingDeltaDegrees or nil,
+        sampleKind = sample and sample.sampleKind or "unavailable",
+        source = sample and sample.reason or "event-linked",
+    }
+    historyItem.eventPositionSnapshots = historyItem.eventPositionSnapshots or {}
+    historyItem.eventPositionSnapshots[#historyItem.eventPositionSnapshots+1] = snapshot
+    appendCapped(eventPositionSnapshots,LIMITS.maxEventPositionSnapshots,snapshot)
+    spatialStats.eventSnapshotsRecorded = spatialStats.eventSnapshotsRecorded + 1
+end
+
+function trackSpatialLocationEvent(historyItem,positionSample,featureCandidate,actionKind,path,nearbyObjects)
+    if not historyItem or not positionSample or not positionSample.positionValid then return end
+    local entry = {
+        interactionSequence = historyItem.sequence,
+        transactionId = historyItem.transactionId,
+        featureCandidate = featureCandidate,
+        actionKind = actionKind,
+        controlType = historyItem.controlType,
+        path = string.sub(tostring(path or ""),1,400),
+        purpose = inferSpatialPurpose(featureCandidate,path,actionKind),
+        sessionElapsedSeconds = historyItem.sessionElapsedSeconds,
+        characterGeneration = positionSample.characterGeneration,
+        position = positionSample.position,
+        nearbyWorldObjects = nearbyObjects,
+        worldContext = positionSample.worldContext,
+        characterOrientation = positionSample.characterOrientation,
+        cameraOrientation = positionSample.cameraOrientation,
+        cameraCharacterHeadingDeltaDegrees = positionSample.cameraCharacterHeadingDeltaDegrees,
+        sampled = true,
+        interpolated = false,
+    }
+    appendCapped(spatialLocationHistory,LIMITS.maxInteractionHistory,entry)
+end
+
 
 local function isCharacterDescendant(obj)
     local current = obj
@@ -1026,7 +6233,8 @@ end
 
 -- v4.0: bounded, read-only metadata. Never inspect script source or private player text.
 local siblingContextCache = nil
-local function enrichEntry(entry, obj)
+local function enrichEntry(entry, obj, profile)
+    local quick = profile and profile.quickTargeted == true
     local function privateKey(k)
         k = string.lower(tostring(k))
         return k:find("password",1,true) or k:find("token",1,true)
@@ -1041,17 +6249,19 @@ local function enrichEntry(entry, obj)
         if t == "string" then return v:sub(1,100):gsub("[%c]"," ") end
         return nil
     end
-    local ok, attrs = pcall(function() return obj:GetAttributes() end)
-    if ok and type(attrs) == "table" then
-        local safe, n = {}, 0
-        for k,v in pairs(attrs) do
-            if n >= 24 then break end
-            if not privateKey(k) then
-                local value = scalar(v)
-                if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+    if not quick then
+        local ok, attrs = pcall(function() return obj:GetAttributes() end)
+        if ok and type(attrs) == "table" then
+            local safe, n = {}, 0
+            for k,v in pairs(attrs) do
+                if n >= 24 then break end
+                if not privateKey(k) then
+                    local value = scalar(v)
+                    if value ~= nil then safe[tostring(k):sub(1,60)] = value; n = n + 1 end
+                end
             end
+            if n > 0 then entry.attributes = safe end
         end
-        if n > 0 then entry.attributes = safe end
     end
     local isQuestCurrency =
         obj.Name == "Tokens"
@@ -1086,15 +6296,7 @@ local function enrichEntry(entry, obj)
         }
     end
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end)
-        local interactable = nil
-        pcall(function() interactable = obj.Interactable end)
-        entry.guiControl = {
-            text = tostring(buttonText):sub(1,100):gsub("[%c]", " "),
-            autoButtonColor = obj.AutoButtonColor,
-            enabled = interactable
-        }
+        entry.guiControl = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.guiControl = {placeholder = tostring(obj.PlaceholderText):sub(1,100)}
     end
@@ -1110,7 +6312,9 @@ local function enrichEntry(entry, obj)
     if obj:IsA("Humanoid") then
         entry.health, entry.maxHealth, entry.walkSpeed = obj.Health, obj.MaxHealth, obj.WalkSpeed
     elseif obj:IsA("Tool") then
-        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,tooltip=obj.ToolTip:sub(1,120)}
+        entry.tool = {requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly,
+            tooltip=obj.ToolTip:sub(1,120):gsub("[%c]"," ")}
     elseif obj:IsA("ProximityPrompt") then
         entry.interaction = {actionText=obj.ActionText:sub(1,120),objectText=obj.ObjectText:sub(1,120),
             enabled=obj.Enabled,holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance}
@@ -1125,10 +6329,10 @@ local function enrichEntry(entry, obj)
     local haystack = lower .. " " .. objectName .. " " .. parentName
     local groups = {
         training={"train","training","gym","strength","agility","durability","rep","machine"},
-        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement"},
+        progression={"level","xp","experience","rebirth","ascension","prestige","unlock","requirement","bubble","capacity","blow"},
         quests={"quest","mission","objective","daily","weekly","task"},
         pets={"pet","companion","egg","hatch","enchant","evolve"},
-        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase"},
+        economy={"shop","store","vendor","price","cost","cash","gold","gem","currency","purchase","sell","upgrade"},
         rewards={"reward","claim","chest","crate","gift","spin","drop"},
         bosses={"boss","raid","elite","arena"},
         travel={"teleport","portal","spawn","vehicle","mount","area"},
@@ -1163,23 +6367,25 @@ local function enrichEntry(entry, obj)
             class = parent.ClassName,
             path = parentPath
         }
-        local ancestors, current = {}, parent
-        for depth = 1, 4 do
-            if not current then break end
-            local fullName = nil
-            pcall(function() fullName = current:GetFullName() end)
-            ancestors[#ancestors + 1] = {
-                name = tostring(current.Name):sub(1,100),
-                class = current.ClassName,
-                path = fullName
-            }
-            current = current.Parent
+        if not quick then
+            local ancestors, current = {}, parent
+            for depth = 1, 4 do
+                if not current then break end
+                local fullName = nil
+                pcall(function() fullName = current:GetFullName() end)
+                ancestors[#ancestors + 1] = {
+                    name = tostring(current.Name):sub(1,100),
+                    class = current.ClassName,
+                    path = fullName
+                }
+                current = current.Parent
+            end
+            if #ancestors > 0 then entry.ancestorContext = ancestors end
         end
-        if #ancestors > 0 then entry.ancestorContext = ancestors end
     end
 
     -- Bounded sibling ValueBase context supports cross-system relationship mapping.
-    if obj:IsA("ValueBase") and parent then
+    if not quick and obj:IsA("ValueBase") and parent then
         local cached = siblingContextCache and siblingContextCache[parent]
         if not cached then
             local related, total = {}, 0
@@ -1256,17 +6462,7 @@ local function enrichEntry(entry, obj)
 
     -- Capture UI control structure only. Never collect text entered into TextBoxes.
     if obj:IsA("GuiButton") then
-        local buttonText = ""
-        pcall(function() buttonText = obj.Text end) -- ImageButton has no Text property.
-        entry.controlMetadata = {
-            controlType = obj.ClassName,
-            text = tostring(buttonText or ""):sub(1,100):gsub("[%c]"," "),
-            visible = obj.Visible,
-            active = obj.Active,
-            selectable = obj.Selectable
-        }
-        local okInteractable, interactable = pcall(function() return obj.Interactable end)
-        if okInteractable then entry.controlMetadata.interactable = interactable end
+        entry.controlMetadata = EVIDENCE_HELPERS.guiControlSnapshot(obj)
     elseif obj:IsA("TextBox") then
         entry.controlMetadata = {
             controlType = "TextBox",
@@ -1319,7 +6515,7 @@ local function observeObject(obj, root, label)
     if observed[obj] then return end
     if label == "Workspace" and isCharacterDescendant(obj) then return end
     local property
-    if obj:IsA("BoolValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
+    if obj:IsA("BoolValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
         property = "Value"
     elseif obj:IsA("ProximityPrompt") then
         property = "Enabled"
@@ -1329,14 +6525,33 @@ local function observeObject(obj, root, label)
     if not property then return end
     local path = watchPath(obj, root, label)
     if not path or path:find("LycolesUniversalInspector", 1, true) then return end
+    if property=="Value" and label=="LocalPlayer"
+        and not stateSnapshotCandidateSeen[obj]
+        and #stateSnapshotCandidates<LIMITS.maxStateSnapshotCandidates then
+        local top=obj
+        while top.Parent and top.Parent~=player do top=top.Parent end
+        local low=path:lower()
+        local primary=top.Name=="Data" or top.Name=="leaderstats"
+        local private=low:find("token",1,true) or low:find("secret",1,true)
+            or low:find("auth",1,true) or low:find("password",1,true)
+            or low:find("userid",1,true)
+        if not primary and not private then
+            stateSnapshotCandidateSeen[obj]=true
+            stateSnapshotCandidates[#stateSnapshotCandidates+1]={object=obj,path=path:sub(1,180)}
+        end
+    end
     observed[obj] = true
     local ok, signal = pcall(function() return obj:GetPropertyChangedSignal(property) end)
     if not ok then return end
     local connection = signal:Connect(function()
         if not alive or not watchEnabled then return end
         local valid, value = pcall(function() return obj[property] end)
-        if not valid or (type(value) ~= "boolean" and type(value) ~= "number") then return end
+        if not valid or (type(value) ~= "boolean" and type(value) ~= "number" and type(value) ~= "string") then return end
         if type(value) == "number" and (value ~= value or math.abs(value) > 1e12) then return end
+        if type(value) == "string" then
+            value = value:gsub("[%c]", " "):sub(1,120)
+            if value == "" then return end
+        end
         local currentPath = watchPath(obj, root, label)
         if not currentPath then return end
         -- Preserve every transition instead of overwriting earlier values.
@@ -1351,60 +6566,1304 @@ end
 
 -- Passive observation only: records controls the user activates normally while enabled.
 -- It never fires controls, invokes remotes, blocks input, or reads private text.
+WORKFLOW_HELPERS = WORKFLOW_HELPERS or {}
+do
 local MENU_FEATURE_HINTS = {
     itemsnewmenu="inventory", petcraftinggui="pets", fusepets="pets",
     rebirthnewmenu="rebirth", questsgui="quests", questsnewmenu="quests",
-    freegiftsgui="rewards", freegiftsnewmenu="rewards",
+    freegiftsgui="rewards", freegiftsnewmenu="rewards", season="rewards",
+    dailyperks="rewards", shadowleviathan="bosses",
     shopnewmenu="shops", bossnewmenu="bosses", teleportnewmenu="travel",
     travelareanewmenu="travel", petsrightbase="pets", petsbutton="pets",
     confirmSellNewMenu="inventory", confirmsellnewmenu="inventory",
     fortunewheelmenugui="rewards", fortuneothermenusgui="rewards",
-    buyspinsmenu="shops"
+    robuxshop="shops", buyspinsmenu="shops",
+    runecrafting="progression", enchants="progression", gemgenie="progression",
+    powerups="progression", boxcondenser="progression", potions="progression"
 }
-local function relevantStateEvidence(feature, changes)
-    if not feature then return nil end
-    if feature == "rebirth" then
-        local rebirthIncreased, strengthReset = false, false
-        for _, change in ipairs(changes) do
-            local key = change.key:lower()
-            if key:find("rebirth",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after > change.before then
-                rebirthIncreased = true
-            end
-            if key:find("strength",1,true) and type(change.before)=="number"
-                and type(change.after)=="number" and change.after < change.before then
-                strengthReset = true
-            end
-        end
-        if rebirthIncreased then
-            return {rule="rebirth-counter-increased", corroboratingStrengthReset=strengthReset,
-                status="client-state-consistent", serverVerified=false}
-        end
-    elseif feature == "training" then
-        for _, change in ipairs(changes) do
-            if change.key:lower():find("strength",1,true)
-                and type(change.before)=="number" and type(change.after)=="number"
-                and change.after > change.before then
-                return {rule="strength-increased", status="client-state-consistent", serverVerified=false}
+local CONTEXT_TOKEN_IGNORES = {
+    button=true, frame=true, main=true, inner=true, top=true, bottom=true,
+    left=true, right=true, close=true, template=true, item=true, items=true,
+    hud=true, players=true, playergui=true, screengui=true, localplayer=true,
+    scrollingframe=true, screen=true, gui=true, label=true, text=true,
+    image=true, content=true, action=true, buttons=true
+}
+local function contextTokensForNames(names)
+    local seen,tokens={},{}
+    if type(names)~="table" then return tokens end
+    for _,name in ipairs(names) do
+        for token in tostring(name):lower():gmatch("[%a%d]+") do
+            if #token>=3 and not CONTEXT_TOKEN_IGNORES[token] and not seen[token] then
+                seen[token]=true
+                tokens[#tokens+1]=token
             end
         end
     end
-    return nil
+    table.sort(tokens)
+    return tokens
 end
+local function contextTokenOverlap(left,right)
+    if type(left)~="table" or type(right)~="table" then return 0 end
+    local seen,score={},0
+    for _,token in ipairs(left) do seen[token]=true end
+    for _,token in ipairs(right) do if seen[token] then score=score+1 end end
+    return score
+end
+
+local function initializeTargetedCaptureRuntime()
+    local TARGETED_REQUEST_SCHEMA_VERSION = "31.0.targeted-inspection-requests.1"
+    local TARGETED_CAPTURE_SCHEMA_VERSION = "31.0.targeted-evidence-session.1"
+    local TARGETED_CAPTURE_EXPORT_KIND = "targeted-evidence-session"
+    local TARGETED_REQUEST_PRESETS = {
+        {
+            id = "all-requests",
+            label = "ALL",
+            requestIds = {
+                "character-entity-observation",
+                "combat-camera-weapon-correlation",
+                "match-objective-state-observation",
+                "loadout-runtime-observation",
+            },
+        },
+        {
+            id = "entity-and-match",
+            label = "ENTITY+MATCH",
+            requestIds = {
+                "character-entity-observation",
+                "match-objective-state-observation",
+            },
+        },
+        {
+            id = "combat-and-loadout",
+            label = "COMBAT+LOADOUT",
+            requestIds = {
+                "combat-camera-weapon-correlation",
+                "loadout-runtime-observation",
+            },
+        },
+    }
+
+    local targetedRequestCatalog = {}
+    local targetedRequestOrder = {}
+    local targetedRequestPresetIndex = 1
+    local targetedSelectedRequestIds = {}
+    local targetedCaptureSession = nil
+    local targetedCaptureLastSession = nil
+    local targetedCaptureLastTick = 0
+    local uiRefreshCallback = nil
+
+    local lifecycleState = {
+        phase = "initializing",
+        reason = "startup",
+        pausedByUser = false,
+        lastTransitionAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        lastError = nil,
+        restartCount = 0,
+        exportCount = 0,
+        sessionCount = 0,
+        lastSessionId = nil,
+    }
+
+    local function setLifecycle(phase, reason, err)
+        lifecycleState.phase = phase or lifecycleState.phase
+        lifecycleState.reason = tostring(reason or lifecycleState.reason or "none"):sub(1,120)
+        lifecycleState.lastTransitionAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        lifecycleState.lastError = err and sanitizeDiagnosticText(err, 180) or nil
+    end
+
+
+    local function utcNowIso()
+        return os.date("!%Y-%m-%dT%H:%M:%SZ")
+    end
+
+    local function cloneValue(value, depth)
+        local t = type(value)
+        if t ~= "table" then return value end
+        if depth and depth > 6 then return {} end
+        local out = {}
+        for k, v in pairs(value) do
+            out[k] = cloneValue(v, (depth or 0) + 1)
+        end
+        return out
+    end
+
+    local function buildDefaultTargetedRequestPayload()
+    return {
+        schemaVersion = TARGETED_REQUEST_SCHEMA_VERSION,
+        generatedAt = utcNowIso(),
+        placeId = game.PlaceId,
+        requests = {
+            {
+                requestId = "character-entity-observation",
+                featureIds = {"esp_player_overlay"},
+                capabilityIds = {
+                    "esp_player_overlay.basic_entity_boxes",
+                    "esp_player_overlay.team_and_health_enhancements",
+                },
+                requiredEvidence = {"player_entity_set", "team_relationship_signal", "character_spatial_positions", "health_signal_count"},
+                services = {"Players", "Teams", "Workspace"},
+                classes = {"Player", "Model", "Humanoid", "HumanoidRootPart"},
+                properties = {"Health", "MaxHealth", "Position", "Team", "TeamColor"},
+                events = {"PlayerAdded", "PlayerRemoving", "CharacterAdded", "CharacterRemoving"},
+                conditions = {"client-visible-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.5, maxSamples = LIMITS.maxTargetedEntitySnapshots},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.character-entities",
+                completionCriteria = {"non-local-player-entity-observed", "team-signal-observed", "health-and-position-samples-captured"},
+                failureConditions = {"no-character-entities", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "combat-camera-weapon-correlation",
+                featureIds = {"combat_recoil_assist", "combat_trigger_assist"},
+                capabilityIds = {
+                    "combat_recoil_assist.recoil_camera_compensation",
+                    "combat_trigger_assist.crosshair_fire_condition",
+                },
+                requiredEvidence = {"camera_state_samples", "camera_movement_correlation", "weapon_state_signal", "weapon_equipped_signal", "mouse_primary_input"},
+                services = {"Workspace", "UserInputService", "Players"},
+                classes = {"Camera", "Tool", "Humanoid", "Backpack"},
+                properties = {"CFrame", "LookVector", "MoveDirection", "Tool.Name"},
+                events = {"InputBegan", "InputEnded", "Tool.Equipped", "Tool.Unequipped"},
+                conditions = {"no-remote-invocation", "no-synthetic-fire-events", "bounded-correlation"},
+                sampling = {intervalSeconds = 0.2, maxSamples = LIMITS.maxTargetedCameraSamples},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.combat-camera",
+                completionCriteria = {"camera-samples-captured", "primary-input-observed", "equipped-tool-state-observed", "temporal-correlation-sampled"},
+                failureConditions = {"camera-unavailable", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "match-objective-state-observation",
+                featureIds = {"objective_status_dashboard"},
+                capabilityIds = {
+                    "objective_status_dashboard.match_state_signals",
+                },
+                requiredEvidence = {"objective_hud_signals", "state_change_signals"},
+                services = {"Players", "StarterGui"},
+                classes = {"ScreenGui", "TextLabel", "TextButton"},
+                properties = {"Text", "Visible", "Enabled"},
+                events = {"PropertyChangedSignal.Text", "PropertyChangedSignal.Visible"},
+                conditions = {"gui-state-observation-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.6, maxSamples = LIMITS.maxTargetedMatchStateSamples},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.match-state",
+                completionCriteria = {"objective-gui-signals-captured", "at-least-one-transition-observed"},
+                failureConditions = {"no-objective-gui-signals", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+            {
+                requestId = "loadout-runtime-observation",
+                featureIds = {"loadout_information_suite"},
+                capabilityIds = {
+                    "loadout_information_suite.loadout_gui_reader",
+                    "loadout_information_suite.runtime_weapon_state",
+                },
+                requiredEvidence = {"weapon_equipped_signal", "hud_weapon_indicators", "loadout_gui_structures"},
+                services = {"Players", "ReplicatedStorage"},
+                classes = {"Backpack", "Tool", "ScreenGui", "TextLabel"},
+                properties = {"Tool.Name", "Tool.Attributes", "Text", "Visible"},
+                events = {"Backpack.ChildAdded", "Backpack.ChildRemoved", "Tool.Equipped", "Tool.Unequipped"},
+                conditions = {"client-visible-loadout-only", "non-authoritative"},
+                sampling = {intervalSeconds = 0.45, maxSamples = LIMITS.maxTargetedLoadoutSnapshots},
+                maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds,
+                expectedOutputSchema = "31.0.targeted-evidence-session.1.loadout-runtime",
+                completionCriteria = {"backpack-or-equipped-tools-observed", "hud-weapon-label-observed"},
+                failureConditions = {"no-tool-evidence", "session-duration-exceeded"},
+                provenance = {source = "client-observation", authority = "non-authoritative"},
+            },
+        }
+    }
+end
+
+local function normalizeTargetedRequest(raw, index)
+    if type(raw) ~= "table" then return nil end
+    local requestId = tostring(raw.requestId or ("request-" .. tostring(index))):gsub("[%s]+", "-"):gsub("[^%w%-%_]+", "")
+    if requestId == "" then requestId = "request-" .. tostring(index) end
+    local sampling = type(raw.sampling) == "table" and raw.sampling or {}
+    local interval = type(sampling.intervalSeconds) == "number" and sampling.intervalSeconds or LIMITS.targetedCaptureTickSeconds
+    local maxSamples = type(sampling.maxSamples) == "number" and sampling.maxSamples or 200
+    local duration = type(raw.maxDurationSeconds) == "number" and raw.maxDurationSeconds or LIMITS.targetedCaptureDefaultDurationSeconds
+    return {
+        requestId = requestId,
+        featureIds = type(raw.featureIds) == "table" and raw.featureIds or {},
+        capabilityIds = type(raw.capabilityIds) == "table" and raw.capabilityIds or {},
+        requiredEvidence = type(raw.requiredEvidence) == "table" and raw.requiredEvidence or {},
+        services = type(raw.services) == "table" and raw.services or {},
+        classes = type(raw.classes) == "table" and raw.classes or {},
+        properties = type(raw.properties) == "table" and raw.properties or {},
+        events = type(raw.events) == "table" and raw.events or {},
+        conditions = type(raw.conditions) == "table" and raw.conditions or {},
+        sampling = {
+            intervalSeconds = clampNumber(interval, 0.1, 3.0),
+            maxSamples = math.floor(clampNumber(maxSamples, 20, LIMITS.maxTargetedCameraSamples)),
+        },
+        maxDurationSeconds = clampNumber(duration, 15, 1200),
+        expectedOutputSchema = tostring(raw.expectedOutputSchema or "31.0.targeted-evidence-session.1.unknown"):sub(1,120),
+        completionCriteria = type(raw.completionCriteria) == "table" and raw.completionCriteria or {},
+        failureConditions = type(raw.failureConditions) == "table" and raw.failureConditions or {},
+        provenance = type(raw.provenance) == "table" and raw.provenance or {source = "client-observation", authority = "non-authoritative"},
+    }
+end
+
+local function loadTargetedCatalog(payload)
+    local requests = type(payload) == "table" and payload.requests or nil
+    if type(requests) ~= "table" then return false, "requests missing" end
+    local catalog, order = {}, {}
+    for i, raw in ipairs(requests) do
+        if #order >= LIMITS.maxTargetedRequests then break end
+        local request = normalizeTargetedRequest(raw, i)
+        if request and not catalog[request.requestId] then
+            catalog[request.requestId] = request
+            order[#order + 1] = request.requestId
+        end
+    end
+    if #order == 0 then return false, "no valid request definitions" end
+    targetedRequestCatalog = catalog
+    targetedRequestOrder = order
+    return true, nil
+end
+
+local function applyTargetedPreset(index)
+    if #TARGETED_REQUEST_PRESETS == 0 then return end
+    if index < 1 then index = #TARGETED_REQUEST_PRESETS end
+    if index > #TARGETED_REQUEST_PRESETS then index = 1 end
+    targetedRequestPresetIndex = index
+    targetedSelectedRequestIds = {}
+    local preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex]
+    for _, requestId in ipairs(preset.requestIds or {}) do
+        if targetedRequestCatalog[requestId] then
+            targetedSelectedRequestIds[requestId] = true
+        end
+    end
+    if next(targetedSelectedRequestIds) == nil then
+        for _, requestId in ipairs(targetedRequestOrder) do
+            targetedSelectedRequestIds[requestId] = true
+        end
+    end
+end
+
+local function selectedRequestIdsArray()
+    local list = {}
+    for _, requestId in ipairs(targetedRequestOrder) do
+        if targetedSelectedRequestIds[requestId] then
+            list[#list + 1] = requestId
+        end
+    end
+    return list
+end
+
+local function ensureTargetedCatalogLoaded()
+    if #targetedRequestOrder > 0 then return true end
+    local ok, err = loadTargetedCatalog(buildDefaultTargetedRequestPayload())
+    if not ok then return false, err end
+    applyTargetedPreset(targetedRequestPresetIndex)
+    return true
+end
+
+local function parseTargetedPayload(payload)
+    if type(payload) == "string" then
+        local ok, decoded = pcall(function() return HttpService:JSONDecode(payload) end)
+        if not ok or type(decoded) ~= "table" then return nil, "invalid JSON" end
+        return decoded, nil
+    end
+    if type(payload) ~= "table" then return nil, "request payload must be a table or JSON string" end
+    return payload, nil
+end
+
+local function appendTimelineEvent(session, category, event)
+    if type(session) ~= "table" or type(event) ~= "table" then return end
+    event.category = category
+    appendCapped(session.samples.timelineEvents, LIMITS.maxTargetedCameraSamples + LIMITS.maxTargetedLoadoutSnapshots, event)
+end
+
+local function captureGuiSignals(tokenSet, maxSignals)
+    local signals = {}
+    local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return signals end
+    local descendants = playerGui:GetDescendants()
+    local scanned = 0
+    for _, obj in ipairs(descendants) do
+        scanned = scanned + 1
+        if scanned > 700 then break end
+        local isText = obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")
+        if isText then
+            local ok, text = pcall(function() return obj.Text end)
+            if ok and type(text) == "string" and #text > 0 then
+                local lower = (obj.Name .. " " .. text):lower()
+                local matched = false
+                for _, token in ipairs(tokenSet) do
+                    if lower:find(token, 1, true) then matched = true break end
+                end
+                if matched then
+                    local path = watchPath(obj, playerGui, "LocalPlayer.PlayerGui")
+                    if path then
+                        signals[#signals + 1] = {path = path:sub(1,320), text = text:sub(1,120)}
+                        if #signals >= maxSignals then break end
+                    end
+                end
+            end
+        end
+    end
+    return signals
+end
+
+local function snapshotLoadout()
+    local equipped = WORKFLOW_HELPERS.equippedToolSnapshot()
+    local backpackTools = {}
+    local backpack = player and player:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then
+                backpackTools[#backpackTools + 1] = child.Name:sub(1,60)
+            end
+        end
+        table.sort(backpackTools)
+    end
+    local hud = captureGuiSignals({"weapon", "ammo", "loadout", "mag", "clip"}, 18)
+    local hudPaths = {}
+    for _, item in ipairs(hud) do hudPaths[#hudPaths + 1] = item.path end
+    return {
+        equippedTools = equipped.names,
+        backpackTools = backpackTools,
+        hudWeaponIndicators = hud,
+        hudWeaponIndicatorPaths = hudPaths,
+        hasCombatTool = equipped.hasCombatTool,
+        observedAt = utcNowIso(),
+        sessionElapsedSeconds = sessionElapsed(os.clock()),
+    }
+end
+
+local function snapshotCharacterEntities(session)
+    local samples, events = {}, {}
+    for _, other in ipairs(Players:GetPlayers()) do
+        local character = other.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid") or nil
+        local root = character and character:FindFirstChild("HumanoidRootPart") or nil
+        local teamName = other.Team and other.Team.Name or nil
+        local entry = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(os.clock()),
+            player = other.Name,
+            userId = other.UserId,
+            isLocalPlayer = other == player,
+            team = teamName,
+            hasCharacter = character ~= nil,
+            hasHumanoid = humanoid ~= nil,
+            hasRootPart = root ~= nil,
+            health = humanoid and roundNumber(humanoid.Health or 0, 2) or nil,
+            maxHealth = humanoid and roundNumber(humanoid.MaxHealth or 0, 2) or nil,
+            position = root and watchVec(root.Position) or nil,
+        }
+        samples[#samples + 1] = entry
+        local characterToken = "none"
+        if character then
+            local okDebug, debugId = pcall(function() return character:GetDebugId() end)
+            characterToken = okDebug and tostring(debugId) or tostring(character)
+        end
+        local key = tostring(other.UserId) .. "|" .. tostring(teamName or "none") .. "|" .. characterToken
+        if not session.stats.entitySeen[key] then
+            session.stats.entitySeen[key] = true
+            events[#events + 1] = {
+                observedAt = entry.observedAt,
+                player = entry.player,
+                eventType = entry.hasCharacter and "character-present" or "character-missing",
+                team = teamName,
+            }
+        end
+    end
+    return samples, events
+end
+
+local function summarizeTargetedProgress(session)
+    if type(session) ~= "table" then
+        return {completedRequests = 0, totalRequests = 0, unresolvedRequests = 0}
+    end
+    local completed, unresolved, total = 0, 0, 0
+    for _, requestId in ipairs(session.requestIds) do
+        total = total + 1
+        local progress = session.requestProgress[requestId]
+        if progress and progress.status == "satisfied" then
+            completed = completed + 1
+        else
+            unresolved = unresolved + 1
+        end
+    end
+    return {completedRequests = completed, totalRequests = total, unresolvedRequests = unresolved}
+end
+
+local function updateRequestProgress(session)
+    if type(session) ~= "table" then return end
+    local metrics = {
+        entitySnapshots = #session.samples.characterEntities,
+        entityEvents = #session.samples.entityEvents,
+        cameraSamples = #session.samples.cameraSamples,
+        cameraCorrelations = #session.samples.cameraCorrelations,
+        inputSamples = #session.samples.inputSamples,
+        weaponSnapshots = #session.samples.weaponSnapshots,
+        loadoutSnapshots = #session.samples.loadoutSnapshots,
+        matchStateSamples = #session.samples.matchStateSamples,
+        transitions = #session.samples.transitions,
+        nonLocalEntities = session.stats.nonLocalEntitiesSeen,
+        teamSignals = session.stats.teamSignalsSeen,
+        objectiveSignals = session.stats.objectiveSignalsSeen,
+        hudWeaponSignals = session.stats.hudWeaponSignals,
+        primaryInputs = session.stats.primaryInputsSeen,
+        loadoutChanges = session.stats.loadoutChanges,
+    }
+    for _, requestId in ipairs(session.requestIds) do
+        local progress = session.requestProgress[requestId]
+        if progress then
+            local satisfied = {}
+            local missing = {}
+            local function mark(name, ok)
+                if ok then satisfied[#satisfied + 1] = name else missing[#missing + 1] = name end
+            end
+            if requestId == "character-entity-observation" then
+                mark("player_entity_set", metrics.nonLocalEntities > 0)
+                mark("team_relationship_signal", metrics.teamSignals > 0)
+                mark("character_spatial_positions", metrics.entitySnapshots >= 2)
+                mark("health_signal_count", metrics.entitySnapshots >= 2)
+            elseif requestId == "combat-camera-weapon-correlation" then
+                mark("camera_state_samples", metrics.cameraSamples >= 4)
+                mark("camera_movement_correlation", metrics.cameraCorrelations > 0)
+                mark("weapon_equipped_signal", metrics.weaponSnapshots > 0 or metrics.loadoutSnapshots > 0)
+                mark("weapon_state_signal", metrics.loadoutChanges > 0)
+                mark("mouse_primary_input", metrics.primaryInputs > 0)
+            elseif requestId == "match-objective-state-observation" then
+                mark("objective_hud_signals", metrics.objectiveSignals > 0 and metrics.matchStateSamples > 0)
+                mark("state_change_signals", metrics.transitions > 0)
+            elseif requestId == "loadout-runtime-observation" then
+                mark("weapon_equipped_signal", metrics.weaponSnapshots > 0)
+                mark("hud_weapon_indicators", metrics.hudWeaponSignals > 0)
+                mark("loadout_gui_structures", metrics.loadoutSnapshots > 0)
+            end
+            progress.observedCounts = cloneValue(metrics)
+            progress.satisfiedEvidence = satisfied
+            progress.missingEvidence = missing
+            progress.lastUpdatedAt = utcNowIso()
+            progress.status = (#missing == 0) and "satisfied" or "collecting"
+            appendCapped(session.samples.progressLogs, LIMITS.maxTargetedProgressLogs, {
+                observedAt = progress.lastUpdatedAt,
+                requestId = requestId,
+                status = progress.status,
+                missingEvidence = cloneValue(missing),
+            })
+        end
+    end
+end
+
+WORKFLOW_HELPERS.getDefaultTargetedInspectionRequests = function()
+    return cloneValue(buildDefaultTargetedRequestPayload())
+end
+
+WORKFLOW_HELPERS.loadTargetedInspectionRequests = function(payload)
+    local decoded, decodeErr = parseTargetedPayload(payload)
+    if not decoded then return false, decodeErr end
+    local ok, err = loadTargetedCatalog(decoded)
+    if not ok then return false, err end
+    applyTargetedPreset(targetedRequestPresetIndex)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("requests-loaded") end
+    return true, {
+        requestCount = #targetedRequestOrder,
+        selectedRequestIds = selectedRequestIdsArray(),
+        schemaVersion = TARGETED_REQUEST_SCHEMA_VERSION,
+    }
+end
+
+WORKFLOW_HELPERS.cycleTargetedPreset = function()
+    if not ensureTargetedCatalogLoaded() then return nil end
+    applyTargetedPreset(targetedRequestPresetIndex + 1)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("preset-cycled") end
+    return {
+        preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex].label,
+        selectedRequestIds = selectedRequestIdsArray(),
+    }
+end
+
+WORKFLOW_HELPERS.startTargetedCaptureSession = function(options)
+    local force = type(options) == "table" and options.force == true
+    if lifecycleState.pausedByUser and not force then
+        setLifecycle("paused", "paused-by-user")
+        return false, "targeted capture paused by user"
+    end
+    local ready, err = ensureTargetedCatalogLoaded()
+    if not ready then
+        setLifecycle("waiting-for-readiness", "request-catalog-unavailable", err)
+        return false, err
+    end
+    if targetedCaptureSession and targetedCaptureSession.active then
+        return false, "targeted session already active"
+    end
+    local selected = {}
+    local byId = {}
+    local requestedIds = type(options) == "table" and options.requestIds or nil
+    if type(requestedIds) == "table" then
+        for _, requestId in ipairs(requestedIds) do
+            if targetedRequestCatalog[requestId] and not byId[requestId] then
+                byId[requestId] = true
+                selected[#selected + 1] = requestId
+            end
+        end
+    else
+        selected = selectedRequestIdsArray()
+    end
+    if #selected == 0 then
+        setLifecycle("waiting-for-readiness", "no-targeted-requests")
+        return false, "no targeted requests selected"
+    end
+
+    local maxDurationSeconds = LIMITS.targetedCaptureDefaultDurationSeconds
+    local requests = {}
+    local requestProgress = {}
+    for _, requestId in ipairs(selected) do
+        local request = cloneValue(targetedRequestCatalog[requestId])
+        requests[requestId] = request
+        if request.maxDurationSeconds and request.maxDurationSeconds > maxDurationSeconds then
+            maxDurationSeconds = request.maxDurationSeconds
+        end
+        requestProgress[requestId] = {
+            requestId = requestId,
+            status = "collecting",
+            satisfiedEvidence = {},
+            missingEvidence = cloneValue(request.requiredEvidence),
+            observedCounts = {},
+            completionCriteria = cloneValue(request.completionCriteria),
+            failureConditions = cloneValue(request.failureConditions),
+            lastUpdatedAt = utcNowIso(),
+            lastSampleClock = 0,
+        }
+    end
+
+    targetedCaptureSession = {
+        schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+        exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+        sessionId = "targeted-" .. HttpService:GenerateGUID(false),
+        placeId = game.PlaceId,
+        gameId = game.GameId,
+        gameName = lastGameName or game.Name,
+        baselineScanId = pendingManifest and pendingManifest.scanId or nil,
+        startedAt = utcNowIso(),
+        startedClock = os.clock(),
+        stoppedAt = nil,
+        stopReason = nil,
+        active = true,
+        requestIds = cloneValue(selected),
+        requests = requests,
+        requestProgress = requestProgress,
+        maxDurationSeconds = maxDurationSeconds,
+        limits = {
+            tickSeconds = LIMITS.targetedCaptureTickSeconds,
+            maxEntitySnapshots = LIMITS.maxTargetedEntitySnapshots,
+            maxCameraSamples = LIMITS.maxTargetedCameraSamples,
+            maxMatchStateSamples = LIMITS.maxTargetedMatchStateSamples,
+        },
+        exportState = {
+            lastManifestScanId = nil,
+            lastLiveBaselineScanId = nil,
+            duplicateExportsSuppressed = 0,
+            exportCount = 0,
+        },
+        samples = {
+            characterEntities = {},
+            entityEvents = {},
+            cameraSamples = {},
+            cameraCorrelations = {},
+            inputSamples = {},
+            weaponSnapshots = {},
+            loadoutSnapshots = {},
+            matchStateSamples = {},
+            transitions = {},
+            progressLogs = {},
+            errors = {},
+            timelineEvents = {},
+        },
+        stats = {
+            ticks = 0,
+            nonLocalEntitiesSeen = 0,
+            teamSignalsSeen = 0,
+            objectiveSignalsSeen = 0,
+            hudWeaponSignals = 0,
+            loadoutChanges = 0,
+            primaryInputsSeen = 0,
+            lastPrimaryInputCount = observerStats.clickInputsProcessed or 0,
+            lastLoadoutSignature = nil,
+            lastMatchSignals = {},
+            entitySeen = {},
+        },
+        collectionLimitations = {
+            "Client-visible observations only",
+            "No server-authoritative state access",
+            "No remote invocation or synthetic gameplay outcomes",
+        },
+    }
+    targetedCaptureLastTick = 0
+    lifecycleState.pausedByUser = false
+    lifecycleState.sessionCount = lifecycleState.sessionCount + 1
+    lifecycleState.lastSessionId = targetedCaptureSession.sessionId
+    setLifecycle("capturing", force and "forced-start" or "session-started")
+    updateRequestProgress(targetedCaptureSession)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-started") end
+    return true, targetedCaptureSession.sessionId
+end
+
+WORKFLOW_HELPERS.stopTargetedCaptureSession = function(reason)
+    if not targetedCaptureSession or not targetedCaptureSession.active then
+        return false, "no active targeted session"
+    end
+    local stopReason = tostring(reason or "operator-stop"):sub(1,80)
+    targetedCaptureSession.active = false
+    targetedCaptureSession.stoppedAt = utcNowIso()
+    targetedCaptureSession.stopReason = stopReason
+    updateRequestProgress(targetedCaptureSession)
+    targetedCaptureLastSession = targetedCaptureSession
+    if stopReason == "operator-pause" then
+        lifecycleState.pausedByUser = true
+        setLifecycle("paused", stopReason)
+    elseif stopReason == "duration-limit" then
+        setLifecycle("exporting", stopReason)
+    else
+        setLifecycle("waiting-for-readiness", stopReason)
+    end
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-stopped") end
+    return true, targetedCaptureSession.sessionId
+end
+
+local function targetedCaptureReady()
+    if not alive then return false, "inspector-closed" end
+    if not interactionObserveEnabled then return false, "interaction-observer-disabled" end
+    if not observerStats.inputBindingReady then return false, "input-observation-not-ready" end
+    if not observerStats.sweepCompleted then return false, "interaction-sweep-incomplete" end
+    return true, "ready"
+end
+
+WORKFLOW_HELPERS.pauseTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = true
+    if targetedCaptureSession and targetedCaptureSession.active then
+        local ok, err = WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-pause")
+        if not ok then return false, err end
+    else
+        setLifecycle("paused", "operator-pause")
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-paused") end
+    end
+    return true, "paused"
+end
+
+WORKFLOW_HELPERS.resumeTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = false
+    local ready, reason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", reason)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resume-waiting") end
+        return false, reason
+    end
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if not ok then
+        setLifecycle("waiting-for-readiness", "resume-failed", result)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resume-failed") end
+        return false, result
+    end
+    setLifecycle("capturing", "operator-resume")
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-resumed") end
+    return true, result
+end
+
+WORKFLOW_HELPERS.restartTargetedCaptureSession = function()
+    lifecycleState.pausedByUser = false
+    lifecycleState.restartCount = lifecycleState.restartCount + 1
+    if targetedCaptureSession and targetedCaptureSession.active then
+        WORKFLOW_HELPERS.stopTargetedCaptureSession("operator-restart")
+    end
+    local ready, reason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", reason)
+        if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-restart-waiting") end
+        return false, reason
+    end
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if not ok then
+        setLifecycle("waiting-for-readiness", "restart-failed", result)
+        return false, result
+    end
+    setLifecycle("capturing", "operator-restart")
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("session-restarted") end
+    return true, result
+end
+
+WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle = function(reason)
+    if lifecycleState.pausedByUser then
+        setLifecycle("paused", "paused-by-user")
+        return false, "paused"
+    end
+
+    if targetedCaptureSession and targetedCaptureSession.active then
+        if lifecycleState.phase ~= "capturing" then setLifecycle("capturing", reason or "active") end
+        return true, "capturing"
+    end
+
+    local ready, readinessReason = targetedCaptureReady()
+    if not ready then
+        setLifecycle("waiting-for-readiness", readinessReason)
+        return false, readinessReason
+    end
+
+    if lifecycleState.phase == "exporting" then
+        setLifecycle("continuing", "interval-rollover")
+    else
+        setLifecycle("initializing", reason or "auto-start")
+    end
+
+    local ok, result = WORKFLOW_HELPERS.startTargetedCaptureSession({force=true})
+    if ok then
+        setLifecycle("capturing", reason or "auto-started")
+        return true, result
+    end
+    setLifecycle("waiting-for-readiness", "start-failed", result)
+    return false, result
+end
+
+
+local function captureTargetedTickForRequest(session, requestId, request, nowClock)
+    local progress = session.requestProgress[requestId]
+    if not progress then return end
+    if nowClock - (progress.lastSampleClock or 0) < (request.sampling and request.sampling.intervalSeconds or LIMITS.targetedCaptureTickSeconds) then
+        return
+    end
+    progress.lastSampleClock = nowClock
+
+    if requestId == "character-entity-observation" then
+        local entities, events = snapshotCharacterEntities(session)
+        for _, item in ipairs(entities) do
+            appendCapped(session.samples.characterEntities, LIMITS.maxTargetedEntitySnapshots, item)
+            appendTimelineEvent(session, "character-entity", cloneValue(item))
+            if item.isLocalPlayer == false then
+                session.stats.nonLocalEntitiesSeen = math.max(session.stats.nonLocalEntitiesSeen, 1)
+            end
+            if item.team then
+                session.stats.teamSignalsSeen = session.stats.teamSignalsSeen + 1
+            end
+        end
+        for _, event in ipairs(events) do
+            appendCapped(session.samples.entityEvents, LIMITS.maxTargetedEntityEvents, event)
+            appendTimelineEvent(session, "entity-event", cloneValue(event))
+        end
+        return
+    end
+
+    if requestId == "combat-camera-weapon-correlation" then
+        local camera = workspace.CurrentCamera
+        local previousPrimary = session.stats.lastPrimaryInputCount
+        local currentPrimary = observerStats.clickInputsProcessed or observerStats.clickInputsObserved or 0
+        local primaryDelta = math.max(0, currentPrimary - previousPrimary)
+        session.stats.lastPrimaryInputCount = currentPrimary
+        session.stats.primaryInputsSeen = math.max(session.stats.primaryInputsSeen, currentPrimary)
+
+        if camera then
+            local look = camera.CFrame.LookVector
+            local sample = {
+                observedAt = utcNowIso(),
+                sessionElapsedSeconds = sessionElapsed(nowClock),
+                position = watchVec(camera.CFrame.Position),
+                lookVector = watchVec(look),
+                fieldOfView = roundNumber(camera.FieldOfView or 0, 3),
+                mousePrimaryInputs = currentPrimary,
+            }
+            appendCapped(session.samples.cameraSamples, LIMITS.maxTargetedCameraSamples, sample)
+            appendTimelineEvent(session, "camera-sample", cloneValue(sample))
+
+            local last = session.stats.lastCameraLook
+            if last and primaryDelta > 0 then
+                local delta = math.sqrt((look.X - last.X)^2 + (look.Y - last.Y)^2 + (look.Z - last.Z)^2)
+                local correlation = {
+                    observedAt = sample.observedAt,
+                    sessionElapsedSeconds = sample.sessionElapsedSeconds,
+                    mousePrimaryInputDelta = primaryDelta,
+                    lookDeltaMagnitude = roundNumber(delta, 6),
+                    correlated = delta > 0.01,
+                }
+                appendCapped(session.samples.cameraCorrelations, LIMITS.maxTargetedCameraCorrelations, correlation)
+                appendTimelineEvent(session, "camera-correlation", cloneValue(correlation))
+            end
+            session.stats.lastCameraLook = {X = look.X, Y = look.Y, Z = look.Z}
+        end
+
+        local inputSample = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(nowClock),
+            mousePrimaryInputs = currentPrimary,
+            mouseSecondaryInputs = observerStats.clickInputsGameProcessed or 0,
+            inputGesturesObserved = #inputGestureObservations,
+        }
+        appendCapped(session.samples.inputSamples, LIMITS.maxTargetedInputSamples, inputSample)
+
+        local loadout = snapshotLoadout()
+        appendCapped(session.samples.weaponSnapshots, LIMITS.maxTargetedWeaponSnapshots, {
+            observedAt = loadout.observedAt,
+            equippedTools = cloneValue(loadout.equippedTools),
+            hasCombatTool = loadout.hasCombatTool,
+        })
+        session.stats.hudWeaponSignals = session.stats.hudWeaponSignals + #loadout.hudWeaponIndicators
+        return
+    end
+
+    if requestId == "match-objective-state-observation" then
+        local objectiveSignals = captureGuiSignals({"score", "timer", "objective", "round", "capture", "team"}, 28)
+        local signalMap = {}
+        for _, item in ipairs(objectiveSignals) do signalMap[item.path] = item.text end
+        local sample = {
+            observedAt = utcNowIso(),
+            sessionElapsedSeconds = sessionElapsed(nowClock),
+            signalCount = #objectiveSignals,
+            signals = signalMap,
+        }
+        appendCapped(session.samples.matchStateSamples, LIMITS.maxTargetedMatchStateSamples, sample)
+        appendTimelineEvent(session, "match-state", {observedAt = sample.observedAt, signalCount = sample.signalCount})
+        session.stats.objectiveSignalsSeen = session.stats.objectiveSignalsSeen + #objectiveSignals
+
+        local previous = session.stats.lastMatchSignals
+        for path, text in pairs(signalMap) do
+            local before = previous[path]
+            if before and before ~= text then
+                local transition = {
+                    observedAt = sample.observedAt,
+                    path = path,
+                    before = tostring(before):sub(1,120),
+                    after = tostring(text):sub(1,120),
+                }
+                appendCapped(session.samples.transitions, LIMITS.maxTargetedTransitions, transition)
+                appendTimelineEvent(session, "match-transition", cloneValue(transition))
+            end
+            previous[path] = text
+        end
+        session.stats.lastMatchSignals = previous
+        return
+    end
+
+    if requestId == "loadout-runtime-observation" then
+        local loadout = snapshotLoadout()
+        appendCapped(session.samples.loadoutSnapshots, LIMITS.maxTargetedLoadoutSnapshots, loadout)
+        appendTimelineEvent(session, "loadout-snapshot", {
+            observedAt = loadout.observedAt,
+            equippedCount = #loadout.equippedTools,
+            backpackCount = #loadout.backpackTools,
+            hudSignals = #loadout.hudWeaponIndicators,
+        })
+
+        local signature = table.concat(loadout.equippedTools, "|") .. "::" .. table.concat(loadout.backpackTools, "|")
+        if session.stats.lastLoadoutSignature and session.stats.lastLoadoutSignature ~= signature then
+            session.stats.loadoutChanges = session.stats.loadoutChanges + 1
+        end
+        session.stats.lastLoadoutSignature = signature
+        session.stats.hudWeaponSignals = session.stats.hudWeaponSignals + #loadout.hudWeaponIndicators
+        return
+    end
+end
+
+WORKFLOW_HELPERS.captureTargetedObservationTick = function(reason)
+    local session = targetedCaptureSession
+    if not session or not session.active then return end
+    local nowClock = os.clock()
+    if nowClock - targetedCaptureLastTick < LIMITS.targetedCaptureTickSeconds then return end
+    targetedCaptureLastTick = nowClock
+
+    if nowClock - session.startedClock > session.maxDurationSeconds then
+        WORKFLOW_HELPERS.stopTargetedCaptureSession("duration-limit")
+        return
+    end
+
+    session.stats.ticks = session.stats.ticks + 1
+    for _, requestId in ipairs(session.requestIds) do
+        local request = session.requests[requestId]
+        if request then
+            local ok, err = pcall(function()
+                captureTargetedTickForRequest(session, requestId, request, nowClock)
+            end)
+            if not ok then
+                appendCapped(session.samples.errors, LIMITS.maxTargetedSessionErrors, {
+                    observedAt = utcNowIso(),
+                    requestId = requestId,
+                    message = sanitizeDiagnosticText(err, 180),
+                    reason = tostring(reason or "background"):sub(1,80),
+                })
+            end
+        end
+    end
+
+    updateRequestProgress(session)
+    if type(uiRefreshCallback)=="function" then uiRefreshCallback("tick") end
+end
+
+local function targetedCaptureSummary(includeSamples)
+    local session = targetedCaptureSession or targetedCaptureLastSession
+    if not session then
+        return {
+            schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+            exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+            available = false,
+            reason = "no-targeted-session",
+            requestIds = selectedRequestIdsArray(),
+        }
+    end
+    local progress = summarizeTargetedProgress(session)
+    local payload = {
+        schemaVersion = TARGETED_CAPTURE_SCHEMA_VERSION,
+        exportKind = TARGETED_CAPTURE_EXPORT_KIND,
+        sessionId = session.sessionId,
+        placeId = session.placeId,
+        gameId = session.gameId,
+        gameName = session.gameName,
+        baselineScanId = session.baselineScanId,
+        active = session.active,
+        startedAt = session.startedAt,
+        stoppedAt = session.stoppedAt,
+        stopReason = session.stopReason,
+        requestIds = cloneValue(session.requestIds),
+        requests = cloneValue(session.requests),
+        requestProgress = cloneValue(session.requestProgress),
+        summary = {
+            completedRequests = progress.completedRequests,
+            unresolvedRequests = progress.unresolvedRequests,
+            totalRequests = progress.totalRequests,
+            ticks = session.stats.ticks,
+        },
+        collectionLimitations = cloneValue(session.collectionLimitations),
+        errors = cloneValue(session.samples.errors),
+    }
+    if includeSamples then
+        payload.samples = cloneValue(session.samples)
+    end
+    return payload
+end
+
+WORKFLOW_HELPERS.getTargetedCaptureSnapshot = function(includeSamples)
+    return targetedCaptureSummary(includeSamples == true)
+end
+
+WORKFLOW_HELPERS.setTargetedCaptureUiRefresh = function(callback)
+    if callback == nil or type(callback) == "function" then
+        uiRefreshCallback = callback
+        return true
+    end
+    return false
+end
+
+WORKFLOW_HELPERS.getTargetedCaptureUiState = function()
+    local snapshot = targetedCaptureSummary(false)
+    local summary = type(snapshot) == "table" and snapshot.summary or {}
+    local progress = type(snapshot) == "table" and snapshot.requestProgress or {}
+    local preset = TARGETED_REQUEST_PRESETS[targetedRequestPresetIndex]
+    local function requestStatus(requestId)
+        local entry = type(progress) == "table" and progress[requestId] or nil
+        local missing = type(entry) == "table" and type(entry.missingEvidence) == "table" and #entry.missingEvidence or 0
+        local satisfied = type(entry) == "table" and type(entry.satisfiedEvidence) == "table" and #entry.satisfiedEvidence or 0
+        return {
+            status = type(entry) == "table" and entry.status or "collecting",
+            missing = missing,
+            satisfied = satisfied,
+        }
+    end
+    local sessionRef = targetedCaptureSession or targetedCaptureLastSession
+    local samplesRef = type(sessionRef) == "table" and sessionRef.samples or nil
+    return {
+        presetLabel = preset and preset.label or "CUSTOM",
+        active = type(snapshot) == "table" and snapshot.active == true,
+        stopReason = type(snapshot) == "table" and snapshot.stopReason or nil,
+        completedRequests = summary and summary.completedRequests or 0,
+        totalRequests = summary and summary.totalRequests or #targetedRequestOrder,
+        unresolvedRequests = summary and summary.unresolvedRequests or 0,
+        sessionId = type(snapshot) == "table" and snapshot.sessionId or nil,
+        lifecyclePhase = lifecycleState.phase,
+        lifecycleReason = lifecycleState.reason,
+        lifecyclePausedByUser = lifecycleState.pausedByUser,
+        lifecycleLastTransitionAt = lifecycleState.lastTransitionAt,
+        lifecycleLastError = lifecycleState.lastError,
+        lifecycleSessionCount = lifecycleState.sessionCount,
+        lifecycleExportCount = lifecycleState.exportCount,
+        lifecycleRestartCount = lifecycleState.restartCount,
+        requestEntity = requestStatus("character-entity-observation"),
+        requestCombat = requestStatus("combat-camera-weapon-correlation"),
+        requestMatch = requestStatus("match-objective-state-observation"),
+        requestLoadout = requestStatus("loadout-runtime-observation"),
+        sampleCounts = {
+            characterEntities = type(samplesRef) == "table" and #samplesRef.characterEntities or 0,
+            cameraSamples = type(samplesRef) == "table" and #samplesRef.cameraSamples or 0,
+            matchStateSamples = type(samplesRef) == "table" and #samplesRef.matchStateSamples or 0,
+            loadoutSnapshots = type(samplesRef) == "table" and #samplesRef.loadoutSnapshots or 0,
+            errors = type(samplesRef) == "table" and #samplesRef.errors or 0,
+        },
+    }
+end
+
+WORKFLOW_HELPERS.targetedCaptureForExport = function(context)
+    local payload = targetedCaptureSummary(true)
+    if type(payload) == "table" and type(payload.samples) == "table" then
+        payload.timelineEvents = payload.samples.timelineEvents or {}
+    end
+    local session = targetedCaptureSession or targetedCaptureLastSession
+    if type(session) == "table" then
+        session.exportState = type(session.exportState) == "table" and session.exportState or {
+            lastManifestScanId = nil,
+            lastLiveBaselineScanId = nil,
+            duplicateExportsSuppressed = 0,
+            exportCount = 0,
+        }
+        local exportKind = type(context) == "table" and tostring(context.kind or "unknown") or "unknown"
+        local scanId = type(context) == "table" and tostring(context.scanId or "none") or "none"
+        local duplicate = false
+        if exportKind == "manifest" then
+            duplicate = session.exportState.lastManifestScanId == scanId
+            if not duplicate then session.exportState.lastManifestScanId = scanId end
+        elseif exportKind == "live-observation" then
+            duplicate = session.exportState.lastLiveBaselineScanId == scanId
+            if not duplicate then session.exportState.lastLiveBaselineScanId = scanId end
+        end
+        if duplicate then
+            session.exportState.duplicateExportsSuppressed = (session.exportState.duplicateExportsSuppressed or 0) + 1
+        else
+            session.exportState.exportCount = (session.exportState.exportCount or 0) + 1
+            lifecycleState.exportCount = lifecycleState.exportCount + 1
+            if lifecycleState.phase == "exporting" then setLifecycle("continuing", "export-complete") end
+        end
+        payload.exportContinuity = {
+            kind = exportKind,
+            scanId = scanId,
+            duplicateExportSuppressed = duplicate,
+            sessionExportCount = session.exportState.exportCount or 0,
+            duplicateExportsSuppressed = session.exportState.duplicateExportsSuppressed or 0,
+        }
+    end
+    payload.lifecycle = {
+        phase = lifecycleState.phase,
+        reason = lifecycleState.reason,
+        pausedByUser = lifecycleState.pausedByUser,
+        lastTransitionAt = lifecycleState.lastTransitionAt,
+    }
+    return payload
+end
+
+
+local seeded, seedError = ensureTargetedCatalogLoaded()
+if seeded then
+    applyTargetedPreset(targetedRequestPresetIndex)
+else
+    warn("Lycoles targeted capture request seed failed", seedError)
+end
+
+_G.LycolesLoadTargetedRequests = function(payload)
+    return WORKFLOW_HELPERS.loadTargetedInspectionRequests(payload)
+end
+_G.LycolesStartTargetedCapture = function(options)
+    return WORKFLOW_HELPERS.startTargetedCaptureSession(options)
+end
+_G.LycolesStopTargetedCapture = function(reason)
+    return WORKFLOW_HELPERS.stopTargetedCaptureSession(reason)
+end
+_G.LycolesPauseTargetedCapture = function()
+    return WORKFLOW_HELPERS.pauseTargetedCaptureSession()
+end
+_G.LycolesResumeTargetedCapture = function()
+    return WORKFLOW_HELPERS.resumeTargetedCaptureSession()
+end
+_G.LycolesRestartTargetedCapture = function()
+    return WORKFLOW_HELPERS.restartTargetedCaptureSession()
+end
+_G.LycolesTargetedCaptureProgress = function(includeSamples)
+    return WORKFLOW_HELPERS.getTargetedCaptureSnapshot(includeSamples)
+end
+end
+initializeTargetedCaptureRuntime()
+
+local function scoredFeatureFromInteractionContext(obj,path)
+    local scores={}
+    local function add(feature,weight)
+        if feature then scores[feature]=(scores[feature] or 0)+weight end
+    end
+    local function scan(value,weight)
+        local text=tostring(value)
+        local hint=MENU_FEATURE_HINTS[text:lower()]
+        if hint then add(hint,weight+1) end
+        local feature=EVIDENCE_HELPERS.featureForName(text)
+        if feature then add(feature,weight) end
+    end
+    scan(obj.Name,2)
+    if obj:IsA("GuiButton") then
+        local ok,text=pcall(function() return obj.Text end)
+        if ok and type(text)=="string" and #text>0 then scan(text:sub(1,80),2) end
+    end
+    local node=obj.Parent
+    for depth=1,9 do
+        if not node then break end
+        scan(node.Name,1)
+        if node:IsA("ScreenGui") then break end
+        node=node.Parent
+    end
+    for segment in tostring(path or ""):gmatch("[^%.]+") do scan(segment,1) end
+    local ranked={}
+    for feature,score in pairs(scores) do ranked[#ranked+1]={feature=feature,score=score} end
+    table.sort(ranked,function(a,b)
+        return a.score==b.score and a.feature<b.feature or a.score>b.score
+    end)
+    if #ranked==0 then return nil,0,nil end
+    local first,second=ranked[1],ranked[2]
+    if first.score>=3 and (not second or first.score>=second.score+2) then
+        return first.feature,#ranked,"context-score-heuristic"
+    end
+    return nil,#ranked,nil
+end
+local function featureConsistentStateEvidence(feature, changes)
+    if not feature then return nil end
+    local matched={}
+    local strengthReset=false
+    for _,change in ipairs(changes) do
+        local key=change.key:lower()
+        local relevant=(feature=="rebirth" and key:find("rebirth",1,true))
+            or (feature=="training" and (key:find("strength",1,true) or key:find("agility",1,true)))
+            or (feature=="progression" and (key:find("bubble",1,true) or key:find("capacity",1,true)))
+            or (feature=="shops" and (key:find("coin",1,true) or key:find("gem",1,true)
+                or key:find("currency",1,true) or key:find("cash",1,true)))
+            or (feature=="pets" and (key:find("pet",1,true) or key:find("hatch",1,true) or key:find("egg",1,true)))
+            or (feature=="inventory" and (key:find("inventory",1,true) or key:find("equip",1,true)))
+            or (feature=="quests" and (key:find("quest",1,true) or key:find("mission",1,true)))
+            or (feature=="rewards" and (key:find("reward",1,true) or key:find("claim",1,true)))
+        if relevant and change.before~=change.after then
+            matched[#matched+1]=change.key
+        end
+        if feature=="rebirth" and key:find("strength",1,true)
+            and type(change.before)=="number" and type(change.after)=="number"
+            and change.after<change.before then strengthReset=true end
+    end
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="feature-key-changed",feature=feature,matchedKeys=matched,
+        corroboratingStrengthReset=strengthReset,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
+end
+local function featureConsistentGuiEvidence(feature, changes)
+    if feature~="rewards" then return nil end
+    local matched={}
+    for _,change in ipairs(changes) do
+        local path=change.path:lower()
+        if change.afterVisible==true and (path:find("claimed",1,true)
+            or path:find("completed",1,true)) then
+            matched[#matched+1]=change.path
+        end
+    end
+    if #matched==0 then return nil end
+    table.sort(matched)
+    return {rule="reward-status-became-visible",feature=feature,matchedPaths=matched,
+        classification="feature-consistent-observable-change",
+        status="candidate-needs-causal-validation",sourceAuthenticityVerified=false,
+        causalityProven=false,serverVerified=false,gameplayVerified=false}
+end
+
+local function collectOutcomeChanges(historyItem, primaryKey, windowKey)
+    local merged={}
+    local function append(list)
+        if type(list)~="table" then return end
+        for _,item in ipairs(list) do
+            if type(item)=="table" then merged[#merged+1]=item end
+        end
+    end
+    append(historyItem and historyItem[primaryKey])
+    local windows=historyItem and historyItem.observationWindows
+    if type(windows)=="table" then
+        for _,window in ipairs(windows) do
+            if type(window)=="table" then append(window[windowKey]) end
+        end
+    end
+    return merged
+end
+
+local function backfillObservableOutcomeCandidates(history)
+    local recovered=0
+    if type(history)~="table" then return recovered end
+    for _,historyItem in ipairs(history) do
+        local feature=historyItem and historyItem.featureCandidate
+        if type(historyItem)=="table" and not historyItem.observableOutcomeCandidate
+            and type(feature)=="string" and feature~="" then
+            local mergedState=collectOutcomeChanges(historyItem,"stateChanges","stateChanges")
+            local mergedGui=collectOutcomeChanges(historyItem,"guiStateChanges","guiChanges")
+            local stateEvidence=featureConsistentStateEvidence(feature,mergedState)
+            local guiEvidence=featureConsistentGuiEvidence(feature,mergedGui)
+            if stateEvidence or guiEvidence then
+                if stateEvidence then historyItem.featureStateEvidence=stateEvidence end
+                if guiEvidence then historyItem.featureGuiEvidence=guiEvidence end
+                historyItem.observableOutcomeCandidate={feature=feature,
+                    classification="feature-consistent-observable-change",
+                    evidenceKinds={stateEvidence and "state-change" or "gui-change",
+                        stateEvidence and guiEvidence and "gui-change" or nil},
+                    overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                    causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                historyItem.outcomeVerified=false
+                recovered=recovered+1
+                workflowStats.backfilledOutcomeCandidates=workflowStats.backfilledOutcomeCandidates+1
+                workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                local item=EVIDENCE_HELPERS.featureInteractions[feature]
+                if item then item.outcomeCandidates=(item.outcomeCandidates or 0)+1 end
+            end
+        end
+    end
+    return recovered
+end
+
 local function actionKind(name)
     local n=name:lower()
     if n:find("unequipall",1,true) then return "unequip-all" end
     if n:find("unequip",1,true) then return "unequip" end
+    if n:find("blow",1,true) or n=="bubble" or n=="bubbles" then return "blow" end
     if n:find("sell",1,true) then return "sell" end
     if n:find("equip",1,true) then return "equip" end
     if n:find("craft",1,true) or n:find("fuse",1,true) then return "craft" end
-    if n:find("claim",1,true) then return "claim" end
+    if n:find("claim",1,true) or n:find("reward",1,true) then return "claim" end
     if n:find("buy",1,true) or n:find("purchase",1,true) then return "purchase" end
+    if n:find("hatch",1,true) or n=="egg" then return "hatch" end
     if n:find("rebirth",1,true) then return "rebirth" end
     if n:find("travel",1,true) or n:find("teleport",1,true) then return "travel" end
     return nil
 end
-local function workflowContext(obj, feature)
+local function semanticActionKind(obj, feature)
+    local direct=actionKind(obj.Name)
+    if direct then return direct,"control-name" end
+    local parentName=obj.Parent and obj.Parent.Name:lower() or ""
+    if obj.Name:lower():find("close",1,true) or parentName:find("close",1,true)
+        or obj.Name:lower():find("cancel",1,true) or parentName:find("cancel",1,true) then
+        return nil,nil
+    end
+    local generic=obj.Name:lower()=="button" or obj.Name:lower()=="action"
+        or obj.Name:lower()=="template" or obj:IsA("ProximityPrompt")
+    if not generic then return nil,nil end
+    local node=obj.Parent
+    for depth=1,7 do
+        if not node or node:IsA("ScreenGui") then break end
+        local lower=node.Name:lower()
+        if feature=="pets" and (lower:find("hatch",1,true) or lower:find("egg",1,true)) then
+            return "hatch","bounded-feature-ancestor-name"
+        end
+        local kind=actionKind(node.Name)
+        if kind then return kind,"bounded-ancestor-name" end
+        node=node.Parent
+    end
+    if feature=="shops" then return "purchase","bounded-feature-default-kind" end
+    if feature=="rewards" or feature=="quests" then
+        return "claim","bounded-feature-default-kind"
+    end
+    if feature=="rebirth" then return "rebirth","bounded-feature-default-kind" end
+    if feature=="travel" then return "travel","bounded-feature-default-kind" end
+    return nil,nil
+end
+local function defaultFeatureForActionKind(kind)
+    if kind=="hatch" then return "pets" end
+    if kind=="rebirth" then return "rebirth" end
+    if kind=="travel" then return "travel" end
+    if kind=="claim" then return "rewards" end
+    if kind=="purchase" then return "shops" end
+    if kind=="sell" then return "inventory" end
+    if kind=="blow" or kind=="craft" then return "progression" end
+    return nil
+end
+local function workflowContext(obj, feature, kind, actionSource)
     local names, node={},obj
     for i=1,9 do
         if not node then break end
@@ -1412,9 +7871,10 @@ local function workflowContext(obj, feature)
         node=node.Parent
     end
     return {feature=feature, control=obj.Name:sub(1,80), ancestry=names,
-        kind=actionKind(obj.Name), clientOnly=true}
+        contextTokens=contextTokensForNames(names),
+        kind=kind, actionSource=actionSource, clientOnly=true}
 end
-local function classifyInteraction(obj)
+local function classifyInteraction(obj,path)
     -- Specific local menu context wins over generic controls like EquipButton.
     local node=obj.Parent
     local depth=0
@@ -1431,14 +7891,14 @@ local function classifyInteraction(obj)
         node=node.Parent
         depth=depth+1
     end
-    local feature,count=featureForName(obj.Name)
+    local feature,count=EVIDENCE_HELPERS.featureForName(obj.Name)
     if feature then return feature,count,"control-name" end
     node=obj.Parent
     depth=0
     while node and depth<8 do
         local hint=MENU_FEATURE_HINTS[node.Name:lower()]
         if hint then return hint,1,"menu-context-hint" end
-        local candidate,matches=featureForName(node.Name)
+        local candidate,matches=EVIDENCE_HELPERS.featureForName(node.Name)
         if candidate then return candidate,matches,"ancestor-name" end
         if node:IsA("ScreenGui") then break end
         node=node.Parent
@@ -1447,14 +7907,20 @@ local function classifyInteraction(obj)
     local lower=obj.Name:lower()
     if lower=="items" then return "inventory",1,"known-navigation-control" end
     if lower=="claim" then return "rewards",1,"known-navigation-control" end
-    return nil,0,"unattributed"
+    local contextualFeature, contextualCount, contextualSource =
+        scoredFeatureFromInteractionContext(obj,path)
+    if contextualFeature then
+        return contextualFeature,contextualCount,contextualSource
+    end
+    return nil,contextualCount or 0,"unattributed"
 end
 local function linkWorkflow(obj, feature, sequence)
     local name=obj.Name:lower()
-    local isYes=name=="yesbutton" or name=="confirmbutton" or name=="confimbutton"
-        or name=="confirm" or name=="acceptbutton" or name=="okbutton"
-    local isNo=name=="nobutton" or name=="cancelbutton" or name=="cancel"
-        or name=="declinebutton"
+    local isYes=name=="yesbutton" or name=="yes" or name=="confirmbutton"
+        or name=="confimbutton" or name=="confirm" or name=="acceptbutton"
+        or name=="accept" or name=="okbutton" or name=="ok"
+    local isNo=name=="nobutton" or name=="no" or name=="cancelbutton"
+        or name=="cancel" or name=="declinebutton" or name=="decline"
     local now=os.clock()
     for i=#pendingActions,1,-1 do
         if now-pendingActions[i].clock > 15 then
@@ -1466,12 +7932,15 @@ local function linkWorkflow(obj, feature, sequence)
     local contextFeature=feature
     local dialog=false
     local menuName=nil
+    local contextNames={}
     for i=1,9 do
         if not node then break end
+        contextNames[#contextNames+1]=node.Name
         local n=node.Name:lower()
         if n:find("confirm",1,true) or n:find("confim",1,true)
-            or n:find("choice",1,true) or n=="travelareanewmenu"
-            or n=="rebirthnewmenu" then
+            or n:find("choice",1,true) or n:find("prompt",1,true)
+            or n:find("purchase",1,true) or n:find("unlock",1,true)
+            or n=="travelareanewmenu" or n=="rebirthnewmenu" then
             dialog=true
             menuName=node.Name
         end
@@ -1479,6 +7948,7 @@ local function linkWorkflow(obj, feature, sequence)
     end
     if (isYes or isNo) and dialog then
         local bestIndex=nil
+        local matchConfidence="context-and-time-heuristic"
         for i=#pendingActions,1,-1 do
             local pending=pendingActions[i]
             if (contextFeature and pending.feature==contextFeature)
@@ -1488,13 +7958,35 @@ local function linkWorkflow(obj, feature, sequence)
                 break
             end
         end
+        if not bestIndex then
+            local contextTokens=contextTokensForNames(contextNames)
+            local bestScore=0
+            if #contextTokens>0 then
+                for i=#pendingActions,1,-1 do
+                    local pending=pendingActions[i]
+                    local age=now-pending.clock
+                    if age<=8 and (not contextFeature or not pending.feature or pending.feature==contextFeature) then
+                        local overlap=contextTokenOverlap(contextTokens,pending.contextTokens)
+                        if overlap>bestScore then
+                            bestScore=overlap
+                            bestIndex=i
+                        end
+                    end
+                end
+            end
+            if bestIndex and bestScore>=2 then
+                matchConfidence="context-token-overlap-heuristic"
+            else
+                bestIndex=nil
+            end
+        end
         if bestIndex then
             local previous=table.remove(pendingActions,bestIndex)
             if isNo then workflowStats.cancelled=workflowStats.cancelled+1
             else workflowStats.linkedConfirmations=workflowStats.linkedConfirmations+1 end
             return {phase=isNo and "cancelled" or "confirmed",linkedSequence=previous.sequence,
                 inferredFeature=previous.feature,action=previous.kind,context=previous.context,
-                dialog=menuName,confidence="context-and-time-heuristic",verified=false}
+                dialog=menuName,confidence=matchConfidence,verified=false}
         end
         if contextFeature=="travel" and isYes then
             return {phase="travel-confirmed-unlinked",action="travel",
@@ -1506,31 +7998,127 @@ local function linkWorkflow(obj, feature, sequence)
     if isYes and feature=="travel" then
         return {phase="travel-confirmed",action="travel",confidence="menu-context-heuristic",verified=false}
     end
-    local kind=actionKind(obj.Name)
+    local kind, actionSource = semanticActionKind(obj,feature)
     if kind then
-        local context=workflowContext(obj,feature)
-        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=feature,kind=kind,context=context}
-        if #pendingActions>MAX_PENDING_ACTIONS then table.remove(pendingActions,1) end
-        return {phase="initiated",action=kind,confidence="control-name-heuristic",verified=false}
+        local inferredFeature=feature or defaultFeatureForActionKind(kind)
+        local context=workflowContext(obj,inferredFeature,kind,actionSource)
+        local bestPending=nil
+        local bestOverlap=0
+        for i=#pendingActions,1,-1 do
+            local pending=pendingActions[i]
+            local age=now-pending.clock
+            if age>=0 and age<=LIMITS.followupLinkMaxAgeSeconds and pending.sequence<sequence
+                and (not inferredFeature or not pending.feature or pending.feature==inferredFeature) then
+                local overlap=contextTokenOverlap(context.contextTokens,pending.contextTokens)
+                if overlap>bestOverlap then
+                    bestOverlap=overlap
+                    bestPending=pending
+                end
+            end
+        end
+        pendingActions[#pendingActions+1]={clock=now,sequence=sequence,feature=inferredFeature,
+            kind=kind,context=context,contextTokens=context.contextTokens}
+        if #pendingActions>LIMITS.maxPendingActions then table.remove(pendingActions,1) end
+        if bestPending and bestOverlap>=LIMITS.followupLinkMinContextOverlap then
+            workflowStats.linkedFollowups=workflowStats.linkedFollowups+1
+            return {phase="followup-linked",linkedSequence=bestPending.sequence,
+                linkedAction=bestPending.kind,action=kind,actionSource=actionSource,
+                inferredFeature=bestPending.feature or inferredFeature,context=context,
+                contextOverlap=bestOverlap,confidence="context-followup-heuristic",verified=false}
+        end
+        return {phase="initiated",action=kind,actionSource=actionSource,
+            inferredFeature=inferredFeature,
+            confidence="bounded-name-context-heuristic",verified=false}
     end
     return nil
 end
+local function identityIsPrefix(prefix,target)
+    if type(prefix)~="table" or type(target)~="table" or #prefix>#target then return false end
+    for index,segment in ipairs(prefix) do
+        local candidate=target[index]
+        if not candidate or segment.name~=candidate.name or segment.className~=candidate.className
+            or segment.ordinal~=candidate.ordinal then return false end
+    end
+    return true
+end
+local function matchGuiRevealFollowup(targetIdentity,targetSequence,targetElapsed)
+    for index=#pendingGuiReveals,1,-1 do
+        local sourceAge=targetElapsed-pendingGuiReveals[index].sourceElapsed
+        if sourceAge<0 or sourceAge>LIMITS.guiRevealFollowupSeconds then
+            table.remove(pendingGuiReveals,index)
+            workflowStats.guiRevealCandidatesExpired=workflowStats.guiRevealCandidatesExpired+1
+        end
+    end
+    if not targetIdentity then return nil end
+    local best=nil
+    for _,candidate in ipairs(pendingGuiReveals) do
+        if candidate.sourceSequence<targetSequence
+            and identityIsPrefix(candidate.revealedPathIdentity,targetIdentity)
+            and (not best or #candidate.revealedPathIdentity>#best.revealedPathIdentity
+                or (#candidate.revealedPathIdentity==#best.revealedPathIdentity
+                    and candidate.observedClock>best.observedClock)) then
+            best=candidate
+        end
+    end
+    if not best then return nil end
+    workflowStats.guiRevealFollowups=workflowStats.guiRevealFollowups+1
+    return {sourceSequence=best.sourceSequence,sourcePath=best.sourcePath,
+        sourcePathIdentity=best.sourcePathIdentity,revealedPath=best.revealedPath,
+        revealedPathIdentity=best.revealedPathIdentity,
+        sourceObservationWindowSeconds=best.observationWindowSeconds,
+        elapsedSinceSourceSeconds=math.floor((targetElapsed-best.sourceElapsed)*1000+0.5)/1000,
+        classification="observed-gui-reveal-descendant-followup",
+        explicitlyLinked=false,temporalCorrelationOnly=true,causalityProven=false,
+        runtimeVerified=false,gameplayVerified=false}
+end
+local function registerGuiRevealCandidates(changes,historyItem,observationWindowSeconds)
+    for _,change in ipairs(changes) do
+        if change.afterVisible==true and change.beforeVisible~=true and change.pathIdentity
+            and historyItem.pathIdentity then
+            pendingGuiReveals[#pendingGuiReveals+1]={observedClock=os.clock(),
+                sourceSequence=historyItem.sequence,sourcePath=historyItem.path,
+                sourcePathIdentity=historyItem.pathIdentity,sourceElapsed=historyItem.sessionElapsedSeconds,
+                revealedPath=change.path,revealedPathIdentity=change.pathIdentity,
+                observationWindowSeconds=observationWindowSeconds}
+            workflowStats.guiRevealCandidates=workflowStats.guiRevealCandidates+1
+            if #pendingGuiReveals>LIMITS.maxPendingGuiReveals then
+                table.remove(pendingGuiReveals,1)
+                workflowStats.guiRevealCandidatesDropped=workflowStats.guiRevealCandidatesDropped+1
+            end
+        end
+    end
+end
+
 local function relevantActionEvidence(feature, workflow, changes)
     local kind=workflow and workflow.action
     if not kind and feature=="rebirth" then kind="rebirth" end
     local signals={}
     for _,change in ipairs(changes) do
         local key=change.key:lower()
-        if key:find("strength",1,true) then
+        if key:find("bubble",1,true) or key:find("capacity",1,true) then
+            signals[#signals+1]="progression-resource-change"
+        elseif key:find("strength",1,true) then
             signals[#signals+1]="strength-change"
         elseif key:find("rebirth",1,true) then
             signals[#signals+1]="rebirth-change"
+        elseif key:find("hatch",1,true) or key:find("egg",1,true) then
+            signals[#signals+1]="hatch-related-value-change"
         elseif key:find("pet",1,true) or key:find("equip",1,true)
             or key:find("inventory",1,true) then
             signals[#signals+1]="inventory-related-value-change"
         elseif key:find("coin",1,true) or key:find("gem",1,true)
             or key:find("currency",1,true) then
             signals[#signals+1]="currency-related-value-change"
+        elseif key:find("ammo",1,true) or key:find("clip",1,true)
+            or key:find("mag",1,true) or key:find("bullet",1,true)
+            or key:find("reserve",1,true) then
+            signals[#signals+1]="weapon-ammo-related-change"
+        elseif key:find("tool",1,true) or key:find("weapon",1,true)
+            or key:find("loadout",1,true) then
+            signals[#signals+1]="weapon-selection-change"
+        elseif key:find("humanoid",1,true) or key:find("character",1,true)
+            or key:find("animation",1,true) then
+            signals[#signals+1]="character-state-change"
         elseif key:find("quest",1,true) or key:find("reward",1,true) then
             signals[#signals+1]="quest-or-reward-related-value-change"
         end
@@ -1542,9 +8130,74 @@ local function relevantActionEvidence(feature, workflow, changes)
                 type(change.before)=="number" and type(change.after)=="number"
                 and change.after>change.before then corroborated=true end
         end
-    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="sell" or kind=="craft" then
+    elseif kind=="blow" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                and type(change.before)=="number" and type(change.after)=="number"
+                and change.after>change.before then corroborated=true end
+        end
+    elseif kind=="sell" then
+        local resourceDecrease,currencyIncrease=false,false
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number" then
+                if (key:find("bubble",1,true) or key:find("capacity",1,true))
+                    and change.after<change.before then resourceDecrease=true end
+                if (key:find("coin",1,true) or key:find("gem",1,true)
+                    or key:find("currency",1,true) or key:find("cash",1,true))
+                    and change.after>change.before then currencyIncrease=true end
+            end
+        end
+        corroborated=resourceDecrease and currencyIncrease
+    elseif kind=="fire" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number"
+                and (key:find("ammo",1,true) or key:find("clip",1,true)
+                    or key:find("mag",1,true) or key:find("reserve",1,true)
+                    or key:find("bullet",1,true)) and change.after~=change.before then
+                corroborated=true
+            end
+        end
+        if not corroborated then
+            for _,signal in ipairs(signals) do
+                if signal=="weapon-ammo-related-change" or signal=="character-state-change" then
+                    corroborated=true
+                end
+            end
+        end
+    elseif kind=="reload" then
+        for _,change in ipairs(changes) do
+            local key=change.key:lower()
+            if type(change.before)=="number" and type(change.after)=="number"
+                and (key:find("ammo",1,true) or key:find("clip",1,true)
+                    or key:find("mag",1,true) or key:find("reserve",1,true)
+                    or key:find("bullet",1,true)) and change.after>change.before then
+                corroborated=true
+            end
+        end
+        if not corroborated then
+            for _,signal in ipairs(signals) do
+                if signal=="weapon-ammo-related-change" then corroborated=true end
+            end
+        end
+    elseif kind=="switch" then
         for _,signal in ipairs(signals) do
-            if signal=="inventory-related-value-change" then corroborated=true end
+            if signal=="weapon-selection-change" or signal=="inventory-related-value-change" then
+                corroborated=true
+            end
+        end
+    elseif kind=="equip" or kind=="unequip" or kind=="unequip-all" or kind=="craft" then
+        for _,signal in ipairs(signals) do
+            if signal=="inventory-related-value-change" or signal=="weapon-selection-change" then
+                corroborated=true
+            end
+        end
+    elseif kind=="hatch" then
+        for _,signal in ipairs(signals) do
+            if signal=="hatch-related-value-change" or signal=="inventory-related-value-change" then
+                corroborated=true end
         end
     elseif kind=="purchase" or kind=="claim" then
         for _,signal in ipairs(signals) do
@@ -1554,6 +8207,34 @@ local function relevantActionEvidence(feature, workflow, changes)
     end
     return {action=kind,signals=signals,clientStateCorroborated=corroborated,
         serverVerified=false,causalVerification=false,confidence="temporal-observation"}
+end
+
+local function interactionDescriptor(obj,root,label)
+    if obj:IsA("ProximityPrompt") then
+        local anchor=obj.Parent
+        for _=1,5 do
+            if not anchor or anchor:IsA("BasePart") then break end
+            anchor=anchor.Parent
+        end
+        return {actionText=tostring(obj.ActionText):sub(1,120),
+            objectText=tostring(obj.ObjectText):sub(1,120),enabled=obj.Enabled,
+            holdDuration=obj.HoldDuration,maxActivationDistance=obj.MaxActivationDistance,
+            keyboardKeyCode=obj.KeyboardKeyCode.Name,gamepadKeyCode=obj.GamepadKeyCode.Name,
+            anchorPath=anchor and watchPath(anchor,root,label) or nil,
+            anchorPosition=anchor and anchor:IsA("BasePart") and watchVec(anchor.Position) or nil}
+    end
+    if obj:IsA("GuiButton") then
+        return EVIDENCE_HELPERS.guiControlSnapshot(obj)
+    end
+    if obj:IsA("ClickDetector") then
+        return {maxActivationDistance=obj.MaxActivationDistance}
+    end
+    if obj:IsA("Tool") then
+        return {tooltip=tostring(obj.ToolTip):sub(1,120):gsub("[%c]"," "),
+            requiresHandle=obj.RequiresHandle,canBeDropped=obj.CanBeDropped,
+            enabled=obj.Enabled,manualActivationOnly=obj.ManualActivationOnly}
+    end
+    return nil
 end
 
 local function observeInteractionObject(obj, root, label)
@@ -1567,19 +8248,71 @@ local function observeInteractionObject(obj, root, label)
         signal, controlType = obj.Triggered, "ProximityPrompt.Triggered"
     elseif obj:IsA("ClickDetector") then
         signal, controlType = obj.MouseClick, "ClickDetector.MouseClick"
+    elseif obj:IsA("Tool") then
+        signal, controlType = obj.Activated, "Tool.Activated"
     end
     if not signal then return end
     interactionObserved[obj] = true
     interactionObservedCount = interactionObservedCount + 1
     observerStats.listenersAttached = observerStats.listenersAttached + 1
+    local preActivationCapture=nil
+    local function capturePreActivation(source,maxAge)
+        local ok,state,identities,guiState,position,positionSample=pcall(function()
+            local values,valueIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            local sampled,rawPosition=capturePlayerPositionSample("pre-activation",true)
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if not rawPosition and rootPart then rawPosition=rootPart.Position end
+            return values,valueIdentities,EVIDENCE_HELPERS.safeNearbyGuiState(obj),rawPosition,sampled
+        end)
+        if not ok then
+            observerStats.preActivationCaptureFailures=observerStats.preActivationCaptureFailures+1
+            return
+        end
+        preActivationCapture={clock=os.clock(),source=source,maxAge=maxAge,
+            state=state,stateIdentities=identities,guiState=guiState,
+            position=position,positionSample=positionSample}
+        observerStats.preActivationCaptures=observerStats.preActivationCaptures+1
+    end
+    local function registerPreActivation(preSignal,source,maxAge,filter)
+        local ok,preConnection=pcall(function()
+            return preSignal:Connect(function(input)
+                if not alive or not interactionObserveEnabled then return end
+                if filter and not filter(input) then return end
+                capturePreActivation(source,maxAge)
+            end)
+        end)
+        if ok then
+            table.insert(watchConnections,preConnection)
+            observerStats.preActivationListenersAttached=
+                observerStats.preActivationListenersAttached+1
+        else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    end
+    if obj:IsA("GuiButton") then
+        registerPreActivation(obj.InputBegan,"GuiButton.InputBegan",2,function(input)
+            return input.UserInputType==Enum.UserInputType.MouseButton1
+                or input.UserInputType==Enum.UserInputType.Touch
+                or input.KeyCode==Enum.KeyCode.ButtonA
+                or input.KeyCode==Enum.KeyCode.Return
+                or input.KeyCode==Enum.KeyCode.Space
+        end)
+    elseif obj:IsA("ProximityPrompt") then
+        registerPreActivation(obj.PromptButtonHoldBegan,"ProximityPrompt.PromptButtonHoldBegan",
+            math.max(2,obj.HoldDuration+1))
+    elseif obj:IsA("Tool") then
+        registerPreActivation(obj.Equipped,"Tool.Equipped",5)
+    end
+
     local connection = signal:Connect(function()
         if not alive or not interactionObserveEnabled then return end
         interactionEventCount = interactionEventCount + 1
-        autoEvidenceLastInteraction = os.clock()
+        local activationClock=os.clock()
+        local sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000
+        autoEvidenceLastInteraction = activationClock
         observerStats.callbacksFired = observerStats.callbacksFired + 1
+        observerStats.objectInteractionCallbacksFired = observerStats.objectInteractionCallbacksFired + 1
         observerStats.lastCallbackAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastEventPath = path:sub(1,180)
-        local feature, matchCount, attributionSource = classifyInteraction(obj)
+        local feature, matchCount, attributionSource = classifyInteraction(obj,path)
         if feature then
             attributedInteractionCount = attributedInteractionCount + 1
         else
@@ -1588,21 +8321,99 @@ local function observeInteractionObject(obj, root, label)
         local workflow = linkWorkflow(obj, feature, observationSequence + 1)
         if workflow and workflow.inferredFeature and not feature then
             feature=workflow.inferredFeature
-            attributionSource="linked-confirmation-heuristic"
+            attributionSource=(workflow.phase=="followup-linked")
+                and "linked-followup-heuristic" or "linked-confirmation-heuristic"
             unattributedInteractionCount=unattributedInteractionCount-1
             attributedInteractionCount=attributedInteractionCount+1
         end
+        local callbackAttributedFinal=feature~=nil
+        if callbackAttributedFinal then
+            observerStats.objectCallbacksAttributed=observerStats.objectCallbacksAttributed+1
+        else
+            observerStats.objectCallbacksUnattributed=observerStats.objectCallbacksUnattributed+1
+        end
+        local captured=preActivationCapture
+        preActivationCapture=nil
+        local captureAge=captured and activationClock-captured.clock or nil
+        local before,beforeStateIdentities,beforeGui,beforePosition,beforePositionSample,baselineSource
+        if captured and captureAge>=0 and captureAge<=captured.maxAge then
+            before=captured.state;beforeStateIdentities=captured.stateIdentities
+            beforeGui=captured.guiState;beforePosition=captured.position
+            beforePositionSample=captured.positionSample
+            baselineSource=captured.source
+            observerStats.preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed+1
+        else
+            if captured then
+                observerStats.stalePreActivationCaptures=observerStats.stalePreActivationCaptures+1
+            end
+            before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+            beforeGui=EVIDENCE_HELPERS.safeNearbyGuiState(obj)
+            local fallbackSample,fallbackRaw=capturePlayerPositionSample("baseline-fallback",true)
+            beforePositionSample=fallbackSample
+            local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if not fallbackRaw and rootPart then fallbackRaw=rootPart.Position end
+            beforePosition=fallbackRaw
+            baselineSource="activation-callback-fallback"
+            observerStats.callbackBaselinesUsed=observerStats.callbackBaselinesUsed+1
+        end
+        local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("interaction-activated",true)
+        local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
+        local linkedClickObservationId=nil
+        if controlType=="GuiButton.Activated" or controlType=="ClickDetector.MouseClick" then
+            linkedClickObservationId=resolveRecentPendingClick(path,"MouseButton1")
+        end
+        local linkedClickObservation=linkedClickObservationId and clickTargetById[linkedClickObservationId] or nil
+        local targetPathIdentity=EVIDENCE_HELPERS.interactionPathIdentity(obj,root,label)
+        local guiRevealFollowup=matchGuiRevealFollowup(targetPathIdentity,
+            observationSequence+1,sessionElapsedSeconds)
+        local explicitRecording=recordWorkflowInteraction(activationClock,sessionElapsedSeconds)
+        local transactionId=explicitRecording and explicitRecording.recordingId
+            or (workflow and workflow.linkedSequence) or (observationSequence+1)
+        local transactionLinkSource=explicitRecording and explicitRecording.linkageSource
+            or (workflow and workflow.linkedSequence and
+                (workflow.phase=="followup-linked" and "observed-followup-link"
+                    or "observed-confirmation-link")
+                or "singleton-event")
         local historyItem = {
-            path=path:sub(1,400), featureCandidate=feature,
-            attribution=attributionSource, controlType=controlType,
+            path=path:sub(1,400), pathIdentity=targetPathIdentity,
+            featureCandidate=feature, attribution=attributionSource, controlType=controlType,
+            actionKind=(workflow and workflow.action) or "interact",
             observedAt=observerStats.lastCallbackAt, sequence=observationSequence + 1,
-            stateChangeCount=0, guiContext=interactionGuiContext(obj), workflow=workflow,
+            sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
+            transactionId=transactionId,
+            transactionOrder=explicitRecording and explicitRecording.order or nil,
+            transactionLinkSource=transactionLinkSource,
+            explicitWorkflowRecording=explicitRecording,
+            stateChangeCount=0, guiContext=EVIDENCE_HELPERS.interactionGuiContext(obj), workflow=workflow,
+            guiRevealFollowup=guiRevealFollowup,
+            controlMetadata=interactionDescriptor(obj,root,label),baselineSource=baselineSource,
+            baselineTiming=baselineSource=="activation-callback-fallback"
+                and "activation-callback" or "pre-activation",
+            baselineAgeSeconds=captureAge and math.floor(captureAge*1000+0.5)/1000 or nil,
+            preActivationBaselineAvailable=baselineSource~="activation-callback-fallback",
+            characterGeneration=spatialCharacterGeneration,
+            beforePositionSample=beforePositionSample,
+            actionPositionSample=actionPositionSample,
+            characterOrientationAtAction=actionPositionSample and actionPositionSample.characterOrientation or nil,
+            cameraOrientationAtAction=actionPositionSample and actionPositionSample.cameraOrientation or nil,
+            cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
+            nearbyWorldObjects=nearbyWorldObjects,
+            clickObservationId=linkedClickObservationId,
+            clickTargetObservation=linkedClickObservation,
+            inferredLocationPurpose=inferSpatialPurpose(feature,path,workflow and workflow.action),
             evidenceLevel="interaction-observed", outcomeVerified=false
         }
         interactionHistory[#interactionHistory+1] = historyItem
-        if #interactionHistory > MAX_INTERACTION_HISTORY then table.remove(interactionHistory, 1) end
-        local before = safeInteractionState()
-        local beforeGui = safeNearbyGuiState(obj)
+        if #interactionHistory > LIMITS.maxInteractionHistory then table.remove(interactionHistory, 1) end
+        registerEventPositionSnapshot(historyItem,"before-action",beforePositionSample,nil)
+        registerEventPositionSnapshot(historyItem,"at-action",actionPositionSample,nil)
+        trackSpatialLocationEvent(historyItem,actionPositionSample,feature,
+            (workflow and workflow.action) or "interact",path,nearbyWorldObjects)
+        if linkedClickObservationId then
+            updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,true)
+        end
+
+
         local inventoryRelevant=feature=="inventory" or feature=="pets" or
             (workflow and (workflow.action=="equip" or workflow.action=="unequip" or
             workflow.action=="unequip-all" or workflow.action=="sell"))
@@ -1620,56 +8431,68 @@ local function observeInteractionObject(obj, root, label)
                 inventoryAction="selection"
             end
         end
-        local inventorySummaryBefore=inventoryRelevant and safeInventorySummary() or nil
-        local beforePosition = nil
-        local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if rootPart then beforePosition=rootPart.Position end
+        local inventorySummaryBefore=inventoryRelevant and EVIDENCE_HELPERS.safeInventorySummary() or nil
         if feature then
-            local item = featureInteractions[feature] or {count=0,stateChanges=0}
+            local item = EVIDENCE_HELPERS.featureInteractions[feature] or {
+                count=0,stateChanges=0,temporalStateChanges=0,outcomeCandidates=0}
             item.count = item.count + 1
-            featureInteractions[feature] = item
+            EVIDENCE_HELPERS.featureInteractions[feature] = item
         end
         observationSequence = observationSequence + 1
         changeCount = changeCount + 1
         changeQueue[#changeQueue + 1] = {
-            path = path:sub(1,400), class = obj.ClassName,
+            path = path:sub(1,400), pathIdentity=historyItem.pathIdentity, class = obj.ClassName,
             featureCandidate = feature, featureMatchCount = matchCount,
             attribution = attributionSource,
             category = "user-interaction", controlType = controlType,
+            controlMetadata=historyItem.controlMetadata,baselineSource=baselineSource,
+            baselineTiming=historyItem.baselineTiming,
+            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
             action = "user-activated", observedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            evidence = "manual-user-interaction", sessionId = sessionId, snapshotId = snapshotId, sequence = observationSequence
+            evidence = "manual-user-interaction", sessionId = sessionId,
+            sessionElapsedSeconds=sessionElapsedSeconds,snapshotId = snapshotId, sequence = observationSequence,
+            transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
+            transactionLinkSource=historyItem.transactionLinkSource
         }
-        local interactionSequence = observationSequence
-        local transactionId=(workflow and workflow.linkedSequence) or historyItem.sequence
-        historyItem.transactionId=transactionId
         local seenStateKeys={}
         local seenGuiKeys={}
         for _,delaySeconds in ipairs(OBSERVATION_WINDOWS) do
+            pendingObservationEvents=pendingObservationEvents+1
             task.delay(delaySeconds, function()
+                pendingObservationEvents=math.max(0,pendingObservationEvents-1)
                 if not alive then return end
                 local ok,err=pcall(function()
-                    local after=safeInteractionState()
-                    local guiChanges=compareNearbyGuiState(beforeGui,safeNearbyGuiState(obj))
+                    local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState()
+                    local guiChanges=EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,EVIDENCE_HELPERS.safeNearbyGuiState(obj))
                     local changes={}
                     for key,value in pairs(before) do
-                        if after[key]~=nil and after[key]~=value and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,before=value,after=after[key]}
+                        if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(after) do
-                        if before[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="added",after=value}
+                        if before[key]==nil and #changes<LIMITS.maxStateChanges then
+                            local identity=afterStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
                     for key,value in pairs(before) do
-                        if after[key]==nil and #changes<MAX_STATE_CHANGES then
-                            changes[#changes+1]={key=key,transition="removed",before=value}
+                        if after[key]==nil and #changes<LIMITS.maxStateChanges then
+                            local identity=beforeStateIdentities[key]
+                            changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
+                                stateIdentityStatus=identity and "component-resolved" or "unavailable"}
                         end
                     end
+                    local windowPositionSample,windowPositionRaw=capturePlayerPositionSample(
+                        "observation-window-"..tostring(delaySeconds),true)
                     local distance=nil
                     local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if beforePosition and currentRoot then
-                        distance=(currentRoot.Position-beforePosition).Magnitude
+                    if not windowPositionRaw and currentRoot then windowPositionRaw=currentRoot.Position end
+                    if beforePosition and windowPositionRaw then
+                        distance=(windowPositionRaw-beforePosition).Magnitude
                         distance=math.floor(distance*10+0.5)/10
                     end
                     local evidence=relevantActionEvidence(feature,workflow,changes)
@@ -1689,6 +8512,7 @@ local function observeInteractionObject(obj, root, label)
                             freshGui[#freshGui+1]=change
                         end
                     end
+                    registerGuiRevealCandidates(freshGui,historyItem,delaySeconds)
                     -- Deduplicate across related initiation/confirmation interactions.
                     -- Retain per-interaction evidence, but count a shared transition once.
                     local transactionFresh={}
@@ -1702,34 +8526,51 @@ local function observeInteractionObject(obj, root, label)
                             transactionFresh[#transactionFresh+1]=change
                         end
                     end
-                    if transactionEvidenceCount>MAX_TRANSACTION_SIGNATURES then
+                    if transactionEvidenceCount>LIMITS.maxTransactionSignatures then
                         transactionEvidenceSeen={}
                         transactionEvidenceCount=0
                     end
                     workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
                     workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                    local featureStateEvidence=featureConsistentStateEvidence(feature,transactionFresh)
+                    local featureGuiEvidence=featureConsistentGuiEvidence(feature,freshGui)
                     if feature=="travel" and distance and distance>100 and not historyItem.travelCandidate then
                         historyItem.travelCandidate=true
                         workflowStats.travelCandidates=workflowStats.travelCandidates+1
                     end
-                    if feature=="rewards" and not historyItem.rewardClaimGuiCandidate then
-                        for _,g in ipairs(guiChanges) do
-                            if g.path:lower():find("claimed",1,true) and g.afterVisible==true then
-                                historyItem.rewardClaimGuiCandidate=true
-                                workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
-                                break
-                            end
-                        end
+                    if featureGuiEvidence and not historyItem.rewardClaimGuiCandidate then
+                        historyItem.rewardClaimGuiCandidate=true
+                        workflowStats.rewardClaimGuiCandidates=workflowStats.rewardClaimGuiCandidates+1
+                    end
+                    if featureStateEvidence then historyItem.featureStateEvidence=featureStateEvidence end
+                    if featureGuiEvidence then historyItem.featureGuiEvidence=featureGuiEvidence end
+                    if (featureStateEvidence or featureGuiEvidence) and not historyItem.observableOutcomeCandidate then
+                        historyItem.observableOutcomeCandidate={feature=feature,
+                            classification="feature-consistent-observable-change",
+                            evidenceKinds={featureStateEvidence and "state-change" or "gui-change",
+                                featureStateEvidence and featureGuiEvidence and "gui-change" or nil},
+                            overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                            causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                        historyItem.outcomeVerified=false
+                        workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                        local item=feature and EVIDENCE_HELPERS.featureInteractions[feature]
+                        if item then item.outcomeCandidates=item.outcomeCandidates+1 end
                     end
                     local window={seconds=delaySeconds,stateChanges=freshState,
                         stateChangeCount=#freshState,guiChanges=freshGui,
                         guiChangeCount=#freshGui,travelDistanceStuds=distance,
-                        actionEvidence=evidence}
+                        baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                        preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
+                        featureStateEvidence=featureStateEvidence,
+                        featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence,
+                        positionSample=windowPositionSample}
                     historyItem.observationWindows=historyItem.observationWindows or {}
                     historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                    registerEventPositionSnapshot(historyItem,
+                        "observation-window-"..tostring(delaySeconds),windowPositionSample,delaySeconds)
                     if delaySeconds==3 and inventoryRelevant and inventorySummaryBefore then
-                        local inventoryAfter=safeInventorySummary()
-                        local guiEvidence=compareInventoryGuiSamples(
+                        local inventoryAfter=EVIDENCE_HELPERS.safeInventorySummary()
+                        local guiEvidence=EVIDENCE_HELPERS.compareInventoryGuiSamples(
                             inventorySummaryBefore,inventoryAfter)
                         historyItem.inventoryObservationScope={
                             actionContext=inventoryAction,
@@ -1767,24 +8608,33 @@ local function observeInteractionObject(obj, root, label)
                         historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
                         historyItem.stateChanges=historyItem.stateChanges or {}
                         for _,change in ipairs(transactionFresh) do historyItem.stateChanges[#historyItem.stateChanges+1]=change end
-                        historyItem.featureStateEvidence=relevantStateEvidence(feature,transactionFresh)
                         observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
                         if feature then
-                            local item=featureInteractions[feature]
-                            if item then item.stateChanges=item.stateChanges+1 end
+                            local item=EVIDENCE_HELPERS.featureInteractions[feature]
+                            if item then
+                                item.temporalStateChanges=item.temporalStateChanges+1
+                                if featureStateEvidence then item.stateChanges=item.stateChanges+1 end
+                            end
                         end
                     end
                     if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
                         historyItem.clientStateCorroborated=true
                         workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
                     end
+                    if linkedClickObservationId then
+                        updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,true)
+                    end
                     if #transactionFresh>0 or #freshGui>0 or (distance and distance>100 and feature=="travel") then
                         changeCount=changeCount+1
                         changeQueue[#changeQueue+1]={
                             path=path:sub(1,400),class=obj.ClassName,category="interaction-observation-window",
                             featureCandidate=feature,sequence=historyItem.sequence,
+                            baselineSource=baselineSource,baselineTiming=historyItem.baselineTiming,
+                            preActivationBaselineAvailable=historyItem.preActivationBaselineAvailable,
                             observationWindowSeconds=delaySeconds,changes=transactionFresh,
                             guiChanges=freshGui,travelDistanceStuds=distance,
+                            featureStateEvidence=featureStateEvidence,
+                            featureGuiEvidence=featureGuiEvidence,
                             actionEvidence=evidence,causalVerification=false,
                             sessionId=sessionId,snapshotId=snapshotId}
                     end
@@ -1794,6 +8644,1131 @@ local function observeInteractionObject(obj, root, label)
         end
     end)
     table.insert(watchConnections, connection)
+end
+
+WORKFLOW_HELPERS.inputThrottleAllowed = function(key,minInterval)
+    local now=os.clock()
+    local previous=inputObserverState.captureByKey[key]
+    if previous and now-previous<minInterval then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return false
+    end
+    inputObserverState.captureByKey[key]=now
+    return true
+end
+
+WORKFLOW_HELPERS.bumpCallbackRate = function(now)
+    local second=math.floor(now)
+    if observerStats.lastCallbackSecond~=second then
+        if observerStats.callbacksThisSecond>observerStats.callbacksPeakPerSecond then
+            observerStats.callbacksPeakPerSecond=observerStats.callbacksThisSecond
+        end
+        observerStats.lastCallbackSecond=second
+        observerStats.callbacksThisSecond=0
+    end
+    observerStats.callbacksThisSecond=observerStats.callbacksThisSecond+1
+end
+
+WORKFLOW_HELPERS.setObservationPhase = function(nextPhase,reason,now)
+    local phase=tostring(nextPhase or "idle")
+    local clock=now or os.clock()
+    if inputObserverState.phase~=phase then
+        inputObserverState.phase=phase
+        inputObserverState.phaseSince=clock
+        inputObserverState.phaseTransitions=inputObserverState.phaseTransitions+1
+    end
+    if reason then inputObserverState.phaseReason=tostring(reason):sub(1,120) end
+end
+
+WORKFLOW_HELPERS.inputQueueLength = function()
+    local length=inputObserverState.queueTail-inputObserverState.queueHead+1
+    if length<0 then return 0 end
+    return length
+end
+
+WORKFLOW_HELPERS.inputActionPriority = function(actionKind,featureCandidate,metadata)
+    local action=tostring(actionKind or "")
+    if action=="fire" or action=="reload" or action=="switch"
+        or action=="equip" or action=="unequip" then
+        return 3
+    end
+    if action=="interact" or action=="pointer-activate" then return 2 end
+    if action=="aim-adjust" and metadata and metadata.combatToolContext then return 2 end
+    if featureCandidate=="combat" and action~="animation" and action~="combat-animation"
+        and action~="move" and action~="move-start" and action~="move-stop" then
+        return 2
+    end
+    if action=="jump" or action=="sprint" then return 1 end
+    return 0
+end
+
+WORKFLOW_HELPERS.stateOptionsForInput = function(actionKind,priority,metadata)
+    local options={candidateBudget=LIMITS.stateSnapshotDefaultCandidateBudget,
+        includeHudSignals=false,hudSignalLimit=0,includeInventory=false}
+    if priority>=3 then
+        options.candidateBudget=320
+        options.includeHudSignals=true
+        options.hudSignalLimit=20
+        options.includeInventory=true
+    elseif priority==2 then
+        options.candidateBudget=220
+        options.includeHudSignals=metadata and metadata.combatToolContext==true
+        options.hudSignalLimit=options.includeHudSignals and 12 or 0
+        options.includeInventory=actionKind=="interact" or actionKind=="pointer-activate"
+    else
+        options.candidateBudget=120
+    end
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    if queueLength>=LIMITS.inputQueueBackpressureWatermark then
+        options.candidateBudget=math.max(80,math.floor(options.candidateBudget*0.55))
+        options.hudSignalLimit=math.max(0,math.floor((options.hudSignalLimit or 0)*0.5))
+    end
+    return options
+end
+
+WORKFLOW_HELPERS.observationWindowsForInput = function(priority)
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    if queueLength>=LIMITS.inputQueueCriticalWatermark then
+        return {0.45}
+    end
+    if queueLength>=LIMITS.inputQueueBackpressureWatermark then
+        return priority>=3 and {0.35,1.25} or {0.45}
+    end
+    if priority>=3 then return OBSERVATION_WINDOWS end
+    if priority==2 then return {0.35,1.25} end
+    return {0.35}
+end
+
+WORKFLOW_HELPERS.enqueueInputObservationTask = function(task)
+    local priority=type(task.priority)=="number" and task.priority or 0
+    local length=WORKFLOW_HELPERS.inputQueueLength()
+    if length>=LIMITS.maxInputObservationQueue then
+        if priority>=3 and inputObserverState.queueHead<=inputObserverState.queueTail then
+            inputObserverState.queue[inputObserverState.queueHead]=nil
+            inputObserverState.queueHead=inputObserverState.queueHead+1
+            observerStats.inputQueueDropped=observerStats.inputQueueDropped+1
+        else
+            observerStats.inputQueueDropped=observerStats.inputQueueDropped+1
+            inputObserverState.backpressureCount=inputObserverState.backpressureCount+1
+            return false
+        end
+    end
+    inputObserverState.queueTail=inputObserverState.queueTail+1
+    inputObserverState.queue[inputObserverState.queueTail]=task
+    observerStats.inputQueueEnqueued=observerStats.inputQueueEnqueued+1
+    local updatedLength=WORKFLOW_HELPERS.inputQueueLength()
+    if updatedLength>observerStats.inputQueuePeak then observerStats.inputQueuePeak=updatedLength end
+    if updatedLength>=LIMITS.inputQueueBackpressureWatermark then
+        if not inputObserverState.backpressureActive then
+            observerStats.inputQueueBackpressureActivations=observerStats.inputQueueBackpressureActivations+1
+        end
+        inputObserverState.backpressureActive=true
+        inputObserverState.backpressureCount=inputObserverState.backpressureCount+1
+    end
+    return true
+end
+
+WORKFLOW_HELPERS.processInputObservationQueue = function()
+    local queueLength=WORKFLOW_HELPERS.inputQueueLength()
+    local now=os.clock()
+    if queueLength<=0 then
+        if now-inputObserverState.lastActivityClock>=LIMITS.inputObservationIdleSeconds then
+            WORKFLOW_HELPERS.setObservationPhase("idle","queue-empty",now)
+        elseif inputObserverState.phase=="action" and now-inputObserverState.lastMeaningfulActionClock>0.9 then
+            WORKFLOW_HELPERS.setObservationPhase("activity","recent-action-cooled",now)
+        end
+        inputObserverState.backpressureActive=false
+        return
+    end
+    local frameStarted=os.clock()
+    local processed=0
+    while processed<LIMITS.inputQueueMaxPerFrame and inputObserverState.queueHead<=inputObserverState.queueTail do
+        if os.clock()-frameStarted>=LIMITS.inputQueueFrameBudgetSeconds then
+            observerStats.inputQueueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames+1
+            break
+        end
+        local item=inputObserverState.queue[inputObserverState.queueHead]
+        inputObserverState.queue[inputObserverState.queueHead]=nil
+        inputObserverState.queueHead=inputObserverState.queueHead+1
+        processed=processed+1
+        if item then
+            local ok=pcall(function()
+                WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy(
+                    item.path,item.controlType,item.actionKind,item.metadata,item.featureCandidate,item.sourceObject)
+            end)
+            if ok then
+                observerStats.inputQueueProcessed=observerStats.inputQueueProcessed+1
+            else
+                observerStats.inputEventWindowFailures=observerStats.inputEventWindowFailures+1
+                workflowStats.observationFailures=workflowStats.observationFailures+1
+            end
+        end
+    end
+    if inputObserverState.queueHead>inputObserverState.queueTail then
+        inputObserverState.queueHead=1
+        inputObserverState.queueTail=0
+        inputObserverState.backpressureActive=false
+    end
+    local frameSeconds=os.clock()-frameStarted
+    observerStats.queueFrameCount=observerStats.queueFrameCount+1
+    observerStats.queueFrameSecondsTotal=observerStats.queueFrameSecondsTotal+frameSeconds
+    if frameSeconds>observerStats.queueFramePeakSeconds then
+        observerStats.queueFramePeakSeconds=frameSeconds
+    end
+end
+
+WORKFLOW_HELPERS.flushInputObservationQueueForExport = function()
+    for _=1,8 do
+        if WORKFLOW_HELPERS.inputQueueLength()<=0 then break end
+        WORKFLOW_HELPERS.processInputObservationQueue()
+    end
+end
+
+WORKFLOW_HELPERS.liveObservationFeatureSummary = function()
+    local features={}
+    for feature,item in pairs(EVIDENCE_HELPERS.featureInteractions) do
+        if type(feature)=="string" and type(item)=="table" then
+            local interactions=type(item.count)=="number" and item.count or 0
+            local stateChanges=type(item.stateChanges)=="number" and item.stateChanges or 0
+            local temporalChanges=type(item.temporalStateChanges)=="number" and item.temporalStateChanges or 0
+            local outcomeCandidates=type(item.outcomeCandidates)=="number" and item.outcomeCandidates or 0
+            if interactions>0 or stateChanges>0 or temporalChanges>0 or outcomeCandidates>0 then
+                features[#features+1]={
+                    feature=feature,
+                    interactionEvents=interactions,
+                    observedEvents=interactions,
+                    verifiedClientOutcomes=0,
+                    clientCorroboratedEvents=stateChanges,
+                    temporalTransitionEvents=temporalChanges,
+                    observableOutcomeCandidates=outcomeCandidates,
+                    implementationReady=false,
+                    readiness=(outcomeCandidates>0 and "observable-outcome-candidate-needs-causal-validation")
+                        or (interactions>0 and "interaction-observed-needs-state-verification")
+                        or "needs-observed-interaction",
+                    note="Observed client-side interaction evidence only; runtime, causal, and gameplay verification remain false"
+                }
+            end
+        end
+    end
+    table.sort(features,function(a,b) return a.feature<b.feature end)
+    return features
+end
+
+WORKFLOW_HELPERS.buildLiveObservationExport = function()
+    if not pendingManifest or type(pendingManifest.scanId)~="string" then
+        error("scan manifest unavailable for live observation export")
+    end
+    WORKFLOW_HELPERS.flushInputObservationQueueForExport()
+    local baselineScanId=pendingManifest.scanId
+    local baselinePartCount=pendingManifest.partCount or pendingManifest.expectedParts or 1
+    if type(baselinePartCount)~="number" or baselinePartCount<1 then baselinePartCount=1 end
+    baselinePartCount=math.floor(baselinePartCount)
+    local observationScanId="live-observation-"..HttpService:GenerateGUID(false)
+    local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
+    local features=WORKFLOW_HELPERS.liveObservationFeatureSummary()
+    local actionClassifications={}
+    for _,entry in ipairs(interactionHistory) do
+        local inferred=(type(entry)=="table" and type(entry.inferredAction)=="table") and entry.inferredAction or nil
+        local key=tostring((inferred and inferred.kind) or entry.actionKind or entry.controlType or "unknown"):sub(1,80)
+        actionClassifications[key]=(actionClassifications[key] or 0)+1
+    end
+    local readiness={}
+    for _,entry in ipairs(features) do
+        readiness[entry.feature]={
+            discovered=true,
+            observed=entry.interactionEvents>0,
+            observedStateChange=entry.clientCorroboratedEvents>0,
+            temporalStateChanges=entry.temporalTransitionEvents,
+            observableOutcomeCandidates=entry.observableOutcomeCandidates,
+            implemented=false,tested=false,
+            readiness=entry.readiness,
+            note="Observed interaction/state correlation only; causality, server authority, and gameplay remain unverified"
+        }
+    end
+    local reportTransportSnapshot=uploadSnapshot("live-observation-export")
+    local baselineMultipartUploadCompleted=(type(reportTransportSnapshot)=="table"
+        and type(reportTransportSnapshot.expectedParts)=="number"
+        and reportTransportSnapshot.expectedParts>0
+        and reportTransportSnapshot.acknowledgedParts==reportTransportSnapshot.expectedParts)
+    local receiverDigestCount=(type(reportTransportSnapshot)=="table"
+        and type(reportTransportSnapshot.acknowledgedDigestParts)=="number")
+        and reportTransportSnapshot.acknowledgedDigestParts or 0
+    local gestureIntentSummary=summarizeInputGestureIntents()
+    local targetedCapture=WORKFLOW_HELPERS.targetedCaptureForExport({kind="live-observation",scanId=baselineScanId})
+    return {
+        schemaVersion="30.6.live-observation-export.1",
+        exportKind="dynamic-observations",
+        placeId=game.PlaceId,
+        gameId=game.GameId,
+        gameName=lastGameName or game.Name,
+        inspectedAt=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        scanId=baselineScanId,
+        baselineScanId=baselineScanId,
+        sessionId=sessionId,
+        snapshotId=pendingManifest.snapshotId or snapshotId,
+        sourceDiagnostics={
+            scanMode="dynamic-observations",
+            baselineScanId=baselineScanId,
+            observationOnly=true,
+            requiresFullObjectRescan=false,
+            observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
+            observerInputBindingReady=observerStats.inputBindingReady,
+            uploadInProgress=uploading,
+            baselineMultipartUploadCompleted=baselineMultipartUploadCompleted,
+            baselineReportTransport=reportTransportSnapshot,
+            targetedCaptureAvailable=targetedCapture and targetedCapture.available~=false,
+            targetedCaptureActive=targetedCapture and targetedCapture.active==true,
+            targetedCaptureSummary=targetedCapture and targetedCapture.summary or nil,
+            note="Post-scan live observations overlay baseline evidence; receiver integrity remains unverified unless separately authenticated"
+        },
+        integrity={
+            scanComplete=true,
+            placeId=game.PlaceId,
+            scanId=observationScanId,
+            baselineScanId=baselineScanId,
+            parts=baselinePartCount,
+            interactionEvents=interactionEventCount,
+            sourceAuthenticityVerified=false,
+            causalityProven=false,
+            serverAuthorityVerified=false,
+            gameplayVerified=false
+        },
+        sourceProvenance={
+            schemaVersion="30.2.source-provenance.1",
+            inputMode="local-multipart",
+            scanId=observationScanId,
+            placeId=game.PlaceId,
+            partCount=baselinePartCount,
+            receiverStoredPayloadDigestCount=receiverDigestCount,
+            receiverStoredPayloadDigestsVerified=false,
+            receiverStoredPayloadDigestsRevalidatedThisRun=false,
+            receiverAcknowledgementDigestEquivalent=baselineMultipartUploadCompleted,
+            receiverIntegrityStatus=(reportTransportSnapshot and reportTransportSnapshot.receiverReportStatus) or "unavailable",
+            receiverIntegrityVerified=false,
+            resumeCheckpointAuthenticated=false,
+            receiverResponseAuthenticityVerified=false,
+            localPayloadEquivalent=false,
+            sourceAuthenticityVerified=false,
+            causalityProven=false,
+            serverAuthorityVerified=false,
+            replayable=false,
+            gameplayVerified=false,
+            actionOutcomesVerified=false,
+            note="Live observation export does not cryptographically re-verify receiver payload integrity"
+        },
+        features=features,
+        featureReadiness=readiness,
+        interactionDiagnostics={
+            observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
+            enabledAtExport=interactionObserveEnabled,
+            listenersAttached=observerStats.listenersAttached,
+            callbacksFired=observerStats.callbacksFired,
+            callbackSourceBreakdown={
+                objectInteractionCallbacksFired=observerStats.objectInteractionCallbacksFired,
+                inputInteractionCallbacksFired=observerStats.inputInteractionCallbacksFired,
+            },
+            callbackAttributionBreakdown={
+                objectCallbacksAttributed=observerStats.objectCallbacksAttributed,
+                objectCallbacksUnattributed=observerStats.objectCallbacksUnattributed,
+                inputCallbacksAttributed=observerStats.inputCallbacksAttributed,
+                inputCallbacksUnattributed=observerStats.inputCallbacksUnattributed,
+            },
+            stateDeltaEvents=observerStats.stateDeltaEvents,
+            pendingObservationEvents=pendingObservationEvents,
+            cumulativeChangeEvents=changeCount,
+            totalInteractionEvents=interactionEventCount,
+            attributedEvents=attributedInteractionCount,
+            unattributedEvents=unattributedInteractionCount,
+            recentInteractions=interactionHistory,
+            interactionHistoryLimit=LIMITS.maxInteractionHistory,
+            cursorObservationHistory=cursorObservationHistory,
+            clickTargetObservations=clickTargetObservations,
+            clickOutcomeRelationships=clickOutcomeRelationships,
+            inputGestureObservations=inputGestureObservations,
+            characterOrientationSamples=characterOrientationSamples,
+            cameraOrientationSamples=cameraOrientationSamples,
+            playerPositionHistory=playerPositionHistory,
+            eventPositionSnapshots=eventPositionSnapshots,
+            spatialLocationHistory=spatialLocationHistory,
+            targetedCaptureSessionSummary=targetedCapture,
+            targetedCaptureTimelineEvents=(targetedCapture and targetedCapture.timelineEvents) or {},
+            cursorClickOrientationSchemas={
+                cursorObservation="30.6.cursor-observation.1",
+                clickTargetObservation="30.6.click-target-observation.1",
+                clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                inputGestureObservation="30.6.input-gesture-observation.1",
+                characterOrientation="30.6.character-orientation.1",
+                cameraOrientation="30.6.camera-orientation.1",
+            },
+            spatialSamplingLimits={
+                maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
+                maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
+                maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
+                maxClickTargetObservations=LIMITS.maxClickTargetObservations,
+                maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                maxInputGestureObservations=LIMITS.maxInputGestureObservations,
+                maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
+                maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
+                nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+            },
+            spatialStats={
+                samplesCaptured=spatialStats.samplesCaptured,
+                samplesSkipped=spatialStats.samplesSkipped,
+                invalidSamples=spatialStats.invalidSamples,
+                teleportsDetected=spatialStats.teleportsDetected,
+                respawnGenerations=spatialStats.respawnGenerations,
+                eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
+                nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
+                nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+                cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
+                clickTargetsCaptured=spatialStats.clickTargetsCaptured,
+                clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                inputGesturesCaptured=spatialStats.inputGesturesCaptured,
+                characterOrientationCaptured=spatialStats.characterOrientationCaptured,
+                cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
+            },
+            workflowStats=workflowStats,
+            backfilledOutcomeCandidates=recoveredOutcomeCandidates,
+            actionClassifications=actionClassifications,
+            inputGestureIntentDiagnostics=gestureIntentSummary,
+            inputObservationStats={
+                captured=observerStats.inputEventsCaptured,
+                dropped=observerStats.inputEventsDropped,
+                windowsCompleted=observerStats.inputEventWindowsCompleted,
+                windowFailures=observerStats.inputEventWindowFailures,
+                toolEquipsObserved=observerStats.toolEquipsObserved,
+                toolUnequipsObserved=observerStats.toolUnequipsObserved,
+                movementEventsObserved=observerStats.movementEventsObserved,
+                animationEventsObserved=observerStats.animationEventsObserved,
+                objectInteractionCallbacksFired=observerStats.objectInteractionCallbacksFired,
+                inputInteractionCallbacksFired=observerStats.inputInteractionCallbacksFired,
+                objectCallbacksAttributed=observerStats.objectCallbacksAttributed,
+                objectCallbacksUnattributed=observerStats.objectCallbacksUnattributed,
+                inputCallbacksAttributed=observerStats.inputCallbacksAttributed,
+                inputCallbacksUnattributed=observerStats.inputCallbacksUnattributed,
+                inputBindingReady=observerStats.inputBindingReady,
+                lastInputEventAt=observerStats.lastInputEventAt,
+                queueEnqueued=observerStats.inputQueueEnqueued,
+                queueProcessed=observerStats.inputQueueProcessed,
+                queueDropped=observerStats.inputQueueDropped,
+                queuePeak=observerStats.inputQueuePeak,
+                queueLength=WORKFLOW_HELPERS.inputQueueLength(),
+                queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
+                queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                clickInputsObserved=observerStats.clickInputsObserved,
+                clickInputsProcessed=observerStats.clickInputsProcessed,
+                clickInputsGameProcessed=observerStats.clickInputsGameProcessed,
+                clickCaptureAttempts=observerStats.clickCaptureAttempts,
+                clickCapturesRecorded=observerStats.clickCapturesRecorded,
+                clickCaptureFailures=observerStats.clickCaptureFailures,
+                clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures,
+                clickCaptureFailureStageCounts=observerStats.clickCaptureFailureStageCounts,
+                clickCaptureFailureReasonCounts=observerStats.clickCaptureFailureReasonCounts,
+                clickCaptureFailureSamples=observerStats.clickCaptureFailureSamples,
+                clickCaptureComponentFailureSamples=observerStats.clickCaptureComponentFailureSamples,
+                clickTargetsResolved=observerStats.clickTargetsResolved,
+                clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
+                clickInspectorOwned=observerStats.clickInspectorOwned,
+                clickLinksAttempted=observerStats.clickLinksAttempted,
+                clickLinksMatched=observerStats.clickLinksMatched,
+                clickLinksMissed=observerStats.clickLinksMissed,
+                clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource,
+                clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate,
+                clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts,
+                clickLinkMissSamples=observerStats.clickLinkMissSamples,
+                clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
+                clickLinksExpired=observerStats.clickLinksExpired,
+                clickLinksPruned=observerStats.clickLinksPruned,
+                inputGesturesStarted=observerStats.inputGesturesStarted,
+                inputGesturesCompleted=observerStats.inputGesturesCompleted,
+                inputGesturesInterrupted=observerStats.inputGesturesInterrupted,
+                inputGestureClickCandidates=observerStats.inputGestureClickCandidates,
+                inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates,
+                inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates,
+                inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates,
+                inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates,
+                inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs,
+                inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements,
+                inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions,
+                gestureIntentSummary=gestureIntentSummary,
+                callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
+                phase=inputObserverState.phase,
+                phaseReason=inputObserverState.phaseReason,
+                phaseTransitions=inputObserverState.phaseTransitions,
+                phaseSinceSeconds=math.floor((os.clock()-inputObserverState.phaseSince)*1000+0.5)/1000,
+                frameAverageSeconds=(observerStats.queueFrameCount>0)
+                    and math.floor((observerStats.queueFrameSecondsTotal/observerStats.queueFrameCount)*100000+0.5)/100000
+                    or 0,
+                framePeakSeconds=math.floor(observerStats.queueFramePeakSeconds*100000+0.5)/100000,
+                stateSnapshotCalls=observerStats.stateSnapshotCalls,
+                stateSnapshotAverageSeconds=(observerStats.stateSnapshotCalls>0)
+                    and math.floor((observerStats.stateSnapshotSeconds/observerStats.stateSnapshotCalls)*100000+0.5)/100000
+                    or 0,
+                stateSnapshotPeakSeconds=math.floor(observerStats.stateSnapshotPeakSeconds*100000+0.5)/100000
+            },
+            stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates","character humanoid/equipment/animation snapshots","bounded HUD numeric signals"},
+            actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
+            gameplayOutcomesVerified=0
+        },
+        targetedCaptureSession=targetedCapture,
+        playerPositionHistory=playerPositionHistory,
+        eventPositionSnapshots=eventPositionSnapshots,
+        spatialLocationHistory=spatialLocationHistory,
+        cursorObservationHistory=cursorObservationHistory,
+        clickTargetObservations=clickTargetObservations,
+        clickOutcomeRelationships=clickOutcomeRelationships,
+        inputGestureObservations=inputGestureObservations,
+        characterOrientationSamples=characterOrientationSamples,
+        cameraOrientationSamples=cameraOrientationSamples,
+        cursorClickOrientationSchemas={
+            cursorObservation="30.6.cursor-observation.1",
+            clickTargetObservation="30.6.click-target-observation.1",
+            clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+            inputGestureObservation="30.6.input-gesture-observation.1",
+            characterOrientation="30.6.character-orientation.1",
+            cameraOrientation="30.6.camera-orientation.1",
+        },
+        spatialDiscovery={
+            status=(#playerPositionHistory>0 or #eventPositionSnapshots>0)
+                and "captured" or "not-captured",
+            characterGenerationsObserved=spatialCharacterGeneration,
+            sampleCount=#playerPositionHistory,
+            eventSnapshotCount=#eventPositionSnapshots,
+            locationEventCount=#spatialLocationHistory,
+            cursorObservationCount=#cursorObservationHistory,
+            clickTargetObservationCount=#clickTargetObservations,
+            clickOutcomeRelationshipCount=#clickOutcomeRelationships,
+            inputGestureObservationCount=#inputGestureObservations,
+            characterOrientationSampleCount=#characterOrientationSamples,
+            cameraOrientationSampleCount=#cameraOrientationSamples,
+            nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+            activeWorkspaceOnly=true,
+            replicatedStorageTemplatesExcluded=true,
+            interpolationPolicy="sampled-only-no-interpolated-positions",
+            continuityPolicy="character-generation-boundaries-preserved",
+            notes="Client-visible positional evidence only; no server authority or causality proof"
+        },
+        pipelineIngestion={
+            supported=true,
+            requiresFullObjectRescan=false,
+            baselineScanId=baselineScanId,
+            mergeTool="tools/merge_observations.py",
+            mergeMode="evidence-overlay",
+            notes={"Use this export as a dynamic observation overlay on the baseline full scan","Observed inputs and inferred action classes are not verified gameplay outcomes"}
+        },
+        readOnly=true,
+        runtimeVerified=false,
+        sourceAuthenticityVerified=false,
+        causalityProven=false,
+        serverAuthorityVerified=false,
+        gameplayVerified=false
+    }
+end
+
+
+WORKFLOW_HELPERS.equippedToolSnapshot = function()
+    local character=player.Character
+    local result={count=0,names={},hasCombatTool=false}
+    if not character then return result end
+    for _,child in ipairs(character:GetChildren()) do
+        if child:IsA("Tool") then
+            local name=child.Name:sub(1,60)
+            result.names[#result.names+1]=name
+            local lower=name:lower()
+            if lower:find("gun",1,true) or lower:find("rifle",1,true)
+                or lower:find("pistol",1,true) or lower:find("shot",1,true)
+                or lower:find("sniper",1,true) or lower:find("smg",1,true)
+                or lower:find("blade",1,true) or lower:find("sword",1,true)
+                or lower:find("knife",1,true) then
+                result.hasCombatTool=true
+            end
+        end
+    end
+    table.sort(result.names)
+    result.count=#result.names
+    return result
+end
+
+WORKFLOW_HELPERS.inferInputAction = function(keyCode,inputType,toolSnapshot)
+    local keyName=tostring(keyCode and keyCode.Name or "")
+    if keyName=="R" then return "reload" end
+    if keyName=="Q" or keyName=="One" or keyName=="Two" or keyName=="Three"
+        or keyName=="Four" or keyName=="Five" or keyName=="Six" or keyName=="Seven"
+        or keyName=="Eight" or keyName=="Nine" or keyName=="Zero" then
+        return "switch"
+    end
+    if keyName=="Space" then return "jump" end
+    if keyName=="LeftShift" or keyName=="RightShift" then return "sprint" end
+    local inputName=tostring(inputType and inputType.Name or "")
+    if inputName=="MouseButton1" or inputName=="MouseButton2"
+        or keyName=="ButtonR2" or keyName=="ButtonL2" then
+        if toolSnapshot and toolSnapshot.count>0 then return "fire" end
+        return "pointer-activate"
+    end
+    return nil
+end
+
+WORKFLOW_HELPERS.inferInputFeature = function(action,toolSnapshot)
+    if action=="fire" or action=="reload" or action=="switch" then
+        return toolSnapshot and toolSnapshot.hasCombatTool and "combat" or "inventory"
+    end
+    if action=="jump" or action=="sprint" then return "movement" end
+    if action=="equip" or action=="unequip" then
+        return toolSnapshot and toolSnapshot.hasCombatTool and "combat" or "inventory"
+    end
+    return nil
+end
+
+WORKFLOW_HELPERS.recordUniversalInputInteractionHeavy = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
+    if not alive or not interactionObserveEnabled then return end
+    if type(path)~="string" or path=="" then return end
+    local activationClock=os.clock()
+    local sessionElapsedSeconds=math.floor((activationClock-sessionStartedClock)*1000+0.5)/1000
+    autoEvidenceLastInteraction=activationClock
+    interactionEventCount=interactionEventCount+1
+    observerStats.inputEventsCaptured=observerStats.inputEventsCaptured+1
+    observerStats.callbacksFired=observerStats.callbacksFired+1
+    observerStats.inputInteractionCallbacksFired=observerStats.inputInteractionCallbacksFired+1
+    WORKFLOW_HELPERS.bumpCallbackRate(activationClock)
+    observerStats.lastCallbackAt=os.date("!%Y-%m-%dT%H:%M:%SZ")
+    observerStats.lastEventPath=path:sub(1,180)
+    observerStats.lastInputEventAt=observerStats.lastCallbackAt
+    if featureCandidate then
+        attributedInteractionCount=attributedInteractionCount+1
+        observerStats.inputCallbacksAttributed=observerStats.inputCallbacksAttributed+1
+    else
+        unattributedInteractionCount=unattributedInteractionCount+1
+        observerStats.inputCallbacksUnattributed=observerStats.inputCallbacksUnattributed+1
+    end
+
+    local priority=WORKFLOW_HELPERS.inputActionPriority(actionKind,featureCandidate,metadata)
+    local stateOptions=WORKFLOW_HELPERS.stateOptionsForInput(actionKind,priority,metadata)
+    local before,beforeStateIdentities=EVIDENCE_HELPERS.safeInteractionState(stateOptions)
+    local beforeGui=(sourceObject and sourceObject:IsA("GuiObject"))
+        and EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject) or {}
+    local beforePositionSample,beforePosition=capturePlayerPositionSample("input-baseline",true)
+    local rootPart=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not beforePosition and rootPart then beforePosition=rootPart.Position end
+    local actionPositionSample,actionPositionRaw=capturePlayerPositionSample("input-action",true)
+    local nearbyWorldObjects=captureNearbyWorldObjects(actionPositionRaw or beforePosition)
+    local linkedClickObservationId=(metadata and type(metadata.clickObservationId)=="string")
+        and metadata.clickObservationId or nil
+    local linkedClickObservation=linkedClickObservationId and clickTargetById[linkedClickObservationId] or nil
+    local explicitRecording=(priority>=2) and recordWorkflowInteraction(
+        activationClock,sessionElapsedSeconds,"automatic-activity-window") or nil
+    local transactionId=explicitRecording and explicitRecording.recordingId or (observationSequence+1)
+    local workflow={phase="input-observed",confidence="bounded-input-observation",
+        action=actionKind,featureCandidate=featureCandidate,
+        linkedSequence=nil,sourceAuthenticityVerified=false,
+        causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+
+    local historyItem={
+        path=path:sub(1,400),pathIdentity=nil,
+        featureCandidate=featureCandidate,attribution=featureCandidate and "input-context" or "unattributed-input",
+        controlType=controlType,actionKind=actionKind,
+        observedAt=observerStats.lastCallbackAt,sequence=observationSequence+1,
+        sessionId=sessionId,sessionElapsedSeconds=sessionElapsedSeconds,
+        transactionId=transactionId,
+        transactionOrder=explicitRecording and explicitRecording.order or nil,
+        transactionLinkSource=explicitRecording and explicitRecording.linkageSource or "singleton-input-event",
+        explicitWorkflowRecording=explicitRecording,
+        stateChangeCount=0,guiContext=EVIDENCE_HELPERS.interactionGuiContext(sourceObject or player),
+        workflow=workflow,guiRevealFollowup=nil,
+        controlMetadata=metadata,baselineSource="input-event-callback",
+        baselineTiming="input-event-callback",baselineAgeSeconds=nil,
+        preActivationBaselineAvailable=false,
+        characterGeneration=spatialCharacterGeneration,
+        beforePositionSample=beforePositionSample,
+        actionPositionSample=actionPositionSample,
+        characterOrientationAtAction=actionPositionSample and actionPositionSample.characterOrientation or nil,
+        cameraOrientationAtAction=actionPositionSample and actionPositionSample.cameraOrientation or nil,
+        cameraCharacterHeadingDeltaDegrees=actionPositionSample and actionPositionSample.cameraCharacterHeadingDeltaDegrees or nil,
+        nearbyWorldObjects=nearbyWorldObjects,
+        clickObservationId=linkedClickObservationId,
+        clickTargetObservation=linkedClickObservation,
+        inferredLocationPurpose=inferSpatialPurpose(featureCandidate,path,actionKind),
+        evidenceLevel="interaction-observed", outcomeVerified=false,
+        observedInput=true,
+        inferredAction={kind=actionKind,
+            confidence=(priority>=3 and "high") or (priority==2 and "moderate") or "low",
+            evidenceSignals={"local-input-event"},serverVerified=false,
+            causalVerification=false,gameplayVerified=false}
+    }
+    interactionHistory[#interactionHistory+1]=historyItem
+    if #interactionHistory>LIMITS.maxInteractionHistory then table.remove(interactionHistory,1) end
+
+    registerEventPositionSnapshot(historyItem,"before-action",beforePositionSample,nil)
+    registerEventPositionSnapshot(historyItem,"at-action",actionPositionSample,nil)
+    trackSpatialLocationEvent(historyItem,actionPositionSample,featureCandidate,
+        actionKind,path,nearbyWorldObjects)
+
+    observationSequence=observationSequence+1
+    if linkedClickObservationId then
+        updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,false)
+    end
+
+    changeCount=changeCount+1
+    changeQueue[#changeQueue+1]={
+        path=path:sub(1,400),pathIdentity=nil,class="InputEvent",
+        featureCandidate=featureCandidate,featureMatchCount=featureCandidate and 1 or 0,
+        attribution=historyItem.attribution,
+        category="user-input",controlType=controlType,
+        controlMetadata=metadata,baselineSource=historyItem.baselineSource,
+        baselineTiming=historyItem.baselineTiming,
+        preActivationBaselineAvailable=false,
+        action="user-input",observedAt=historyItem.observedAt,
+        evidence="manual-user-input",sessionId=sessionId,
+        sessionElapsedSeconds=sessionElapsedSeconds,snapshotId=snapshotId,sequence=observationSequence,
+        transactionId=transactionId,transactionOrder=historyItem.transactionOrder,
+        transactionLinkSource=historyItem.transactionLinkSource,
+        actionKind=actionKind,
+        actionConfidence=historyItem.inferredAction and historyItem.inferredAction.confidence or "low"
+    }
+
+    local seenStateKeys={}
+    local seenGuiKeys={}
+    local plannedWindows=WORKFLOW_HELPERS.observationWindowsForInput(priority)
+    for _,delaySeconds in ipairs(plannedWindows) do
+        pendingObservationEvents=pendingObservationEvents+1
+        task.delay(delaySeconds,function()
+            pendingObservationEvents=math.max(0,pendingObservationEvents-1)
+            if not alive then return end
+            local ok=pcall(function()
+                local after,afterStateIdentities=EVIDENCE_HELPERS.safeInteractionState(stateOptions)
+                local guiChanges=(sourceObject and sourceObject:IsA("GuiObject"))
+                    and EVIDENCE_HELPERS.compareNearbyGuiState(beforeGui,
+                        EVIDENCE_HELPERS.safeNearbyGuiState(sourceObject)) or {}
+                local changes={}
+                for key,value in pairs(before) do
+                    if after[key]~=nil and after[key]~=value and #changes<LIMITS.maxStateChanges then
+                        local identity=afterStateIdentities[key]
+                        changes[#changes+1]={key=key,before=value,after=after[key],stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                for key,value in pairs(after) do
+                    if before[key]==nil and #changes<LIMITS.maxStateChanges then
+                        local identity=afterStateIdentities[key]
+                        changes[#changes+1]={key=key,transition="added",after=value,stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                for key,value in pairs(before) do
+                    if after[key]==nil and #changes<LIMITS.maxStateChanges then
+                        local identity=beforeStateIdentities[key]
+                        changes[#changes+1]={key=key,transition="removed",before=value,stateIdentity=identity,
+                            stateIdentityStatus=identity and "component-resolved" or "unavailable"}
+                    end
+                end
+                local windowPositionSample,windowPositionRaw=capturePlayerPositionSample(
+                    "input-observation-window-"..tostring(delaySeconds),true)
+                local distance=nil
+                local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if not windowPositionRaw and currentRoot then windowPositionRaw=currentRoot.Position end
+                if beforePosition and windowPositionRaw then
+                    distance=(windowPositionRaw-beforePosition).Magnitude
+                    distance=math.floor(distance*10+0.5)/10
+                end
+                local evidence=relevantActionEvidence(featureCandidate,workflow,changes)
+                local freshState={}
+                for _,change in ipairs(changes) do
+                    local identity=change.key.."|"..tostring(change.before).."|"..tostring(change.after).."|"..tostring(change.transition)
+                    if not seenStateKeys[identity] then
+                        seenStateKeys[identity]=true
+                        freshState[#freshState+1]=change
+                    end
+                end
+                local freshGui={}
+                for _,change in ipairs(guiChanges) do
+                    local identity=change.path.."|"..tostring(change.beforeVisible).."|"..tostring(change.afterVisible).."|"..tostring(change.transition)
+                    if not seenGuiKeys[identity] then
+                        seenGuiKeys[identity]=true
+                        freshGui[#freshGui+1]=change
+                    end
+                end
+                local transactionFresh={}
+                for _,change in ipairs(freshState) do
+                    local identity=tostring(transactionId).."|"..change.key.."|"..
+                        tostring(change.before).."|"..tostring(change.after).."|"..
+                        tostring(change.transition)
+                    if not transactionEvidenceSeen[identity] then
+                        transactionEvidenceSeen[identity]=true
+                        transactionEvidenceCount=transactionEvidenceCount+1
+                        transactionFresh[#transactionFresh+1]=change
+                    end
+                end
+                if transactionEvidenceCount>LIMITS.maxTransactionSignatures then
+                    transactionEvidenceSeen={}
+                    transactionEvidenceCount=0
+                end
+                workflowStats.uniqueStateEvents=workflowStats.uniqueStateEvents+#transactionFresh
+                workflowStats.uniqueGuiEvents=workflowStats.uniqueGuiEvents+#freshGui
+                local featureStateEvidence=featureConsistentStateEvidence(featureCandidate,transactionFresh)
+                local featureGuiEvidence=featureConsistentGuiEvidence(featureCandidate,freshGui)
+                if featureStateEvidence then historyItem.featureStateEvidence=featureStateEvidence end
+                if featureGuiEvidence then historyItem.featureGuiEvidence=featureGuiEvidence end
+                if (featureStateEvidence or featureGuiEvidence) and not historyItem.observableOutcomeCandidate then
+                    historyItem.observableOutcomeCandidate={feature=featureCandidate,
+                        classification="feature-consistent-observable-change",
+                        evidenceKinds={featureStateEvidence and "state-change" or "gui-change",
+                            featureStateEvidence and featureGuiEvidence and "gui-change" or nil},
+                        overlappingInteractionsPossible=true,sourceAuthenticityVerified=false,
+                        causalityProven=false,serverAuthorityVerified=false,gameplayVerified=false}
+                    historyItem.outcomeVerified=false
+                    workflowStats.completedCandidates=workflowStats.completedCandidates+1
+                end
+                local window={seconds=delaySeconds,stateChanges=freshState,
+                    stateChangeCount=#freshState,guiChanges=freshGui,
+                    guiChangeCount=#freshGui,travelDistanceStuds=distance,
+                    baselineSource="input-event-callback",baselineTiming="input-event-callback",
+                    preActivationBaselineAvailable=false,
+                    featureStateEvidence=featureStateEvidence,
+                    featureGuiEvidence=featureGuiEvidence,actionEvidence=evidence,
+                    positionSample=windowPositionSample}
+                historyItem.observationWindows=historyItem.observationWindows or {}
+                historyItem.observationWindows[#historyItem.observationWindows+1]=window
+                registerEventPositionSnapshot(historyItem,
+                    "input-observation-window-"..tostring(delaySeconds),windowPositionSample,delaySeconds)
+                historyItem.guiStateChanges=historyItem.guiStateChanges or {}
+                for _,g in ipairs(freshGui) do historyItem.guiStateChanges[#historyItem.guiStateChanges+1]=g end
+                historyItem.guiStateChangeCount=#historyItem.guiStateChanges
+                if #transactionFresh>0 then
+                    historyItem.evidenceLevel="temporal-state-change-observed"
+                    historyItem.stateChangeCount=(historyItem.stateChangeCount or 0)+#transactionFresh
+                    historyItem.stateChanges=historyItem.stateChanges or {}
+                    for _,change in ipairs(transactionFresh) do
+                        historyItem.stateChanges[#historyItem.stateChanges+1]=change
+                    end
+                    observerStats.stateDeltaEvents=observerStats.stateDeltaEvents+1
+                end
+                if evidence.clientStateCorroborated and not historyItem.clientStateCorroborated then
+                    historyItem.clientStateCorroborated=true
+                    workflowStats.actionOutcomesCorroborated=workflowStats.actionOutcomesCorroborated+1
+                end
+                if linkedClickObservationId then
+                    updateClickOutcomeFromHistory(linkedClickObservationId,historyItem,false)
+                end
+                if #transactionFresh>0 or #freshGui>0 then
+                    changeCount=changeCount+1
+                    changeQueue[#changeQueue+1]={
+                        path=path:sub(1,400),class="InputEvent",category="input-observation-window",
+                        featureCandidate=featureCandidate,sequence=historyItem.sequence,
+                        baselineSource="input-event-callback",baselineTiming="input-event-callback",
+                        preActivationBaselineAvailable=false,
+                        observationWindowSeconds=delaySeconds,changes=transactionFresh,
+                        guiChanges=freshGui,travelDistanceStuds=distance,
+                        featureStateEvidence=featureStateEvidence,
+                        featureGuiEvidence=featureGuiEvidence,
+                        actionEvidence=evidence,causalVerification=false,
+                        sessionId=sessionId,snapshotId=snapshotId,
+                        actionKind=actionKind
+                    }
+                end
+                observerStats.inputEventWindowsCompleted=observerStats.inputEventWindowsCompleted+1
+                workflowStats.multiWindowSamples=workflowStats.multiWindowSamples+1
+            end)
+            if not ok then
+                observerStats.inputEventWindowFailures=observerStats.inputEventWindowFailures+1
+                workflowStats.observationFailures=workflowStats.observationFailures+1
+            end
+        end)
+    end
+end
+
+WORKFLOW_HELPERS.recordUniversalInputInteraction = function(path,controlType,actionKind,metadata,featureCandidate,sourceObject)
+    if not alive or not interactionObserveEnabled then return end
+    local priority=WORKFLOW_HELPERS.inputActionPriority(actionKind,featureCandidate,metadata)
+    local now=os.clock()
+    inputObserverState.lastActivityClock=now
+    if priority>=2 then
+        inputObserverState.lastMeaningfulActionClock=now
+        WORKFLOW_HELPERS.setObservationPhase("action","meaningful-input",now)
+    else
+        WORKFLOW_HELPERS.setObservationPhase("activity","input-observed",now)
+    end
+    if priority<=0 then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return
+    end
+    local signature=(tostring(actionKind or "").."|"..tostring(featureCandidate or "").."|"
+        ..tostring(metadata and metadata.keyCode or metadata and metadata.inputType or "").."|"
+        ..tostring(metadata and metadata.source or ""))
+    if inputObserverState.recent.inputSignature==signature
+        and now-(inputObserverState.recent.inputSignatureClock or 0)<0.08 then
+        observerStats.inputEventsDropped=observerStats.inputEventsDropped+1
+        return
+    end
+    inputObserverState.recent.inputSignature=signature
+    inputObserverState.recent.inputSignatureClock=now
+    WORKFLOW_HELPERS.enqueueInputObservationTask({
+        path=path,controlType=controlType,actionKind=actionKind,metadata=metadata,
+        featureCandidate=featureCandidate,sourceObject=sourceObject,priority=priority
+    })
+end
+
+WORKFLOW_HELPERS.observeUniversalInputObject = function(obj,root,label)
+    if not alive then return end
+    if universalInputObserved[obj] then return end
+    if obj:IsA("Tool") then
+        local character=player.Character
+        local backpack=player:FindFirstChildOfClass("Backpack")
+        local localTool=(character and obj:IsDescendantOf(character))
+            or (backpack and obj:IsDescendantOf(backpack))
+        if not localTool then return end
+        universalInputObserved[obj]=true
+        local toolPath=watchPath(obj,root,label)
+        if not toolPath then return end
+        local function toolMetadata(stage)
+            local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+            return {
+                stage=stage,toolName=obj.Name:sub(1,80),
+                tooltip=tostring(obj.ToolTip or ""):sub(1,80),
+                equippedToolCount=snapshot.count,
+                equippedTools=snapshot.names,
+                combatToolContext=snapshot.hasCombatTool,
+                source="Tool."..stage,
+            }
+        end
+        local okEquip,connEquip=pcall(function()
+            return obj.Equipped:Connect(function()
+                if not alive or not interactionObserveEnabled then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(toolPath.."|equipped",0.2) then return end
+                observerStats.toolEquipsObserved=observerStats.toolEquipsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local feature=snapshot.hasCombatTool and "combat" or "inventory"
+                WORKFLOW_HELPERS.recordUniversalInputInteraction(toolPath..".Equipped","Tool.Equipped",
+                    "equip",toolMetadata("equipped"),feature,obj)
+            end)
+        end)
+        if okEquip then table.insert(watchConnections,connEquip) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okUnequip,connUnequip=pcall(function()
+            return obj.Unequipped:Connect(function()
+                if not alive or not interactionObserveEnabled then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(toolPath.."|unequipped",0.2) then return end
+                observerStats.toolUnequipsObserved=observerStats.toolUnequipsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local feature=snapshot.hasCombatTool and "combat" or "inventory"
+                WORKFLOW_HELPERS.recordUniversalInputInteraction(toolPath..".Unequipped","Tool.Unequipped",
+                    "unequip",toolMetadata("unequipped"),feature,obj)
+            end)
+        end)
+        if okUnequip then table.insert(watchConnections,connUnequip) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    elseif obj:IsA("Humanoid") then
+        local character=player.Character
+        local localHumanoid=character and character:FindFirstChildOfClass("Humanoid")
+        if obj~=localHumanoid then return end
+        universalInputObserved[obj]=true
+        local okRun,runConn=pcall(function()
+            return obj.Running:Connect(function(speed)
+                if not alive or not interactionObserveEnabled then return end
+                local moving=speed>=2
+                if inputObserverState.movementBaseline==moving then return end
+                inputObserverState.movementBaseline=moving
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-running-"..tostring(moving),0.5) then return end
+                observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
+                local stateTag=moving and "move-start" or "move-stop"
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Running","Humanoid.Running",
+                    stateTag,{speed=math.floor(speed*100+0.5)/100,
+                        equippedTools=snapshot.names,source="Humanoid.Running"},
+                    "movement",obj)
+            end)
+        end)
+        if okRun then table.insert(watchConnections,runConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okJump,jumpConn=pcall(function()
+            return obj.Jumping:Connect(function(active)
+                if not alive or not interactionObserveEnabled or not active then return end
+                if not WORKFLOW_HELPERS.inputThrottleAllowed("humanoid-jump",0.55) then return end
+                observerStats.movementEventsObserved=observerStats.movementEventsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Jumping","Humanoid.Jumping",
+                    "jump",{active=true,equippedTools=snapshot.names,source="Humanoid.Jumping"},
+                    "movement",obj)
+            end)
+        end)
+        if okJump then table.insert(watchConnections,jumpConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+        local okAnim,animConn=pcall(function()
+            return obj.AnimationPlayed:Connect(function(track)
+                if not alive or not interactionObserveEnabled then return end
+                local animationId=track and track.Animation and tostring(track.Animation.AnimationId or "") or ""
+                if animationId=="" then return end
+                local key="local-animation:"..animationId:sub(1,80)
+                if not WORKFLOW_HELPERS.inputThrottleAllowed(key,1.8) then return end
+                observerStats.animationEventsObserved=observerStats.animationEventsObserved+1
+                local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+                local action=snapshot.hasCombatTool and "combat-animation" or "animation"
+                local feature=snapshot.hasCombatTool and "combat" or nil
+                WORKFLOW_HELPERS.recordUniversalInputInteraction("Character.Humanoid.Animation","Humanoid.AnimationPlayed",
+                    action,{animationId=animationId:sub(1,80),source="Humanoid.AnimationPlayed",
+                        equippedTools=snapshot.names},feature,obj)
+            end)
+        end)
+        if okAnim then table.insert(watchConnections,animConn) else observerStats.bindingErrors=observerStats.bindingErrors+1 end
+    end
+end
+
+WORKFLOW_HELPERS.startUniversalInputObservation = function()
+    if observerStats.inputBindingReady then return end
+    observerStats.inputBindingReady=true
+    WORKFLOW_HELPERS.setObservationPhase("idle","input-observation-started",os.clock())
+    table.insert(watchConnections,game:GetService("RunService").Heartbeat:Connect(function()
+        if not alive then return end
+        local heartbeatClock=os.clock()
+        capturePlayerPositionSample("heartbeat-adaptive",false)
+        sampleActivePointerGestureCameraHeading(heartbeatClock,"gesture-heartbeat")
+        sampleActivePointerGesturesRelativeDelta(heartbeatClock)
+        if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end
+        WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("heartbeat")
+        WORKFLOW_HELPERS.captureTargetedObservationTick("heartbeat")
+    end))
+    local keyActions={
+        R="reload",Q="switch",E="interact",F="interact",One="switch",Two="switch",Three="switch",
+        Four="switch",Five="switch",Six="switch",Seven="switch",Eight="switch",Nine="switch",
+        Zero="switch",Space="jump",LeftShift="sprint",RightShift="sprint",
+        ButtonR2="fire",ButtonL2="aim",ButtonA="jump",ButtonX="reload",ButtonY="switch"
+    }
+    local beganConnection=UserInputService.InputBegan:Connect(function(input,gameProcessed)
+        if not alive or not interactionObserveEnabled then return end
+        local toolSnapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+        local inputType=input.UserInputType
+        local keyCode=input.KeyCode
+        local keyName=tostring(keyCode and keyCode.Name or "")
+        local inputName=tostring(inputType and inputType.Name or "")
+        local isClickInput=(inputName=="MouseButton1" or inputName=="MouseButton2")
+
+        if isClickInput then
+            observerStats.clickInputsObserved=observerStats.clickInputsObserved+1
+            inputObserverState.buttonsDown[inputName]=true
+        end
+
+        local action=keyActions[keyName] or WORKFLOW_HELPERS.inferInputAction(keyCode,inputType,toolSnapshot)
+        local clickObservation=nil
+        local pointerGesture=nil
+        if isClickInput then
+            pointerGesture=beginPointerGesture(inputName,inputName)
+            local gestureId=pointerGesture and pointerGesture.id or nil
+            local ok,captured=pcall(function()
+                return captureClickTargetObservation(inputName,input,gestureId)
+            end)
+            if ok and type(captured)=="table" then
+                clickObservation=captured
+                observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
+            else
+                local failureReason=ok and "capture-returned-non-table" or captured
+                recordClickCaptureFailure("capture-wrapper",failureReason,inputName,inputName)
+                clickObservation=createFallbackClickTargetObservation(inputName,inputName,gestureId,"capture-wrapper",failureReason)
+                observerStats.clickInputsProcessed=observerStats.clickInputsProcessed+1
+            end
+            if type(pointerGesture)=="table" and type(clickObservation)=="table" and type(clickObservation.id)=="string" then
+                pointerGesture.clickObservationId=clickObservation.id
+                gestureByClickObservationId[clickObservation.id]=pointerGesture.id
+                local relation=resolveClickOutcomeForObservation(clickObservation.id)
+                local initialIntent=classifyInputGestureIntent(pointerGesture,clickObservation,relation)
+                applyInputGestureIntent(pointerGesture,initialIntent,clickObservation,relation)
+            end
+        end
+
+        if gameProcessed and action~="fire" and action~="reload" and action~="switch" then
+            if isClickInput then observerStats.clickInputsGameProcessed=observerStats.clickInputsGameProcessed+1
+            elseif not action then
+                return
+            end
+        end
+
+        if not action and not isClickInput then return end
+        if not action and isClickInput then action="pointer-activate" end
+
+        local controlKey=("input:%s:%s"):format(inputName,keyName)
+        if not WORKFLOW_HELPERS.inputThrottleAllowed(controlKey,0.12) then return end
+        if not isClickInput then inputObserverState.buttonsDown[inputName]=true end
+
+        local clickTargetScope=clickObservation and clickObservation.targetScope or nil
+        local clickInspectorOwned=clickObservation and clickObservation.inspectorOwnedTarget==true
+        if clickInspectorOwned then
+            action="inspector-ui-click"
+        end
+
+        local feature=clickInspectorOwned and nil or WORKFLOW_HELPERS.inferInputFeature(action,toolSnapshot)
+        local path=((clickInspectorOwned and "LocalPlayer.InspectorInput" or "LocalPlayer.Input")
+            .."."..inputName.."."..keyName):sub(1,220)
+
+        WORKFLOW_HELPERS.recordUniversalInputInteraction(path,"InputBegan."..inputName,action,{
+            keyCode=keyName,inputType=inputName,gameProcessed=gameProcessed,
+            equippedTools=toolSnapshot.names,equippedToolCount=toolSnapshot.count,
+            combatToolContext=toolSnapshot.hasCombatTool,
+            clickObservationId=clickObservation and clickObservation.id or nil,
+            inputGestureId=clickObservation and clickObservation.inputGestureId or nil,
+            inputGestureIntent=clickObservation and clickObservation.inputIntent and {
+                schemaVersion=clickObservation.inputIntent.schemaVersion,
+                primaryIntent=clickObservation.inputIntent.primaryIntent,
+                cameraDragCandidate=clickObservation.inputIntent.cameraDragCandidate,
+                guiInteractionCandidate=clickObservation.inputIntent.guiInteractionCandidate,
+                worldInteractionCandidate=clickObservation.inputIntent.worldInteractionCandidate,
+                ambiguousInput=clickObservation.inputIntent.ambiguousInput,
+                likelyCameraMovement=clickObservation.inputIntent.likelyCameraMovement,
+                likelyGameplayInteraction=clickObservation.inputIntent.likelyGameplayInteraction,
+                inputContextSignals=clickObservation.inputIntent.inputContextSignals,
+                confidence=clickObservation.inputIntent.confidence,
+                targetAndOutcomeSignals=clickObservation.inputIntent.targetAndOutcomeSignals,
+            } or nil,
+            clickTargetConfidence=clickObservation and clickObservation.targetIdentificationConfidence or nil,
+            clickTargetSummary=clickObservation and {
+                topmostGuiPath=clickObservation.topmostGuiTarget and clickObservation.topmostGuiTarget.path or nil,
+                raycastPath=clickObservation.raycastTarget and clickObservation.raycastTarget.path or nil,
+                scope=clickTargetScope,
+                classification=clickObservation.targetClassification,
+                ambiguous=clickObservation.targetResolution and clickObservation.targetResolution.ambiguous or nil,
+                inspectorOwnedTarget=clickInspectorOwned,
+            } or nil,
+            userInputState=tostring(input.UserInputState),source="UserInputService.InputBegan"
+        },feature,nil)
+    end)
+    table.insert(watchConnections,beganConnection)
+
+    local endedConnection=UserInputService.InputEnded:Connect(function(input)
+        local inputName=tostring(input.UserInputType and input.UserInputType.Name or "")
+        if inputName=="MouseButton1" or inputName=="MouseButton2" then
+            finalizePointerGesture(inputName,inputName,"input-ended")
+        end
+        inputObserverState.buttonsDown[inputName]=nil
+    end)
+    table.insert(watchConnections,endedConnection)
+
+    local changedConnection=UserInputService.InputChanged:Connect(function(input)
+        if not alive or not interactionObserveEnabled then return end
+        if input.UserInputType~=Enum.UserInputType.MouseMovement then return end
+        local now=os.clock()
+        local delta=input.Delta
+        local magnitude=math.floor(delta.Magnitude*10+0.5)/10
+        updateActivePointerGesturesFromMouseDelta(delta,now)
+        local intervalOk=(now-inputObserverState.lastCursorSampleClock)>=LIMITS.cursorMovementSampleSeconds
+        if intervalOk and magnitude>=LIMITS.cursorMovementMinPixels then
+            captureCursorObservation("mouse-movement","MouseMovement",true)
+            inputObserverState.lastCursorSampleClock=now
+            inputObserverState.lastCursorSamplePosition={x=delta.X,y=delta.Y,magnitude=magnitude}
+        end
+        local pointerDown=inputObserverState.buttonsDown.MouseButton1
+            or inputObserverState.buttonsDown.MouseButton2
+        if not pointerDown or now-inputObserverState.lastMovementCapture<0.9 then return end
+        if magnitude<18 then return end
+        inputObserverState.lastMovementCapture=now
+        local snapshot=WORKFLOW_HELPERS.equippedToolSnapshot()
+        local feature=snapshot.hasCombatTool and "combat" or "movement"
+        local action=snapshot.hasCombatTool and "aim-adjust" or "pointer-adjust"
+        WORKFLOW_HELPERS.recordUniversalInputInteraction("LocalPlayer.Input.MouseMovement",
+            "InputChanged.MouseMovement",action,{
+                delta={x=math.floor(delta.X+0.5),y=math.floor(delta.Y+0.5),magnitude=magnitude},
+                pointerDown=true,equippedTools=snapshot.names,
+                combatToolContext=snapshot.hasCombatTool,
+                source="UserInputService.InputChanged"
+            },feature,nil)
+    end)
+    table.insert(watchConnections,changedConnection)
+end
+
+WORKFLOW_HELPERS.observeInteractionObject = observeInteractionObject
+WORKFLOW_HELPERS.backfillObservableOutcomeCandidates = backfillObservableOutcomeCandidates
 end
 
 local function sweepInteractionControls()
@@ -1808,7 +9783,7 @@ local function sweepInteractionControls()
     for i, obj in ipairs(descendants) do
         if not alive then return end
         if obj:IsA("GuiButton") then
-            local success = pcall(observeInteractionObject, obj, gui, "PlayerGui")
+            local success = pcall(WORKFLOW_HELPERS.observeInteractionObject, obj, gui, "PlayerGui")
             if not success then observerStats.bindingErrors = observerStats.bindingErrors + 1 end
         end
         observerStats.sweepScanned = i
@@ -1826,7 +9801,7 @@ local function flushWatch()
     watchBusy = true
     local batch = {}
     local changesInBatch = 0
-    local take = math.min(changeCount, WATCH_BATCH)
+    local take = math.min(changeCount, LIMITS.watchBatchSize)
     for i = 1, take do
         batch[#batch + 1] = changeQueue[i]
     end
@@ -1838,11 +9813,11 @@ local function flushWatch()
     end
     changeCount = changeCount - take
     changesInBatch = take
-    if #batch < WATCH_BATCH then for path, entry in pairs(watchQueue) do
+    if #batch < LIMITS.watchBatchSize then for path, entry in pairs(watchQueue) do
         batch[#batch + 1] = entry
         watchQueue[path] = nil
         watchCount = watchCount - 1
-        if #batch >= WATCH_BATCH then break end
+        if #batch >= LIMITS.watchBatchSize then break end
     end end
     task.spawn(function()
         local report = {
@@ -1851,8 +9826,8 @@ local function flushWatch()
             inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             objects = batch, counts = {}, groups = {},
             sessionId = sessionId, parentSnapshotId = snapshotId,
-            featureEvidence = buildFeatureEvidence(batch),
-            featureReadiness = buildReadiness(buildFeatureEvidence(batch), interactionEventCount),
+            featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(batch),
+            featureReadiness = EVIDENCE_HELPERS.buildReadiness(EVIDENCE_HELPERS.buildFeatureEvidence(batch), interactionEventCount),
             scanStats = {
                 mode = changesInBatch > 0 and "dynamic-observations" or "dynamic-additions", scanned = #batch,
                 eligible = #batch, recorded = #batch, omitted = 0,
@@ -1930,6 +9905,16 @@ local function startWatching()
         {root = game:GetService("Teams"), label = "Teams"},
         {root = game:GetService("SoundService"), label = "SoundService"}
     }
+    if player.Character then
+        spatialCharacterGeneration = spatialCharacterGeneration + 1
+        spatialStats.respawnGenerations = spatialCharacterGeneration
+        capturePlayerPositionSample("watch-start-character",true)
+    end
+    table.insert(watchConnections, player.CharacterRemoving:Connect(function()
+        if not alive then return end
+        capturePlayerPositionSample("character-removing",true)
+        spatialLastValidSample = nil
+    end))
     for _, spec in ipairs(roots) do
         if spec.root then
             table.insert(watchConnections, spec.root.DescendantAdded:Connect(function(obj)
@@ -1941,7 +9926,10 @@ local function startWatching()
                         return
                     end
                     observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
+                    if spec.label=="LocalPlayer" or spec.label=="Character" then
+                        WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                    end
                     local ok, entry = pcall(watchEntry, obj, spec.root, spec.label)
                     if ok and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -1954,10 +9942,18 @@ local function startWatching()
         if spec.root then
             task.spawn(function()
                 local descendants = spec.root:GetDescendants()
+                local observeUniversal=(spec.label=="LocalPlayer" or spec.label=="Character")
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
-                    observeObject(obj, spec.root, spec.label)
-                    observeInteractionObject(obj, spec.root, spec.label)
+                    if spec.label == "Workspace" and isCharacterDescendant(obj) then
+                        watchSkippedCharacters = watchSkippedCharacters + 1
+                    else
+                        observeObject(obj, spec.root, spec.label)
+                        WORKFLOW_HELPERS.observeInteractionObject(obj, spec.root, spec.label)
+                        if observeUniversal then
+                            WORKFLOW_HELPERS.observeUniversalInputObject(obj, spec.root, spec.label)
+                        end
+                    end
                     if i % 500 == 0 then task.wait() end
                 end
             end)
@@ -1966,6 +9962,10 @@ local function startWatching()
     -- Rebind the local-character observer after respawns without rescanning other players.
     table.insert(watchConnections, player.CharacterAdded:Connect(function(character)
         if not alive then return end
+        spatialCharacterGeneration = spatialCharacterGeneration + 1
+        spatialStats.respawnGenerations = spatialCharacterGeneration
+        spatialLastValidSample = nil
+        capturePlayerPositionSample("character-added",true)
         local label = "Character"
         task.defer(function()
             if not alive then return end
@@ -1974,7 +9974,8 @@ local function startWatching()
                 for i, obj in ipairs(descendants) do
                     if not alive then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, character, label)
                     if i % 300 == 0 then task.wait() end
                 end
             end
@@ -1983,7 +9984,8 @@ local function startWatching()
                 task.defer(function()
                     if not alive or not watchEnabled then return end
                     observeObject(obj, character, label)
-                    observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeInteractionObject(obj, character, label)
+                    WORKFLOW_HELPERS.observeUniversalInputObject(obj, character, label)
                     local good, entry = pcall(watchEntry, obj, character, label)
                     if good and entry and not watchQueue[entry.path] and not watchSeen[entry.path] then
                         watchSeen[entry.path] = true
@@ -1996,9 +9998,11 @@ local function startWatching()
         end)
     end))
 
+    WORKFLOW_HELPERS.startUniversalInputObservation()
+
     task.spawn(function()
         while alive do
-            task.wait(WATCH_INTERVAL)
+            task.wait(LIMITS.watchIntervalSeconds)
             if alive then
                 refreshQueue()
                 flushWatch()
@@ -2026,6 +10030,7 @@ interactionToggle.MouseButton1Click:Connect(function()
             end
         end)
     else
+        stopWorkflowRecording("observer-disabled")
         observerStats.deactivationCount = observerStats.deactivationCount + 1
         observerStats.lastDisabledAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
         observerStats.lastDisabledReason = "manual-toggle"
@@ -2036,44 +10041,131 @@ interactionToggle.MouseButton1Click:Connect(function()
     interactionToggle.BackgroundColor3 = interactionObserveEnabled
         and Color3.fromRGB(65, 105, 85) or Color3.fromRGB(85, 85, 105)
     status.Text = interactionObserveEnabled
-        and "Observer ON; perform gameplay actions, then press SCAN for fresh evidence"
+        and "Observer ON; gameplay inputs and interactions are captured automatically"
         or "Manual interaction observation paused"
 end)
 
-local function inspect(requestType)
+
+local function buildWorkflowGenerationDiagnostics(totalInteractions, attributedInteractions,
+        unattributedInteractions)
+    local blockers = {}
+    local linkedWorkflowEvents = workflowStats.linkedConfirmations + workflowStats.linkedFollowups
+    local derivedWorkflowEvidenceEvents = math.max(linkedWorkflowEvents,
+        workflowStats.completedCandidates)
+    if totalInteractions <= 0 then
+        blockers[#blockers+1] = "no-interaction-events-observed"
+    else
+        if attributedInteractions <= 0 then
+            blockers[#blockers+1] = "no-feature-attributed-interactions"
+        end
+        if (workflowRecordingStats.started <= 0 and linkedWorkflowEvents <= 0
+                and workflowStats.completedCandidates <= 0) then
+            blockers[#blockers+1] = "no-workflow-recording-events-observed"
+        end
+        if linkedWorkflowEvents <= 0 and workflowStats.completedCandidates <= 0 then
+            blockers[#blockers+1] = "no-linked-confirmation-events"
+        end
+        if workflowStats.actionOutcomesCorroborated <= 0 then
+            blockers[#blockers+1] = "no-corroborated-action-outcomes"
+        end
+        if workflowStats.completedCandidates <= 0 then
+            blockers[#blockers+1] = "no-completed-workflow-candidates"
+        end
+        if workflowStats.multiWindowSamples <= 0 then
+            blockers[#blockers+1] = "no-observation-window-samples"
+        end
+        if unattributedInteractions > 0 then
+            blockers[#blockers+1] = "some-interactions-remain-unattributed"
+        end
+    end
+    return {
+        available = true,
+        interactionEvents = totalInteractions,
+        attributedInteractions = attributedInteractions,
+        unattributedInteractions = unattributedInteractions,
+        linkedConfirmations = workflowStats.linkedConfirmations,
+        linkedFollowups = workflowStats.linkedFollowups,
+        linkedWorkflowEvents = linkedWorkflowEvents,
+        derivedWorkflowEvidenceEvents = derivedWorkflowEvidenceEvents,
+        corroboratedActionOutcomes = workflowStats.actionOutcomesCorroborated,
+        completedWorkflowCandidates = workflowStats.completedCandidates,
+        explicitWorkflowRecordings = workflowRecordingStats.started,
+        automaticWorkflowRecordings = workflowRecordingStats.automaticStarts,
+        manualWorkflowRecordings = workflowRecordingStats.manualStarts,
+        blockers = blockers,
+        readinessImpact = "limitations-only",
+        causalProof = false,
+        runtimeVerified = false,
+        gameplayVerified = false,
+    }
+end
+
+local function inspect(requestType, featureRequest)
+    pushRuntimeStage("scan-requested", tostring(requestType or "manual"))
     if running or uploading then
-        status.Text = "Wait for current scan/upload to finish"
-        return
+        status.Text = "Wait for current scan/upload or press SCAN to cancel"
+        pushRuntimeFailure("scan-requested", "already-running-or-uploading")
+        return false
     end
     if pendingParts and #pendingParts > 0 then
+        local unsent = 0
         for i = 1, #pendingParts do
-            if not pendingAcknowledged[i] then
-                status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
-                return
-            end
+            if not pendingAcknowledged[i] then unsent = unsent + 1 end
+        end
+        if unsent > 0 then
+            status.Text = "Proceeding with rescan; previous upload had " .. tostring(unsent) .. " unsent part(s)."
+            pushRuntimeFailure("scan-requested", "unsent-parts-superseded-by-rescan")
         end
     end
 
-    scanInvocationCount = scanInvocationCount + 1
-    scanRequestType = requestType == "startup-baseline" and "startup-baseline" or (requestType == "auto-evidence" and "auto-evidence" or "manual")
+    stopWorkflowRecording("scan-started")
+    observerStats.scanInvocationCount = observerStats.scanInvocationCount + 1
+    observerStats.scanRequestType = requestType == "startup-baseline" and "startup-baseline"
+        or (requestType == "auto-evidence" and "auto-evidence"
+        or (requestType == "feature-request" and "feature-request" or "manual"))
+    scanGeneration = scanGeneration + 1
+    local generation = scanGeneration
     running = true
+    pushRuntimeStage("scan-started", tostring(observerStats.scanRequestType or requestType or "manual"))
     siblingContextCache = setmetatable({}, {__mode="k"})
-    status.Text = "Scanning..."
+    local profile = activeScanProfile()
+    status.Text = "Scanning (" .. profile.label .. ")..."
 
     task.spawn(function()
         local scanStarted = os.clock()
+        pushRuntimeStage("collecting", profile.label)
+
         local ok, result = pcall(function()
             local report = {
                 version = VERSION,
                 sessionId = sessionId, snapshotId = HttpService:GenerateGUID(false),
+                scanId = HttpService:GenerateGUID(false),
                 placeId = game.PlaceId,
                 gameId = game.GameId,
                 placeVersion = game.PlaceVersion,
                 inspectedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                 gameName = nil,
+                featureRequest = featureRequest,
                 objects = {},
                 counts = {},
-                groups = {}
+                groups = {},
+                worldInteractionDiscovery = {
+                    candidates = {},
+                    maxCandidates = 160,
+                    notes = "client-visible world interaction candidates only"
+                },
+                statDiscovery = {
+                    candidates = {},
+                    maxCandidates = 220,
+                    notes = "client-visible progression-stat candidates only"
+                }
+            }
+
+            local reportScanId, generatedScanId, scanContextReason = WORKFLOW_HELPERS.ensureReportScanContext(report)
+            report.scanContextDiagnostics = {
+                scanId = reportScanId,
+                generatedAtScanStart = generatedScanId == true,
+                reason = scanContextReason,
             }
 
             local okName, info = pcall(function()
@@ -2085,32 +10177,58 @@ local function inspect(requestType)
             end
 
 
-            -- Universal snapshot: collect every instance in the three client-visible roots.
-            -- Names, hierarchy, spatial data, and interaction metadata only.
-            -- Never collect chat text, player identifiers, script source, or remote payloads.
-            local roots = {
-                {instance = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage"},
-                {instance = game:GetService("ReplicatedFirst"), label = "ReplicatedFirst"},
-                {instance = workspace, label = "Workspace"},
-                {instance = player:FindFirstChild("PlayerGui"), label = "PlayerGui"},
-                {instance = player, label = "LocalPlayer"},
-                {instance = player.Character, label = "Character"},
-                {instance = game:GetService("Lighting"), label = "Lighting"},
-                {instance = game:GetService("Teams"), label = "Teams"},
-                {instance = game:GetService("SoundService"), label = "SoundService"}
+            local rootInstances = {
+                ReplicatedStorage = game:GetService("ReplicatedStorage"),
+                ReplicatedFirst = game:GetService("ReplicatedFirst"),
+                Workspace = workspace,
+                PlayerGui = player:FindFirstChild("PlayerGui"),
+                LocalPlayer = player,
+                Character = player.Character,
+                Lighting = game:GetService("Lighting"),
+                Teams = game:GetService("Teams"),
+                SoundService = game:GetService("SoundService")
             }
+            local roots = {}
+            local plannedRoots = {}
+            for _, label in ipairs(profile.rootLabels) do
+                plannedRoots[#plannedRoots + 1] = label
+                roots[#roots + 1] = {instance = rootInstances[label], label = label}
+            end
             report.scanStats = {
                 scanned = 0, eligible = 0, recorded = 0, omitted = 0,
-                mode = "universal-snapshot-v4.1", byCategory = {}, byRoot = {},
+                mode = profile.scanMode, profile = activeScanProfileId,
+                quickTargeted = profile.quickTargeted == true,
+                recordingPolicy = profile.recordingPolicy,
+                plannedRoots = plannedRoots,
+                byCategory = {}, byRoot = {},
                 rootCoverage = {}, byClass = {},
                 valueBase = {scanned = 0, recorded = 0, byClass = {}},
                 guiControls = {buttons = 0, textBoxes = 0, prompts = 0, clickDetectors = 0},
                 scriptCandidates = {modules = 0, localScripts = 0, scripts = 0, controllers = 0},
-                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0},
+                worldInteractionDiscovery = {
+                    candidates = 0,
+                    trainingStations = 0,
+                    proximityPrompts = 0,
+                    clickDetectors = 0,
+                    seatStations = 0
+                },
+                statDiscovery = {
+                    candidates = 0,
+                    leaderstats = 0,
+                    replicatedValues = 0,
+                    characterAttributes = 0,
+                    guiDisplays = 0,
+                    levelOrExperience = 0
+                },
+                omissions = {overlappingRoots = 0, invalidPath = 0, inspectorSelf = 0, profileFiltered = 0},
                 performance = {rootSeconds = {}, yieldCount = 0, scanSeconds = 0},
                 pathCollisionsResolved = 0,
-                siblingContextLimit = 8,
-                limitations = {scriptSource="not-read", serverState="not-visible", remotePayloads="not-collected"}
+                siblingContextLimit = profile.quickTargeted and 0 or 8,
+                limitations = {
+                    scriptSource = "not-read", serverState = "not-visible", remotePayloads = "not-collected",
+                    coverage = profile.quickTargeted and "quick-targeted-not-full-object-inventory"
+                        or "full-client-visible-root-inventory"
+                }
             }
             local function categoryOf(obj)
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
@@ -2155,19 +10273,145 @@ local function inspect(requestType)
                 end
                 return stablePathCache[obj]
             end
+
             local function vec3(v)
                 return {x = math.floor(v.X * 100) / 100,
                     y = math.floor(v.Y * 100) / 100,
                     z = math.floor(v.Z * 100) / 100}
             end
+
+            local worldDiscoverySeen = {}
+            local function recordWorldInteractionCandidate(entry, obj, path)
+                if not entry or type(path) ~= "string" then return end
+                local low = string.lower(path)
+                if not string.find(low, "workspace", 1, true) then return end
+
+                local mechanism = nil
+                if obj:IsA("ProximityPrompt") then
+                    mechanism = "proximity-prompt"
+                elseif obj:IsA("ClickDetector") then
+                    mechanism = "click-detector"
+                elseif obj:IsA("Seat") or obj:IsA("VehicleSeat") then
+                    mechanism = "seat-station"
+                elseif string.find(low, "train", 1, true)
+                    or string.find(low, "trainer", 1, true)
+                    or string.find(low, "bench", 1, true)
+                    or string.find(low, "machine", 1, true)
+                    or string.find(low, "treadmill", 1, true)
+                    or string.find(low, "punch", 1, true) then
+                    mechanism = "training-object"
+                end
+                if not mechanism then return end
+
+                local dedupeKey = mechanism .. "|" .. path
+                if worldDiscoverySeen[dedupeKey] then return end
+                worldDiscoverySeen[dedupeKey] = true
+
+                local counters = report.scanStats.worldInteractionDiscovery
+                counters.candidates = counters.candidates + 1
+                if mechanism == "proximity-prompt" then
+                    counters.proximityPrompts = counters.proximityPrompts + 1
+                elseif mechanism == "click-detector" then
+                    counters.clickDetectors = counters.clickDetectors + 1
+                elseif mechanism == "seat-station" then
+                    counters.seatStations = counters.seatStations + 1
+                end
+                if mechanism == "training-object" or mechanism == "proximity-prompt" or mechanism == "click-detector" then
+                    counters.trainingStations = counters.trainingStations + 1
+                end
+
+                local list = report.worldInteractionDiscovery.candidates
+                if #list < report.worldInteractionDiscovery.maxCandidates then
+                    list[#list + 1] = {
+                        path = string.sub(path, 1, 400),
+                        class = obj.ClassName,
+                        mechanism = mechanism,
+                        category = categoryOf(obj),
+                        visible = entry.visible,
+                        maxActivationDistance = entry.maxActivationDistance,
+                    }
+                end
+            end
+
+            local statDiscoverySeen = {}
+            local function recordStatDiscoveryCandidate(entry, obj, path)
+                if not entry or type(path) ~= "string" or not obj:IsA("ValueBase") then return end
+                if type(entry.value) ~= "number" and type(entry.value) ~= "boolean" then return end
+
+                local low = string.lower(path)
+                if string.find(low, ".health", 1, true)
+                    or string.find(low, "walkspeed", 1, true)
+                    or string.find(low, "jump", 1, true)
+                    or string.find(low, "velocity", 1, true)
+                    or string.find(low, "position", 1, true)
+                    or string.find(low, "activeanimationcount", 1, true) then
+                    return
+                end
+
+                local source = "replicated-values"
+                if string.find(low, ".leaderstats.", 1, true) then
+                    source = "leaderstats"
+                elseif string.find(low, "playergui", 1, true) then
+                    source = "gui-display"
+                elseif string.find(low, "character", 1, true) then
+                    source = "character"
+                end
+
+                local statLike = string.find(low, ".leaderstats.", 1, true)
+                    or string.find(low, "progress", 1, true)
+                    or string.find(low, "level", 1, true)
+                    or string.find(low, "experience", 1, true)
+                    or string.find(low, "xp", 1, true)
+                    or string.find(low, "rebirth", 1, true)
+                    or string.find(low, ".stats.", 1, true)
+                    or string.find(low, ".data.", 1, true)
+                if not statLike then return end
+
+                if statDiscoverySeen[path] then return end
+                statDiscoverySeen[path] = true
+
+                local counters = report.scanStats.statDiscovery
+                counters.candidates = counters.candidates + 1
+                if source == "leaderstats" then
+                    counters.leaderstats = counters.leaderstats + 1
+                elseif source == "gui-display" then
+                    counters.guiDisplays = counters.guiDisplays + 1
+                elseif source == "character" then
+                    counters.characterAttributes = counters.characterAttributes + 1
+                else
+                    counters.replicatedValues = counters.replicatedValues + 1
+                end
+                if string.find(low, "level", 1, true)
+                    or string.find(low, "experience", 1, true)
+                    or string.find(low, "xp", 1, true) then
+                    counters.levelOrExperience = counters.levelOrExperience + 1
+                end
+
+                local list = report.statDiscovery.candidates
+                if #list < report.statDiscovery.maxCandidates then
+                    list[#list + 1] = {
+                        path = string.sub(path, 1, 400),
+                        class = obj.ClassName,
+                        name = string.sub(obj.Name, 1, 80),
+                        source = source,
+                        valueType = type(entry.value),
+                        value = entry.value,
+                        confidence = source == "leaderstats" and "high" or "medium",
+                        temporalCorrelationOnly = true,
+                        gameplayVerified = false,
+                        causalityProven = false,
+                    }
+                end
+            end
+
             report.scanStats.rootAvailability = {}
-            local requiredRoots = {ReplicatedStorage=true, Workspace=true, PlayerGui=true, LocalPlayer=true}
+            local requiredRoots = profile.requiredRoots
             local scanAborted = false
             local pathOccurrences = {}
             local nextInstanceId = 0
             for _, spec in ipairs(roots) do
                 local rootStarted = os.clock()
-                local yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                local yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                 local root = spec.instance
                 stablePathCache = {}
                 local coverage = {
@@ -2181,7 +10425,7 @@ local function inspect(requestType)
                     if okDescendants and type(descendants) == "table" then
                         coverage.success = true
                         for i, obj in ipairs(descendants) do
-                        if not alive then break end
+                        if not alive or generation ~= scanGeneration then break end
                         report.scanStats.scanned = report.scanStats.scanned + 1
                         coverage.scanned = coverage.scanned + 1
                         report.scanStats.byRoot[spec.label] = (report.scanStats.byRoot[spec.label] or 0) + 1
@@ -2214,9 +10458,16 @@ local function inspect(requestType)
                             report.scanStats.omissions.inspectorSelf = report.scanStats.omissions.inspectorSelf + 1
                         end
                         if path then
-                            -- Roblox permits identically named siblings. Preserve each object
-                            -- with an unambiguous scan-local occurrence suffix.
-                            local count = (pathOccurrences[path] or 0) + 1
+                            local includeByProfile = shouldRecordObjectForProfile(profile, obj, path, spec.label)
+                            if not includeByProfile then
+                                report.scanStats.omitted = report.scanStats.omitted + 1
+                                coverage.omitted = coverage.omitted + 1
+                                report.scanStats.omissions.profileFiltered =
+                                    report.scanStats.omissions.profileFiltered + 1
+                            else
+                                -- Roblox permits identically named siblings. Preserve each object
+                                -- with an unambiguous scan-local occurrence suffix.
+                                local count = (pathOccurrences[path] or 0) + 1
                             pathOccurrences[path] = count
                             if count > 1 then
                                 path = path:sub(1, 380) .. "[occurrence:" .. tostring(count) .. "]"
@@ -2255,7 +10506,10 @@ local function inspect(requestType)
                                     "ReplicatedStorage%.([%w_]+)") or "other"
                                 report.groups[group] = (report.groups[group] or 0) + 1
                             end
-                            enrichEntry(entry, obj)
+                            enrichEntry(entry, obj, profile)
+                            recordWorldInteractionCandidate(entry, obj, path)
+                            recordStatDiscoveryCandidate(entry, obj, path)
+
                             if obj:IsA("ModuleScript") or obj:IsA("LocalScript") or obj:IsA("Script") then
                                 local n = string.lower(obj.Name)
                                 if n:find("controller",1,true) or n:find("manager",1,true)
@@ -2264,13 +10518,15 @@ local function inspect(requestType)
                                     entry.controllerEvidence = "name-based-candidate-only"
                                 end
                             end
-                            local tagOk, tags = pcall(function()
-                                return game:GetService("CollectionService"):GetTags(obj)
-                            end)
-                            if tagOk and type(tags) == "table" and #tags > 0 then
-                                entry.tags = {}
-                                for ti = 1, math.min(#tags, 20) do
-                                    entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                            if not profile.quickTargeted then
+                                local tagOk, tags = pcall(function()
+                                    return game:GetService("CollectionService"):GetTags(obj)
+                                end)
+                                if tagOk and type(tags) == "table" and #tags > 0 then
+                                    entry.tags = {}
+                                    for ti = 1, math.min(#tags, 20) do
+                                        entry.tags[ti] = tostring(tags[ti]):sub(1,80)
+                                    end
                                 end
                             end
                             table.insert(report.objects, entry)
@@ -2290,17 +10546,22 @@ local function inspect(requestType)
                             end
                             cat.eligible = cat.eligible + 1
                             cat.recorded = cat.recorded + 1
+                            end
                         else
                             report.scanStats.omitted = report.scanStats.omitted + 1
                             coverage.omitted = coverage.omitted + 1
                             if not path then report.scanStats.omissions.invalidPath = report.scanStats.omissions.invalidPath + 1 end
                         end
                         if os.clock() >= yieldDeadline then
-                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects..."
+                            status.Text = "Scanning " .. report.scanStats.scanned .. " objects (" .. profile.label .. ")..."
                             report.scanStats.performance.yieldCount = report.scanStats.performance.yieldCount + 1
                             task.wait()
-                            yieldDeadline = os.clock() + SCAN_YIELD_BUDGET_SECONDS
+                            yieldDeadline = os.clock() + LIMITS.scanYieldBudgetSeconds
                         end
+                        end
+                        if generation ~= scanGeneration then
+                            coverage.error = "scan cancelled"
+                            scanAborted = true
                         end
                     else
                         coverage.error = tostring(descendants)
@@ -2311,6 +10572,7 @@ local function inspect(requestType)
                 end
                 if coverage.required and not coverage.success then scanAborted = true end
                 report.scanStats.performance.rootSeconds[spec.label] = math.floor((os.clock()-rootStarted)*1000+0.5)/1000
+                if generation ~= scanGeneration then break end
             end
             report.scanStats.performance.scanSeconds = math.floor((os.clock()-scanStarted)*1000+0.5)/1000
             report.scanStats.recorded = #report.objects
@@ -2327,30 +10589,216 @@ local function inspect(requestType)
                     requiredRootsPresent = false
                 end
             end
+            local scanCancelled = generation ~= scanGeneration
+            if scanCancelled then scanAborted = true end
             local scanComplete = not scanAborted and requiredRootsPresent
                 and rootAccountingValid
                 and report.scanStats.scanned == report.scanStats.recorded + report.scanStats.omitted
             report.scanStats.complete = scanComplete
-            report.featureEvidence = buildFeatureEvidence(report.objects)
-            report.featureReadiness = buildReadiness(report.featureEvidence, interactionEventCount)
+            report.featureEvidence = EVIDENCE_HELPERS.buildFeatureEvidence(report.objects)
+            report.featureReadiness = EVIDENCE_HELPERS.buildReadiness(report.featureEvidence, interactionEventCount)
+            local recoveredOutcomeCandidates=WORKFLOW_HELPERS.backfillObservableOutcomeCandidates(interactionHistory)
+            local gestureIntentSummary=summarizeInputGestureIntents()
+            local targetedContext = WORKFLOW_HELPERS.manifestExportContext(report)
+            local targetedCapture = WORKFLOW_HELPERS.targetedCaptureForExport(targetedContext)
             report.interactionDiagnostics = {
-                scanRequestType=scanRequestType, scanInvocationCount=scanInvocationCount,
+                scanRequestType=observerStats.scanRequestType,
+                scanInvocationCount=observerStats.scanInvocationCount,
+                scanProfile=activeScanProfileId, scanMode=profile.scanMode,
+                quickTargeted=profile.quickTargeted==true,
+                profileFilteredObjects=report.scanStats.omissions.profileFiltered,
+                scanId=reportScanId,
+                scanContextDiagnostics=report.scanContextDiagnostics,
+                targetedCaptureContext=targetedContext,
+                targetedCaptureContextMissing=targetedContext.missingScanId==true,
+
                 observerReady=interactionObserveEnabled and observerStats.sweepCompleted,
                 enabledAtScan=interactionObserveEnabled, listenersAttached=observerStats.listenersAttached,
-                callbacksFired=observerStats.callbacksFired, stateDeltaEvents=observerStats.stateDeltaEvents,
+                callbacksFired=observerStats.callbacksFired,
+                callbackSourceBreakdown={
+                    objectInteractionCallbacksFired=observerStats.objectInteractionCallbacksFired,
+                    inputInteractionCallbacksFired=observerStats.inputInteractionCallbacksFired,
+                },
+                callbackAttributionBreakdown={
+                    objectCallbacksAttributed=observerStats.objectCallbacksAttributed,
+                    objectCallbacksUnattributed=observerStats.objectCallbacksUnattributed,
+                    inputCallbacksAttributed=observerStats.inputCallbacksAttributed,
+                    inputCallbacksUnattributed=observerStats.inputCallbacksUnattributed,
+                },
+                stateDeltaEvents=observerStats.stateDeltaEvents,
+                preActivationListenersAttached=observerStats.preActivationListenersAttached,
+                preActivationCaptures=observerStats.preActivationCaptures,
+                preActivationBaselinesUsed=observerStats.preActivationBaselinesUsed,
+                callbackBaselinesUsed=observerStats.callbackBaselinesUsed,
+                stalePreActivationCaptures=observerStats.stalePreActivationCaptures,
+                preActivationCaptureFailures=observerStats.preActivationCaptureFailures,
+                baselineTimingPolicy="pre-activation when a bounded supported signal is fresh; otherwise explicit activation-callback fallback",
                 bindingErrors=observerStats.bindingErrors, sweepCompleted=observerStats.sweepCompleted,
                 sweepScanned=observerStats.sweepScanned, lastEventPath=observerStats.lastEventPath,
-                pendingObservationEvents=0, cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
+                pendingObservationEvents=pendingObservationEvents,
+                observationWindowsExpected=interactionEventCount*#OBSERVATION_WINDOWS,
+                observationWindowsCompleted=workflowStats.multiWindowSamples,
+                observationWindowsFailed=workflowStats.observationFailures,
+                observationWindowAccountingValid=
+                    workflowStats.multiWindowSamples+workflowStats.observationFailures
+                        +pendingObservationEvents==interactionEventCount*#OBSERVATION_WINDOWS,
+                evidenceLossPossible=pendingObservationEvents>0
+                    or workflowStats.observationFailures>0
+                    or observerStats.preActivationCaptureFailures>0
+                    or observerStats.callbackBaselinesUsed>0,
+                cumulativeChangeEvents=changeCount, totalInteractionEvents=interactionEventCount,
                 attributedEvents=attributedInteractionCount, unattributedEvents=unattributedInteractionCount,
-                recentInteractions=interactionHistory, interactionHistoryLimit=MAX_INTERACTION_HISTORY,
-                workflowStats=workflowStats, pendingWorkflowCount=#pendingActions,
+                recentInteractions=interactionHistory, interactionHistoryLimit=LIMITS.maxInteractionHistory,
+                cursorObservationHistory=cursorObservationHistory,
+                clickTargetObservations=clickTargetObservations,
+                clickOutcomeRelationships=clickOutcomeRelationships,
+                inputGestureObservations=inputGestureObservations,
+                characterOrientationSamples=characterOrientationSamples,
+                cameraOrientationSamples=cameraOrientationSamples,
+                playerPositionHistory=playerPositionHistory,
+                eventPositionSnapshots=eventPositionSnapshots,
+                spatialLocationHistory=spatialLocationHistory,
+                targetedCaptureSessionSummary=targetedCapture,
+                targetedCaptureTimelineEvents=(targetedCapture and targetedCapture.timelineEvents) or {},
+                cursorClickOrientationSchemas={
+                    cursorObservation="30.6.cursor-observation.1",
+                    clickTargetObservation="30.6.click-target-observation.1",
+                    clickOutcomeRelationship="30.6.click-outcome-relationship.1",
+                    inputGestureObservation="30.6.input-gesture-observation.1",
+                    characterOrientation="30.6.character-orientation.1",
+                    cameraOrientation="30.6.camera-orientation.1",
+                },
+                spatialSamplingLimits={
+                    maxPlayerPositionHistory=LIMITS.maxPlayerPositionHistory,
+                    maxEventPositionSnapshots=LIMITS.maxEventPositionSnapshots,
+                    maxNearbyWorldObjects=LIMITS.maxNearbyWorldObjects,
+                    maxCursorObservationHistory=LIMITS.maxCursorObservationHistory,
+                    maxClickTargetObservations=LIMITS.maxClickTargetObservations,
+                    maxClickOutcomeRelationships=LIMITS.maxClickOutcomeRelationships,
+                    maxInputGestureObservations=LIMITS.maxInputGestureObservations,
+                    maxCharacterOrientationSamples=LIMITS.maxCharacterOrientationSamples,
+                    maxCameraOrientationSamples=LIMITS.maxCameraOrientationSamples,
+                    nearbyWorldObjectRadiusStuds=LIMITS.nearbyWorldObjectRadiusStuds,
+                },
+                spatialStats={
+                    samplesCaptured=spatialStats.samplesCaptured,
+                    samplesSkipped=spatialStats.samplesSkipped,
+                    invalidSamples=spatialStats.invalidSamples,
+                    teleportsDetected=spatialStats.teleportsDetected,
+                    respawnGenerations=spatialStats.respawnGenerations,
+                    eventSnapshotsRecorded=spatialStats.eventSnapshotsRecorded,
+                    nearbyWorldObjectLookups=spatialStats.nearbyWorldObjectLookups,
+                    nearbyWorldObjectFailures=spatialStats.nearbyWorldObjectFailures,
+                    cursorSamplesCaptured=spatialStats.cursorSamplesCaptured,
+                    clickTargetsCaptured=spatialStats.clickTargetsCaptured,
+                    clickOutcomeLinks=spatialStats.clickOutcomeLinks,
+                    inputGesturesCaptured=spatialStats.inputGesturesCaptured,
+                    characterOrientationCaptured=spatialStats.characterOrientationCaptured,
+                    cameraOrientationCaptured=spatialStats.cameraOrientationCaptured,
+                },
+                workflowStats=workflowStats,
+                backfilledOutcomeCandidates=recoveredOutcomeCandidates,
+                inputGestureIntentDiagnostics=gestureIntentSummary,
+                workflowGenerationDiagnostics=buildWorkflowGenerationDiagnostics(
+                    interactionEventCount, attributedInteractionCount, unattributedInteractionCount),
+                pendingWorkflowCount=#pendingActions,
+                pendingGuiRevealCount=#pendingGuiReveals,
+                workflowRecordingActive=workflowRecording.active,
+                workflowRecordingStats=workflowRecordingStats,
+                workflowRecordingLimits={maxDurationSeconds=LIMITS.workflowRecordingSeconds,
+                    maxEvents=LIMITS.maxWorkflowRecordingEvents},
+                workflowRecordingPolicy="automatic-activity-window-with-optional-manual-override-not-causal-proof",
                 verificationPolicy="read-only-client-corroboration-not-server-proof",
                 transactionDeduplication="linked-workflow-sequence",
+                guiRevealFollowupPolicy="visible-transition-plus-exact-descendant-identity-within-15-seconds-review-only",
                 inventoryDiscovery="candidate-first-gui-sampling-parent-aware-pagination",
-                evidenceLevels={"interaction-observed","temporal-state-change-observed","gameplay-outcome-verified"},
-                gameplayOutcomesVerified=0, stateSnapshotMaxValues=1000, observationWindowsSeconds=OBSERVATION_WINDOWS,
-                stateChangeLimit=MAX_STATE_CHANGES,
-                featureEvidenceRules={"rebirth-counter-increased","strength-increased"},
+                evidenceLevels={"interaction-observed","temporal-state-change-observed",
+                    "feature-consistent-observable-change","gameplay-outcome-verified"},
+                gameplayOutcomesVerified=0,
+                completedCandidateDefinition="feature-consistent observable change; causality and gameplay remain unverified",
+                actionOutcomeDefinition="bounded client-state correlation; not server or causal proof",
+                stateSnapshotScope={"leaderstats","Data","bounded non-private LocalPlayer ValueBase candidates","character humanoid/equipment/animation snapshots","bounded HUD numeric signals"},
+                inputObservationStats={captured=observerStats.inputEventsCaptured,
+                    dropped=observerStats.inputEventsDropped,
+                    windowsCompleted=observerStats.inputEventWindowsCompleted,
+                    windowFailures=observerStats.inputEventWindowFailures,
+                    toolEquipsObserved=observerStats.toolEquipsObserved,
+                    toolUnequipsObserved=observerStats.toolUnequipsObserved,
+                    movementEventsObserved=observerStats.movementEventsObserved,
+                    animationEventsObserved=observerStats.animationEventsObserved,
+                    objectInteractionCallbacksFired=observerStats.objectInteractionCallbacksFired,
+                    inputInteractionCallbacksFired=observerStats.inputInteractionCallbacksFired,
+                    objectCallbacksAttributed=observerStats.objectCallbacksAttributed,
+                    objectCallbacksUnattributed=observerStats.objectCallbacksUnattributed,
+                    inputCallbacksAttributed=observerStats.inputCallbacksAttributed,
+                    inputCallbacksUnattributed=observerStats.inputCallbacksUnattributed,
+                    inputBindingReady=observerStats.inputBindingReady,
+                    lastInputEventAt=observerStats.lastInputEventAt,
+                    queueEnqueued=observerStats.inputQueueEnqueued,
+                    queueProcessed=observerStats.inputQueueProcessed,
+                    queueDropped=observerStats.inputQueueDropped,
+                    queuePeak=observerStats.inputQueuePeak,
+                    queueLength=WORKFLOW_HELPERS.inputQueueLength(),
+                    queueOverBudgetFrames=observerStats.inputQueueOverBudgetFrames,
+                    queueBackpressureActivations=observerStats.inputQueueBackpressureActivations,
+                    clickInputsObserved=observerStats.clickInputsObserved,
+                    clickInputsProcessed=observerStats.clickInputsProcessed,
+                    clickInputsGameProcessed=observerStats.clickInputsGameProcessed,
+                    clickCaptureAttempts=observerStats.clickCaptureAttempts,
+                    clickCapturesRecorded=observerStats.clickCapturesRecorded,
+                    clickCaptureFailures=observerStats.clickCaptureFailures,
+                    clickCaptureComponentFailures=observerStats.clickCaptureComponentFailures,
+                    clickCaptureFailureStageCounts=observerStats.clickCaptureFailureStageCounts,
+                    clickCaptureFailureReasonCounts=observerStats.clickCaptureFailureReasonCounts,
+                    clickCaptureFailureSamples=observerStats.clickCaptureFailureSamples,
+                    clickCaptureComponentFailureSamples=observerStats.clickCaptureComponentFailureSamples,
+                    clickTargetsResolved=observerStats.clickTargetsResolved,
+                    clickTargetsUnresolved=observerStats.clickTargetsUnresolved,
+                    clickInspectorOwned=observerStats.clickInspectorOwned,
+                    clickLinksAttempted=observerStats.clickLinksAttempted,
+                    clickLinksMatched=observerStats.clickLinksMatched,
+                    clickLinksMissed=observerStats.clickLinksMissed,
+                    clickLinksMissedMissingSource=observerStats.clickLinksMissedMissingSource,
+                    clickLinksMissedNoEligibleCandidate=observerStats.clickLinksMissedNoEligibleCandidate,
+                    clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts,
+                    clickLinkMissSamples=observerStats.clickLinkMissSamples,
+                    clickLinksAmbiguous=observerStats.clickLinksAmbiguous,
+                    clickLinksExpired=observerStats.clickLinksExpired,
+                    clickLinksPruned=observerStats.clickLinksPruned,
+                    inputGesturesStarted=observerStats.inputGesturesStarted,
+                    inputGesturesCompleted=observerStats.inputGesturesCompleted,
+                    inputGesturesInterrupted=observerStats.inputGesturesInterrupted,
+                    inputGestureClickCandidates=observerStats.inputGestureClickCandidates,
+                    inputGestureCameraDragCandidates=observerStats.inputGestureCameraDragCandidates,
+                    inputGestureHeldCandidates=observerStats.inputGestureHeldCandidates,
+                    inputGestureGuiInteractionCandidates=observerStats.inputGestureGuiInteractionCandidates,
+                    inputGestureWorldInteractionCandidates=observerStats.inputGestureWorldInteractionCandidates,
+                    inputGestureAmbiguousInputs=observerStats.inputGestureAmbiguousInputs,
+                    inputGestureLikelyCameraMovements=observerStats.inputGestureLikelyCameraMovements,
+                    inputGestureLikelyGameplayInteractions=observerStats.inputGestureLikelyGameplayInteractions,
+                    gestureIntentSummary=gestureIntentSummary,
+                    callbacksPeakPerSecond=observerStats.callbacksPeakPerSecond,
+                    phase=inputObserverState.phase,
+                    phaseReason=inputObserverState.phaseReason,
+                    phaseTransitions=inputObserverState.phaseTransitions,
+                    phaseSinceSeconds=math.floor((os.clock()-inputObserverState.phaseSince)*1000+0.5)/1000,
+                    frameAverageSeconds=(observerStats.queueFrameCount>0)
+                        and math.floor((observerStats.queueFrameSecondsTotal/observerStats.queueFrameCount)*100000+0.5)/100000
+                        or 0,
+                    framePeakSeconds=math.floor(observerStats.queueFramePeakSeconds*100000+0.5)/100000,
+                    stateSnapshotCalls=observerStats.stateSnapshotCalls,
+                    stateSnapshotAverageSeconds=(observerStats.stateSnapshotCalls>0)
+                        and math.floor((observerStats.stateSnapshotSeconds/observerStats.stateSnapshotCalls)*100000+0.5)/100000
+                        or 0,
+                    stateSnapshotPeakSeconds=math.floor(observerStats.stateSnapshotPeakSeconds*100000+0.5)/100000},
+                stateSnapshotCandidateCount=#stateSnapshotCandidates,
+                stateSnapshotMaxValues=LIMITS.maxStateSnapshotCandidates,
+                observationWindowsSeconds=OBSERVATION_WINDOWS,
+                observationIdleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
+                scanCancelled=scanCancelled,
+                stateChangeLimit=LIMITS.maxStateChanges,
+                featureEvidenceRules={"feature-key-changed","reward-status-became-visible",
+                    "post-capture-window-evidence-backfill"},
                 contextualAttributionIsHeuristic=true, guiStateObservation="bounded-nearby-visibility-and-active-only",
                 activationCount=observerStats.activationCount, deactivationCount=observerStats.deactivationCount,
                 lastEnabledAt=observerStats.lastEnabledAt, lastDisabledAt=observerStats.lastDisabledAt,
@@ -2358,10 +10806,51 @@ local function inspect(requestType)
                 sweepStartedAt=observerStats.sweepStartedAt, sweepFinishedAt=observerStats.sweepFinishedAt,
                 lastSweepError=observerStats.lastSweepError
             }
-            report.featureSnapshotDelta = compareFeatureSnapshots(report.featureEvidence)
+            report.playerPositionHistory = playerPositionHistory
+            report.eventPositionSnapshots = eventPositionSnapshots
+            report.spatialLocationHistory = spatialLocationHistory
+            report.targetedCaptureSession = targetedCapture
+            report.cursorObservationHistory = cursorObservationHistory
+            report.clickTargetObservations = clickTargetObservations
+            report.clickOutcomeRelationships = clickOutcomeRelationships
+            report.inputGestureObservations = inputGestureObservations
+            report.characterOrientationSamples = characterOrientationSamples
+            report.cameraOrientationSamples = cameraOrientationSamples
+            report.cursorClickOrientationSchemas = {
+                cursorObservation = "30.6.cursor-observation.1",
+                clickTargetObservation = "30.6.click-target-observation.1",
+                clickOutcomeRelationship = "30.6.click-outcome-relationship.1",
+                inputGestureObservation = "30.6.input-gesture-observation.1",
+                characterOrientation = "30.6.character-orientation.1",
+                cameraOrientation = "30.6.camera-orientation.1",
+            }
+            report.spatialDiscovery = {
+                status = (#playerPositionHistory>0 or #eventPositionSnapshots>0)
+                    and "captured" or "not-captured",
+                characterGenerationsObserved = spatialCharacterGeneration,
+                sampleCount = #playerPositionHistory,
+                eventSnapshotCount = #eventPositionSnapshots,
+                locationEventCount = #spatialLocationHistory,
+                cursorObservationCount = #cursorObservationHistory,
+                clickTargetObservationCount = #clickTargetObservations,
+                clickOutcomeRelationshipCount = #clickOutcomeRelationships,
+                inputGestureObservationCount = #inputGestureObservations,
+                characterOrientationSampleCount = #characterOrientationSamples,
+                cameraOrientationSampleCount = #cameraOrientationSamples,
+                nearbyWorldObjectRadiusStuds = LIMITS.nearbyWorldObjectRadiusStuds,
+                activeWorkspaceOnly = true,
+                replicatedStorageTemplatesExcluded = true,
+                interpolationPolicy = "sampled-only-no-interpolated-positions",
+                continuityPolicy = "character-generation-boundaries-preserved",
+                notes = "Client-visible positional evidence only; no server authority or causality proof"
+            }
+
+            report.featureSnapshotDelta = EVIDENCE_HELPERS.compareFeatureSnapshots(report.featureEvidence)
             report.automationDiagnostics = {
                 enabled=AUTO_EVIDENCE_ENABLED, idleSeconds=AUTO_EVIDENCE_IDLE_SECONDS,
                 cooldownSeconds=AUTO_EVIDENCE_COOLDOWN_SECONDS, maxAutomaticRescans=AUTO_EVIDENCE_MAX_RESCANS,
+                scanProfile=activeScanProfileId, quickTargeted=profile.quickTargeted==true,
+                coveragePolicy=profile.recordingPolicy,
                 automaticRescans=autoEvidenceRescans, lastFailure=autoEvidenceLastFailure,
                 capturedInteractionCount=interactionEventCount,
                 indexIntegrityWarning="Use receiver GET /reports/READ_KEY/SCAN_ID/integrity to verify object indexing",
@@ -2369,12 +10858,16 @@ local function inspect(requestType)
             }
             report.diagnostics = {
                 complete = scanComplete,
+                scanCancelled = scanCancelled,
                 completenessBasis = "required-root-success-and-object-accounting",
                 requiredRootsPresent = requiredRootsPresent,
                 rootAccountingValid = rootAccountingValid,
                 scannedObjects = report.scanStats.scanned,
                 recordedObjects = report.scanStats.recorded,
                 omittedObjects = report.scanStats.omitted,
+                profileFilteredObjects = report.scanStats.omissions.profileFiltered,
+                scanProfile = activeScanProfileId,
+                targetedCoverage = profile.quickTargeted == true,
                 completeButLimitedToClientVisibleRoots = true,
                 scanMode = "client-visible-read-only",
                 rootsScanned = report.scanStats.byRoot,
@@ -2383,7 +10876,7 @@ local function inspect(requestType)
                 evidenceRules = {
                     controllerCandidates = "Name-based candidates only; no source inspection",
                     guiControls = "Visible client-side GUI hierarchy and button labels",
-                    interactions = "Manual interaction observer must be enabled separately",
+                    interactions = "Automatic GUI, tool, and input observation while inspector is active",
                     configuration = "Replicated ValueBase objects and safe attributes only",
                     serverLogic = "Not observable from this client scan"
                 },
@@ -2399,117 +10892,756 @@ local function inspect(requestType)
                 }
             }
 
+            pushRuntimeStage("report-built", tostring(#report.objects))
             return report
         end)
 
-        if not alive then return end
+        if not alive or generation ~= scanGeneration then return end
 
         if not ok then
             status.Text = "Scan error: " .. tostring(result)
+            pushRuntimeFailure("collecting", tostring(result))
             siblingContextCache = nil
-        running = false
+            running = false
             return
         end
+        if result and result.diagnostics and result.diagnostics.scanCancelled then
+            status.Text = "Scan cancelled"
+            pushRuntimeFailure("scan-started", "cancelled")
+            siblingContextCache = nil
+            running = false
+            return
+        end
+
+        pushRuntimeStage("packaging", "multipart-build")
 
         local encoded, resultData = pcall(function()
             -- Large universal scans must never be encoded as one JSON document.
             -- The receiver accepts bounded parts; keep only a small clipboard manifest.
-            local parts = prepareParts(result)
-            local manifest = encodeStage('scan-manifest', {
+            local parts, reportScanId, interactionDiagnosticsSummary = prepareParts(result)
+            uploadState={attempted=false,status="not-attempted",acknowledgedParts=0,
+                expectedParts=#parts,lastError=nil}
+            local manifestData = {
                 version = VERSION, gameName = result.gameName,
+                scanId = reportScanId,
                 sessionId = result.sessionId, snapshotId = result.snapshotId,
                 featureEvidence = result.featureEvidence,
                 featureReadiness = result.featureReadiness,
-                interactionDiagnostics = result.interactionDiagnostics,
+                interactionDiagnostics = interactionDiagnosticsSummary or result.interactionDiagnostics,
                 automationDiagnostics = result.automationDiagnostics,
                 featureSnapshotDelta = result.featureSnapshotDelta,
                 placeId = result.placeId, inspectedAt = result.inspectedAt,
+                featureRequest = result.featureRequest,
                 objectCount = #result.objects, partCount = #parts,
                 expectedParts = #parts, uploadedParts = 0,
+                reportTransport = uploadSnapshot("pre-upload"),
+                localExport = {attempted=false,status="not-attempted",exportedParts=0,
+                    expectedParts=#parts,manifestSaved=false,manifestWriteAttempts=0,
+                    localPartContentDigestsComputed=false},
                 localPerformance = result.localPerformance,
+                scanContextDiagnostics = result.scanContextDiagnostics,
                 scanStats = result.scanStats, diagnostics = result.diagnostics,
-                note = "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics"
-            })
-            return {json = manifest, parts = parts}
+                note = "Inspection snapshot is uploaded in numbered parts; manifest includes scan profile and coverage diagnostics"
+            }
+            local manifest = encodeStage("scan-manifest", manifestData)
+            return {json=manifest,parts=parts,manifest=manifestData,scanId=reportScanId}
         end)
+        if generation ~= scanGeneration then
+            running = false
+            return
+        end
         if encoded then
+            pushRuntimeStage("packaging-complete", "manifest-and-parts-ready")
             snapshotId = result.snapshotId
             last = resultData.json
             pendingParts = resultData.parts
+            pendingManifest = resultData.manifest
             pendingAcknowledged = {}
-            status.Text = (result.diagnostics.complete and "Scan complete - " or "PARTIAL SCAN - ")
-                .. #result.objects .. " entries in " .. #pendingParts .. " part(s)"
+            local scanSeconds = result.scanStats and result.scanStats.performance
+                and result.scanStats.performance.scanSeconds or 0
+            local packageSeconds = result.localPerformance and result.localPerformance.serializationSeconds or 0
+            local packagingMetrics = result.localPerformance and result.localPerformance.packagingDiagnostics or nil
+            local summaryBytes = packagingMetrics and packagingMetrics.summaryEncodedBytes or 0
+            local maxAllowedBytes = packagingMetrics and packagingMetrics.maxAllowedBytes or MAX_PART_BYTES
+            local largestPartBytes = packagingMetrics and packagingMetrics.largestPartBytes or 0
+            local overflowEvents = packagingMetrics and packagingMetrics.overflowEvents or 0
+            local fragmentedRecordCount = packagingMetrics and packagingMetrics.fragmentedRecordCount or 0
+            local fragmentedRecordTotalFragments = packagingMetrics and packagingMetrics.fragmentedRecordTotalFragments or 0
+            local plannedRootCount = result.scanStats and type(result.scanStats.plannedRoots)=="table"
+                and #result.scanStats.plannedRoots or #ROOT_LABELS
+            status.Text = (result.diagnostics.complete and "Snapshot complete - " or "SNAPSHOT PARTIAL - ")
+                .. #result.objects .. " entries in " .. #pendingParts .. " part(s); snapshot "
+                .. tostring(scanSeconds) .. "s; packaging " .. tostring(packageSeconds)
+                .. "s; summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
+                .. "B; largest " .. tostring(largestPartBytes) .. "B; overflow "
+                .. tostring(overflowEvents) .. "; fragments " .. tostring(fragmentedRecordCount)
+                .. "/" .. tostring(fragmentedRecordTotalFragments)
+                .. "; upload " .. uploadAttemptStage()
             output.Text =
                 "Game: " .. tostring(result.gameName or "Unknown")
                 .. "\\nPlaceId: " .. tostring(result.placeId)
+                .. "\\nScan ID: " .. tostring(resultData.scanId)
+                .. "\\nScan profile: " .. tostring(result.scanStats and result.scanStats.profile or activeScanProfileId)
                 .. "\\nEntries: " .. #result.objects
                 .. "\\nRemotes: "
                 .. tostring(result.counts.RemoteEvent or 0) .. " events, "
                 .. tostring(result.counts.RemoteFunction or 0) .. " functions"
                 .. "\\nParts: " .. #pendingParts
-                .. "\\nRoots: " .. tostring(result.scanStats and result.scanStats.byRoot and #ROOT_LABELS or 0)
+                .. "\\nRoots: " .. tostring(plannedRootCount)
+                .. "\\nSnapshot stage: " .. (result.diagnostics.complete and "complete" or "partial")
+                .. "\\nPackaging stage: prepared " .. #pendingParts .. " numbered parts"
+                .. "\\nPackaging metrics: summary " .. tostring(summaryBytes) .. "/" .. tostring(maxAllowedBytes)
+                .. " bytes; largest part " .. tostring(largestPartBytes) .. " bytes"
+                .. "; overflow events " .. tostring(overflowEvents)
+                .. "; fragmented records " .. tostring(fragmentedRecordCount)
+                .. "/" .. tostring(fragmentedRecordTotalFragments)
+                .. "\\nUpload stage: " .. uploadAttemptStage()
                 .. "\\nInteraction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
                 .. "\\nObserver callbacks: " .. tostring(observerStats.callbacksFired)
                 .. "\\nObserver sweep: " .. (observerStats.sweepCompleted and "COMPLETE" or "NOT COMPLETE")
                 .. "\\nObserver activations: " .. tostring(observerStats.activationCount)
-                .. "\\nScan type: " .. scanRequestType
+                .. "\\nScan type: " .. tostring(observerStats.scanRequestType)
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
-                .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
-            if autoSend and validEndpoint(endpoint) then transmit() end
+                .. "\\nGeneration handoff: finish button available for snapshot transfer"
+            refreshGeneratedHandoff("Scan complete")
+            if autoSend and validEndpoint(endpoint) then
+                pushRuntimeStage("transmitting", "auto-send")
+                transmit()
+            else
+                pushRuntimeStage("completed", "scan-packaged")
+            end
         else
             status.Text = "JSON error: " .. tostring(resultData)
+            pushRuntimeFailure("packaging", tostring(resultData))
         end
         running = false
     end)
+    return true
 end
 
 -- v6 automatic evidence collection: observe ordinary user gameplay without requiring
 -- the user to perform a fresh manual scan after every interaction.
 -- Bounded rescan budget avoids repeatedly uploading huge worlds.
-local autoEvidenceToggle = Instance.new("TextButton")
+autoEvidenceToggle = Instance.new("TextButton")
 autoEvidenceToggle.Name = "AutoEvidenceToggle"
-autoEvidenceToggle.Size = UDim2.fromOffset(120, 26)
-autoEvidenceToggle.Position = UDim2.fromOffset(380, 168)
+autoEvidenceToggle.Size = UDim2.fromOffset(230, 30)
+autoEvidenceToggle.Position = UDim2.fromOffset(8, 48)
 autoEvidenceToggle.Text = "EVIDENCE: ON"
-autoEvidenceToggle.TextSize = 10
+autoEvidenceToggle.TextSize = 12
 autoEvidenceToggle.TextColor3 = Color3.fromRGB(245,245,245)
 autoEvidenceToggle.BackgroundColor3 = Color3.fromRGB(50,105,85)
-autoEvidenceToggle.Parent = panel
--- Keep evidence control below INTERACT and outside the report viewport.
+autoEvidenceToggle.Parent = automationPane
 autoEvidenceToggle.ZIndex = 4
-local evidenceHint = create("TextLabel", {
+workflowRecordToggle = create("TextButton", {
+    Name="WorkflowRecordToggle",Text="FLOW: AUTO-IDLE",
+    Size=UDim2.fromOffset(230,30),Position=UDim2.fromOffset(252,48),
+    TextSize=12,TextColor3=Color3.fromRGB(245,245,245),
+    BackgroundColor3=Color3.fromRGB(85,85,105),ZIndex=4
+},automationPane)
+refreshWorkflowRecorder=function(reason)
+    if workflowRecording.active then
+        local mode=workflowRecording.automatic and "AUTO" or "MANUAL"
+        workflowRecordToggle.Text=mode.." FLOW: "..workflowRecording.eventCount.."/"..LIMITS.maxWorkflowRecordingEvents
+        workflowRecordToggle.BackgroundColor3=workflowRecording.automatic
+            and Color3.fromRGB(90,120,55) or Color3.fromRGB(145,90,45)
+        if reason=="started" then
+            status.Text=workflowRecording.automatic
+                and "Workflow recording auto-armed from gameplay activity"
+                or "Workflow recording manually armed for this session"
+        end
+    else
+        workflowRecordToggle.Text="FLOW: AUTO-IDLE"
+        workflowRecordToggle.BackgroundColor3=Color3.fromRGB(85,85,105)
+        if reason=="operator-stopped" then
+            status.Text="Workflow recording paused; auto mode resumes on next activity"
+        elseif reason=="event-limit" then
+            status.Text="Workflow window reached 8 interactions; auto resumes on next activity"
+        elseif reason=="duration-limit" then
+            status.Text="Workflow window reached 60 seconds; auto resumes on next activity"
+        end
+    end
+end
+workflowRecordToggle.MouseButton1Click:Connect(function()
+    if workflowRecording.active then
+        stopWorkflowRecording("operator-stopped")
+    elseif not interactionObserveEnabled then
+        status.Text="Workflow recording unavailable while observer is paused"
+    else
+        startWorkflowRecording("explicit-user-armed-recording")
+    end
+end)
+
+scanModeToggle = create("TextButton", {
+    Name = "ScanModeToggle", Text = "SCAN MODE: FULL",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 86),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, automationPane)
+observationToggle = create("TextButton", {
+    Name = "ObservationWindowToggle", Text = "OBSERVE: 12s",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(252, 86),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(85,85,105), ZIndex = 4
+}, automationPane)
+evidenceHint = create("TextLabel", {
     Name = "EvidenceHint",
-    Text = "After interaction: up to 4 full rescans",
-    Position = UDim2.fromOffset(379, 201),
-    Size = UDim2.fromOffset(121, 55),
+    Text = "Auto rescans: 0/4",
+    Position = UDim2.fromOffset(8, 124),
+    Size = UDim2.fromOffset(474, 44),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
-    TextSize = 10,
+    TextSize = 12,
     TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
-}, panel)
-local uploadHint = create("TextLabel", {
+}, automationPane)
+automationHint = create("TextLabel", {
+    Name = "AutomationHint",
+    Text = "Automation state: idle",
+    Position = UDim2.fromOffset(8, 172),
+    Size = UDim2.fromOffset(474, 44),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 12,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, automationPane)
+uploadHint = create("TextLabel", {
     Name = "UploadHint",
     Text = "Receiver ACK is not full integrity proof.",
-    Position = UDim2.fromOffset(379, 263),
-    Size = UDim2.fromOffset(121, 65),
+    Position = UDim2.fromOffset(8, 356),
+    Size = UDim2.fromOffset(474, 28),
     BackgroundTransparency = 1,
     TextColor3 = Color3.fromRGB(205, 215, 220),
-    TextSize = 10,
+    TextSize = 11,
     TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top
-}, panel)
+}, inspectorPane)
 
-autoEvidenceToggle.MouseButton1Click:Connect(function()
-    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+targetedPresetToggle = create("TextButton", {
+    Name = "TargetedPresetToggle", Text = "TARGET: ALL",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 8),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(74, 82, 108), ZIndex = 4
+}, capturePane)
+targetedCaptureToggle = create("TextButton", {
+    Name = "TargetedCaptureToggle", Text = "PAUSE CAPTURE",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(8, 46),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(128, 76, 48), ZIndex = 4
+}, capturePane)
+targetedRestartToggle = create("TextButton", {
+    Name = "TargetedRestartToggle", Text = "RESTART CAPTURE",
+    Size = UDim2.fromOffset(230, 30), Position = UDim2.fromOffset(252, 46),
+    TextSize = 12, TextColor3 = Color3.fromRGB(245,245,245),
+    BackgroundColor3 = Color3.fromRGB(74, 82, 108), ZIndex = 4
+}, capturePane)
+targetedHint = create("TextLabel", {
+    Name = "TargetedHint",
+    Text = "Targeted: waiting",
+    Position = UDim2.fromOffset(8, 84),
+    Size = UDim2.fromOffset(474, 48),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.fromRGB(205, 215, 220),
+    TextSize = 12,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, capturePane)
+targetedEntityLabel = create("TextLabel", {
+    Name = "TargetedEntityProgress", Text = "Entity observation: waiting",
+    Position = UDim2.fromOffset(8, 136), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedCombatLabel = create("TextLabel", {
+    Name = "TargetedCombatProgress", Text = "Combat/camera observation: waiting",
+    Position = UDim2.fromOffset(8, 160), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedMatchLabel = create("TextLabel", {
+    Name = "TargetedMatchProgress", Text = "Match/objective observation: waiting",
+    Position = UDim2.fromOffset(8, 184), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedLoadoutLabel = create("TextLabel", {
+    Name = "TargetedLoadoutProgress", Text = "Loadout observation: waiting",
+    Position = UDim2.fromOffset(8, 208), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedEvidenceLabel = create("TextLabel", {
+    Name = "TargetedEvidenceCollected", Text = "Evidence collected: 0 samples",
+    Position = UDim2.fromOffset(8, 236), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedMissingLabel = create("TextLabel", {
+    Name = "TargetedEvidenceMissing", Text = "Evidence missing: n/a",
+    Position = UDim2.fromOffset(8, 260), Size = UDim2.fromOffset(474, 22),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+}, capturePane)
+targetedErrorLabel = create("TextLabel", {
+    Name = "TargetedCaptureErrors", Text = "Capture errors: 0",
+    Position = UDim2.fromOffset(8, 284), Size = UDim2.fromOffset(474, 48),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, capturePane)
+
+settingsTitleLabel = create("TextLabel", {
+    Name = "SettingsAppearanceHeader",
+    Text = "Appearance",
+    Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(220, 26),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 15, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 4
+}, settingsPane)
+themePresetLabel = create("TextLabel", {
+    Name = "ThemePresetLabel", Text = "Preset:",
+    Position = UDim2.fromOffset(8, 38), Size = UDim2.fromOffset(60, 24),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205,215,220),
+    TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4
+}, settingsPane)
+themePresetButton = create("TextButton", {
+    Name = "ThemePresetButton", Text = "Graphite",
+    Position = UDim2.fromOffset(74, 36), Size = UDim2.fromOffset(130, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themeSaveButton = create("TextButton", {
+    Name = "ThemeSaveButton", Text = "SAVE THEME",
+    Position = UDim2.fromOffset(212, 36), Size = UDim2.fromOffset(130, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themeResetButton = create("TextButton", {
+    Name = "ThemeResetButton", Text = "RESET DEFAULT",
+    Position = UDim2.fromOffset(350, 36), Size = UDim2.fromOffset(132, 28),
+    BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+    TextSize = 12, BorderSizePixel = 0, ZIndex = 4
+}, settingsPane)
+themePersistenceLabel = create("TextLabel", {
+    Name = "ThemePersistenceStatus", Text = "Theme persistence status: initializing",
+    Position = UDim2.fromOffset(8, 68), Size = UDim2.fromOffset(474, 32),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(190,200,206),
+    TextSize = 11, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+THEME_STATUS_LABEL = themePersistenceLabel
+THEME_VALUE_ROWS = {}
+
+function themeSetActiveValue(key, value)
+    THEME_ACTIVE[key] = value
+    if not THEME_PRESETS[THEME_ACTIVE.preset or ""] then
+        THEME_ACTIVE.preset = "Custom"
+    elseif key ~= "preset" then
+        THEME_ACTIVE.preset = "Custom"
+    end
+    themeApply()
+end
+
+function themeFormatSettingValue(key, value)
+    if key == "borderOpacity" then return string.format("%.2f", value) end
+    if key == "textScale" or key == "uiScale" then return string.format("%.2f", value) end
+    return tostring(math.floor(value + 0.5))
+end
+
+function themeRefreshSettingsRows()
+    themePresetButton.Text = tostring(THEME_ACTIVE.preset or "Custom")
+    for _, row in ipairs(THEME_VALUE_ROWS) do
+        local value = THEME_ACTIVE[row.key] or row.minimum
+        row.valueLabel.Text = row.labelPrefix .. themeFormatSettingValue(row.key, value)
+    end
+    if themePersistenceSupported() then
+        themePersistenceLabel.Text = THEME_LAST_SAVE_MESSAGE
+    else
+        themePersistenceLabel.Text = "Theme persistence unavailable in this executor (session-only changes active)"
+    end
+end
+
+function createThemeAdjustRow(rowIndex, labelPrefix, key, minimum, maximum, step)
+    local y = 104 + (rowIndex * 42)
+    local card = create("Frame", {
+        Name = "ThemeRow-" .. key,
+        Position = UDim2.fromOffset(8, y), Size = UDim2.fromOffset(474, 36),
+        BackgroundColor3 = Color3.fromRGB(58,58,58), BorderSizePixel = 0, ZIndex = 4
+    }, settingsPane)
+    local valueLabel = create("TextLabel", {
+        Text = labelPrefix, Position = UDim2.fromOffset(8, 4), Size = UDim2.fromOffset(332, 28),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(235,235,235),
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4
+    }, card)
+    local minus = create("TextButton", {
+        Text = "-", Position = UDim2.fromOffset(346, 4), Size = UDim2.fromOffset(56, 28),
+        BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+        TextSize = 16, BorderSizePixel = 0, ZIndex = 4
+    }, card)
+    local plus = create("TextButton", {
+        Text = "+", Position = UDim2.fromOffset(410, 4), Size = UDim2.fromOffset(56, 28),
+        BackgroundColor3 = Color3.fromRGB(74,82,108), TextColor3 = Color3.fromRGB(245,245,245),
+        TextSize = 16, BorderSizePixel = 0, ZIndex = 4
+    }, card)
+    THEME_VALUE_ROWS[#THEME_VALUE_ROWS + 1] = {
+        key = key,
+        minimum = minimum,
+        maximum = maximum,
+        step = step,
+        valueLabel = valueLabel,
+        labelPrefix = labelPrefix,
+    }
+    minus.MouseButton1Click:Connect(function()
+        local current = themeClamp(THEME_ACTIVE[key] or minimum, minimum, maximum)
+        themeSetActiveValue(key, themeClamp(current - step, minimum, maximum))
+        themeRefreshSettingsRows()
+        refreshEvidenceControls("theme-adjust")
+    end)
+    plus.MouseButton1Click:Connect(function()
+        local current = themeClamp(THEME_ACTIVE[key] or minimum, minimum, maximum)
+        themeSetActiveValue(key, themeClamp(current + step, minimum, maximum))
+        themeRefreshSettingsRows()
+        refreshEvidenceControls("theme-adjust")
+    end)
+    themeRegister(card, {bgToken="card", stroke=true, corner=true, noBorder=true})
+    themeRegister(valueLabel, {textToken="text", noBorder=true})
+    themeRegister(minus, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+    themeRegister(plus, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+end
+
+createThemeAdjustRow(0, "Background shade: ", "backgroundShade", 0, 255, 4)
+createThemeAdjustRow(1, "Surface shade: ", "surfaceShade", 0, 255, 4)
+createThemeAdjustRow(2, "Button shade: ", "buttonShade", 0, 255, 4)
+createThemeAdjustRow(3, "Border brightness: ", "borderBrightness", 0, 255, 4)
+createThemeAdjustRow(4, "Border opacity: ", "borderOpacity", 0.05, 1.0, 0.05)
+createThemeAdjustRow(5, "Corner radius: ", "cornerRadius", 0, 24, 1)
+createThemeAdjustRow(6, "Text brightness: ", "textBrightness", 110, 255, 3)
+createThemeAdjustRow(7, "Text scale: ", "textScale", 0.7, 1.35, 0.05)
+createThemeAdjustRow(8, "UI scale: ", "uiScale", 0.85, 1.25, 0.02)
+createThemeAdjustRow(9, "Button hover brightness: ", "buttonHoverBrightness", 0, 40, 1)
+
+settingsLimitsLabel = create("TextLabel", {
+    Name = "SettingsLimitsLabel",
+    Text = "Capture limits\n- max requests: "..tostring(LIMITS.maxTargetedRequests)
+        .."\n- max entity samples: "..tostring(LIMITS.maxTargetedEntitySnapshots)
+        .."\n- max camera samples: "..tostring(LIMITS.maxTargetedCameraSamples),
+    Position = UDim2.fromOffset(8, 530), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+settingsSamplingLabel = create("TextLabel", {
+    Name = "SettingsSamplingLabel",
+    Text = "Sampling intervals\n- targeted tick: "..tostring(LIMITS.targetedCaptureTickSeconds).."s"
+        .."\n- observation idle: "..tostring(AUTO_EVIDENCE_IDLE_SECONDS).."s"
+        .."\n- workflow window: "..tostring(LIMITS.workflowRecordingSeconds).."s",
+    Position = UDim2.fromOffset(8, 626), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+settingsExportLabel = create("TextLabel", {
+    Name = "SettingsExportLabel",
+    Text = "Export preferences\n- multipart JSON export preserved"
+        .."\n- receiver ACK tracked separately from integrity verification"
+        .."\n- targeted session IDs and provenance preserved",
+    Position = UDim2.fromOffset(8, 722), Size = UDim2.fromOffset(474, 88),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+settingsPerfLabel = create("TextLabel", {
+    Name = "SettingsPerformanceLabel",
+    Text = "Performance + diagnostics\n- bounded queues and capped timelines"
+        .."\n- no duplicate listener installation"
+        .."\n- automatic lifecycle: initializing → waiting → capturing → exporting → continuing",
+    Position = UDim2.fromOffset(8, 818), Size = UDim2.fromOffset(474, 120),
+    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(220,220,220),
+    TextSize = 12, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 4
+}, settingsPane)
+
+THEME_PANEL_SCALE = Instance.new("UIScale")
+THEME_PANEL_SCALE.Parent = panel
+THEME_LOAD_OK, THEME_LOAD_STATE = themeLoadFromDisk()
+if THEME_LOAD_OK then
+    THEME_LAST_SAVE_MESSAGE = "Theme loaded from " .. THEME_CONFIG_PATH
+elseif THEME_LOAD_STATE == "missing" then
+    THEME_LAST_SAVE_MESSAGE = "No saved theme found; using defaults"
+elseif THEME_LOAD_STATE == "malformed" then
+    THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+else
+    THEME_LAST_SAVE_MESSAGE = "Theme persistence unavailable in this executor"
+end
+
+THEME_PRESET_NAMES = themePresetNames()
+THEME_PRESET_INDEX = 1
+for idx, presetName in ipairs(THEME_PRESET_NAMES) do
+    if presetName == tostring(THEME_ACTIVE.preset or THEME_DEFAULT_PRESET) then
+        THEME_PRESET_INDEX = idx
+        break
+    end
+end
+
+themePresetButton.MouseButton1Click:Connect(function()
+    THEME_PRESET_INDEX = (THEME_PRESET_INDEX % #THEME_PRESET_NAMES) + 1
+    local selected = THEME_PRESET_NAMES[THEME_PRESET_INDEX]
+    themeApplyPreset(selected)
+    if selected == "Custom" then
+        THEME_ACTIVE.preset = "Custom"
+        themeApply()
+    end
+    themeRefreshSettingsRows()
+    refreshEvidenceControls("theme-preset")
+end)
+
+themeSaveButton.MouseButton1Click:Connect(function()
+    local ok, message = themeSaveToDisk()
+    if not ok then
+        THEME_LAST_SAVE_MESSAGE = "Theme save failed: " .. tostring(message)
+    end
+    themeRefreshSettingsRows()
+    status.Text = THEME_LAST_SAVE_MESSAGE
+end)
+
+themeResetButton.MouseButton1Click:Connect(function()
+    THEME_ACTIVE = themeNormalize(themeCopyTable(THEME_PRESETS[THEME_DEFAULT_PRESET]))
+    THEME_ACTIVE.preset = THEME_DEFAULT_PRESET
+    for idx, presetName in ipairs(THEME_PRESET_NAMES) do
+        if presetName == THEME_DEFAULT_PRESET then THEME_PRESET_INDEX = idx break end
+    end
+    THEME_LAST_SAVE_MESSAGE = "Theme reset to default preset"
+    themeApply()
+    themeRefreshSettingsRows()
+    refreshEvidenceControls("theme-reset")
+end)
+
+themeRegister(panel, {bgToken="background", stroke=true, corner=true, noBorder=true})
+themeRegister(headerBackground, {bgToken="surface", noBorder=true})
+themeRegister(titleLabel, {textToken="text", noBorder=true})
+themeRegister(tabContentArea, {bgToken="surface", stroke=true, corner=true, noBorder=true})
+themeRegister(inspectorPane, {bgToken="surface", noBorder=true})
+themeRegister(capturePane, {bgToken="surface", noBorder=true})
+themeRegister(automationPane, {bgToken="surface", noBorder=true})
+themeRegister(settingsPane, {bgToken="surface", noBorder=true})
+themeRegister(generatedScriptPane, {bgToken="surface", noBorder=true})
+
+themeRegister(minimise, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(mini, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(inspectorTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(captureTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(automationTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(settingsTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(generatedScriptTab, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(scan, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(copy, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(save, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(close, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(status, {textToken="text", noBorder=true})
+themeRegister(queueLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(output, {bgToken="card", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(config, {bgToken="card", stroke=true, corner=true, noBorder=true})
+themeRegister(url, {bgToken="surface", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(send, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(automatic, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(watchToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(interactionToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(autoEvidenceToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(workflowRecordToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(scanModeToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(observationToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedPresetToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedCaptureToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(targetedRestartToggle, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+
+themeRegister(evidenceHint, {textToken="textSecondary", noBorder=true})
+themeRegister(automationHint, {textToken="textSecondary", noBorder=true})
+themeRegister(uploadHint, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedHint, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedEntityLabel, {textToken="text", noBorder=true})
+themeRegister(targetedCombatLabel, {textToken="text", noBorder=true})
+themeRegister(targetedMatchLabel, {textToken="text", noBorder=true})
+themeRegister(targetedLoadoutLabel, {textToken="text", noBorder=true})
+themeRegister(targetedEvidenceLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedMissingLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(targetedErrorLabel, {textToken="textSecondary", noBorder=true})
+
+themeRegister(settingsTitleLabel, {textToken="text", noBorder=true})
+themeRegister(themePresetLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(themePresetButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themeSaveButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themeResetButton, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(themePersistenceLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsLimitsLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsSamplingLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsExportLabel, {textToken="textSecondary", noBorder=true})
+themeRegister(settingsPerfLabel, {textToken="textSecondary", noBorder=true})
+
+themeRegister(featureRequestInput, {bgToken="card", textToken="text", stroke=true, corner=true, noBorder=true})
+themeRegister(produceScript, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(loadGeneratedResult, {bgToken="button", textToken="text", stroke=true, corner=true, noBorder=true, hover=true})
+themeRegister(generatedStatus, {textToken="textSecondary", noBorder=true})
+themeRegister(generatedCodeOutput, {bgToken="card", textToken="textSecondary", stroke=true, corner=true, noBorder=true})
+
+themeApply()
+pushRuntimeStage("theme-applied", tostring(THEME_ACTIVE and THEME_ACTIVE.preset or "custom"))
+themeRefreshSettingsRows()
+pushRuntimeStage("settings-ready", "theme-controls")
+
+
+targetedCaptureUiRefresh = function(reason)
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    local presetLabel = uiState.presetLabel or "CUSTOM"
+    targetedPresetToggle.Text = "TARGET: " .. tostring(presetLabel)
+    local completed = uiState.completedRequests or 0
+    local total = uiState.totalRequests or 0
+    local unresolved = uiState.unresolvedRequests or 0
+    local active = uiState.active == true
+    local phase = tostring(uiState.lifecyclePhase or "waiting-for-readiness")
+    local reasonLine = uiState.lifecycleReason and tostring(uiState.lifecycleReason):sub(1,64) or "none"
+    local pausedByUser = uiState.lifecyclePausedByUser == true
+
+    if active and not pausedByUser then
+        targetedCaptureToggle.Text = "PAUSE CAPTURE"
+        targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(128, 76, 48)
+    else
+        targetedCaptureToggle.Text = "RESUME CAPTURE"
+        targetedCaptureToggle.BackgroundColor3 = Color3.fromRGB(55, 110, 80)
+    end
+
+    local entity = uiState.requestEntity or {}
+    local combat = uiState.requestCombat or {}
+    local matchState = uiState.requestMatch or {}
+    local loadout = uiState.requestLoadout or {}
+    local samples = uiState.sampleCounts or {}
+
+    targetedHint.Text = "Lifecycle: " .. phase .. " | session " .. tostring(uiState.sessionId or "n/a")
+        .. "\nProgress: " .. tostring(completed) .. "/" .. tostring(total)
+        .. " complete | " .. tostring(unresolved) .. " open"
+    targetedEntityLabel.Text = "Entity observation: " .. tostring(entity.status or "collecting") .. " | satisfied "
+        .. tostring(entity.satisfied or 0) .. " | missing " .. tostring(entity.missing or 0)
+    targetedCombatLabel.Text = "Combat/camera observation: " .. tostring(combat.status or "collecting") .. " | satisfied "
+        .. tostring(combat.satisfied or 0) .. " | missing " .. tostring(combat.missing or 0)
+    targetedMatchLabel.Text = "Match/objective observation: " .. tostring(matchState.status or "collecting") .. " | satisfied "
+        .. tostring(matchState.satisfied or 0) .. " | missing " .. tostring(matchState.missing or 0)
+    targetedLoadoutLabel.Text = "Loadout observation: " .. tostring(loadout.status or "collecting") .. " | satisfied "
+        .. tostring(loadout.satisfied or 0) .. " | missing " .. tostring(loadout.missing or 0)
+    targetedEvidenceLabel.Text = "Evidence collected: entity " .. tostring(samples.characterEntities or 0)
+        .. ", camera " .. tostring(samples.cameraSamples or 0)
+        .. ", match " .. tostring(samples.matchStateSamples or 0)
+        .. ", loadout " .. tostring(samples.loadoutSnapshots or 0)
+    targetedMissingLabel.Text = "Evidence missing: " .. tostring(entity.missing or 0)
+        .. "+" .. tostring(combat.missing or 0)
+        .. "+" .. tostring(matchState.missing or 0)
+        .. "+" .. tostring(loadout.missing or 0)
+    targetedErrorLabel.Text = "Capture errors: " .. tostring(samples.errors or 0)
+        .. "\nLifecycle reason: " .. reasonLine
+
+    if reason=="session-started" or reason=="session-resumed" then
+        status.Text = "Targeted capture active"
+    elseif reason=="session-stopped" or reason=="session-paused" then
+        status.Text = "Targeted capture paused"
+    elseif reason=="preset-cycled" then
+        status.Text = "Targeted preset: " .. tostring(presetLabel)
+    end
+end
+
+if WORKFLOW_HELPERS.setTargetedCaptureUiRefresh then
+    WORKFLOW_HELPERS.setTargetedCaptureUiRefresh(targetedCaptureUiRefresh)
+end
+
+
+refreshEvidenceControls = function(reason)
+    local profile = activeScanProfile()
     autoEvidenceToggle.Text = AUTO_EVIDENCE_ENABLED and "EVIDENCE: ON" or "EVIDENCE: OFF"
     autoEvidenceToggle.BackgroundColor3 = AUTO_EVIDENCE_ENABLED
         and Color3.fromRGB(50,105,85) or Color3.fromRGB(85,85,105)
+    scanModeToggle.Text = "SCAN MODE: " .. profile.label
+    observationToggle.Text = "OBSERVE: " .. tostring(AUTO_EVIDENCE_IDLE_SECONDS) .. "s"
+    evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+        .. "\nCoverage: " .. (profile.quickTargeted and "targeted" or "full")
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    automationHint.Text = "Watch: " .. (watchEnabled and "ON" or "OFF")
+        .. " | Interaction observer: " .. (interactionObserveEnabled and "ON" or "OFF")
+        .. "\nTargeted lifecycle: " .. tostring(uiState.lifecyclePhase or "waiting-for-readiness")
+        .. " | reason: " .. tostring(uiState.lifecycleReason or "none")
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh(reason) end
+    settingsSamplingLabel.Text = "Sampling intervals\n- targeted tick: "..tostring(LIMITS.targetedCaptureTickSeconds).."s"
+        .."\n- observation idle: "..tostring(AUTO_EVIDENCE_IDLE_SECONDS).."s"
+        .."\n- workflow window: "..tostring(LIMITS.workflowRecordingSeconds).."s"
+    if reason=="profile-changed" then
+        status.Text = "Scan mode " .. profile.label .. " | auto rescans "
+            .. AUTO_EVIDENCE_MAX_RESCANS .. " | observation " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+    end
+end
+
+autoEvidenceToggle.MouseButton1Click:Connect(function()
+    AUTO_EVIDENCE_ENABLED = not AUTO_EVIDENCE_ENABLED
+    refreshEvidenceControls("evidence-toggle")
     status.Text = AUTO_EVIDENCE_ENABLED and "Automatic evidence enabled" or "Automatic evidence paused"
 end)
+scanModeToggle.MouseButton1Click:Connect(function()
+    local nextProfile = activeScanProfileId == "full" and "quick" or "full"
+    applyScanProfile(nextProfile)
+end)
+observationToggle.MouseButton1Click:Connect(function()
+    cycleObservationIdleSeconds()
+    status.Text = "Observation window set to " .. AUTO_EVIDENCE_IDLE_SECONDS .. "s"
+end)
+
+targetedPresetToggle.MouseButton1Click:Connect(function()
+    local result = WORKFLOW_HELPERS.cycleTargetedPreset()
+    if result then
+        if targetedCaptureUiRefresh then targetedCaptureUiRefresh("preset-cycled") end
+    else
+        status.Text = "Targeted preset unavailable"
+    end
+end)
+
+targetedCaptureToggle.MouseButton1Click:Connect(function()
+    local uiState = WORKFLOW_HELPERS.getTargetedCaptureUiState and WORKFLOW_HELPERS.getTargetedCaptureUiState() or {}
+    local active = uiState.active == true
+    local pausedByUser = uiState.lifecyclePausedByUser == true
+    if active and not pausedByUser then
+        local ok, err = WORKFLOW_HELPERS.pauseTargetedCaptureSession()
+        if not ok then
+            status.Text = "Targeted pause failed: " .. tostring(err)
+        elseif targetedCaptureUiRefresh then
+            targetedCaptureUiRefresh("session-paused")
+        end
+        return
+    end
+
+    local ok, result = WORKFLOW_HELPERS.resumeTargetedCaptureSession()
+    if not ok then
+        status.Text = "Targeted resume waiting: " .. tostring(result)
+        return
+    end
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-resumed") end
+end)
+
+targetedRestartToggle.MouseButton1Click:Connect(function()
+    local ok, result = WORKFLOW_HELPERS.restartTargetedCaptureSession()
+    if not ok then
+        status.Text = "Targeted restart waiting: " .. tostring(result)
+        return
+    end
+    if targetedCaptureUiRefresh then targetedCaptureUiRefresh("session-restarted") end
+end)
+
+refreshEvidenceControls("initial")
+if WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle then
+    WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle("startup")
+end
 
 -- Existing observer already captures pre/post state and GUI transitions. This
--- scheduler consolidates those records into full reports after activity settles.
+-- scheduler consolidates those records into profile-selected reports after activity settles.
 task.spawn(function()
     while alive do
         task.wait(3)
@@ -2519,6 +11651,8 @@ task.spawn(function()
             and os.clock()-autoEvidenceLastInteraction >= AUTO_EVIDENCE_IDLE_SECONDS
             and os.clock()-autoEvidenceLastScan >= AUTO_EVIDENCE_COOLDOWN_SECONDS
             and autoEvidenceRescans < AUTO_EVIDENCE_MAX_RESCANS
+            and WORKFLOW_HELPERS.inputQueueLength()==0
+            and inputObserverState.phase~="action"
             and not running and not uploading then
             local allSent = true
             if pendingParts then
@@ -2530,18 +11664,48 @@ task.spawn(function()
                 autoEvidenceLastSequence=interactionEventCount
                 autoEvidenceLastScan=os.clock()
                 autoEvidenceRescans=autoEvidenceRescans+1
-                evidenceHint.Text = "Auto rescans: " .. autoEvidenceRescans .. "/" .. AUTO_EVIDENCE_MAX_RESCANS
+                refreshEvidenceControls("auto-rescan")
                 inspect("auto-evidence")
             else
                 autoEvidenceLastFailure="Previous scan parts not acknowledged"
+                refreshEvidenceControls("auto-rescan-blocked")
             end
         end
     end
 end)
-scan.MouseButton1Click:Connect(function() inspect("manual") end)
+produceScript.MouseButton1Click:Connect(function()
+    local request = trim(featureRequestInput.Text:gsub("[%c]+", " "))
+    if request == "" then
+        generatedStatus.Text = "Enter a client-visible capability request first."
+        return
+    end
+    if #request > 240 then
+        generatedStatus.Text = "Request is too long; use 240 bytes or fewer."
+        return
+    end
+    featureRequestInput.Text = request
+    if activeScanProfileId ~= "full" then
+        applyScanProfile("full")
+        status.Text = "Feature request capture switched to FULL scan for complete evidence"
+    end
+    if inspect("feature-request", request) then
+        generatedStatus.Text = "Capturing a complete evidence package for offline generation.\n\nNo gameplay implementation or outcome is verified in-game."
+    else
+        generatedStatus.Text = "Evidence capture not started:\n" .. status.Text
+    end
+end)
+
+scan.MouseButton1Click:Connect(function()
+    pushRuntimeStage("button-clicked", "scan")
+    if running or uploading then
+        cancelActiveOperation()
+    else
+        inspect("manual")
+    end
+end)
 
 copy.MouseButton1Click:Connect(function()
-    if not last then
+    if not pendingManifest or not pendingManifest.scanId then
         status.Text = "Scan not finished"
         return
     end
@@ -2551,28 +11715,93 @@ copy.MouseButton1Click:Connect(function()
         return
     end
 
-    local ok = pcall(setclipboard, last)
-    status.Text = ok and "Copied JSON" or "Copy failed"
+    local ok,payload=pcall(function()
+        local exportData=WORKFLOW_HELPERS.buildLiveObservationExport()
+        return encodeStage("live-observation-export",exportData)
+    end)
+    if not ok then
+        status.Text = "Live export failed"
+        return
+    end
+    local copied=pcall(setclipboard,payload)
+    status.Text = copied and "Copied live observation JSON" or "Copy failed"
 end)
 
 save.MouseButton1Click:Connect(function()
-    if not last then
+    if not last or not pendingManifest or not pendingParts or #pendingParts==0 then
         status.Text = "Scan not finished"
         return
     end
-
     if type(writefile) ~= "function" then
+        pendingManifest.localExport={attempted=true,status="failed",exportedParts=0,
+            expectedParts=#pendingParts,manifestSaved=false,manifestWriteAttempts=0,
+            localPartContentDigestsComputed=false,lastError="file writing unavailable"}
+        refreshLocalManifest("local-export")
+        refreshGeneratedHandoff("Local export finished")
         status.Text = "File saving unavailable"
         return
     end
 
-    local ok = pcall(
-        writefile,
-        "Lycoles_" .. tostring(game.PlaceId) .. ".json",
-        last
-    )
-
-    status.Text = ok and "Saved JSON" or "Save failed"
+    local safeScanId=tostring(pendingManifest.scanId or "unknown"):gsub("[^%w%-]","")
+    local prefix="Lycoles_"..tostring(game.PlaceId).."_"..safeScanId
+    local exported=0
+    local firstError=nil
+    for i,body in ipairs(pendingParts) do
+        local ok,err=pcall(writefile,prefix.."_part-"..string.format("%04d",i)..".json",body)
+        if ok then exported=exported+1 elseif not firstError then firstError=tostring(err) end
+    end
+    pendingManifest.localExport={
+        attempted=true,status=exported==#pendingParts and "incomplete" or "failed",
+        exportedParts=exported,expectedParts=#pendingParts,
+        filenamePrefix=prefix,manifestSaved=false,manifestWriteAttempts=1,
+        localPartContentDigestsComputed=false,
+        lastError=exported==#pendingParts and "manifest finalization pending" or "one or more part writes failed",
+        note="Raw numbered part bytes are preserved; compare offline SHA-256 with receiver acknowledgement digests when available"
+    }
+    refreshLocalManifest("local-export")
+    local manifestOk,manifestError=pcall(writefile,prefix.."_manifest.json",last)
+    if manifestOk and exported==#pendingParts then
+        pendingManifest.localExport.status="complete"
+        pendingManifest.localExport.manifestSaved=true
+        pendingManifest.localExport.manifestWriteAttempts=2
+        pendingManifest.localExport.lastError=nil
+        refreshLocalManifest("local-export")
+        local finalOk,finalError=pcall(writefile,prefix.."_manifest.json",last)
+        if finalOk then
+            status.Text="Saved complete report: "..exported.." part(s) + manifest"
+        else
+            manifestOk=false;manifestError=finalError
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.manifestSaved=false
+            pendingManifest.localExport.lastError="final manifest write failed"
+            refreshLocalManifest("local-export")
+        end
+    end
+    if not manifestOk or exported~=#pendingParts then
+        if manifestOk then
+            pendingManifest.localExport.status="incomplete"
+            pendingManifest.localExport.manifestSaved=true
+            pendingManifest.localExport.manifestWriteAttempts=2
+            pendingManifest.localExport.lastError="one or more numbered parts were not saved"
+            refreshLocalManifest("local-export")
+            local partialOk,partialError=pcall(writefile,prefix.."_manifest.json",last)
+            if not partialOk then
+                manifestOk=false;manifestError=partialError
+                pendingManifest.localExport.status="failed"
+                pendingManifest.localExport.manifestSaved=false
+                pendingManifest.localExport.lastError="final manifest write failed"
+                refreshLocalManifest("local-export")
+            end
+        else
+            pendingManifest.localExport.status="failed"
+            pendingManifest.localExport.lastError="manifest write failed"
+            refreshLocalManifest("local-export")
+        end
+        status.Text="Report save incomplete: "..exported.."/"..#pendingParts
+        if firstError then warn("Lycoles local report export failed",firstError) end
+        if manifestError then warn("Lycoles local manifest export failed",tostring(manifestError)) end
+    end
+    refreshGeneratedHandoff("Local export finished")
 end)
 
 close.MouseButton1Click:Connect(_G.LycolesInspectorClose)
@@ -2602,21 +11831,22 @@ url.FocusLost:Connect(function()
 end)
 
 send.MouseButton1Click:Connect(function()
-    endpoint = trim(url.Text)
-    transmit()
+    if generationUi.ready and generationUi.startGenerationHandoff then
+        generationUi.startGenerationHandoff()
+    else
+        status.Text = "Generation handoff UI not initialized"
+    end
 end)
 
 automatic.MouseButton1Click:Connect(function()
-    autoSend = not autoSend
-
-    automatic.Text = autoSend
-        and "AUTO-SEND: ON"
-        or "AUTO-SEND: OFF"
-
-    status.Text = autoSend
-        and "Automatic uploads enabled"
-        or "Automatic uploads disabled"
+    if generationUi.ready and generationUi.openGeneratorIfReady then
+        generationUi.openGeneratorIfReady()
+    else
+        status.Text = "Generator session controls unavailable"
+    end
 end)
+
+pushRuntimeStage("callbacks-registered", "ui-controls")
 
 if endpoint ~= "" then
     status.Text = "Saved receiver loaded"
@@ -2625,13 +11855,24 @@ else
 end
 
 startWatching()
+pushRuntimeStage("watch-started", "passive-observers")
 -- Automatically attach passive listeners; users do not need to toggle INTERACT manually.
 observerStats.activationCount = observerStats.activationCount + 1
 observerStats.lastEnabledAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
 interactionToggle.Text = 'INTERACT: ON (AUTO)'
 task.spawn(function()
  local ok,err=pcall(sweepInteractionControls)
- if not ok then observerStats.bindingErrors=observerStats.bindingErrors+1; observerStats.lastSweepError=tostring(err):sub(1,250) end
+ if not ok then
+  observerStats.bindingErrors=observerStats.bindingErrors+1
+  observerStats.lastSweepError=tostring(err):sub(1,250)
+  pushRuntimeFailure("observer-sweep", err)
+ else
+  pushRuntimeStage("observer-ready", "interaction-controls")
+ end
 end)
 -- Startup scan is discovery-only; after enabling interaction recording, run SCAN again.
-inspect("startup-baseline")
+if inspect("startup-baseline") then
+    pushRuntimeStage("startup-scan-dispatched", "startup-baseline")
+else
+    pushRuntimeFailure("startup-scan", "dispatch-blocked")
+end

@@ -1,0 +1,477 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "records": [
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_recoil_assist.recoil_camera_compensation",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "camera-control runtime adapter",
+            "weapon-state classifier"
+          ],
+          "missingEvidence": [
+            "camera_movement_correlation"
+          ],
+          "name": "Camera recoil compensation",
+          "stage": "Evidence partially available"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_recoil_assist",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Recoil Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_target_assist.target_candidate_selection",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "entity-index adapter",
+            "projection adapter"
+          ],
+          "missingEvidence": [],
+          "name": "Target candidate selection",
+          "stage": "Evidence sufficient for a bounded implementation"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_target_assist",
+      "featureStage": "Evidence sufficient for a bounded implementation",
+      "featureTitle": "Target Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "combat_trigger_assist.crosshair_fire_condition",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "fire-control adapter",
+            "target classifier"
+          ],
+          "missingEvidence": [
+            "state_change_signals"
+          ],
+          "name": "Crosshair fire condition",
+          "stage": "Evidence partially available"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "combat_trigger_assist",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Trigger Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "esp_player_overlay.basic_entity_boxes",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "drawing adapter",
+            "projection adapter"
+          ],
+          "missingEvidence": [],
+          "name": "Basic player boxes",
+          "stage": "Evidence sufficient for a bounded implementation"
+        },
+        {
+          "capabilityId": "esp_player_overlay.team_and_health_enhancements",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "health value resolver",
+            "team-color map"
+          ],
+          "missingEvidence": [
+            "state_change_signals"
+          ],
+          "name": "Team/health enhancements",
+          "stage": "Evidence partially available"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "esp_player_overlay",
+      "featureStage": "Evidence sufficient for a bounded implementation",
+      "featureTitle": "Player Awareness Overlay",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "loadout_information_suite.loadout_gui_reader",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "gui-snapshot parser"
+          ],
+          "missingEvidence": [
+            "loadout_gui_structures"
+          ],
+          "name": "Loadout GUI reader",
+          "stage": "Evidence partially available"
+        },
+        {
+          "capabilityId": "loadout_information_suite.runtime_weapon_state",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": false,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "tool identity resolver"
+          ],
+          "missingEvidence": [
+            "hud_weapon_indicators"
+          ],
+          "name": "Runtime weapon state indicators",
+          "stage": "Evidence partially available"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "loadout_information_suite",
+      "featureStage": "Evidence partially available",
+      "featureTitle": "Loadout and Weapon Intelligence",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": true,
+            "Implementation ready": true,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [],
+          "missingEvidence": [],
+          "name": "Movement telemetry overlay",
+          "stage": "Implementation ready"
+        },
+        {
+          "capabilityId": "movement_navigation_assist.path_hinting",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "region graph builder"
+          ],
+          "missingEvidence": [],
+          "name": "Path hinting",
+          "stage": "Evidence sufficient for a bounded implementation"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "movement_navigation_assist",
+      "featureStage": "Implementation ready",
+      "featureTitle": "Navigation Assistance",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "objective_status_dashboard.reactive_match_reader",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": false,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [
+            "objective field mapper"
+          ],
+          "missingEvidence": [],
+          "name": "Reactive match reader",
+          "stage": "Evidence sufficient for a bounded implementation"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "objective_status_dashboard",
+      "featureStage": "Evidence sufficient for a bounded implementation",
+      "featureTitle": "Objective and Match Status Dashboard",
+      "featureType": "gameplay"
+    },
+    {
+      "capabilities": [
+        {
+          "capabilityId": "profile_and_keybind_manager.profile_persistence",
+          "claims": {
+            "actionOutcomesVerified": false,
+            "causalityProven": false,
+            "gameplayVerified": false,
+            "runtimeVerified": false,
+            "serverAuthorityVerified": false,
+            "sourceAuthenticityVerified": false
+          },
+          "lifecycle": {
+            "Concept proposed": true,
+            "Evidence partially available": true,
+            "Evidence sufficient for a bounded implementation": true,
+            "Gameplay verified": false,
+            "Implementation dependencies satisfied": true,
+            "Implementation ready": false,
+            "Implemented": false,
+            "Runtime tested": false,
+            "Static validation passed": false
+          },
+          "missingDependencies": [],
+          "missingEvidence": [],
+          "name": "Profile persistence",
+          "stage": "Implementation dependencies satisfied"
+        }
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "featureId": "profile_and_keybind_manager",
+      "featureStage": "Implementation dependencies satisfied",
+      "featureTitle": "Profiles and Keybinds",
+      "featureType": "infrastructure"
+    }
+  ],
+  "schemaVersion": "121.reassessed-feature-feasibility.1",
+  "summary": {
+    "gameplayFeatureCount": 7,
+    "gameplayImplementationReadyCapabilities": [
+      {
+        "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+        "featureId": "movement_navigation_assist",
+        "name": "Movement telemetry overlay"
+      }
+    ],
+    "infrastructureFeatureCount": 1,
+    "stageCounts": {
+      "Evidence partially available": 5,
+      "Evidence sufficient for a bounded implementation": 4,
+      "Implementation dependencies satisfied": 1,
+      "Implementation ready": 1
+    }
+  }
+}

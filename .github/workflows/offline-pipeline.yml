@@ -7,13 +7,16 @@ on:
       - 'LycolesUniversalInspector.lua'
       - 'tests/**'
       - 'receiver/**'
-      - 'receiver/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/offline-pipeline.yml'
   pull_request:
     paths:
       - 'tools/**'
       - 'LycolesUniversalInspector.lua'
       - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/offline-pipeline.yml'
   workflow_dispatch:
 permissions:
@@ -27,12 +30,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install Node validation dependencies
+        run: npm ci --ignore-scripts
       - name: Compile Python sources
         run: python -m compileall -q tools tests
       - name: Run offline regression tests
         run: python -m unittest discover -s tests -v
-      - name: Validate Cloudflare receiver
-        run: node tests/test_receiver.mjs
+      - name: Validate receiver and generated Luau syntax
+        run: npm test
       - name: Generate example release bundle
         shell: bash
         run: |

@@ -26,11 +26,27 @@ def compile_workflows(plan):
         corroborated=item.get("clientCorroboratedEvents",0)
         transitions=item.get("temporalTransitionEvents",0)
         verified=item.get("verifiedClientOutcomes",0)
-        if any(type(x) is not int or x<0 for x in (observed,corroborated,transitions,verified)):
+        candidates=item.get("observableOutcomeCandidates",0)
+        state_correlations=item.get("featureStateCorrelations",0)
+        gui_correlations=item.get("featureGuiCorrelations",0)
+        counters=(observed,corroborated,transitions,verified,candidates,state_correlations,gui_correlations)
+        if any(type(x) is not int or x<0 for x in counters):
             raise ValueError("Invalid evidence counters")
-        if corroborated>observed or transitions>observed or verified>observed:
-            raise ValueError("Inconsistent evidence counters")
+        counter_issues=[]
+        if corroborated>observed:
+            counter_issues.append("clientCorroboratedEvents exceeds interactionEvents")
+        if transitions>observed:
+            counter_issues.append("temporalTransitionEvents exceeds interactionEvents")
+        if verified>observed:
+            counter_issues.append("verifiedClientOutcomes exceeds interactionEvents")
+        if candidates>observed:
+            counter_issues.append("observableOutcomeCandidates exceeds interactionEvents")
+        if state_correlations>candidates:
+            counter_issues.append("featureStateCorrelations exceeds observableOutcomeCandidates")
+        if gui_correlations>candidates:
+            counter_issues.append("featureGuiCorrelations exceeds observableOutcomeCandidates")
         evidence_level=("client-outcome-observed" if verified else
+                        "observable-outcome-candidate-unverified" if candidates else
                         "client-state-corroborated" if corroborated else
                         "temporal-transition-observed" if transitions else
                         "interaction-observed" if observed else "discovered-only")
@@ -41,6 +57,18 @@ def compile_workflows(plan):
             "corroboratedInteractions":corroborated,
             "temporalTransitions":transitions,
             "clientOutcomes":verified,
+            "observableOutcomeCandidates":candidates,
+            "featureStateCorrelations":state_correlations,
+            "featureGuiCorrelations":gui_correlations,
+            "counterDiagnostics":{
+                "inconsistent":bool(counter_issues),
+                "issues":counter_issues,
+            },
+            "correlationSemantics":"Feature-consistent client-visible change; correlation, not causal proof",
+            "sourceAuthenticityVerified":False,
+            "causalityProven":False,
+            "serverAuthorityVerified":False,
+            "gameplayVerified":False,
             "reproducibleActionContract":False,
             "automaticallyExecutable":False,
             "requiredValidation":[
@@ -57,7 +85,14 @@ def compile_workflows(plan):
         "summary":{"discovered":len(workflows),
                    "observed":sum(w["observedInteractions"]>0 for w in workflows),
                    "clientCorroborated":sum(w["corroboratedInteractions"]>0 for w in workflows),
+                   "observableOutcomeCandidates":sum(w["observableOutcomeCandidates"] for w in workflows),
+                   "featuresWithObservableOutcomeCandidates":sum(w["observableOutcomeCandidates"]>0 for w in workflows),
+                   "featuresWithCounterInconsistencies":sum(
+                       (w.get("counterDiagnostics") or {}).get("inconsistent") is True for w in workflows
+                   ),
                    "automaticallyExecutable":0},
+        "claims":{"sourceAuthenticityVerified":False,"causalityProven":False,
+                  "serverAuthorityVerified":False,"gameplayVerified":False},
         "notice":"Passive client observations are not executable server action contracts."
     }
 
@@ -71,10 +106,11 @@ def render_review(workflows):
            "This report distinguishes observed client evidence from reproducible actions.",
            "No gameplay action is marked executable without a validated implementation contract.",
            "", "## Evidence-ranked features", ""]
-    priority={"client-outcome-observed":0,"client-state-corroborated":1,
-              "temporal-transition-observed":2,"interaction-observed":3,"discovered-only":4}
+    priority={"client-outcome-observed":0,"observable-outcome-candidate-unverified":1,
+              "client-state-corroborated":2,"temporal-transition-observed":3,
+              "interaction-observed":4,"discovered-only":5}
     ranked=sorted(workflows["workflows"],key=lambda w:(
-        priority.get(w["evidenceLevel"],5),-w["observedInteractions"],w["feature"]))
+        priority.get(w["evidenceLevel"],6),-w["observedInteractions"],w["feature"]))
     for i,w in enumerate(ranked,1):
         name=w["feature"].replace("\\n"," ").replace("\\r"," ").replace("#","").strip()
         lines.extend(["### "+str(i)+". "+name, "",
@@ -82,6 +118,15 @@ def render_review(workflows):
             "- Observed interactions: "+str(w["observedInteractions"]),
             "- Client corroboration: "+str(w["corroboratedInteractions"]),
             "- Temporal transitions: "+str(w["temporalTransitions"]),
+            "- Observable outcome candidates: "+str(w.get("observableOutcomeCandidates",0)),
+            "- Feature-state correlations: "+str(w.get("featureStateCorrelations",0)),
+            "- Feature-GUI correlations: "+str(w.get("featureGuiCorrelations",0)),
+            "- Candidate semantics: "+w.get("correlationSemantics","correlation, not causal proof")])
+        counter_diag=w.get("counterDiagnostics") if isinstance(w.get("counterDiagnostics"),dict) else {}
+        if counter_diag.get("inconsistent") is True:
+            issues=counter_diag.get("issues") if isinstance(counter_diag.get("issues"),list) else []
+            lines.append("- Counter diagnostics: inconsistent source counters ("+"; ".join(str(issue) for issue in issues[:4])+")")
+        lines.extend([
             "- Executable contract: not established",
             "- Next validation: "+", ".join(w["requiredValidation"]), ""])
     if not ranked: lines.append("No candidate features were identified.")

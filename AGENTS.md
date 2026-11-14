@@ -1,0 +1,1105 @@
+# Lycoles Universal Inspector Development Guidance
+
+## Objective
+
+Develop Lycoles as a universal, evidence-driven Roblox inspection and script-generation system. Prioritize reliability, accurate interpretation, compatibility, automated testing, and functional Luau generated only when supported by observable evidence.
+
+## Permanent environment constraints
+
+Target experiences are third-party games that the user does not own and cannot open in Roblox Studio.
+
+- Never require target-game Studio access, `.rbxl`/`.rbxlx` files, private source, server scripts, developer-only services, or experience ownership.
+- Never make ownership-dependent validation a prerequisite or repeatedly recommend Studio access as the solution.
+- Build from legitimately observable client-side information and permitted interfaces.
+- Do not implement anti-cheat bypasses, exploit loaders, security circumvention, unauthorized remote invocation, stealth mechanisms, or access-control evasion.
+- Do not merge into `main` without explicit authorization. Develop and push verified work on `openhands-development`.
+
+
+
+
+
+## Session notes — 2026-11-06 gesture attribution conflict correction (v30.6.56)
+
+- Camera heading change alone must not be treated as conclusive drag intent. Require pointer-movement evidence for strong camera-drag classification, and preserve a separate `camera-rotation-uncertain`/ambiguous path when movement evidence is absent.
+- Keep three concerns independent in exported gesture evidence:
+  1. Physical gesture signals (duration, movement, displacement, interruption)
+  2. Intent hypotheses (camera/gameplay, ambiguity, confidence)
+  3. Target/outcome corroboration (GUI/world, raycast-only, callback/state-change quality)
+- Raycast-only world targeting with weak/temporal-only outcome signals should remain non-confirmatory and must not auto-escalate to world-interaction intent.
+- Sampling reliability matters under executors: maintain press/release orientation boundaries and heartbeat camera sampling while gestures are active to reduce missed camera-turn evidence when mouse delta events are sparse.
+- Counter reconciliation is required for live diagnostics: export explicit record-vs-counter alignment for captured/completed/interrupted/open gestures.
+- Receiver-side synthesis must propagate camera/gameplay ambiguity signals into spatial relationships (`camera-intent-confounder`) rather than silently upgrading them into actionable world interactions.
+
+
+## Session notes — 2026-11-06 right-button camera-control follow-up (v30.6.57)
+
+- Relative-pointer camera rotation can occur with zero `InputChanged.MouseMovement` samples under executor mouse-lock contexts; heartbeat `GetMouseDelta()` sampling during active pointer gestures is required to avoid false "no movement" conclusions.
+- Gesture intent now carries explicit `inputContextSignals` (including mouse button identity and right-button camera-control hypothesis) so downstream systems can distinguish button semantics from outcome semantics.
+- Temporal-only or weakly corroborated client-state signals must not promote camera-control gestures into confident world interactions when camera-confounder evidence is present.
+- Keep camera and gameplay hypotheses simultaneously represented when evidence conflicts; do not collapse to one hypothesis prematurely.
+- Callback diagnostics must separate "callback observed" from "callback attributed" to avoid over-trusting unattributed callback events in intent promotion.
+
+
+
+## Session notes — 2026-11-06 autonomous generation service expansion (v30.6.58)
+
+- `tools/lycoles_generation_service.py` now exposes an autonomous orchestration contract (`30.6.autonomous-generation-plan.1`) with ranked discovered features, selected strategy, evidence references, assumptions, and explicit verification-state progression.
+- Generation strategy policy is category-driven (`pickup-reward-farming`, `training-progression`, `shop-purchase`, `inventory-equipment`, `pets-companions`, `teleport-navigation`) with A/B/C strategy ordering and feasibility scoring.
+- Runtime feedback loop is persistent and queryable:
+  - HTTP: `GET/POST /v1/generation/feedback`
+  - CLI: `record-feedback --feedback-json <path>`
+  - persisted in `feedback-log.jsonl`
+  - repeated failures penalize and can block re-selection of the same strategy.
+- Deterministic validation now includes optional Luau compile checks (`luau-compile` when available), dependency/helper scanning, and verification lifecycle status export.
+- Malformed legacy evidence is now fail-soft in the generation service:
+  - malformed observation timing falls back to baseline-only,
+  - malformed baseline timing falls back to manifest/synthetic readiness,
+  - service returns explicit blocker artifacts (`generation-blockers.json`) instead of crashing.
+
+
+## Session notes — 2026-11-06 legacy baseline + recording compatibility (v30.6.59)
+
+- Real merged observation streams can legitimately contain `baselineSource="input-event-callback"` in two timing forms:
+  1. legacy raw: `baselineTiming="input-event-callback"`
+  2. normalized overlay: `baselineTiming="activation-callback"`
+  Downstream validators must accept both and normalize behavior to activation-callback semantics.
+- `explicitWorkflowRecording` metadata can appear for `automatic-activity-window` transactions; this must **not** trigger strict explicit-user recording validation. Gate explicit recording checks only on explicit-user markers (`transactionLinkSource`/`linkageSource`/`explicitUserArmed`/`user-recorded-*`).
+- For Bubble Gum replay in this workspace, merged evidence now processes without parser crashes, but current available package still lands in `observational-only-request-unmet` (no feasible evidence-backed strategy for requested auto reward pickup).
+
+
+## Session notes — 2026-11-13 evidence replay importer + semantic blocker diagnostics (v30.6.60)
+
+- New replay package schema: `30.6.evidence-replay-package.1` via `tools/evidence_replay_import.py`.
+- Replay importer supports baseline directories, multipart ZIPs, manifest JSON, observation exports, and replay-package reimport. It validates place/scan identity, part completeness, duplicate conflicts, manifest digest consistency (when provided), and observation baseline/place linkage.
+- Generation service now supports:
+  - `replay-import` command for package creation
+  - `run-job --evidence-kind replay_package` for deterministic replay execution
+- Planner now emits per-feature feasibility diagnostics (`missingDependencies`, `rejectionReasons`, `feasibilityClass`) and selection diagnostics (`highestRankedFeatureId`, `fallbackUsed`).
+- Selection now prefers strongest feasible feature; if none are feasible, it retains top-ranked and reports explicit blockers.
+- Malformed baseline timing fallback now degrades to manifest/synthetic readiness even without overlay files.
+- Requested Bubble IDs `144CF595...` + `live-observation-16FF57E3...` are still not present as local payloads in this workspace; strict replay import correctly fails closed on mismatch against available baseline `33E9EFC5...`.
+
+
+## Session notes — 2026-11-12 uploaded v30.6.53 replay artifacts
+
+- Uploaded `Lycoles_v30.6.53_Observation_Part_1..3` reconstruct into one valid JSON payload (`~7.57M chars`) and confirm the pre-v30.6.54 GUI bug signature: `GetGuiObjectsAtPosition is not a valid member of UserInputService` repeated for click capture.
+- Uploaded baseline zips `Lycoles_v30.6.53_Baseline_Part_1_of_2.zip` + `Part_2_of_2.zip` are **overlapping zip subsets**, not byte-concatenation segments. Correct reconstruction is union extraction (not `cat`), yielding complete `part-0001..part-0985` plus manifest.
+- Real legacy interaction history may include `baselineSource="input-event-callback"` and `baselineTiming="input-event-callback"`; compile tooling must normalize this to activation-callback semantics instead of rejecting the scan.
+- Real legacy manifests may report callback/window diagnostics where callbacks fired but no baseline attribution was recorded at export time; compiler should surface this as explicit evidence-loss limitation rather than hard-failing parse.
+
+
+
+## Session notes — 2026-11-06 pointer gesture intent pass (v30.6.55)
+
+- Potassium-safe pointer classification now depends on **gesture lifecycle evidence** (start/move/end, duration, cursor travel, camera heading deltas), not single click events alone.
+- Click observations and click-outcome relationships should carry `inputGestureId` + `inputIntent` to preserve attribution provenance across inspector → receiver transforms.
+- World-raycast-only click evidence (without confirmed GUI/world targeting + corroborated outcomes) must remain non-confirmatory; classify as ambiguous/camera-leaning where indicated.
+- Export contract additions that should remain stable:
+  - `inputGestureObservations`
+  - `cursorClickOrientationSchemas.inputGestureObservation = "30.6.input-gesture-observation.1"`
+  - `interactionDiagnostics.inputGestureIntentDiagnostics`
+  - `qualityMetrics.spatialDiscovery.inputGestureIntent`
+- Current compiler safety telemetry after v30.6.55:
+  - Luau AST root local pressure: **168**
+  - Safety budget: **170**
+  - Potassium hard local-register cap: **200**
+
+## Session notes — 2026-11-06 GUI hit-testing repair and ambiguity-safe attribution (v30.6.54)
+
+- `GetGuiObjectsAtPosition` must be called on `PlayerGui`, not `UserInputService`.
+- `UserInputService:GetMouseLocation()` + GUI inset differences can vary by executor/context; probing multiple coordinate variants (`raw-screen`, `minus-gui-inset`, `plus-gui-inset`) is safer than assuming one space.
+- If GUI hit testing is unavailable/failed, a successful world raycast is **non-confirmatory** for intended click target; classify as ambiguous rather than confirmed world.
+- Pending click correlation anchors should only use confirmed target classes. Ambiguous/unresolved clicks must avoid injecting world target paths.
+- Live observation exports intentionally keep `receiverIntegrityVerified=false` unless a separate authenticated integrity revalidation step is performed; expose baseline transport snapshot fields to avoid misinterpretation.
+
+## Session notes — 2026-11-06 shared-summary overflow fix (v30.6.53)
+
+- Live error `JSON error: 2308: Shared scan summary exceeds receiver limit without interaction` is emitted from inspector `prepareParts` metadata size validation, before upload attempts.
+- "without interaction" means `recentInteractions` was already excluded/chunked, but shared metadata still exceeded `MAX_PART_BYTES`.
+- Required guardrail: large diagnostics collections must never stay embedded in metadata summary; export them as bounded multipart chunks with explicit key + start offset, and keep summary compact with per-collection totals.
+- New optional part fields used for bounded diagnostics transport:
+  - `interactionDiagnosticsChunkKey`
+  - `interactionDiagnosticsChunk`
+  - `interactionDiagnosticsChunkStart`
+- `tools/compile_scan.py` now reconstructs these chunked diagnostics arrays fail-closed (sequence + total validation), preserving compatibility with existing multipart schema consumers.
+
+
+## Session notes — 2026-11-06 click failure hotfix (v30.6.52)
+
+- Confirmed root cause for Bubble Gum `27/27` click-capture failures in `v30.6.51`: `captureClickTargetObservation` called `_numeric(screen.x/y)` but no `_numeric` Lua helper existed in the inspector runtime, so each click capture attempt threw before append.
+- Required safety rule for click pipeline:
+  - never rely on non-local numeric helper symbols in executor runtime paths,
+  - perform staged pcall isolation for cursor capture, GUI hit-testing, raycast, and orientation capture,
+  - always persist a minimal unresolved click record when capture wrapper fails, so downstream click-link correlation can distinguish `missing source record` from `matching ambiguity`.
+- New exported diagnostics to preserve in future changes:
+  - `clickCaptureFailureStageCounts`, `clickCaptureFailureReasonCounts`, `clickCaptureFailureSamples`, `clickCaptureComponentFailureSamples`
+  - `clickLinksMissedMissingSource`, `clickLinksMissedNoEligibleCandidate`, `clickLinkMissReasonCounts`, `clickLinkMissSamples`
+- Receiver discovery now exposes `spatialDiscoveryQualityMetrics.clickOutcomeCorrelation.missAttribution` and infers `missingSource` for legacy exports when click captures are fully absent/failed.
+
+
+## Session notes — 2026-11-06 click/pickup repair pass (v30.6.51)
+
+- Inspector advanced to `v30.6.51` with click-pipeline structural repairs aimed at Potassium/live evidence fidelity:
+  - `InputBegan` now captures mouse click targets **before** processed-input filtering, preventing GUI clicks from being silently dropped when `gameProcessed=true`.
+  - Added explicit click stage diagnostics counters in `inputObservationStats` (`clickInputsObserved`, `clickCaptureAttempts`, `clickTargetsResolved`, `clickLinks*`, etc.).
+  - Added inspector-owned click disambiguation (`targetScope`, `inspectorOwnedTarget`) and excluded inspector UI clicks from gameplay correlation queues.
+  - Added richer click target payload diagnostics (`pipelineDiagnostics`, `targetResolution`, click-time player/camera orientation context).
+  - Strengthened pending-click correlation diagnostics with ambiguity tracking and link scoring metadata.
+- Nearby-world capture now rejects root-container artifacts (e.g. `Workspace.`), reducing false actionable object pollution.
+- Universal discovery pipeline (`tools/receiver_generation_pipeline.py`) now includes universal pickup discovery outputs:
+  - `pickupCandidateRegistry`
+  - `pickupSpawnLocationRegistry`
+  - `pickupCollectionObservations`
+  - `pickupOutcomeRelationships`
+  - `pickupNavigationCandidates`
+  - `pickupDiscoveryQualityMetrics`
+- Pickup discovery is evidence-driven and bounded (no server-side causality claims), with explicit uncertainty and readiness blockers.
+- Discovery summary now surfaces pickup candidate/outcome/navigation counts.
+- Live diagnostic replay run performed against available Bubble Gum export artifact:
+  - `scanId`: `B8B193D3-AF22-406B-91B1-D4F3A5505A21`
+  - observed click arrays in that export remained absent (`clickTargetObservations=0`, `clickOutcomeRelationships=0`) confirming upstream capture gap in that run.
+- Validation completed:
+  - `python3 -m unittest tests.test_inspector_ui tests.test_receiver_generation_pipeline` (**66/66 passed**)
+  - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+  - `python3 -m unittest discover -s tests` (**1665 passed, 17 skipped, 0 failed**)
+  - Root local pressure via `luau-ast`: **170** (budget: **170**, Potassium hard cap: **200**).
+
+## Session notes — 2026-11-12 cursor/click/orientation evidence pass (v30.6.50)
+
+- Inspector advanced to `v30.6.50` with bounded universal evidence streams for:
+  - `cursorObservationHistory`
+  - `clickTargetObservations`
+  - `clickOutcomeRelationships`
+  - `characterOrientationSamples`
+  - `cameraOrientationSamples`
+- Added click-to-outcome correlation progression in inspector event records:
+  - click observation IDs (`click_<sequence>`),
+  - interaction linkage from GUI callback/input paths,
+  - staged outcome updates (`interaction-callback-observed` -> `state-change-temporally-associated` -> `meaningful-outcome-observed` -> `outcome-corroborated`).
+- Added orientation-at-action propagation across interaction history, event snapshots, and spatial sample payloads.
+- `tools/receiver_generation_pipeline.py` now normalizes and preserves cursor/click/orientation evidence into universal discovery output, with fallback derivation from interaction events when explicit arrays are absent.
+- Discovery quality metrics now include:
+  - `cursorObservations`, `clickTargetDiscovery`, `clickOutcomeCorrelation`, `orientationTracking`.
+- Summary rendering now surfaces cursor/click/orientation counts for quick evidence health checks.
+- Regression coverage expanded in:
+  - `tests/test_inspector_ui.py`
+  - `tests/test_receiver_generation_pipeline.py`
+- Validation completed:
+  - `python3 -m unittest tests.test_inspector_compiler_limits` (**2/2 passed**)
+  - `python3 -m unittest tests.test_receiver_generation_pipeline tests.test_inspector_ui` (**63/63 passed**)
+  - `python3 -m unittest discover -s tests` (**1662 passed, 17 skipped, 0 failed**)
+- Dedicated generation service enhancement: `tools/lycoles_generation_service.py` now caches feature-analysis outputs by deterministic evidence signature (`scan/place/mode/readiness payload + route complexity`) to avoid re-running unchanged analysis in the same service lifetime.
+- Job provider diagnostics now expose `analysisCacheEnabled`, `analysisCacheHit`, and `analysisCacheKey`.
+- New regression coverage in `tests/test_lycoles_generation_service.py` validates cache reuse (`provider analysis called once across identical repeated jobs`).
+- Post-cache full-suite validation: `python3 -m unittest discover -s tests` (**1662 passed, 17 skipped, 0 failed**).
+
+
+
+## Session notes — 2026-11-10 live-fix pass (Muscle Legends FA86)
+
+- `tools/observation_auto_train_template.lua` now includes a character lifecycle recovery state machine:
+  - listens to `CharacterRemoving`, `CharacterAdded`, and `Humanoid.Died`,
+  - suspends training actions during respawn,
+  - performs bounded recovery retries with backoff,
+  - rebinds humanoid listeners and re-equips selected training tools when available,
+  - exports recovery telemetry (`deathCount`, `recoveryAttempts`, `recoverySuccesses`, `recoveryFailures`, recovery durations).
+- Quest/reward GUI execution now resolves actionable `GuiButton` controls from non-button paths (frame/label inputs), avoiding direct `object is not GuiButton` failures.
+- Reward runtime now prioritizes claim controls over menu-open controls and downgrades to monitor-only after repeated unresolved claim controls.
+- Quest runtime now downgrades to monitor-only after repeated unresolved actionable quest controls.
+- Observation contract primary progression path selection now explicitly prefers leaderstats Strength when evidenced (prevents quest repetition from becoming the primary Strength tracker).
+- Observation stat outputs now include category separation (`primary-progression`, `quest-progress`, `currency-resource`, `inventory-count`, `equipment-or-pet-experience`, `transient-state`, `other-progression`).
+- Reward payload extraction is now reward-scoped; quest collect controls are no longer admitted into `auto_rewards` payload-derived paths.
+
+- Universal discovery pivot (2026-11-10): `tools/receiver_generation_pipeline.py` now emits discovery artifacts independent of executable generation:
+  - machine-readable report schema `30.8.universal-discovery-report.1` (`universal-discovery-report.json`),
+  - human-readable summary (`universal-discovery-summary.txt`),
+  - discovery-only CLI mode: `discover-observation`.
+- `run_live_observation_scenario` now always produces discovery artifacts first; when baseline parts are missing and no executable contract is derivable, status is `discovery-only` with `generated-discovery-only` recovery summary instead of hard failure.
+- Observation recovery summary schema upgraded to `117.observation-recovery-summary.6` to include discovery artifact paths/metrics.
+- Added Potassium universal inspector loader template at `potassium_artifacts/universal_discovery_live_package/PotassiumInspectorLoader.template.lua` pointing to commit-pinned `LycolesUniversalInspector.lua` raw URL.
+
+- Spatial discovery extension (2026-11-12): inspector now emits bounded universal spatial evidence (`playerPositionHistory`, `eventPositionSnapshots`, `spatialLocationHistory`) in both scan reports and live-observation exports.
+- Spatial samples are explicitly `sampled`/`interpolated` (currently sampled-only), character-generation-scoped across respawns, and include discontinuity flags for large displacement events.
+- Interaction records now carry event-linked spatial snapshots (`before-action`, `at-action`, per-window) and bounded nearby workspace object context (`workspace-active` only).
+- `tools/receiver_generation_pipeline.py` now derives and emits: `functionalLocationRegistry`, `spatialActionOutcomeRelationships`, `navigationCandidates`, and `spatialDiscoveryQualityMetrics`.
+- Legacy observation exports without spatial fields remain supported; discovery reports emit explicit spatial warnings and keep location/actionability sections empty instead of fabricating data.
+
+## Evidence architecture
+
+Prioritize, in order:
+
+1. Client-visible instance hierarchy and object metadata.
+2. Observable UI structure, state, and interactions.
+3. Replicated objects and properties available through permitted interfaces.
+4. Observable gameplay state changes.
+5. Evidence-based gameplay-system identification.
+6. Deterministic normalization and provenance preservation.
+7. Evidence-backed Luau generation.
+
+Every contract must distinguish:
+
+- **Observed fact:** directly present in a validated client-side report.
+- **Inference:** a deterministic interpretation supported by stated evidence.
+- **Unknown:** server authority, causality, remote behavior, anti-cheat behavior, or runtime outcomes not established by evidence.
+
+Client visibility never proves server authority, causality, or gameplay success.
+
+Current v108 interpretation contract: `tools/system_interpreter_v108.py` emits explicitly classified deterministic-inference `108.system-interpretation.1` candidates over the exact canonical v107 report/feature plan. Optional `108.relationship-evidence.1` inputs are immutable caller-supplied, shape/provenance-reference validated, ambiguity-quarantined correlations; their source authenticity, causality, server authority, and gameplay meaning remain explicit unknowns.
+
+Current v108 runtime contract: `tools/runtime_contract_v108.py` derives exact expected checks and compares optional bounded `108.runtime-observation.1` evidence by structured status, never display text. Absence is `not_observed`, a failed status is `drifted`, and complete matching is only deterministic comparison evidence. `tools/integrated_pipeline_v108.py` must reconstruct every v107/v108 artifact exactly, report unsupported observations/capabilities/APIs explicitly, and keep source authenticity, Roblox runtime, live-game, server-authority, causality, and gameplay claims false.
+
+Current v30.1 inspector contract: generic controls may derive action candidates only from bounded semantic ancestry; feature readiness may use only feature-consistent observable state/GUI changes. `completedCandidates` means an observable correlation candidate, never causal success. `outcomeVerified`, source authenticity, server authority, and gameplay verification remain false unless separately established.
+
+Current v109 manifest contract: `tools/manifest_readiness_v109.py` analyzes a local manifest without treating it as the numbered multipart report. Legacy `uploadedParts: 0` is an unknown pre-upload snapshot, not transport failure. New manifests expose the generated multipart `scanId`, and local-manifest identity/counts must match numbered parts. Inspector `SAVE REPORT` must persist the exact already-encoded `pendingParts` bodies plus a self-consistent finalized manifest; complete may be recorded only after every part and the manifest carrying that completed state are written, while partial/finalization failure remains explicit. It must not claim local part digests were computed when they were not. Manifest readiness must distinguish local export claims from upload ACKs, receiver integrity, and downstream availability, and recommend recovery without claiming files or receiver data were actually retrieved. The Generated Script tab may summarize scan, local-export, upload, and offline-generation handoff state, but must label request text as non-evidence and keep ACK-only receiver integrity plus gameplay unverified. Generated-result imports are display-only, bounded, place-bound, and must require false authenticity/runtime/gameplay/execution claims; never evaluate imported code or treat its embedded digest as authenticated in-game. Explicit ACK state still does not establish receiver integrity or downstream availability. A separately validated direct Worker `/integrity` response may establish receiver-stored report availability, but not local payload equivalence without matching hashes. Manifest-only input must keep v107/v108 script generation blocked because canonical object parts and reviewed contracts are absent. `tools/fetch_receiver_scan.py` is the network boundary: keep read keys environment-only, require HTTPS, reject redirects, use constant-cost receiver metadata rather than the O(part-count) Worker integrity route, validate every part before atomic publication, and leave `tools/build_release.py` offline.
+
+Current v30.2 transport contract: the Worker hashes exact accepted request bodies, persists per-part SHA-256 sidecars, and returns them in ACKs and numbered-part headers. The inspector requires and records digest-bearing ACKs. The importer must fail closed on missing/mismatched persisted digests and may compare a supplied local ACK manifest. Optional resume state must stay outside output, contain no read key, bind to receiver origin plus canonical metadata, retain only digest-verified parts through atomic checkpoint updates, revalidate every cached part before final atomic publication, and remain explicitly unauthenticated. `receiverStoredPayloadDigestsVerified`, `receiverAcknowledgementDigestEquivalent`, and resume checks do not authenticate either party or establish locally computed original-byte equivalence. Production Worker deployment remains separately authorized.
+
+Current release provenance contract: `tools/compile_scan.py` must distinguish ordinary local manifests, strict `30.2.receiver-import.2`, and explicit `30.2.receiver-import-legacy.1`, require the exact matching field set, reconcile every identity/accounting field, and recompute each current raw part digest. Receiver imports retain normalized `30.2.source-provenance.1`; local multipart compilation emits `30.2.source-provenance.2` with complete exact-current-byte digest coverage and rejects duplicate indices whose canonical documents match but raw bytes differ. Strict v12 requires receiver-stored digest verification. Legacy v11 first requires complete receiver integrity, records exact locally computed response digests, forbids resume, and must keep receiver-stored digest verification false. Direct multipart input must report receiver checks unavailable. `source-provenance.json`, release manifests, documentation, and generated UI may surface retrieval integrity, ACK equivalence, and resume reuse only while checkpoint authentication, receiver-response/source authenticity, original local payload equivalence, causality, authority, replayability, gameplay, and action outcomes remain false or unverified. `tools/diagnose_receiver_access.py` may probe configured known scan IDs without printing origin/read-key values or unrelated record IDs and must name missing configuration before network access. Probe the authenticated collection first: `multipart-scans` can continue to per-scan v12/v11 checks, while `legacy-single-reports` is the original pre-multipart contract and is never eligible for multipart recovery. Agent Canvas conversations may retain their startup secret snapshot; after Settings secrets are added, use a fresh conversation rather than requesting duplicates or plaintext values.
+
+- Nov 2026 FA86 ingestion update: `tools/receiver_generation_pipeline.py from-parts` accepts `.zip` archives directly, validates scan identity, detects missing/conflicting duplicate part indices, and safely extracts into deterministic ingestion directories.
+- Nov 2026 overlay merge update: `tools/merge_observations.py` now merges and deduplicates dynamic `recentInteractions` into baseline `observedInteractionHistory`, carries bounded interaction diagnostics/coverage accounting, and sanitizes malformed explicit-recording/baseline-timing markers before downstream action/workflow planners.
+- Nov 2026 workflow counter update: `tools/compile_workflows.py` no longer hard-fails on counter hierarchy mismatches from live overlays; it now emits explicit `counterDiagnostics` per workflow and aggregate inconsistency counts in summary.
+
+
+- Current receiver recovery compatibility (Nov 2026): some deployments expose only paged legacy `reports` collections and per-record wrappers (`{"report": ...}`) instead of `/reports/<key>/<scanId>/metadata|integrity|part-*`. `tools/fetch_receiver_scan.py` now supports opt-in `--allow-legacy-report-index` reconstruction with strict scan/part identity checks, deterministic synthetic `scanOrdinal` normalization when missing, duplicate-identity conflict rejection, configurable `--max-legacy-report-pages` search depth, and legacy provenance mode `30.2.receiver-import-legacy-reports.1`. `tools/compile_scan.py`, `tools/generate_script.py`, and `tools/receiver_generation_pipeline.py` accept the derived provenance mode without upgrading authenticity/runtime/gameplay claims.
+- Receiver requests may require importer UA (`Lycoles-receiver-import/30.2`) to bypass Cloudflare browser-signature blocking.
+- In current receiver data, requested baseline scan IDs `DBFC72C6-749B-4F95-BBA2-433B8B61745C` and `6D3741EF-9569-4F40-B38A-E4FD2AE0A063` are not present. Recoverable place-matching baselines are `CEF96B95-27DB-4348-9F3E-7182DDB42BE8` (Arsenal) and `F4C38F6A-8CAE-4BED-8037-9A9B87ECA207` plus `E97A57CF-055D-4D3A-BB85-B2584A010BB1` (Phantom), but they currently contain zero `interactionHistoryChunk` events, which keeps request-aligned combat capabilities/workflows at zero until true live interaction-observation overlays are captured.
+
+Current v30.6.1 handoff-lifecycle contract: in-game status and `reportTransport` must distinguish report generation/local export from upload attempt, receiver storage acknowledgement/integrity, and downstream availability. `uploadAttemptStatus` is not attempted, blocked before attempt, attempted, or previously attempted/currently blocked; `receiverReportStatus` is unavailable, configuration-blocked, upload-in-progress/incomplete, partially acknowledged, fully acknowledged awaiting integrity, or integrity verified. Complete or partial ACK accounting survives a later configuration error. `downstreamAvailabilityStatus` remains not validated until independent integrity/import evidence permits otherwise. `tools/manifest_readiness_v109.py` derives these labels from canonical status/count/verification fields, rejects contradictory explicit labels, treats legacy `uploadedParts: 0` as unknown rather than failure, and recommends integrity verification after complete ACK coverage even if the latest retry is blocked. Local writes and ACKs alone never establish receiver integrity, downstream availability, source authenticity, runtime behavior, or gameplay verification.
+
+
+Current v30.3 capability-request contract: the in-game Generated Script tab stages one bounded client-visible request and triggers a complete evidence scan. The request may be carried through metadata-bearing parts, lifecycle manifests, capability plans, release manifests, and generated read-only Luau only as user intent and evidence-review context. `PRODUCE SCRIPT` does not imply in-game generation, runtime installation, action support, causality, replayability, authority, or gameplay success; those remain offline-validated or unverified as explicitly reported.
+- v30.6.19 v104/v106 pipeline integration now treats normalized `observedInteractionHistory` as first-class deterministic workflow evidence. Integrated output must include `workflow-candidates.json`, diagnostics must expose workflow/completed/review-only counts, and verification must fail closed on any workflow-artifact tampering or drift.
+
+- v30.6.20 workflow selection normalization contract: planner (`plan_generated_workflows.py`), readiness (`assess_generation_readiness.py`), and guided workflow validator (`generate_guided_workflow.py`) must keep request-term tokenization semantically aligned. Synthetic `stem+"e"` forms are disallowed; canonical matching must not emit invalid artifacts like `traine`.
+
+- v30.6.21 readiness diagnostic contract: request-feature synthesis must surface request-aligned review-only GUI transition evidence separately from generation-ready workflow candidates and emit `request_aligned_gui_transition_outcomes_without_scalar_contract` when aligned GUI transitions lack a resolvable scalar outcome contract.
+
+- v30.6.22 workflow-planning contract: linked GUI transition evidence without resolvable scalar outcomes may surface bounded review-only workflow candidates, but must remain non-generation-ready and explicitly reported via `reviewOnlyLinkedCandidates`, `requestAlignedReviewOnlyLinkedCandidates`, and `selectedReviewOnlyCandidateId` diagnostics.
+
+
+- v30.6.23 manifest-readiness legacy transport contract: when `reportTransport` is absent, `uploadedParts` alone is insufficient; bounded `localPerformance` multipart telemetry must be surfaced as diagnostic context (`legacyLocalMultipart*`) while preserving unknown upload lifecycle unless receiver acknowledgement/integrity is explicitly verified.
+
+- v30.6.40 performance/action-correlation pass adds adaptive queued input processing with strict frame budgets and queue caps, local-player-only Humanoid/Tool universal observers, scoped state snapshots by action priority, and backpressure-aware observation windows. Low-priority repetitive movement/animation noise is explicitly deprioritized, while meaningful inputs (fire/reload/switch/equip/unequip/interact) remain queued for bounded correlation. Diagnostics now expose queue depth/throughput, callback peak rate, phase transitions, and state-snapshot timing without asserting causality/server authority/gameplay success.
+- Real scan archive note (2026-11-06): `Lycoles_..._AC79D385..._part-1249.zip` on `origin/main` is a combined archive containing both full datasets (`AC79D385...` Bubble: 1,254 JSON files including manifest; `7965AF57...` Arsenal: 1,235 JSON files including manifest). Extract by scan-id token match rather than assuming one scan per uploaded ZIP filename.
+- v30.6.40 live-capture export fix: `COPY JSON` now emits a fresh `30.6.live-observation-export.1` dynamic-observation payload (not the frozen startup manifest). It flushes bounded queued input tasks before encoding, carries baseline scan linkage (`baselineScanId`), exposes recent interactions/action classifications/state-change windows/performance telemetry, and is merge-ingestable as a no-rescan evidence overlay (`scanMode="dynamic-observations"`, local multipart provenance claims all false, `mergeTool="tools/merge_observations.py"`).
+- Readiness diagnostics update (v30.6.39 follow-up): `tools/assess_generation_readiness.py` now emits explicit combat-request observation gap blockers when evidence is missing: `request_aligned_input_observation_not_captured` and `request_aligned_state_transition_not_observed`. These are evidence-gap diagnostics only; they do not upgrade causality/runtime/gameplay verification claims.
+- v30.6.41 live-observation exercise support: `tools/receiver_generation_pipeline.py` now exposes `exercise-observation` for one dynamic-observation export plus inferred/overridden `baselineScanId`. It validates overlay shape, reports blocked baseline-evidence gaps explicitly, and can enforce `--require-executable` for request-aligned automatic workflow checks without upgrading runtime/gameplay/server-authority claims. Receiver diagnostic for scan `FE1C0EDA-12C4-43BC-B490-062412BD0DD1` currently reports legacy-single-report storage with the scan not listed on first page (`requested-records-not-in-first-legacy-page`).
+- v30.6.40+ generation integration update: offline and service generation paths now accept direct live observation overlay JSON exports (`schemaVersion 30.6.live-observation-export.1`) without requiring repackaged observation part folders. `tools/build_release.py` supports repeatable `--observation-file`, validates `scanMode="dynamic-observations"` + integrity + features shape, and merges overlays via `merge_observations.py`. `tools/lycoles_generation_service.py` now accepts `observationPaths` (HTTP) / `--observation-path` (CLI run-job), routes file-vs-directory paths appropriately, and preserves request traceability in job snapshots.
+- v30.6.42 observation-only recovery contract: `tools/receiver_generation_pipeline.py` can now recover from missing baseline parts in `exercise-observation` by deriving a bounded `117.observation-tool-contract.1` from dynamic export `interactionDiagnostics.recentInteractions` (currently capped to recent events). For FE1C0EDA Muscle Legends export (`Pasted text(20261108-115341).txt`), recovery selected `LocalPlayer.Backpack.Weight` (42 Tool.Activated total, 26 matching path events, 317 state-delta events) and generated `LycolesGeneratedAutoTrain.lua` + contract + loader template under `potassium_artifacts/muscle_legends_auto_train_observation_recovery/`. Claims remain non-upgraded (runtime/gameplay/causality/server-authority false).
+
+- v30.6.43 first live gameplay success baseline preserved: commit `f9e16dfff27f03440004282f83303b334d8436ec` confirmed in Potassium with functional GUI + auto Weight activation + user-observed Strength increase (13 activations, 0 script-reported failures). Delayed progression behavior is now modeled in observation-recovery generation: `117.observation-tool-contract.2` adds `timing` and `outcomeModel` (primary state path, candidate paths, quest-repetition paths, noisy-path filtering). Lua generation moved to `tools/observation_auto_train_template.lua` with reusable ActionExecutor / StateObserver / OutcomeAssessor components, delayed activation attribution windows, strength/minute metrics, stall detection, interval/window controls, and respawn-aware rebinding. Claims remain non-upgraded (no server authority/causality/runtime verification inference).
+- Action-discovery cadence analytics (111 schema additive): `tools/discover_action_capabilities.py` now emits `genericCapabilities.inputCadencePatterns` + `inputCadenceSummary` using normalized inferred/workflow action kinds and sequence-based episode grouping (`single`/`burst`/`sustained`). These are explicitly temporal client-side timing signals only and must not be interpreted as causal/server/gameplay verification.
+- v30.6.44 multi-feature batch generation uplift: observation recovery now emits `117.observation-tool-contract.3` with evidence-bounded `featureContracts`, `unsupportedFeatures`, `generatedFeatureIds`, and `generatorMetadata`. Current Muscle Legends batch package (`potassium_artifacts/muscle_legends_feature_batch/`) generates one unified GUI script (`LycolesGeneratedFeatureBatch.lua`) with feature-level toggles, START ALL / STOP ALL, manual-only destructive gating for `auto_rebirth`, per-feature attempts/success/errors/progression, and COPY REPORT export (`_G.LycolesLastDiagnosticReport` fallback when clipboard unavailable). Live export-derived implemented feature IDs: `auto_train`, `auto_equip`, `auto_rewards`, `auto_rebirth`, `quest_automation`; excluded blocker: `proximity_interactions` (no explicit `ProximityPrompt.Triggered` path evidence).
+- v30.6.24 workflow-linkage diagnostic contract: when linked workflow evidence is absent, manifest-readiness must report bounded transaction-ID reuse metrics and flag single-use transaction patterns (`transaction_ids_not_reused_across_steps`) as root-cause capture guidance without claiming causality or workflow completion.
+- v30.6.45 live batch hardening after user verification: fixed GUI reward trigger assumptions by adding multi-path client interaction adapters (`firesignal(MouseButton1Click/Activated)` fallback before `GuiButton:Activate`) and explicit runtime capability reporting in diagnostics. Observation contract now emits reward discovery payload for `auto_rewards` (`auto_rewards_discovery`) with guarded spin/wheel paths, reward container scanning, and eligibility indicators (`ReadyText`/`Timer`/`Claimed`) to avoid paid/cooldown actions. `quest_automation` upgraded from observe-only to `quest_train_workflow` using evidence-backed repetition state paths and train-tool workflow reuse. Batch GUI now supports dragging, minimize/restore, clearer unsupported coloring, and richer per-feature strength/reps counters; diagnostic output now includes `progressionByUnit`, `unresolvedPaths`, and `strengthPathResolved` for progression-accounting transparency.
+- Receiver/generation integration (2026-11-07): `tools/receiver_generation_pipeline.py` now supports repeatable `--observation-path` for `from-parts`/`from-receiver`, validates and discovers dynamic observation exports (`30.6.live-observation-export.1`) by baseline scan ID, and adds `exercise-live` mode to run Arsenal/Phantom evidence exercises with structured executable-vs-observational summaries. Current workspace data: Arsenal baseline present (`7965AF57...`), Phantom baseline absent (reported as blocked, not fabricated).
+- v30.6.46 distinct-feature contract upgrade (`117.observation-tool-contract.4` / summary `.3`): removed standalone `auto_equip` feature from generated batch and absorbed equip behavior into `auto_train` via implicit action metadata; added action-contract dedup + dependency metadata (`featureDependencies`, `deduplicatedFeatures`) and executable-vs-monitor separation (`implementedFeatures` vs `monitoredFeatures`). Quest generation now emits `quest_monitor` (observe-only, non-actionable) when evidence only shows repetition progress with no additional quest UI actions. Added new distinct optional feature contracts from real evidence: `alternate_tool_training` (cycles non-primary observed tools) and `inventory_management` (items-menu GUI actions). Reward contracts now include explicit `reward-state-change` verification windows and state-path diagnostics; runtime report distinguishes `action-verified-in-gameplay`, `action-invoked-outcome-unverified`, `blocked-by-eligibility`, `unsupported-interaction`, and `runtime-failure`. Rebirth start now requires explicit two-step confirmation (ARM then CONFIRM within 5s) to prevent implicit destructive activation.
+- Generation-readiness request alignment (2026-11-07): `tools/assess_generation_readiness.py` now normalizes combat request phrasing (`shooting`→`fire`, `reloading`→`reload`, `switching`→`switch`) and derives request-aligned observed actions from validated interaction history plus cadence patterns via `_request_action_alignment(...)`. This improves evidence alignment diagnostics only; it does not elevate runtime/gameplay/causality claims or authorize replay contracts.
+- Arsenal-like games may not emit enough GUI-only interaction evidence. v30.6.39 extends passive capture with bounded global input, tool equip/unequip, humanoid movement/jump, and animation observations; keep these pathways read-only and throttled.
+- New interaction diagnostics now include `inputObservationStats` and automatic workflow recording policy (`automatic-activity-window-with-optional-manual-override-not-causal-proof`). Preserve this contract in future schema adjustments.
+- Potassium lexical-local pressure is sensitive to top-level `local`/`local function` growth. For new observer logic, prefer namespace method assignment (e.g., `WORKFLOW_HELPERS.someMethod = function(...)`) over additional top-level local function declarations to stay within `tests/test_inspector_compiler_limits.py` root-pressure budget (<=170).
+
+
+- v30.6.25 manifest-only functional fallback contract: `tools/build_release.py` must keep full-release generation fail-closed when numbered multipart object parts are unavailable, but may emit bounded manifest-assisted operational artifacts (`LycolesManifestAssistedWorkflow.lua`, `manifest-assisted-workflow.json`) derived only from captured client-visible interaction evidence (exact observed paths/contracts/state hints) with all verification/authenticity/authority/gameplay claims remaining false. `tools/integrated_pipeline_v108.py` CLI must detect this manifest-only input shape and return a structured blocked summary instead of raising `invalid inspection`.
+
+
+- v30.6.26 manifest-assisted activation contract: generated manifest-assisted Lua may attempt bounded activation only for observed `GuiButton.Activated`, `ProximityPrompt.Triggered`, and `Tool.Activated` controls (with availability checks for executor prompt support and Tool equip prerequisites). Each attempt must preserve explicit before/after hint reporting and retain all-negative verification claims.
+
+- v30.6.27 workflow root-cause contract: manifest-readiness must derive bounded observable-transition diagnostics from `interactionDiagnostics.recentInteractions` and flag `feature_attributed_transitions_without_outcome_contract` when feature-attributed GUI/state transitions exist but no completed workflow candidate contract is available; this remains fail-closed guidance only and never upgrades causality/runtime/gameplay verification.
+
+
+- v30.6.28 manifest-assisted target-selection contract: manifest-only fallback target extraction should prioritize feature-attributed interactions with observed GUI/state transitions, suppress unattributed zero-change noise, and expose bounded per-target transition counts (`stateChangeCount`, `guiStateChangeCount`, `observableChange`) in both generated Lua target context and `manifest-assisted-workflow.json` schema `30.6.manifest-assisted-workflow.2`.
+
+
+- v30.6.29 post-capture outcome contract: before report export, inspector may conservatively backfill missing `observableOutcomeCandidate` entries from already-captured event/window evidence only when existing feature-consistent state/GUI heuristics match. Backfilled candidates must retain all-negative verification flags, increment explicit diagnostics counters (`workflowStats.backfilledOutcomeCandidates`, `interactionDiagnostics.backfilledOutcomeCandidates`), and never imply causal/server/gameplay verification.
+
+
+- v30.6.30 legacy upload-lifecycle contract: manifest-readiness must distinguish legacy `unknown_legacy_manifest_snapshot` states by observed context (`local-multipart-export-observed`, `partial-local-multipart-export-observed`, `attempted`, `unknown`) with explicit status/blocker/next-action outputs, especially separating pre-upload placeholders from ambiguous post-upload lifecycle snapshots.
+
+
+
+- v30.6.31 manifest-assisted ranking contract: when interaction events expose `observableOutcomeCandidate`, manifest-only target extraction should treat that as stronger bounded evidence than generic transition presence, surface it in generated Lua/JSON target metadata, and keep fail-closed claims (no causal/server/runtime/gameplay verification upgrades).
+- v30.6.32 manifest-assisted metadata contract: when build-release emits `manifest-assisted-workflow.json`, include upload/readiness context (`transportReadinessStatus`, `transportReadinessBlockers`, `scriptGenerationReady`) so downstream tooling can separate upload-lifecycle blockers from evidence-interpretation limits without upgrading verification claims.
+
+- v30.6.33 manifest-assisted Lua diagnostics contract: generated `LycolesManifestAssistedWorkflow.lua` should persist transport-readiness context (status + bounded blocker summary) in every rendered status view so manual bounded trials retain upload/readiness provenance context.
+
+- v30.6.34 manifest-readiness evidence contract: emit `evidence.interactionCoverageDiagnostics` and fail-closed legacy blockers (`legacy_manifest_missing_outcome_candidate_field`, `explicit_outcome_candidate_events_unavailable`) when observable interaction changes exist without explicit outcome-candidate fields.
+
+
+- v30.6.35 manifest-assisted output contract: `manifest-assisted-workflow.json` now uses schema `30.6.manifest-assisted-workflow.5` and includes `generationReadinessBlockers` plus `interactionCoverageDiagnostics`; generated `LycolesManifestAssistedWorkflow.lua` status views should display both transport and generation readiness/blocker summaries.
+
+- v30.6.35 Lua blocker-summary ordering contract: bounded generation-blocker text must prioritize legacy outcome-gap and workflow-corroboration blockers so high-signal diagnostics remain visible even when blocker lists exceed display caps.
+
+
+
+
+- v30.6.10 introduces FULL/QUICK scan profiles plus configurable observation delay and explicit cancellation/recovery. QUICK scans are targeted and must disclose profile-filtered omissions; they default to one auto-rescan. `PRODUCE SCRIPT` must force FULL profile capture so generation requests remain complete. Interaction diagnostics now include `workflowGenerationDiagnostics` root-cause blockers, and manifest-readiness accepts `upload-cancelled` snapshots without hiding partial ACK progress. Manifest-readiness now emits schema `109.manifest-readiness.3`; build-release manifest-only blocking must treat any `109.manifest-readiness.*` schema as non-release input.
+- v30.6.11 strengthens functional interaction interpretation: context-scored feature attribution (name/text/ancestor/path), Bubble Gum-oriented menu hints, bounded context-token confirmation linking fallback, and default feature inference from unambiguous action kinds. This is evidence-ranking only: no new causality, runtime, server-authority, or gameplay verification claims.
+- v30.6.12 extends action discovery with linked transaction outcome inheritance: when an initiating control has no direct scalar outcome, a later linked event in the same transaction can contribute resolvable state evidence (with explicit inherited-source provenance) so generation-readiness can cover confirmation-driven UI flows without introducing positive causality/runtime/gameplay claims.
+
+
+- `tools/universal_gameplay_intelligence.py` now normalizes per-action `during.actionSource` (`user-input`, `tool`, `humanoid`, etc.) and bounded input metadata, and summary now includes `inputActionRecords` plus `actionSourceBreakdown`; preserve these when evolving downstream generation heuristics.
+
+Current v30.5 action-discovery contract: `tools/compile_scan.py` retains at most 20,000 actionable Prompt/ClickDetector/GUI/Tool records with explicit truncation. `tools/discover_action_capabilities.py` may classify composable action surfaces and emit a reusable prompt runtime-trial target only from an exact observed `ProximityPrompt.Triggered` event plus at least one resolvable scalar state change. Interaction and outcome evidence should carry bounded class/name/sibling-ordinal identities; malformed, mismatched, or explicitly unavailable new identities cannot authorize generation. Event-time prompt prerequisite metadata must be normalized to the allowed text/enabled/duration/distance/input/anchor fields, preserve at most eight distinct snapshots with explicit drift status, and be revalidated by generation rather than overwritten or trusted implicitly. `tools/generate_prompt_interactions.py` ranks request-aligned and useful gameplay-objective candidates ahead of menu-like navigation, requires discovery's deterministically selected request/context-aligned scalar outcome when several signals compete, resolves identities before legacy flat paths, teleports only to the observed prompt hierarchy, checks prompt availability and executor-provided `fireproximityprompt`, monitors only the selected change direction, stops after three failures, and never invokes discovered remotes. Shared Admin Commands must expose generic `;interaction*` controls and compatible `;egg*` aliases with `;stopall` cleanup. `;interactionfeedback` may expose at most 100 attempt records bound to the exact action-capability digest; `tools/evaluate_prompt_trial_feedback.py` must accept only selected target/outcome contracts, independently recompute directional changes, reject unknown/forged claims, and retain authenticity, causality, server authority, runtime, gameplay, and action-outcome verification false. Auto and Multi game modes remain non-executable until their explicit live-observation blockers are resolved; names, temporal correlation, and operator-supplied feedback alone are insufficient. Passive `Tool.Activated` evidence and combat names remain discovery-only; generation additionally requires exact unambiguous LocalPlayer identity, one stable enabled prerequisite snapshot, and one selected resolvable scalar outcome before bounded official equip/`Tool:Activate()` trials are permitted.
+
+Current guided GUI contract: normalize the same GUI prerequisite fields at scan and activation time: control class/text, Visible/Active/Selectable/AutoButtonColor/optional Interactable, ancestor visibility, ScreenGui enabled state, scrolling-frame intersection, and effective visibility. A generated `guided-gui-activation-trial` requires one exact unambiguous PlayerGui component identity, one complete stable available snapshot, and one selected resolvable scalar outcome. Generated Luau may highlight that exact control, observe the official `Activated` event, wait bounded time for normal user activation, and evaluate the selected outcome; it must not use `firesignal`, `VirtualInputManager`, `VirtualUser`, an invented `GuiButton:Activate()`, or classify this as automatic replay. Readiness and result validators must require `automaticActivation=false`, `manualActivationRequired=true`, and `exactControlHighlighting=true`. Hidden, disabled, off-scroll, malformed, ambiguous, incomplete, or drifted controls stay discovery-only.
+- v30.6.13 manifest readiness adds `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` so legacy manifests explicitly report unknown upload-attempt state vs failed upload state and provide one bounded `workflowCaptureRecommendation` without implying receiver or gameplay verification.
+- v30.6.13 interaction linking expands bounded confirmation tokens (`yes/no/ok/accept/decline`), includes dialog cues (`prompt`, `purchase`, `unlock`), and allows conservative feature-default generic-control action inference (`shops→purchase`, `rewards/quests→claim`, `rebirth`, `travel`) to improve passive initiator capture for later confirmation linkage.
+
+- v30.6.14 guided GUI contract allows text-only metadata drift when all non-text fields match across snapshots. Discovery marks this as `guiMetadataTextDynamic=true`; generator/runtime/planner may ignore text-only drift in matching but must continue fail-closed checks on control class, visibility/active/selectable, ancestor/screen visibility, scrolling bounds, interactable, exact path identity, and exact scalar state-outcome identity.
+
+- v30.6.15 inspector may emit conservative non-confirm follow-up links: semantic actions within 6 seconds and context-token overlap >=3 can share a transaction (`observed-followup-link`) without any positive causality/runtime/gameplay claims. Diagnostics now include `linkedFollowups` and `linkedWorkflowEvents`; readiness/mapping should treat combined linked events (confirmations + followups) as linkage evidence.
+
+- v30.6.16 manifest-readiness linkage diagnostics expose `linkedEvidenceType` (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and `linkedWorkflowEvents`; downstream interpretation should use these fields for operator guidance while keeping existing blocker mappings backward compatible.
+
+- v30.6.17 readiness guidance specialization: when linkage evidence is `followups-only`, manifest-readiness should recommend capturing one same-menu confirmation/cancel step with observable before/after values, rather than generic linked-action advice.
+
+- v30.6.18 GUI discovery now classifies outcome evidence per target (`observableOutcomeEvidenceKind`: `resolvable-scalar` / `gui-transition-only` / `none`) and surfaces review-only candidates (`reviewOnlyTemporalOutcomeCandidate`, aggregate `reviewOnlyTemporalOutcomeCandidates`). These diagnostics must not increase generation readiness without resolvable scalar outcome identity evidence.
+
+- v30.6.18 integration note: `tools/integrated_pipeline_v107.py` depends on `tools/action_registry_v107.py`; keep the runtime-evidence action registry, its unit test (`tests/test_action_registry_v107.py`), and CI workflow (`.github/workflows/v107-integrated.yml`) tracked together so clean checkouts retain v107 workflow-candidate and readiness summaries.
+- v107 runtime evidence for `action_registry_v107` must reference canonical feature IDs from `feature_planner_v107` (e.g., `observe_0000`), not path-derived IDs; unknown IDs fail closed during generation/verification.
+- `action_registry_v107` now reports `summary.workflowCorrelatedActions` and per-action `runtimeEvidence.completedWorkflowHits` / `partialWorkflowHits`; generation readiness can be `high` from completed workflow correlation even when an individual action has only one success sample.
+
+Current v30.6.2 generation-readiness provenance contract: `tools/discover_action_capabilities.py` must normalize complete per-event baseline tuples fail-closed and aggregate pre-activation, activation-callback, and legacy-unknown counts independently for Prompt, Tool, and GUI targets. `tools/plan_generated_workflows.py` preserves independently validated timing on canonical steps; `tools/generate_guided_workflow.py` accepts same-schema legacy omission but rejects malformed present provenance. Generation readiness exposes target/workflow `observationBaseline` plus scan-wide `interactionObservationCoverage`; both are `limitations-only`, all verification claims remain false, and neither complete accounting nor pre-activation coverage may increase readiness or imply causality, complete state observation, runtime behavior, gameplay, authority, or authenticity. Current compiled summaries include `preActivationCaptureFailures`; older summaries may omit it. Generated-result and in-game loaders preserve same-schema legacy compatibility while independently validating any present bounded counts, classifications, loss claims, and workflow step totals before display.
+
+
+Current v30.6 interaction-baseline contract: supported GuiButton, ProximityPrompt, and newly equipped Tool observations may capture bounded LocalPlayer scalar state, nearby GUI state, and character position from `InputBegan`, `PromptButtonHoldBegan`, or `Equipped` before the primary `Activated`/`Triggered` callback. Each history item, raw interaction event, and observation window must state `baselineSource`, `baselineTiming`, and `preActivationBaselineAvailable`; absent, stale, unsupported, or failed pre-captures use `activation-callback-fallback`, which explicitly implies possible synchronous evidence loss. Diagnostics must account for every scheduled 0.35/1.25/3.0-second window as completed, failed, or pending instead of hardcoding pending zero. `tools/compile_scan.py` and `tools/compile_interaction_sequences.py` must accept legacy reports as timing-unknown, validate all new timing/counter claims fail-closed, preserve per-feature/workflow timing coverage, and state loss limitations without upgrading temporal correlation to causality, server authority, runtime success, gameplay success, or action-outcome verification.
+
+
+Current linked workflow contract: `tools/plan_generated_workflows.py` may classify a complete exact linked sequence as `mixed-guided` when any GUI step needs normal user activation or `bounded-automatic` when every step is an exact Tool/Prompt contract. `tools/plan_generated_workflows.py` ranks complete candidates by bounded normalized request terms matched against exact feature, action, label, path, and selected-outcome evidence, then readiness and lower required user involvement; `tools/generate_guided_workflow.py` independently recomputes selection scores and deterministically emits the highest-ranked eligible candidate, resolves exact identities, revalidates stable prerequisites, uses only normal-user GUI `Activated`, bounded official `Tool:Activate()`, and checked executor-provided `fireproximityprompt`, and stops at the first unavailable target, drift, failed activation, or unobserved selected scalar direction. Prompt workflow steps additionally require an enabled snapshot plus exact ancestor BasePart path, finite captured position, and activation distance; runtime anchor drift beyond 12 studs fails closed. The runtime must bind `115.guided-workflow-feedback.1` records to the canonical `114.generated-workflow-plan.1` SHA-256 and selected candidate, cap entries at 400, and keep clipboard, network, synthetic GUI activation, and discovered remote invocation unavailable. `tools/evaluate_guided_workflow_feedback.py` must independently validate exact candidate/step/outcome identities, contiguous entry order, increasing run order, terminal status semantics, scalar direction, and all-negative claims. `tools/aggregate_guided_workflow_feedback.py` may aggregate at most 100 uniquely identified sessions only after each passes that evaluator; recurrence, status conflicts, and scalar-type drift remain client-observation correlation. Generation readiness may describe the emitted linked workflow as a bounded request-aligned capability but must keep implementation readiness, source authenticity, causality, server authority, Roblox runtime, gameplay, and action-outcome verification false.
+
+Workflow readiness must recompute the complete `114.generated-workflow-plan.1` from the compiled plan plus action capabilities and reject any byte-structural drift before projecting a generated capability. Expose only canonical matched request terms and their recomputed score. Selection transparency is bounded to 20 candidates, must retain the selected candidate, and classifies each alternative only as not ready, lower-scoring, more user-intensive, or a stable-identity tiebreak; generated UI shows at most three alternatives. Generation supports exact repeated mixed-action sequences through 64 steps; longer sequences remain review-only. Every emitted step binds its exact observed scalar entry value and fails before activation when that state has drifted. A generated session allows at most five operator-started attempts, cleans active highlights/connections on cancellation, and permits a later bounded retry without upgrading evidence claims. Inspector v30.5.2 accepts display-only mixed-workflow results only when the workflow selection, capability identity, execution mode, bounded steps, and all-negative claims agree; available feedback must be digest-bound to that selected candidate, remain at most 64 steps, and is summarized as informational client observation rather than execution proof. Controlled official-Luau coverage must exercise GUI→Tool→Prompt order, state-prerequisite rejection, cancellation recovery, and retry limits using normal GUI events, official Tool activation, bounded Prompt activation, and plan-bound feedback while retaining all live-runtime and gameplay claims as false.
+
+Current request-feature-readiness compatibility contract: generated-result and release manifests must carry `generationReadiness.requestFeatureReadiness` exactly as emitted by `tools/assess_generation_readiness.py` when present, and fail closed on impossible claims. Generated evidence IDs in `requestFeatureReadiness.generatedEvidence` must equal the canonical `generatedCapabilities` IDs, matched IDs must remain a subset of generated IDs, and `implementationReady`/runtime/gameplay/causality/action-outcome claims cannot be promoted true. Request status and blockers are bounded to observed generated subset semantics (`generated-bounded-subset` / `evidence-only-no-replay-contract`) and explicit mode-selection blockers (`auto-game-mode`, `multi-game-mode`) until live replay contracts exist.
+
+Current dynamic-overlay provenance contract: each complete observation scan must carry compiler-normalized source provenance whose scan/place/part identity matches that overlay and whose unsupported trust claims remain false. `source-provenance.json` describes only the baseline; overlay records stay separate in `capability-plan.json` and `evidence-overlay-provenance.json`, with a digest-linked release-manifest summary. Mixed source modes never imply source authenticity, causality, server authority, replayability, gameplay verification, or action-outcome verification.
+
+## Generated features
+
+- v30.6.3 workflow planning distinguishes all transaction groups from genuine shared multi-event links: a transaction ID present on one event is a singleton, not a linked workflow. Planning diagnostics/status are recomputed, cross-field validated, propagated as limitations-only readiness evidence, and displayed without changing causality/runtime/gameplay claims.
+- v30.6.4 generated linked workflows offer operator-armed repetition capped at five sequences and 400 feedback records. Sequence one requires exact observed entry values; later sequences use the prior observed value keyed by the exact resolved state instance. STOP/CLOSE, identity/metadata/state drift, activation failure, or missing selected outcome terminates immediately.
+- v30.6.5 appends an eligible `LycolesGuidedWorkflow.lua` source into the primary `LycolesGeneratedUtility.lua` in both generation paths while retaining the standalone file for review. Manifests/control inventories must agree through `integratedInGeneratedUtility` and `Linked Workflow Trial`; no eligible workflow means neither claim is present.
+- v30.6.6 interaction records optionally carry validated `sessionId` and monotonic `sessionElapsedSeconds`. Observed/generated workflow plans may surface bounded adjacent unlinked pairs for review, but temporal proximity must never create a transaction, workflow candidate, causality claim, or execution readiness.
+- v30.6.8 explicit workflow recordings are operator-armed, same-session, and bounded to 60 seconds/eight events. Their shared random ID and consecutive order express user intent only. Planner validation must reject malformed order, provenance, limits, timing, session, or non-false causality/runtime/gameplay claims; generation readiness still requires exact per-step contracts.
+- v30.6.7 GUI reveal followups require an observed transition to visible, exact class/name/sibling-ordinal containment of the later normally activated control, matching same-session elapsed timing, and all-negative claims. They are bounded review episodes only and must not create transaction IDs, workflow candidates, automatic linkage, execution readiness, or causal/gameplay claims.
+
+Each generated feature must define:
+
+- Evidence source and stable provenance.
+- Evidence classification and unknown boundaries.
+- Implementation strategy.
+- Runtime checks.
+- Success conditions.
+- Failure conditions.
+- Accurate verification status.
+
+Generate complete functional read-only/client-local behavior when evidence supports it. Fail closed instead of fabricating game-specific functionality when evidence is insufficient.
+
+Current v110 gameplay-understanding contract: `tools/understand_gameplay.py` composes concurrent systems, observable resources, action candidates, temporal relationships, loop/objective candidates, automation opportunities, structured evidence gaps, and request blockers. `profileIndex` is the versioned provider-independent reference inventory: unknown discovered feature categories receive deterministic generic system IDs, path-and-component-identity-bound resource IDs prevent equal terminal labels or duplicate flat paths from colliding, every relationship/loop/objective uses canonical IDs, and bounded system truncation is explicit. It must not assign one genre, infer causality from chronology, invent action mechanisms, promote user request text into evidence, or mark implementation/runtime/gameplay/action outcomes verified. Explicitly absent features stay excluded.
+
+
+## Session notes — 2026-11-13 Milestone 3 targeted capture runtime + ingestion
+
+- Inspector advanced to `v30.6.62` (`version.txt` synchronized).
+- Added bounded targeted capture runtime in `LycolesUniversalInspector.lua` with:
+  - runtime request loading (`_G.LycolesLoadTargetedRequests`),
+  - session lifecycle APIs (`_G.LycolesStartTargetedCapture`, `_G.LycolesStopTargetedCapture`, `_G.LycolesTargetedCaptureProgress`),
+  - heartbeat-driven bounded sampling across entity/camera/input/loadout/objective categories,
+  - request-progress evidence reconciliation and timeline capture,
+  - export integration (`targetedCaptureSession`, `targetedCaptureTimelineEvents`) into full scan + live observation diagnostics.
+- Potassium local-pressure safeguard restored by encapsulating targeted runtime in `initializeTargetedCaptureRuntime()` (register pressure regression fixed; compiler pressure test passing again).
+- UI gained targeted controls (`TARGET` preset cycle, `CAPTURE` start/stop, progress hint) and is wired through helper callbacks (`WORKFLOW_HELPERS.setTargetedCaptureUiRefresh`, `getTargetedCaptureUiState`) instead of direct state coupling.
+- Generation-service ingestion update: `tools/lycoles_generation_service.py` now partitions observation files so dynamic overlays continue through `build_release`, while `targeted-evidence-session` files bypass overlay parser and remain available for reconciliation.
+- Reconciliation improvements:
+  - `run_from_parts` now extracts targeted sessions from observation payload when present,
+  - targeted sessions are merged into evidence signals/capability contracts.
+- Added milestone orchestrator `tools/targeted_capture_milestone.py` to generate Milestone 3 deliverables and runtime-validation artifacts.
+- Added/updated tests:
+  - `tests/test_evidence_reconciliation_milestone.py` (targeted session ingestion + movement module contract checks),
+  - `tests/test_targeted_capture_milestone.py` (Milestone 3 artifact generation),
+  - `tests/test_lycoles_generation_service.py` (targeted evidence session ingestion path).
+- Validation status for this pass:
+  - `node --test tests/test_luau_syntax.mjs` ✅
+  - `python3 -m pytest -q` ✅ (`1695 passed, 17 skipped`)
+
+Current generated command contract: every complete generated utility and reviewed-actions GUI includes the same place-guarded Admin Commands framework. GUI and `;` command entry share one local state and cleanup path. Universal commands are client-local utilities, not server administrator privileges; game restrictions may override them. `stopall`/close must restore tracked collision and humanoid state. `systems` and `readiness` are informational only: release/standalone generation may embed bounded v110 candidate and blocker summaries, while absent evidence must remain explicit and every system stays unverified/implementation-not-ready. Game-specific action commands may be added only with sufficient observed capability evidence and explicit action contracts. Never add inferred remote calls.
+
+## Validation without target-game Studio access
+
+Use layered validation:
+
+1. Python and Node.js regression tests.
+2. Luau syntax parsing and static/semantic contract checks.
+3. Roblox API compatibility checks from versioned public definitions.
+4. Synthetic hierarchy and gameplay-state fixtures.
+5. Deterministic resolver-model tests.
+6. Controlled Luau execution when safely and technically available.
+7. User-supplied observations and results from permitted environments.
+8. Regression fixtures derived from prior inspection reports.
+
+Always label simulated/model/static success separately from actual permitted-environment runtime evidence. Studio-based testing may be used for separate authorized test experiences but is never a prerequisite for target-game milestones.
+
+## Development cycle
+
+For every substantial cycle:
+
+1. Audit the current highest-impact evidence, functionality, or validation gap.
+2. Add focused regression tests before implementation when practical.
+3. Make minimal, versioned, backward-compatible changes.
+4. Run focused tests, the complete Python suite, Node receiver/Luau tests, and `git diff --check`.
+5. Resolve regressions and document failures, resolutions, limitations, and next priorities.
+6. Commit verified changes on `openhands-development` with the OpenHands co-author trailer.
+7. Push and verify exact local/remote commit SHA equality.
+8. Update `OPENHANDS_PROGRESS.md` and begin the next highest-impact improvement.
+
+Do not stop merely because one implementation commit is complete; finish its tests, documentation, progress record, push, and SHA verification.
+
+## Current controlled Luau validation
+
+- Install the hash-pinned official Luau `0.744` runtime with `python tools/install_luau_v108.py --output build/luau-0.744`.
+- Run all Python tests with `LUAU_BIN="$PWD/build/luau-0.744/luau" python -B -m unittest discover -s tests -v`, then run `npm test` and `git diff --check`.
+- `tools/controlled_admin_commands.py` executes actual `generate_admin_commands.py` output in bounded local stubs and verifies command/chat/GUI shared state, tracked cleanup, fly continuity across a simulated character replacement, deterministic output, and assertion-based place guarding. Its report must keep Roblox runtime, live-game, server-authority, and gameplay claims false.
+- `tools/controlled_gui_activation.py` executes actual guided interaction output in bounded stubs and verifies exact identity resolution, highlighting, official `Activated` observation, selected scalar direction, drift/unavailable/timeout failure boundaries, cleanup, and the 25-attempt cap. It simulates user-event activation and must keep `automaticGuiActivationUsed`, Roblox runtime, server authority, causality, and gameplay verification false.
+- Controlled Luau success is simulated, read-only evidence only; it never upgrades Roblox runtime, live-game, server-authority, causality, or gameplay verification claims.
+
+## Live Bubble test preparation workflow (v30.6.36+)
+
+- `tools/prepare_live_test_bubble_package.py` generates `build/live_test_bubble/` from a manifest plus manifest-assisted artifacts, including:
+  - 18-target analysis table (`targets-18-analysis.md/.json`),
+  - primary/backup workflow selection,
+  - beginner operator checklist,
+  - export/retrieval and post-test validation instructions.
+- For the Bubble Gum INFINITY baseline package, run:
+  - `python3 tools/prepare_live_test_bubble_package.py --manifest "Pasted text(20261102-152723).txt" --artifact-dir build/e2e_bubble_v108 --output build/live_test_bubble --place-id 85896571713843`
+- `tools/validate_live_capture.py` validates returned live captures (manifest + optional parts directory), runs `build_release`, and emits machine-readable and markdown summaries:
+  - `python3 tools/validate_live_capture.py --manifest <manifest.json> --parts-dir <parts_dir> --output <out_dir> --place-id 85896571713843`
+- Validation summary explicitly separates available interaction history from inspector-reported total events (`events` vs `eventsReportedByInspector`) so subset histories are not misinterpreted as complete capture failure.
+- Potassium/Roblox executors may fail on top-level lexical-local pressure before runtime (`Out of local registers ... exceeded limit 200`). v30.6.36 had 203 top-level locals even though official Luau disassembly stayed below register index 200; these are different compiler properties.
+- Keep bounded-policy constants grouped under `LIMITS` and cohesive helper families inside lexical `do` scopes exported through namespace tables. Do not flatten `EVIDENCE_HELPERS` or `WORKFLOW_HELPERS` back into top-level local functions.
+- Regression guard: `tests/test_inspector_compiler_limits.py` uses the official Luau AST to enforce root lexical pressure at or below 170, including active locals inside scoped modules, and compiles `LycolesUniversalInspector.lua` across every Luau 0.744 optimization/debug combination. Potassium remains live-unverified until user-confirmed `loadstring(source)` success.
+
+## Dedicated generation service baseline
+
+- `tools/lycoles_generation_service.py` is the current production-service boundary for evidence-to-script processing, separate from OpenHands conversation state.
+- CLI:
+  - synchronous job: `python3 tools/lycoles_generation_service.py run-job --evidence-kind <manifest|parts_dir> --evidence-path <path> --output-root <dir> [--requested-capability <text>]`
+  - service mode: `python3 tools/lycoles_generation_service.py serve --host 127.0.0.1 --port 8787 --output-root build/generation-jobs`
+- HTTP API (service mode):
+  - `POST /v1/generation/jobs`
+  - `GET /v1/generation/jobs`
+  - `GET /v1/generation/jobs/{jobId}`
+- The service currently uses deterministic pipeline artifacts (`build_release`, `generation-readiness`, `generated_result`) and keeps all authenticity/runtime/gameplay claims false.
+- `tests/test_lycoles_generation_service.py` is the regression guard for manifest-blocked, multipart-generated, and async lifecycle flows.
+- Receiver bridge: `tools/receiver_generation_pipeline.py`
+  - local parts: `python3 tools/receiver_generation_pipeline.py from-parts --parts-dir <dir> --output-root <dir> [--requested-capability <text>]`
+  - receiver fetch + generation: `python3 tools/receiver_generation_pipeline.py from-receiver --receiver-endpoint <https-origin> --scan-id <id> --output-root <dir> [--local-manifest <manifest.json>] [--resume-dir <dir>] [--requested-capability <text>]`
+  - receiver mode requires `LYCOLES_READ_KEY` in the environment.
+- Provider-backed generation environment knobs (server-side only):
+  - `LYCOLES_LLM_PROVIDER=deterministic|openai|openai-compatible`
+  - `LYCOLES_OPENAI_API_KEY` (or `OPENAI_API_KEY` fallback)
+  - `LYCOLES_OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
+  - `LYCOLES_ANALYSIS_MODEL`, `LYCOLES_GENERATION_MODEL`, `LYCOLES_REPAIR_MODEL`
+  - optional cost tracking: `LYCOLES_ANALYSIS_COST_GBP_PER_1K`, `LYCOLES_GENERATION_COST_GBP_PER_1K`, `LYCOLES_REPAIR_COST_GBP_PER_1K`
+  - `LYCOLES_PREFER_AI_GENERATION=true` enables AI-first script synthesis when deterministic output is also available.
+- Real Bubble Gum INFINITY dataset location/reference:
+  - Source ZIP (main branch): `Lycoles_BubbleGum_Clean_Inspection.zip`
+  - Scan identity: `scanId=AC79D385-BCB0-4928-85D5-6C3D960C44AE`, `placeId=85896571713843`, `partCount=1253`.
+- Real-data compatibility note: `compile_scan.py` now tolerates invalid interaction `pathIdentity` by dropping mismatched entries instead of aborting the full scan; this was required for the verified live dataset.
+- Gameplay-first generation refactor (2026-11-06): `generate_script.py` now emits a `Gameplay` tab with evidence-ranked action targets (`ACTION_TARGETS`) and bounded client-side activation attempts (`fireproximityprompt` for prompts, virtual input fallback for GUI buttons). Legacy `Features` tab is removed.
+- Safety compatibility constraint: do not reintroduce `firesignal(` in generated Lua; `test_build_release` enforces this.
+- `understand_gameplay.py` now outputs `mechanicCandidates` with ranked gameplay mechanics and publishes `summary.topAutomationMechanic`; profile index includes `mechanicCandidateIds`.
+- `assess_generation_readiness.py` now computes per-feature `gameplayPriorityScore`, reports `summary.meaningfulGameplayFeatureMatches`, and emits blocker `no_meaningful_gameplay_feature_matches` when request matches are UI-only/low-value.
+- Requested-capability propagation fix: `build_release.build(..., requested_capability=...)` can override compiled plan request (validated, fail-closed), and `lycoles_generation_service.EvidenceProcessor` now forwards `GenerationRequest.requested_capability` into `build_release.build`. This resolves prior `no-capability-requested` false negatives when pipeline callers supplied request text.
+- Latest gameplay-first real artifacts:
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_v2.lua`
+  - `generated/live/BubbleGumInfinity_PipelineGenerated_GameplayFirst_Requested_v2.lua`
+  - `generated/live/BubbleGumInfinity_gameplay-understanding_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_gameplay-first_v2.json`
+  - `generated/live/BubbleGumInfinity_generation-readiness_requested_v2.json`
+
+- Universal discovery extraction (2026-11-06): `compile_scan.py` now emits `universalDiscovery` (`30.7.universal-discovery.1`) containing bounded `regions`, `interactables`, `economySignals`, `stateChangeSignals`, and `interactionPatterns` derived from full multipart objects plus interaction history.
+- New intelligence artifact: `tools/universal_gameplay_intelligence.py` emits `111.universal-gameplay-intelligence.1` with `world`, `economy`, `actions`, `workflows`, and `relationships`; all verification/authenticity/causality claims are fail-closed false.
+- Release integration: `build_release.py` now writes `universal-gameplay-intelligence.json`, records it in `release-manifest.json` under `universalGameplayIntelligence`, and includes summary counts in `README.txt`.
+- Workflow diagnostics refinement in `LycolesUniversalInspector.lua`: `explicit-workflow-recording-not-armed` now triggers only when there is no linked/completed workflow evidence; diagnostics include `derivedWorkflowEvidenceEvents` to avoid recording-only false negatives.
+- Regression coverage added:
+  - `tests/test_compile_scan.py` now validates universal discovery schema and extraction of interactable/economy/state signals.
+  - `tests/test_universal_gameplay_intelligence.py` validates analyzer output and deterministic `validate()` roundtrip.
+  - `tests/test_build_release.py` verifies manifest/file integration for universal intelligence artifacts.
+
+- Potassium compile headroom fix (`v30.6.38`): demoted six late UI declarations from local bindings to reduce top-level register pressure near the observation-control block where Potassium previously failed (`observationToggle` allocation). Local Luau text-compile register scan now peaks at `R154`.
+
+
+## Update — 2026-11-08 — routing policy + universal automatic-action inference
+
+- External evidence blocker recorded: after deep receiver legacy-index search, baseline scan IDs `DBFC72C6-749B-4F95-BBA2-433B8B61745C` and `6D3741EF-9569-4F40-B38A-E4FD2AE0A063` remain unavailable. Treat as external blocker and stop pagination-depth expansion unless new evidence sources appear.
+- Generation service routing (`tools/lycoles_generation_service.py`) now uses complexity-aware, retry/cost-adjusted model order:
+  - low-risk: economy-first analysis, coding-first generation/repair,
+  - hard requests: reasoning-priority generation/repair and coding/reasoning analysis fallback,
+  - per-stage attempt/retry telemetry is captured in `usage` and provider routing metadata.
+- Universal input-to-state/action inference upgraded:
+  - `tools/discover_action_capabilities.py` now emits `automaticActionInferences` and `automaticActionSummary` from sustained/burst cadence + outcome-density/state-signal evidence.
+  - `tools/plan_generated_workflows.py` propagates candidate-level `automaticActionSignals` and summary count `workflowsWithAutomaticActionCandidates`.
+  - `tools/assess_generation_readiness.py` consumes automatic-action inferences when matching request/action evidence.
+- Synthetic fixtures continue to validate implementation logic only; they do not establish live gameplay verification.
+
+## Update — 2026-11-08 — executable workflow delivery visibility and strict request gating
+
+- `tools/lycoles_generation_service.py` delivery now returns explicit script artifacts:
+  - `generatedScriptPath`, `generatedScriptKind`, and `scriptArtifacts` (`utility`, `guidedWorkflow`, `promptInteractions`).
+- Delivery now exposes `executableWorkflow` diagnostics derived from readiness + release manifest, including:
+  - request-provided flag,
+  - execution-ready/request-aligned workflow counts,
+  - guided workflow script generation status,
+  - selected workflow candidate id,
+  - request-aligned executable availability and blockers.
+- Generation status now explicitly reports `observational-only-request-unmet` when a request exists but request-aligned executable workflow output is unavailable.
+- Strict fail-closed mode added:
+  - `GenerationRequest.require_executable` and CLI `--require-executable` (`run-job`) block jobs that cannot produce request-aligned executable workflow output.
+  - HTTP API accepts `requireExecutable: boolean` for queued jobs.
+- `tools/receiver_generation_pipeline.py` supports strict request gating (`--require-executable`) in both `from-parts` and `from-receiver` modes and emits actionable failure reasons.
+- `summarize_generation_result(...)` now reports executable status plus delivered script path/kind so observational-only outputs are explicit, not silent.
+- `tools/receiver_generation_pipeline.py exercise-live` now distinguishes scenario outcomes:
+  - `succeeded` only when `summary.executableLogic.requestExecutableStatus == "request-executable-ready"`.
+  - `observational-only-request-unmet` when a requested capability remains non-executable from available evidence.
+
+## Update — 2026-11-08 — singleton executable workflows + guided runtime recovery hardening
+
+- `tools/plan_generated_workflows.py` now emits **bounded singleton execution-ready workflow candidates** when a transaction has exactly one exact generation-ready mapped event.
+  - New candidate traits: `stepCount=1`, `guidedTrialGenerationReady=true`, `executionReady=true`, `singleStepWorkflow=true`.
+  - Execution mode remains contract-safe:
+    - `mixed-guided` for GUI-manual singleton steps,
+    - `bounded-automatic` for Tool/Prompt singleton steps.
+  - Summary now includes `singleStepExecutionReadyWorkflows`.
+- `tools/generate_guided_workflow.py` runtime template hardening:
+  - Added preflight checks (`preflightReady`) before run start.
+  - Added bounded activation retries for non-GUI steps (`stepActivationRetryLimit=2`, retry-on-timeout only).
+  - Added prompt teleport cleanup (`restorePromptPosition`) on finish/close and prompt activation failure/success paths.
+- Schema/contract alignment for singleton mixed workflows:
+  - `generate_guided_workflow.validate(...)` now accepts `1..64` steps.
+  - `generated_result.py` mixed-workflow capability validation now accepts `1..64` steps.
+  - `generate_script.py` generation-readiness display validation now accepts `1..128` steps.
+- Offline executable package checkpoint (strict mode):
+  - `python3 tools/lycoles_generation_service.py run-job --evidence-kind parts_dir --evidence-path build/workflow_ready_parts_fixture --requested-capability "Complete observed shop flow" --require-executable --output-root build/executable_generation_job`
+  - Result included request-aligned executable readiness with selected candidate id `e0207a259f6fae8ed60a`.
+  - Tracked artifact bundle committed under `potassium_artifacts/workflow_ready_live_package/` for commit-pinned Potassium loading.
+
+
+## Update — 2026-11-08 — strict automatic executable gating + manifest-assisted compatibility
+
+- `tools/assess_generation_readiness.py`
+  - Automatic-request detection now parses raw request text (not stop-word-filtered request tokens), including `automatically`.
+  - `requestFeatureReadiness.workflowEvidence` now reports automatic execution requirement/candidate counts correctly for both full and summarized workflow candidate payloads.
+  - Automatic execution-ready counting now treats `executionMode == "bounded-automatic"` as automatically executable when `automaticallyExecutable` is absent in summarized candidates.
+- `tools/lycoles_generation_service.py`
+  - `delivery.executableWorkflow` now includes strict automatic-execution diagnostics:
+    - `automaticExecutionRequired`
+    - `automaticExecutionReadyWorkflowCandidates`
+    - `requestAlignedAutomaticExecutionReadyWorkflowCandidates`
+  - Strict fail-closed behavior for automatic requests now blocks when request-aligned automatic candidates are missing, manual GUI activation is required, or automatic activation is unavailable.
+  - Manifest mode now supports `30.6.manifest-assisted-workflow.5` wrappers by resolving `sourceManifest` from sibling path, absolute path, or workspace-root fallback.
+- `tools/plan_generated_workflows.py`
+  - Planning summary now includes:
+    - `automaticExecutionReadyWorkflows`
+    - `requestAlignedAutomaticExecutionReadyWorkflows`
+- `tools/receiver_generation_pipeline.py`
+  - Summary executable logic now surfaces automatic execution requirement and automatic candidate counts.
+- New regression coverage:
+  - `tests/test_lycoles_generation_service.py`
+    - strict automatic request blocks manual-guided workflows under `require_executable`
+    - strict automatic request succeeds when request-aligned bounded-automatic workflow exists
+    - manifest-assisted wrapper compatibility path through `sourceManifest`
+  - `tests/test_receiver_generation_pipeline.py`
+    - strict automatic request block/success behavior under pipeline entrypoints
+  - `tests/test_generation_readiness.py`
+    - asserts automatic-request blocker in GUI-only combat evidence case
+- New strict automatic package artifact:
+  - `potassium_artifacts/automatic_workflow_live_package/`
+  - Includes generated utility/guided scripts, readiness/release manifests, generation result, and `PotassiumLoader.template.lua`.
+
+
+## Update — 2026-11-08 — v30.6.47 selectable training methods + world discovery diagnostics
+
+- Observation contract upgraded to `117.observation-tool-contract.5` (`receiver_generation_pipeline.observation-contract.5`).
+- `auto_train` now emits a single `tool_activate_selectable` action contract with evidence-ranked `methods[]` and `defaultSelectedMethodIds`; standalone `alternate_tool_training` emission removed.
+- Training method defaults are safety-biased:
+  - primary evidenced inventory tool selected by default,
+  - weaker methods (e.g., `Punch`) can be present but are not auto-selected.
+- Quest behavior remains fail-closed:
+  - `quest_automation` only when actionable select/claim GUI paths are observed,
+  - otherwise `quest_monitor` (`observe_only`) with explicit missing-evidence diagnostics.
+- Unsupported world/proximity evidence now emits explicit exclusions and counters:
+  - `proximity_interactions`,
+  - `world_training_stations` when no world-space training evidence exists.
+- Runtime template (`tools/observation_auto_train_template.lua`) now supports:
+  - training-method selector UI (`ON/OFF` per method),
+  - per-method attempt/success/error/progress accounting,
+  - method cooldown/backoff when unavailable,
+  - reward candidate cooldown backoff to avoid repeated unsupported spam,
+  - quest open/claim path handling without duplicate loops,
+  - diagnostic export including method-level telemetry + `trainingDiscovery`.
+- Inspector world discovery (`LycolesUniversalInspector.lua`) now includes bounded `worldInteractionDiscovery` candidates and summary counters in scan output for downstream station/proximity gating.
+
+## Update — 2026-11-08 — v30.6.48 universal stat discovery + stat-oriented auto-train runtime
+
+- Observation recovery contract upgraded to:
+  - `117.observation-tool-contract.6`
+  - `receiver_generation_pipeline.observation-contract.6`
+  - `117.observation-recovery-summary.5`
+- `tools/receiver_generation_pipeline.py` now emits a universal stat model for `auto_train`:
+  - `trainingDiscovery.statRegistry.stats[]`
+  - `trainingDiscovery.statTrainingTargets[]`
+  - `trainingDiscovery.actionStatEvidence.relationships[]`
+  - `auto_train.action.statTargets[]`
+  - `auto_train.action.methodStatMap`
+- Default training selection is now stat-target-aware and evidence-ranked:
+  - methods are selected through stat targets (not a flat interchangeable tool list),
+  - unsupported/low-confidence mappings remain explicit limitations,
+  - weaker methods (like Punch) remain non-default unless evidence supports inclusion.
+- Runtime template (`tools/observation_auto_train_template.lua`) now supports stat-oriented controls:
+  - stat-target ACTIVE/PAUSE toggles,
+  - per-stat current value / gain / gain-per-minute telemetry,
+  - method labels mapped to stat targets,
+  - method and stat diagnostics exported in `featureReports`.
+- Inspector (`LycolesUniversalInspector.lua`) now emits bounded `statDiscovery` evidence:
+  - `report.statDiscovery.candidates[]` (client-visible progression-stat candidates),
+  - `report.scanStats.statDiscovery` counters,
+  - explicit temporal-correlation-only fields with causality/gameplay verification false.
+- Muscle Legends feature-batch artifacts regenerated with the new schema and stat model under:
+  - `potassium_artifacts/muscle_legends_feature_batch/`
+  - top-level files now synced from scenario output and include `statTargets` + relationship diagnostics.
+
+## Update — 2026-11-12 — split-baseline archive ingestion + enriched spatial discovery
+
+- `tools/receiver_generation_pipeline.py` now supports split baseline multipart archives directly in discovery mode:
+  - new CLI flag (repeatable): `discover-observation --baseline-archive <path.zip>`
+  - archives are merged via `ingest_parts_archives(...)`, validated for scan/place/part identity, then converted into baseline context (`_build_baseline_parts_context`).
+- Discovery report metadata now includes:
+  - `scanMetadata.baselineContext` (scan/place/object counters + actionable-world-object index size)
+  - `scanMetadata.baselineArchiveValidation` (source archive count, manifest uploaded parts observed, acknowledgement gap, combined SHA256).
+- Spatial location interpretation now excludes non-actionable roots/templates (`Workspace` root and `ReplicatedStorage.*`), uses canonical path normalization, and emits richer location/navigation evidence:
+  - `functionalLocationRegistry[*].relevantWorkspaceObjectPaths`
+  - `requiredActivationConditions`
+  - `observedOutcomes`
+  - `missingEvidence` / `unresolvedRequirements`
+  - `navigationCandidates[*].evidenceStatus` + `validationStatus`.
+- `spatialDiscoveryQualityMetrics` now includes:
+  - `locationClustering.navigationCandidatesReady`
+  - `nearbyObjectRelevance`
+  - `coverage.interactionToLocationCoverage` and bounded `coverage.coordinateCoverage`
+  - `missingLocationEvidence` examples.
+- Regression coverage added for split-archive ingestion and baseline-aware universal discovery output in `tests/test_receiver_generation_pipeline.py`.
+
+## Update — 2026-11-12 — staged navigation readiness + blocker diagnostics
+
+- Bubble Gum live confirmation: inspector `v30.6.49` compiled/loaded successfully in Potassium (no runtime changes required for this stage).
+- Universal discovery navigation logic in `tools/receiver_generation_pipeline.py` now uses staged evidence states instead of a single strict `validated_destination` gate:
+  - `observed-position`
+  - `interaction-position`
+  - `outcome-associated-position`
+  - `actionable-navigation-candidate` (or `...-partial`)
+  - `live-validated-destination`
+- Candidate evidence now includes explicit blocker diagnostics (`readinessBlockers`) and stage booleans:
+  - `observedPosition`, `interactionPosition`, `outcomeAssociatedPosition`,
+  - `actionableNavigationCandidate`, `readyForLiveValidation`, `liveValidatedDestination`.
+- Nearby world-object relevance now supports baseline descendant-actionability matching (ancestor path in observation, actionable descendant path in baseline), improving object-to-location linkage without hardcoded game rules.
+- Location outcome handling now distinguishes gameplay-relevant outcomes from transient animation/movement noise via `meaningfulOutcomeKeys` while preserving full `observedOutcomes`.
+- Spatial quality metrics now track:
+  - `actionableNavigationCandidates`
+  - `navigationCandidatesReady`
+  - `liveValidatedDestinations`.
+- New regressions added:
+  - pointer-only false-positive rejection,
+  - repeat GUI flow readiness promotion,
+  - multi-world separation at identical coordinates.
+
+## Update — 2026-11-12 — physical destination model and workflow separation
+
+- Universal discovery now publishes destination-level structures in addition to location-level structures:
+  - `physicalDestinationRegistry` (stable destination IDs, source location IDs, representative coordinates, paths/mechanisms, provenance)
+  - `destinationWorkflows` (destination-scoped workflow identities with targets/mechanisms/state keys)
+  - `locationNavigationCandidates` (legacy-compatible location-scoped candidates retained for diagnostics)
+  - `navigationCandidates` (deduplicated destination-scoped candidates)
+- `functionalLocationRegistry` entries now include `physicalDestinationId` for traceability.
+- Destination merge logic is evidence-scored (distance + shared identity roots + nearby overlap + purpose/feature overlap) with same-world and anti-conflict guards.
+- Navigation readiness and gameplay outcome verification are intentionally separated:
+  - `navigationReadiness`: actionable / ready-for-live-validation / live-validated + blockers
+  - `gameplayOutcomeVerification`: tiered status (interaction/state/temporal/multi-signal/live) + missing evidence
+- `spatialActionOutcomeRelationships` now carries `meaningfulOutcomeStateKeys` and `outcomeVerification` fields.
+- Bubble Gum comparison against commit `6a122e15`:
+  - locations: 12 -> 12
+  - physical destinations: n/a -> 10
+  - destination merges: n/a -> 2
+  - deduped destination navigation candidates: 12 -> 10
+  - navigation-ready: 2 -> 1
+  - gameplay-verified destinations: 0
+- Full Python suite status after this stage: `1658 passed, 17 skipped, 0 failed`.
+- Inspector UI regression causes/fixes:
+  - version drift (`version.txt` 30.6.48 vs inspector runtime 30.6.49) fixed by syncing to `30.6.49`
+  - queue-processing guard assertion fixed by restoring expected line `if alive and interactionObserveEnabled then WORKFLOW_HELPERS.processInputObservationQueue() end`
+
+
+## Update — 2026-11-13 — pickup evidence propagation into autonomous planning
+
+- Root cause identified for reward/pickup under-classification in replay generation readiness:
+  - `tools/assess_generation_readiness.py::_request_feature_matches` hardcoded `tokenEvidenceOnly=True` and did not propagate observed control/path evidence from `observedInteractionHistory`.
+  - `tools/lycoles_generation_service.py::AutonomousPlanningEngine._extract_features` dropped matched-feature target paths/controls (`targetPath=None`, `commands=[]`), which forced strategy feasibility blockers (`observed GUI/prompt/tool control pathway`).
+  - `tools/generated_result.py` incorrectly required `tokenEvidenceOnly` to always be `True` for matched features.
+- Implemented universal, conservative fixes:
+  - Added `_request_feature_history_signals(plan)` to aggregate per-feature interaction signals from observed history.
+  - Matched feature evidence now carries representative path/control metadata (`representativeTargetPath`, `representativeGuiTargetPath`, `representativeWorldTargetPath`, `observedControlTypes`) plus bounded outcome counters.
+  - `tokenEvidenceOnly` is now derived from actual evidence presence (boolean), not hardcoded.
+  - Planning ingestion now uses matched-feature representative paths and observed controls, enabling evidence-backed direct-interaction strategy scoring.
+  - World-path inference from click raycast was gated to avoid GUI-overlay leakage (only treated as world evidence when the event has world interaction signals).
+- New regression tests:
+  - `tests/test_generation_readiness.py::test_request_feature_match_propagates_observed_target_path_and_outcome_signals`
+  - `tests/test_generated_result.py::test_request_feature_match_accepts_non_token_only_boolean`
+- Verified behavior on v30.6.57 replay package:
+  - Rewards request now surfaces a feasible `strategy-c-direct-interaction` candidate with observed GUI path evidence.
+  - Generation status remains conservative (`observational-only-request-unmet`) until execution-ready workflow and live validation criteria are met.
+
+
+## Update — 2026-11-13 — v30.6.61 rewards replay import + claim-control semantics
+
+- Strict import of v30.6.61 rewards evidence succeeded with expected identities:
+  - place: `85896571713843`
+  - baseline scan: `BA775179-415E-46D4-8161-AC8ABB4EA53F`
+  - observation scan (source/integrity): `live-observation-1FACED15-4343-44BA-8C22-3C5932B7B475`
+  - baseline parts complete: `983/983`
+  - concatenated observation SHA256: `9e0e1d65733414769439af2d4e4308dc05ba160abcf0afcd4ab9656e93c2ed19`
+- Rewards interaction timeline showed callback-attributed GUI interactions but no corroborated scalar reward-outcome contract.
+- The likely claim control in this scan is `DailyRewards.Frame.Playtime.Main.1.Button` (GUI transitions: `Label` hidden, `Completed` shown), while `Top.Close.Button` remains close-only.
+- Universal semantic-selection hardening added to readiness/planning:
+  - request-feature history now tracks per-path semantics (`claim`, `close`, completion transitions, notification-only transitions).
+  - claim-like requests prioritize completion-backed controls and penalize notification-only/open-close controls.
+  - matched features now publish `requestActionSemanticsAligned`.
+  - planner ingestion clears `targetPath`/`commands` when semantics are misaligned, preventing false request-aligned direct-interaction feasibility from close/menu controls.
+- Regressions added for:
+  - claim-path preference over close-only controls,
+  - semantic mismatch path/control suppression in planner extraction.
+- Generation remains conservative (`observational-only-request-unmet`) until request-aligned execution-ready workflow candidates and live verification evidence exist.
+
+
+## Update — 2026-11-13 — Controlled rewards-claim trial contract (v30.6.61)
+
+- Root cause of strict executable rejection persists by design:
+  - workflow planner remains `review-only-candidates` for rewards claim due GUI-transition-only evidence (`reviewOnlyTemporalOutcomeCandidate`) and no resolvable scalar outcome contract (`trialGenerationReady=False`, `replayContractAvailable=False`).
+  - therefore strict execution-ready counters stay zero and `--require-executable` still fails with request-aligned execution/automatic blockers.
+- Added explicit controlled-trial status path without weakening strict execution-ready gates:
+  - `requestFeatureReadiness.workflowEvidence.controlledClaimTrialCandidates`
+  - `requestFeatureReadiness.workflowEvidence.executionContractValid`
+  - `requestFeatureReadiness.workflowEvidence.readyForControlledTesting`
+  - mirrored in delivery executable status as `executionContractValid` and `readyForControlledPotassiumTesting`.
+- For claim requests, generated utility now emits strict claim-only targets:
+  - includes only semantically aligned claim controls with completion transition evidence;
+  - excludes Close/Cancel/Back and notification/menu-only controls;
+  - preserves path confidence/provenance fields per target.
+- Controlled claim trial behavior in generated Lua:
+  - place-guarded, one bounded attempt only,
+  - activation via `VirtualInputManager` mouse-button click (no firesignal / no synthetic event invocation),
+  - checks pre/post completion/label visibility transitions,
+  - clean stop with explicit messages for missing controls, unavailable activation, already-completed state, timeout, and bounded-attempt exhaustion.
+- Current v30.6.61 rewards job confirms:
+  - strict executable unavailable (unchanged blockers),
+  - controlled contract valid and ready for controlled Potassium trial,
+  - claim path selected: `DailyRewards.Frame.Playtime.Main.1.Button`,
+  - close path excluded from emitted targets.
+
+
+## Update — 2026-11-13 — Controlled rewards trial GUI safety hardening
+
+- Generator-level controlled claim trial now validates GUI targets before activation:
+  - resolves exact claim path and re-resolves after Lycoles UI suspension,
+  - enforces GuiButton type, ancestor visibility, ScreenGui enabled state,
+  - checks interactable/active flags where available,
+  - rejects invalid/zero bounds and stale GUI paths,
+  - verifies DailyRewards interface is open.
+- Added robust hit testing to avoid false world-target fallback behavior:
+  - chooses an unobstructed click point inside target bounds,
+  - uses `PlayerGui:GetGuiObjectsAtPosition` with raw/plus/minus GUI inset variants,
+  - stops safely with obstruction diagnostics when game-owned overlays cover target.
+- Prevents self-interception by Lycoles overlays:
+  - temporarily disables only Lycoles-owned `ScreenGui` instances (`name` prefix `lycoles`),
+  - waits one frame before point selection and dispatch,
+  - always restores prior `Enabled` states after success/failure/timeout/error.
+- Activation dispatch safety:
+  - `VirtualInputManager` availability checked before use,
+  - release event is always attempted and release failures are reported,
+  - no firesignal, no fabricated remotes, no uncontrolled retries.
+- Outcome semantics are explicitly separated:
+  - input dispatch != reward claim verification,
+  - success requires observed `Completed` transition,
+  - label hidden transition is supporting-only evidence,
+  - already completed reward exits without clicking.
+- Controlled request contract now includes configurable bounded completion timeout (`completionTimeoutSeconds`, default 2.5s).
+- Regenerated artifact from v30.6.61 replay package:
+  - `build/generation-jobs-v30.6.61-rewards/job-9cc84b4d2d584bb1/LycolesGeneratedUtility.lua`
+  - copied to `potassium_artifacts/LycolesGeneratedUtility.lua`.
+
+
+## Update — 2026-11-13 — Phantom Forces universal architecture milestone
+
+- Added reusable milestone orchestrator: `tools/universal_architecture_milestone.py`.
+  - Inputs: extracted multipart baseline directory + optional live observation JSON.
+  - Outputs: architecture audit, evidence inventory, machine-readable game model, universal tool proposals, feature config catalog, feasibility records, and unified GUI blueprint.
+- Evidence package handling clarified for split archives:
+  - Extraction should merge ZIP members by filename and reject digest conflicts.
+  - Baseline extraction count and manifest `uploadedParts` are distinct metrics and must both be preserved in reports.
+- Live observation identity handling must account for dual scan identities:
+  - `integrity.scanId` may be a live-observation scan id,
+  - `baselineScanId`/root `scanId` can reference the baseline multipart package.
+  - Baseline-to-observation linkage should validate place id + baseline scan id equivalence, not live scan id equivalence.
+- Universal feature discovery is now objective/mechanic/challenge-driven with explicit lifecycle statuses and fail-closed claims; no feature is auto-marked implemented/runtime-tested/gameplay-verified.
+- Feature configuration schemas now enforce universal fields (`id`, type, defaults, range/choices, dependencies, runtime binding, validation, persistence) and keep non-implemented features as planned-only settings.
+- Unified GUI architecture output is single-window by contract, with integrated diagnostics/profiles/keybind sections and `separateAdminGuiAllowed=false`.
+
+
+## Update — 2026-11-13 — Milestone 2 evidence reconciliation + capability contracts
+
+- Added `tools/evidence_reconciliation_milestone.py` to reconcile collected evidence vs missing evidence and emit capability-level feasibility outputs.
+- New required outputs are produced in a versioned directory (example: `generated/phantomforces_universal_milestone_v2/`):
+  - `evidence-reconciliation-report.json`
+  - `capability-evidence-contracts.json`
+  - `reassessed-feature-feasibility.json`
+  - `targeted-inspection-plan.json`
+  - `game-understanding-improvements.json`
+  - `generation-integration-report.json`
+  - `milestone-2-summary.md`
+- Camera discrepancy is now explicitly split into evidence classes:
+  - camera input gestures / camera-turn observations
+  - camera state samples
+  - camera movement correlations
+  - verified camera-response behavior
+  This avoids treating camera gestures as equivalent to verified camera-state samples.
+- Capability contracts are now feature + capability scoped (not feature-category scoped) and include required entities/properties/observations, temporal constraints, dependencies, verification requirements, provenance, confidence, and limitations.
+- Feasibility lifecycle now supports partial feature readiness by capability stage, separating gameplay and infrastructure.
+- A targeted-inspection planner now generates actionable, read-only evidence requests from missing capability requirements.
+- Generation service integration:
+  - `tools/lycoles_generation_service.py` now invokes reconciliation artifacts for multipart evidence bundles when `capability-plan.json` exists.
+  - Job outputs include reconciliation metadata paths/summary under `analysis` and top-level `evidenceReconciliation`.
+  - Module loader now registers dynamically loaded modules in `sys.modules` for dataclass-safe imports.
+- Implemented a small read-only gameplay vertical slice artifact when available:
+  - `MovementTelemetryOverlay.lua` emitted when `movement_navigation_assist.movement_telemetry_overlay` is implementation-ready.
+- New tests:
+  - `tests/test_evidence_reconciliation_milestone.py`
+  - generation-service integration assertion added in `tests/test_lycoles_generation_service.py`
+- Regression status after Milestone 2 changes:
+  - targeted Python suites: `92 passed`
+  - Luau parser checks: `4 passed, 0 failed`
+
+## Update — 2026-11-13 — Milestone 3.1 tabbed GUI + automatic targeted capture
+
+- Inspector GUI was redesigned into a single-window tabbed layout with shared content area:
+  - Tabs: `Inspector`, `Capture`, `Automation`, `Settings`, and `Generated`.
+  - Legacy right-side stacked controls were removed to prevent overlap with scan output.
+  - Tab panes use scrolling frames and explicit pane visibility switching.
+- Targeted capture lifecycle is now automatic and stateful:
+  - lifecycle phases: `initializing` -> `waiting-for-readiness` -> `capturing` -> `exporting` -> `continuing`.
+  - Auto-start is driven by `WORKFLOW_HELPERS.advanceTargetedCaptureLifecycle` on startup and heartbeat.
+  - Readiness requires alive inspector + interaction observer enabled + input binding ready + sweep completed.
+- Manual controls are preserved and expanded in Capture tab:
+  - Pause/resume toggle and explicit restart control.
+  - Manual pause sets `pausedByUser` and is respected by auto lifecycle (no immediate auto-restart).
+- Targeted export continuity metadata added:
+  - `WORKFLOW_HELPERS.targetedCaptureForExport(context)` now tracks context (`manifest` vs `live-observation`), duplicate suppression, and export continuity counters.
+  - Call sites now pass `{kind, scanId}` to avoid duplicate export accounting.
+- Root local register pressure remained safe after redesign:
+  - computed root local pressure: `168` (budget `170`, Potassium hard limit `200`).
+- New/updated UI regressions cover:
+  - tab switching + pane visibility,
+  - shared content layout/control preservation,
+  - capture pause/resume/restart paths,
+  - automatic lifecycle and duplicate-export continuity metadata.
+
+## Update — 2026-11-13 — Milestone 3.2 functional tabs + monochrome theme persistence
+
+- Fixed tab usability defects observed live in Potassium:
+  - tab navigation now fits a single row (`Inspector`, `Capture`, `Automation`, `Settings`, `Generated`),
+  - inspector and settings pane content now render with explicit pane-child z-index handling.
+- Restored functional Inspector content in tabbed layout (scan/copy/save/receiver/report controls remain live, not decorative).
+- Replaced static settings placeholders with functional Appearance controls:
+  - preset cycle (`Graphite`, `Slate`, `Silver`, `Custom`),
+  - adjustable background/surface/button shades, border brightness/opacity, corner radius,
+    text brightness, text scale, UI scale, button hover brightness,
+  - explicit Save Theme and Reset Default actions.
+- Added centralized theme manager in inspector runtime:
+  - tokenized palette + registry-based apply path,
+  - shared corner/stroke styling (`UICorner`, `UIStroke`) and hover behavior,
+  - live re-application across registered controls/tabs.
+- Added theme persistence contract with fallback handling:
+  - config path `LycolesInspector/settings/theme.json`, schema-versioned payload,
+  - robust load/save handling for missing files, malformed JSON, and unsupported file APIs,
+  - explicit user-visible status messaging when persistence is unavailable.
+- Automatic targeted capture lifecycle remains integrated; theme and tab operations do not restart capture sessions.
+- Compiler pressure remained within budget after changes (`root local pressure = 168`, budget `170`).
+
+## Update — 2026-11-13 — v30.6.65 scan regression hotfix (Potassium)
+
+- Root cause of Potassium runtime failure (`attempt to index nil with 'scanId'`):
+  - In `inspect`, targeted export context used `result.scanId` **inside** the scan `pcall` body before `pcall` returned.
+  - `result` at that point is the outer `pcall` result variable and is `nil` during report construction.
+  - Failing expression was the manifest targeted export call at line ~9387 in v30.6.64.
+- Structural fix:
+  - Added scan-context helpers:
+    - `WORKFLOW_HELPERS.ensureReportScanContext(report)`
+    - `WORKFLOW_HELPERS.manifestExportContext(report)`
+  - `report.scanId` is now guaranteed at scan-report construction time.
+  - `prepareParts(report)` now reuses/ensures `report.scanId` instead of creating a disconnected scan id.
+  - Manifest targeted export now uses `manifestExportContext(report)` and cannot index outer `result`.
+  - Added `scanContextDiagnostics` into interaction diagnostics and manifest metadata.
+- Added executable Luau harness tests for helper runtime behavior (`tests/test_inspector_scan_context_runtime.py`) covering generated/reused scan IDs, missing-context fallback, and no nil-index regression path.
+- GUI overflow touch-up while preserving monochrome design:
+  - inspector action buttons tightened and spaced;
+  - button/url text truncation enabled;
+  - receiver row widths adjusted.
+- Compiler pressure unchanged after fix: root local pressure remains `168` (budget `170`).
+
+## Update — 2026-11-13 — v30.6.66 runtime recovery (Potassium live failure)
+
+- Live failure root cause for "tabs nearly empty" + non-working SCAN:
+  - `WORKFLOW_HELPERS.ensureReportScanContext` / `manifestExportContext` were defined at top-level **before** `WORKFLOW_HELPERS` local table declaration.
+  - This triggered top-level runtime abort (`attempt to index nil`) during script initialization.
+  - Because abort happened mid-file, early GUI pieces rendered but later tab content, callbacks, scan pipeline, and startup lifecycle wiring never initialized.
+- Structural recovery:
+  - Moved to a **single** helper table lifecycle:
+    - early declaration `local WORKFLOW_HELPERS = {}`
+    - later block uses `WORKFLOW_HELPERS = WORKFLOW_HELPERS or {}` (no shadowing redeclaration)
+  - This restores complete script execution path through tab/callback/scan initialization.
+- Added runtime diagnostics system (lightweight, fail-tolerant):
+  - always-on stage/failure ring buffers (`_G/getgenv().LycolesInspectorDiagnostics` when writable)
+  - visible header badge (`RuntimeDiagnosticLabel`) independent of tab content
+  - staged scan telemetry: `button-clicked -> scan-requested -> scan-started -> collecting -> report-built -> packaging -> packaging-complete -> transmitting/completed`
+  - explicit failure markers for blocked transmit/startup/collecting/packaging/cancel branches.
+- Added executable Luau runtime tests for diagnostics block and boot ordering:
+  - `tests/test_inspector_runtime_diagnostics_runtime.py`
+  - verifies diagnostics collection, bounded stage history, and helper declaration ordering.
+- Compiler pressure after recovery + diagnostics: root local pressure `170` (budget `170`) with compile-limit suite passing.
+
+- Generation service now persists analysis cache across restarts (`tools/lycoles_generation_service.py`):
+  - file: `<output_root>/analysis-cache.json` (schema `30.6.analysis-cache.1`),
+  - bounded by `LYCOLES_ANALYSIS_CACHE_MAX_ENTRIES` (default 256, minimum 32),
+  - cache hit can now survive process restarts, reducing repeated analysis-model spend for unchanged evidence signatures,
+  - covered by `tests/test_lycoles_generation_service.py::test_analysis_cache_persists_across_service_restarts`.
+
+## Update — 2026-11-13 — v30.6.67 packaging overflow recovery (Potassium live)
+
+- Live Potassium failure root cause (`Runtime error: packaging`, `Shared scan summary exceeds receiver limit`):
+  - `prepareParts` metadata part overflowed when large table-valued diagnostics fields (notably `interactionDiagnostics.targetedCaptureSessionSummary` with nested `samples`) stayed inline in the shared summary part.
+  - Existing chunking covered `recentInteractions` and selected collection keys only; unlisted large summary tables were fail-closed at the meta part size check.
+- Structural fix:
+  - Added dynamic summary externalization in `prepareParts`: when metadata part exceeds `MAX_PART_BYTES`, the largest remaining table-valued summary field is serialized into deterministic JSON fragments and emitted as additional `interactionDiagnosticsChunk` parts.
+  - Added summary descriptors (`chunkedInteractionDiagnosticSummaryFields`) and per-field metadata (`...ChunkSchema`, `...ChunkKind`, `...ChunkKey`, `...EncodedLength`) so downstream can reconstruct full values without evidence loss.
+  - Added packaging diagnostics (`report.localPerformance.packagingDiagnostics`) including summary encoded size, max allowed bytes, overflow count, externalized fields, generated part count, largest part bytes, and status.
+- Downstream compatibility:
+  - `tools/compile_scan.py` now reconstructs `json-fragment` summary fields from chunk descriptors and validates fragment sequence/length fail-closed.
+- Runtime regression coverage:
+  - `tests/test_inspector_packaging_runtime.py` executes real `prepareParts` Luau logic and verifies oversized summary externalization + bounded part sizes.
+  - `tests/test_compile_scan.py` adds summary fragment reconstruction and sequence-mismatch fail-closed tests.
+
+## Update — 2026-11-14 — v30.6.68 oversized diagnostics record fragmentation
+
+- Live Potassium failure on v30.6.67 reproduced offline against commit `38d65d66cb12cad730272b83e983dd10d649286d` with error:
+  - `Single interaction diagnostics chunk item exceeds receiver limit (targetedCaptureSessionSummaryChunkedFragments)`
+- Root cause details:
+  - failing path: `interactionDiagnostics.targetedCaptureSessionSummaryChunkedFragments[1]`
+  - old summary fragment design stored raw JSON text in `fragment` string, which was JSON-escaped again when wrapped; this expanded payload unpredictably.
+  - reproduction sizing (Luau harness): summary fragment piece `100000` bytes -> fragment record `133378` bytes -> part `133722` bytes (> `MAX_PART_BYTES=105000`).
+- Structural fix in `prepareParts`:
+  - introduced per-item oversized diagnostics fragmentation with schema `30.6.interaction-diagnostics-item-fragment.1`.
+  - switched summary externalization fragments to hex-encoded payloads (`30.6.interaction-diagnostics-fragment-chunk.2`, `chunkEncoding=hex-utf8-json`) to remove escape-amplification risk.
+  - fragmentation preserves deterministic ordering, record identity, encoded length, and field path metadata.
+- Downstream reconstruction (`tools/compile_scan.py`):
+  - added strict fail-closed reconstruction for item fragments (missing/duplicate/corrupt/length mismatch/non-object decode all fail).
+  - added dual support for legacy raw summary fragments and new hex summary fragments.
+- Packaging diagnostics upgraded (`30.6.packaging-diagnostics.3`):
+  - tracks fragmented record count, total fragments, per-record encoded bytes + field path (bounded list), total part bytes, duration, overflow count, largest part.
+- Additional hardening in v30.6.68 patchline: oversized `interactionHistoryChunk` records now use schema `30.6.interaction-history-fragment.1` and are reconstructed fail-closed in `compile_scan.py`.
+
+## Update — 2026-11-14 — Milestone 4 split-observation ingestion + loadout module
+
+- Generation service split observation support (`tools/lycoles_generation_service.py`):
+  - Added `_collect_observation_inputs(...)` classification for directories, direct files, and split part fragments.
+  - Added deterministic split recombination (`_combine_split_observation_files`) using filename pattern `*_Part_<n>_of_<m>.*` with strict continuity checks.
+  - Added dynamic-observation normalization/materialization (`_normalize_observation_inputs`) that can synthesize bounded feature overlays from `targetedCaptureSession` samples when original `features` are sparse.
+  - `EvidenceBundle` now carries `normalized_observation_paths`; reconciliation call path now prefers normalized files over raw request paths.
+
+- Reconciliation upgrade (`tools/evidence_reconciliation_milestone.py`):
+  - Aggregates targeted `requestProgress` states and missing-evidence maps.
+  - Requirement evaluation now consumes targeted runtime signals for:
+    - `weapon_equipped_signal`, `weapon_state_signal`, `loadout_gui_structures`, `hud_weapon_indicators`, `team_relationship_signal`, and `camera_movement_correlation`.
+  - Capability dependency rules now treat `tool identity resolver` as satisfied when loadout tool signals are present.
+  - Loadout capabilities (`loadout_gui_reader`, `runtime_weapon_state`) can be promoted to `Implementation ready` when targeted loadout snapshots are available.
+
+- Generated gameplay module (`tools/generate_script.py`):
+  - Added first functional gameplay-focused loadout telemetry module integrated into the main generated utility:
+    - new tabs: `Loadout`, `LoadCfg`
+    - runtime sampling of equipped/backpack tools
+    - HUD indicator extraction from evidence-grounded paths
+    - runtime-bound refresh configuration and backpack visibility setting
+    - diagnostics (`changeCount`, evidence snapshot counters)
+    - keybind toggle (`RightShift`)
+  - Updated control layout sizing to accommodate expanded tab set.
+
+- Validation adjustment (`tools/build_release.py`):
+  - Lua validator now requires a minimum of 4 generated controls instead of exactly 4, preserving compatibility with expanded validated modules.
+
+- Regression coverage additions:
+  - `tests/test_lycoles_generation_service.py`: split observation part ingestion + loadout module generation assertions.
+  - `tests/test_evidence_reconciliation_milestone.py`: targeted loadout requirements and `Implementation ready` stage assertions.
+  - `tests/test_generate_script.py`: loadout module/tab/keybind + targeted snapshot hint rendering assertions.
+
+- Verified real-evidence service run:
+  - Real Phantom Forces scan + split observation fragments (derived from authentic combined observation export) successfully processed.
+  - Service emitted warnings for split recombination + synthetic feature overlay generation and produced static-checked release outputs.
+  - Reconciliation summary reported gameplay implementation-ready capabilities including `loadout_information_suite.loadout_gui_reader`.
+
+## Session notes — 2026-11-06 milestone 4.1 request-aligned fulfillment + runtime harness
+
+- Added generated module-contract artifact (`generated-module-contract.json`, schema `30.6.generated-module-contract.1`) from both `tools/generate_script.py` and `tools/build_release.py`.
+- Manifest now includes `generatedModuleContract` metadata (`artifact`, `schemaVersion`, `sha256`, module/evidence summaries, behavior claims).
+- Request alignment in `tools/lycoles_generation_service.py` is now behavior-level (`_assess_request_fulfillment`) instead of workflow-only:
+  - required behaviors derived from request terms (loadout/movement/automatic intent),
+  - behavior coverage sourced from `generated-module-contract` + workflow diagnostics,
+  - offline implementation completeness tracked separately from runtime/gameplay verification,
+  - blocker reports include `requestFulfillment` with missing/evidence-gap/offline-validation-gap behaviors.
+- Generation status rule updated to fail closed for unmet requested behavior coverage while keeping claims runtime/gameplay false.
+- Unified generated GUI categories are now validated across code/tests: `Overview`, `Loadout`, `Movement`, `Settings`, `Diagnostics`.
+- Added offline mocked runtime harness (`tools/generated_runtime_harness.py`) covering initialization, toggles, keybind handling, settings cycles, respawn updates, cleanup, and missing-data handling without claiming live verification.
+- Luau template safety reminder: never use identical replacement token for both LHS and RHS assignment in template placeholders (e.g., `MOVEMENT_HINT_DATA`); use a dedicated placeholder token (e.g., `MOVEMENT_HINT_DATA_TABLE`) to avoid accidental LHS substitution and compile breakage.
+- Validation run after milestone changes:
+  - `python3 -m pytest -q` → **1741 passed, 17 skipped, 79 subtests passed**
+  - `node tests/test_luau_syntax.mjs && node tests/test_receiver.mjs` → pass
+
+## Session notes — 2026-11-06 Milestone 4.2 unified utility architecture (v30.6.68)
+
+- Generated utility GUI ownership is now single-root and contract-registered:
+  - Primary utility must include exactly one ScreenGui root and feature controls via `registerFeatureControl({id=...})`.
+  - Admin Commands GUI remains a separate artifact (`LycolesAdminCommands.lua`) and must not be concatenated into `LycolesGeneratedUtility.lua`.
+- Generated module contract schema advanced to `30.6.generated-module-contract.2`.
+- Request fulfillment schema advanced to `30.6.request-fulfillment.2` with stage-gated semantics:
+  - active-vs-passive request intent separation,
+  - explicit active feature requirement (`activeFeatureRequired`),
+  - `verificationStages` (`codeGenerated`, `offlineContractPassed`, `mockedRuntimeBehaviorPassed`, `liveRuntimeObserved`, `gameplayOutcomeVerified`).
+- Offline completion must fail closed when mocked runtime behavior checks fail (`offline.mocked_runtime_behavior`), preventing text-only toggle regressions from being marked complete.
+- Discovery ranking now includes contract-aware scoring fields (`discoveryScoring`) and penalizes duplicate native functionality while prioritizing functional utility for active requests.
+- `tools/build_release.py` validator expectations changed from legacy `button("...")` tokens to contract registration tokens (`registerFeatureControl({id="..."`) to avoid false validation failures.
+
+## Session notes — 2026-11-14 AI generation integration Milestone 1 foundation (v30.6.68)
+
+- Inspector completion controls now prioritize generation handoff:
+  - replaced `SEND JSON` / `AUTO-SEND` UI controls with `FINISH INSPECTION & GENERATE SCRIPT` and `OPEN GENERATOR`.
+  - manual local export (`SAVE REPORT`) remains available.
+- Added shared generation session/window orchestration with RightShift visibility control and minimize/restore integration across inspector, generator, and results windows.
+- Added mock asynchronous generation backend contract in-inspector with explicit methods for:
+  - inspection submission,
+  - gameplay analysis retrieval,
+  - recommendation retrieval,
+  - generation request,
+  - status polling,
+  - result retrieval,
+  - revision requests.
+- Added explicit Anthropic adapter scaffold metadata (`configured=false`) and credential-safe constraints (no client-side embedded API secrets).
+- Feature recommendations are now derived dynamically from captured `featureEvidence` and readiness blockers; recommendations are labeled as evidence-backed candidates or uncertain, not as verified gameplay.
+- Generated script results support multi-version history, copy/save, revision regeneration from existing evidence, and return-to-generator navigation without rescanning.
+- Rescan flow no longer hard-blocks on unsent parts after removing direct SEND JSON control; old unsent parts are superseded by new scans.
+- Root local pressure remained within Potassium safety budget after scoping generation UI setup into an initializer function.

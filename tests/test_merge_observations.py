@@ -14,8 +14,20 @@ class MergeTests(unittest.TestCase):
           "features":[{"feature":"rebirth","interactionEvents":1,"observedEvents":1,
             "verifiedClientOutcomes":0,"clientCorroboratedEvents":0,
             "temporalTransitionEvents":0,"implementationReady":False}]}
-    def observation(self):
-        return {"integrity":{"scanComplete":True,"placeId":123,"scanId":"delta"},
+    def observation(self,input_mode="local-multipart"):
+        receiver=input_mode=="receiver-import"
+        provenance={"schemaVersion":"30.2.source-provenance.1","inputMode":input_mode,
+          "scanId":"delta","placeId":123,"partCount":2,
+          "receiverStoredPayloadDigestsVerified":receiver,
+          "receiverStoredPayloadDigestsRevalidatedThisRun":receiver,
+          "receiverAcknowledgementDigestEquivalent":False,
+          "receiverIntegrityVerified":receiver,
+          "resumeCheckpointAuthenticated":False,"receiverResponseAuthenticityVerified":False,
+          "localPayloadEquivalent":False,"sourceAuthenticityVerified":False,
+          "causalityProven":False,"serverAuthorityVerified":False,"replayable":False,
+          "gameplayVerified":False,"actionOutcomesVerified":False}
+        return {"integrity":{"scanComplete":True,"placeId":123,"scanId":"delta","parts":2},
+          "sourceProvenance":provenance,
           "sourceDiagnostics":{"scanMode":"dynamic-observations"},
           "features":[{"feature":"rebirth","interactionEvents":2,"observedEvents":2,
             "verifiedClientOutcomes":1,"clientCorroboratedEvents":1,
@@ -27,6 +39,108 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(merged["features"][0]["verifiedClientOutcomes"],1)
         self.assertEqual(b["features"][0]["interactionEvents"],1)
         self.assertFalse(merged["releaseGate"]["gameplayAutomationApproved"])
+        overlay=merged["evidenceOverlays"][0]
+        self.assertEqual(overlay["sourceProvenance"]["scanId"],"delta")
+        self.assertEqual(overlay["sourceProvenance"]["inputMode"],"local-multipart")
+        self.assertFalse(overlay["sourceProvenance"]["sourceAuthenticityVerified"])
+    def test_local_v2_digest_provenance_is_preserved_and_validated(self):
+        observation=self.observation();provenance=observation["sourceProvenance"]
+        provenance.update(schemaVersion="30.2.source-provenance.2",
+            localPartContentDigestsComputed=True,partContentDigests=[
+                {"partIndex":1,"sha256":"1"*64},{"partIndex":2,"sha256":"2"*64}])
+        merged=m.merge_evidence(self.baseline(),[observation])
+        self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["schemaVersion"],
+                         "30.2.source-provenance.2")
+        provenance["partContentDigests"][1]["partIndex"]=1
+        with self.assertRaisesRegex(ValueError,"provenance"):
+            m.merge_evidence(self.baseline(),[observation])
+
+    def test_forged_overlay_provenance_rejected(self):
+        for field in ("gameplayVerified","receiverStoredPayloadDigestsVerified"):
+            with self.subTest(field=field):
+                observation=self.observation()
+                observation["sourceProvenance"][field]=True
+                with self.assertRaisesRegex(ValueError,"provenance"):
+                    m.merge_evidence(self.baseline(),[observation])
+    def test_receiver_overlay_provenance_preserved_separately(self):
+        merged=m.merge_evidence(self.baseline(),[self.observation("receiver-import")])
+        provenance=merged["evidenceOverlays"][0]["sourceProvenance"]
+        self.assertEqual(provenance["inputMode"],"receiver-import")
+        self.assertTrue(provenance["receiverStoredPayloadDigestsVerified"])
+        self.assertFalse(provenance["receiverResponseAuthenticityVerified"])
+    def test_live_observation_export_shape_merges_without_full_rescan(self):
+        obs={
+          "schemaVersion":"30.6.live-observation-export.1",
+          "exportKind":"dynamic-observations",
+          "scanId":"base",
+          "baselineScanId":"base",
+          "integrity":{"scanComplete":True,"placeId":123,"scanId":"live-observation-1","baselineScanId":"base","parts":2,"interactionEvents":3},
+          "sourceDiagnostics":{"scanMode":"dynamic-observations","requiresFullObjectRescan":False,"baselineScanId":"base"},
+          "sourceProvenance":{
+            "schemaVersion":"30.2.source-provenance.1","inputMode":"local-multipart",
+            "scanId":"live-observation-1","placeId":123,"partCount":2,
+            "receiverStoredPayloadDigestsVerified":False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun":False,
+            "receiverAcknowledgementDigestEquivalent":False,
+            "receiverIntegrityVerified":False,
+            "resumeCheckpointAuthenticated":False,
+            "receiverResponseAuthenticityVerified":False,
+            "localPayloadEquivalent":False,
+            "sourceAuthenticityVerified":False,
+            "causalityProven":False,
+            "serverAuthorityVerified":False,
+            "replayable":False,
+            "gameplayVerified":False,
+            "actionOutcomesVerified":False,
+          },
+          "features":[{"feature":"combat","interactionEvents":3,"observedEvents":3,
+            "verifiedClientOutcomes":0,"clientCorroboratedEvents":1,
+            "temporalTransitionEvents":1}],
+        }
+        merged=m.merge_evidence(self.baseline(),[obs])
+        by_feature={item["feature"]:item for item in merged["features"]}
+        self.assertEqual(by_feature["combat"]["interactionEvents"],3)
+        self.assertEqual(by_feature["rebirth"]["interactionEvents"],1)
+        self.assertEqual(merged["evidenceOverlays"][0]["scanId"],"live-observation-1")
+        self.assertEqual(merged["evidenceOverlays"][0]["sourceProvenance"]["inputMode"],"local-multipart")
+
+    def test_overlay_interactions_are_merged_into_history_and_diagnostics(self):
+        b=self.baseline()
+        b["interactionDiagnostics"]={"stateDeltaEvents":0,"recentInteractions":[]}
+        b["observedInteractionHistory"]=[]
+        observation=self.observation()
+        observation["interactionDiagnostics"]={
+            "stateDeltaEvents":3,
+            "guiStateObservation":{"transitionsCaptured":4},
+            "recentInteractions":[
+                {"path":"LocalPlayer.Backpack.Weight","controlType":"Tool.Activated","stateChanges":[{"key":"A","before":1,"after":2}]},
+                {"path":"PlayerGui.Shop.Buy","controlType":"GuiButton.Activated","stateChanges":[]},
+            ],
+        }
+        merged=m.merge_evidence(b,[observation])
+        self.assertEqual(len(merged["observedInteractionHistory"]),2)
+        self.assertEqual(merged["interactionDiagnostics"]["historyTotal"],2)
+        self.assertEqual(merged["interactionDiagnostics"]["stateDeltaEvents"],3)
+        self.assertEqual(merged["interactionDiagnostics"]["guiStateObservation"]["transitionsCaptured"],4)
+        self.assertEqual(merged["interactionObservationSummary"]["mergedOverlayInteractionEvents"],2)
+        self.assertEqual(merged["interactionObservationSummary"]["duplicateOverlayInteractionEventsSkipped"],0)
+
+    def test_overlay_interaction_deduplication_avoids_double_counting(self):
+        b=self.baseline()
+        b["interactionDiagnostics"]={"stateDeltaEvents":0,"recentInteractions":[]}
+        b["observedInteractionHistory"]=[]
+        event={"path":"LocalPlayer.Backpack.Weight","controlType":"Tool.Activated","stateChanges":[{"key":"A","before":1,"after":2}]}
+        one=self.observation()
+        one["interactionDiagnostics"]={"stateDeltaEvents":1,"recentInteractions":[event]}
+        two=self.observation()
+        two["integrity"]["scanId"]="delta-2"
+        two["sourceProvenance"]["scanId"]="delta-2"
+        two["interactionDiagnostics"]={"stateDeltaEvents":1,"recentInteractions":[event]}
+        merged=m.merge_evidence(b,[one,two])
+        self.assertEqual(len(merged["observedInteractionHistory"]),1)
+        self.assertEqual(merged["interactionObservationSummary"]["mergedOverlayInteractionEvents"],1)
+        self.assertEqual(merged["interactionObservationSummary"]["duplicateOverlayInteractionEventsSkipped"],1)
+
     def test_duplicate_rejected(self):
         with self.assertRaises(ValueError):
             m.merge_evidence(self.baseline(),[self.observation(),self.observation()])

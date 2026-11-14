@@ -10,7 +10,16 @@ def fixture():
 class V54(unittest.TestCase):
  def test_generator(self):
   s=generate(3623096087)
-  for token in ('LYCOLES_V54_CHUNK','orderedChildren','perRoot','game.PlaceId~=3623096087','clientReceiptUntrusted=true'):self.assertIn(token,s)
+  for token in ('LYCOLES_V54_BATCH_STREAM_BEGIN','LYCOLES_V54_BATCH','MAX_BATCH_CHARS','orderedChildren','perRoot','game.PlaceId~=3623096087'):self.assertIn(token,s)
+  self.assertNotIn('FireServer',s)
+ def test_batch_stream(self):
+  observations=fixture()["observations"]
+  lines=["LYCOLES_V54_BATCH_STREAM_BEGIN 3623096087 2"]
+  for sample in observations:
+   index=sample["index"]
+   lines.extend((f"LYCOLES_V54_BATCH_BEGIN {index} 1",f"LYCOLES_V54_BATCH {index}/1/1 "+json.dumps(sample),f"LYCOLES_V54_BATCH_END {index}"))
+  lines.append("LYCOLES_V54_BATCH_STREAM_END")
+  self.assertEqual(parse_receipt("\n".join(lines)),fixture())
  def test_bounds(self):
   for args in ({"samples":25},{"interval":0},{"cap":100}):
    with self.assertRaises(ValueError):generate(123,**args)

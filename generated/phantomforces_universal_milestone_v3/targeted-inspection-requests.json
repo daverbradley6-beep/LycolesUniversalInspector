@@ -1,0 +1,274 @@
+{
+  "placeId": 292439477,
+  "requestCount": 4,
+  "requests": [
+    {
+      "capabilityIds": [
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements"
+      ],
+      "classes": [
+        "Player",
+        "Model",
+        "Humanoid",
+        "HumanoidRootPart"
+      ],
+      "completionCriteria": [
+        "non-local-player-entity-observed",
+        "team-signal-observed",
+        "health-and-position-samples-captured"
+      ],
+      "conditions": [
+        "client-visible-only",
+        "bounded",
+        "non-authoritative"
+      ],
+      "events": [
+        "PlayerAdded",
+        "PlayerRemoving",
+        "CharacterAdded",
+        "CharacterRemoving"
+      ],
+      "expectedOutputSchema": "31.0.targeted-evidence-session.1.character-entities",
+      "failureConditions": [
+        "no-character-entities",
+        "session-duration-exceeded"
+      ],
+      "featureIds": [
+        "esp_player_overlay"
+      ],
+      "maxDurationSeconds": 240,
+      "missingEvidence": [
+        "player_entity_set",
+        "team_relationship_signal"
+      ],
+      "properties": [
+        "Health",
+        "MaxHealth",
+        "Position",
+        "Team",
+        "TeamColor"
+      ],
+      "provenance": {
+        "authority": "non-authoritative",
+        "source": "client-observation"
+      },
+      "requestId": "character-entity-observation",
+      "requiredEvidence": [
+        "player_entity_set",
+        "team_relationship_signal",
+        "character_spatial_positions",
+        "health_signal_count"
+      ],
+      "sampling": {
+        "intervalSeconds": 0.5,
+        "maxSamples": 420
+      },
+      "services": [
+        "Players",
+        "Teams",
+        "Workspace"
+      ],
+      "targetFeatureCapabilityPairs": [],
+      "whyNeeded": "Targeting and ESP capabilities require opponent entity, team, and spatial evidence."
+    },
+    {
+      "capabilityIds": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_trigger_assist.crosshair_fire_condition"
+      ],
+      "classes": [
+        "Camera",
+        "Tool",
+        "Humanoid",
+        "Backpack"
+      ],
+      "completionCriteria": [
+        "camera-samples-captured",
+        "primary-input-observed",
+        "equipped-tool-state-observed",
+        "temporal-correlation-sampled"
+      ],
+      "conditions": [
+        "no-synthetic-fire-events",
+        "no-remote-invocation",
+        "non-authoritative"
+      ],
+      "events": [
+        "InputBegan",
+        "InputEnded",
+        "Tool.Equipped",
+        "Tool.Unequipped"
+      ],
+      "expectedOutputSchema": "31.0.targeted-evidence-session.1.combat-camera",
+      "failureConditions": [
+        "camera-unavailable",
+        "session-duration-exceeded"
+      ],
+      "featureIds": [
+        "combat_recoil_assist",
+        "combat_trigger_assist"
+      ],
+      "maxDurationSeconds": 240,
+      "missingEvidence": [
+        "camera_state_samples",
+        "camera_movement_correlation",
+        "weapon_state_signal",
+        "weapon_equipped_signal"
+      ],
+      "properties": [
+        "CFrame",
+        "LookVector",
+        "Tool.Name",
+        "MoveDirection"
+      ],
+      "provenance": {
+        "authority": "non-authoritative",
+        "source": "client-observation"
+      },
+      "requestId": "combat-camera-weapon-correlation",
+      "requiredEvidence": [
+        "camera_state_samples",
+        "camera_movement_correlation",
+        "weapon_state_signal",
+        "weapon_equipped_signal",
+        "mouse_primary_input"
+      ],
+      "sampling": {
+        "intervalSeconds": 0.2,
+        "maxSamples": 900
+      },
+      "services": [
+        "Workspace",
+        "UserInputService",
+        "Players"
+      ],
+      "targetFeatureCapabilityPairs": [],
+      "whyNeeded": "Recoil and trigger capabilities require camera/weapon temporal evidence, not click-only signals."
+    },
+    {
+      "capabilityIds": [
+        "objective_status_dashboard.match_state_signals"
+      ],
+      "classes": [
+        "ScreenGui",
+        "TextLabel",
+        "TextButton"
+      ],
+      "completionCriteria": [
+        "objective-gui-signals-captured",
+        "at-least-one-transition-observed"
+      ],
+      "conditions": [
+        "gui-state-observation-only",
+        "non-authoritative"
+      ],
+      "events": [
+        "PropertyChangedSignal.Text",
+        "PropertyChangedSignal.Visible"
+      ],
+      "expectedOutputSchema": "31.0.targeted-evidence-session.1.match-state",
+      "failureConditions": [
+        "no-objective-gui-signals",
+        "session-duration-exceeded"
+      ],
+      "featureIds": [
+        "objective_status_dashboard"
+      ],
+      "maxDurationSeconds": 240,
+      "missingEvidence": [
+        "objective_hud_signals"
+      ],
+      "properties": [
+        "Text",
+        "Visible",
+        "Enabled"
+      ],
+      "provenance": {
+        "authority": "non-authoritative",
+        "source": "client-observation"
+      },
+      "requestId": "match-objective-state-observation",
+      "requiredEvidence": [
+        "objective_hud_signals",
+        "state_change_signals"
+      ],
+      "sampling": {
+        "intervalSeconds": 0.6,
+        "maxSamples": 520
+      },
+      "services": [
+        "Players",
+        "StarterGui"
+      ],
+      "targetFeatureCapabilityPairs": [],
+      "whyNeeded": "Objective dashboard capability requires reactive state transitions, not static HUD paths."
+    },
+    {
+      "capabilityIds": [
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state"
+      ],
+      "classes": [
+        "Backpack",
+        "Tool",
+        "ScreenGui",
+        "TextLabel"
+      ],
+      "completionCriteria": [
+        "backpack-or-equipped-tools-observed",
+        "hud-weapon-label-observed"
+      ],
+      "conditions": [
+        "client-visible-loadout-only",
+        "non-authoritative"
+      ],
+      "events": [
+        "Backpack.ChildAdded",
+        "Backpack.ChildRemoved",
+        "Tool.Equipped",
+        "Tool.Unequipped"
+      ],
+      "expectedOutputSchema": "31.0.targeted-evidence-session.1.loadout-runtime",
+      "failureConditions": [
+        "no-tool-evidence",
+        "session-duration-exceeded"
+      ],
+      "featureIds": [
+        "loadout_information_suite"
+      ],
+      "maxDurationSeconds": 240,
+      "missingEvidence": [
+        "weapon_equipped_signal",
+        "hud_weapon_indicators"
+      ],
+      "properties": [
+        "Tool.Name",
+        "Tool.Attributes",
+        "Text",
+        "Visible"
+      ],
+      "provenance": {
+        "authority": "non-authoritative",
+        "source": "client-observation"
+      },
+      "requestId": "loadout-runtime-observation",
+      "requiredEvidence": [
+        "weapon_equipped_signal",
+        "hud_weapon_indicators",
+        "loadout_gui_structures"
+      ],
+      "sampling": {
+        "intervalSeconds": 0.45,
+        "maxSamples": 420
+      },
+      "services": [
+        "Players",
+        "ReplicatedStorage"
+      ],
+      "targetFeatureCapabilityPairs": [],
+      "whyNeeded": "Loadout runtime indicators require equipped-weapon and HUD linkage evidence."
+    }
+  ],
+  "schemaVersion": "122.targeted-inspection-requests.1"
+}
