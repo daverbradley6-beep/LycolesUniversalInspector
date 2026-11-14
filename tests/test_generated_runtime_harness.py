@@ -63,11 +63,15 @@ class RuntimeHarnessTests(unittest.TestCase):
         movement = harness.toggle_movement(player)
         self.assertTrue(loadout["enabled"])
         self.assertTrue(movement["enabled"])
+        self.assertTrue(movement["telemetryEnabled"])
+        self.assertTrue(movement["focusAssistEnabled"])
+        self.assertEqual(movement["currentFov"], float(harness.movement.focus_target_fov))
         self.assertGreaterEqual(harness.connection_count, 2)
 
         settings = harness.apply_settings_cycle()
         self.assertIn(settings["loadoutRefresh"], HARNESS.LOADOUT_REFRESH_OPTIONS)
         self.assertIn(settings["movementRefresh"], HARNESS.MOVEMENT_REFRESH_OPTIONS)
+        self.assertIn(settings["movementFocusTargetFov"], HARNESS.FOCUS_FOV_OPTIONS)
 
         key_target = harness.handle_keybind(player, harness.loadout.keybind)
         self.assertEqual(key_target, "loadout")
@@ -85,6 +89,9 @@ class RuntimeHarnessTests(unittest.TestCase):
         cleaned = harness.cleanup()
         self.assertFalse(cleaned["loadoutEnabled"])
         self.assertFalse(cleaned["movementEnabled"])
+        self.assertFalse(cleaned["movementTelemetryEnabled"])
+        self.assertFalse(cleaned["movementFocusAssistEnabled"])
+        self.assertEqual(cleaned["movementCurrentFov"], harness.movement.baseline_fov)
         self.assertEqual(cleaned["connectionCount"], 0)
 
     def test_missing_data_handling(self):
@@ -93,6 +100,9 @@ class RuntimeHarnessTests(unittest.TestCase):
         player = HARNESS.MockPlayer(character=None)
         movement = harness.toggle_movement(player)
         self.assertTrue(isinstance(movement["enabled"], bool))
+        self.assertEqual(movement["enabled"], movement["telemetryEnabled"])
+        movement_off = harness.toggle_movement(player)
+        self.assertEqual(movement_off["enabled"], movement_off["telemetryEnabled"])
         self.assertEqual(harness.handle_keybind(player, "Unknown"), "none")
 
 

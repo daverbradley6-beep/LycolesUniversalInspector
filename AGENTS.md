@@ -1069,3 +1069,17 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Validation run after milestone changes:
   - `python3 -m pytest -q` → **1741 passed, 17 skipped, 79 subtests passed**
   - `node tests/test_luau_syntax.mjs && node tests/test_receiver.mjs` → pass
+
+## Session notes — 2026-11-06 Milestone 4.2 unified utility architecture (v30.6.68)
+
+- Generated utility GUI ownership is now single-root and contract-registered:
+  - Primary utility must include exactly one ScreenGui root and feature controls via `registerFeatureControl({id=...})`.
+  - Admin Commands GUI remains a separate artifact (`LycolesAdminCommands.lua`) and must not be concatenated into `LycolesGeneratedUtility.lua`.
+- Generated module contract schema advanced to `30.6.generated-module-contract.2`.
+- Request fulfillment schema advanced to `30.6.request-fulfillment.2` with stage-gated semantics:
+  - active-vs-passive request intent separation,
+  - explicit active feature requirement (`activeFeatureRequired`),
+  - `verificationStages` (`codeGenerated`, `offlineContractPassed`, `mockedRuntimeBehaviorPassed`, `liveRuntimeObserved`, `gameplayOutcomeVerified`).
+- Offline completion must fail closed when mocked runtime behavior checks fail (`offline.mocked_runtime_behavior`), preventing text-only toggle regressions from being marked complete.
+- Discovery ranking now includes contract-aware scoring fields (`discoveryScoring`) and penalizes duplicate native functionality while prioritizing functional utility for active requests.
+- `tools/build_release.py` validator expectations changed from legacy `button("...")` tokens to contract registration tokens (`registerFeatureControl({id="..."`) to avoid false validation failures.

@@ -593,8 +593,11 @@ def build_generated_module_contract(plan,generation_readiness=None):
 
     loadout_supported=snapshot["loadoutEvidenceAvailable"]
     movement_supported=snapshot["movementEvidenceAvailable"]
+    movement_focus_supported=snapshot["cameraSampleCount"]>0
 
     behavior={
+        "ui.single_root_window": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
+        "ui.contract_registered_controls": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
         "ui.unified_categories": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
         "loadout.detect_equipped_tools": {"generated":True,"evidenceSupported":loadout_supported,"offlineValidated":True},
         "loadout.track_backpack_changes": {"generated":True,"evidenceSupported":loadout_supported,"offlineValidated":True},
@@ -612,6 +615,9 @@ def build_generated_module_contract(plan,generation_readiness=None):
         "movement.state_diagnostics": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
         "movement.grounded_airborne_status": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
         "movement.telemetry_updates": {"generated":True,"evidenceSupported":movement_supported,"offlineValidated":True},
+        "movement.functional_focus_toggle": {"generated":True,"evidenceSupported":movement_focus_supported,"offlineValidated":True},
+        "movement.functional_focus_restore": {"generated":True,"evidenceSupported":movement_focus_supported,"offlineValidated":True},
+        "movement.functional_control_binding": {"generated":True,"evidenceSupported":movement_focus_supported,"offlineValidated":True},
         "movement.configurable_refresh": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
         "movement.enable_disable": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
         "movement.respawn_recovery": {"generated":True,"evidenceSupported":True,"offlineValidated":True},
@@ -620,35 +626,89 @@ def build_generated_module_contract(plan,generation_readiness=None):
         "workflow.request_aligned_executable": {"generated":False,"evidenceSupported":False,"offlineValidated":False},
     }
 
+    feature_contracts=[
+        {
+            "featureId":"loadout_telemetry_reader",
+            "featureType":"passive-telemetry",
+            "playerGoal":"Observe current equipped and backpack tools in one place",
+            "gameMechanic":"Client-visible tool inventory and HUD hint text",
+            "userVisibleAction":"Open Loadout category and optionally enable updates",
+            "runtimeInputs":["LocalPlayer.Character","LocalPlayer.Backpack","PlayerGui HUD hint paths"],
+            "behaviorImplementation":"Snapshot reads with bounded periodic refresh and respawn-aware state",
+            "observableOutcome":"Panel lines update when tools or hint text changes",
+            "guiControl":{"category":"Loadout","control":"toggle"},
+            "controlToBehaviorBinding":"Loadout control toggles loadout module loop",
+            "lifecycle":["register","initialize","enable","update","disable","destroy"],
+            "evidenceRequirements":["loadout hint path or loadout snapshot evidence"],
+            "validationProcedure":"offline-contract-and-mocked-runtime",
+            "duplicatesNativeFunctionalityLikely":True,
+            "duplicateRationale":"Many games already show equipped weapon/tool in HUD",
+            "availability":loadout_supported,
+        },
+        {
+            "featureId":"movement_focus_assist",
+            "featureType":"functional-utility",
+            "playerGoal":"Improve short-term aiming clarity with a reversible local focus view",
+            "gameMechanic":"Local camera FieldOfView adjustment",
+            "userVisibleAction":"Toggle Movement focus assist from GUI or keybind",
+            "runtimeInputs":["Workspace.CurrentCamera","movement evidence samples"],
+            "behaviorImplementation":"Apply target FOV when enabled and restore original FOV when disabled",
+            "observableOutcome":"Visible zoom/focus change when enabled and restoration on disable",
+            "guiControl":{"category":"Movement","control":"toggle"},
+            "controlToBehaviorBinding":"Movement control toggles focus-assist lifecycle",
+            "lifecycle":["register","initialize","enable","update","disable","destroy"],
+            "evidenceRequirements":["camera sample evidence"],
+            "validationProcedure":"offline-contract-and-mocked-runtime-then-live-potassium",
+            "duplicatesNativeFunctionalityLikely":False,
+            "availability":movement_focus_supported,
+            "blockers":([] if movement_focus_supported else ["camera samples unavailable in evidence"]),
+        },
+    ]
+
+    type_counts={
+        "diagnostic":2,
+        "passive-telemetry":1,
+        "functional-utility":1,
+        "gameplay-affecting":0,
+    }
+
     return {
-        "schemaVersion":"30.6.generated-module-contract.1",
+        "schemaVersion":"30.6.generated-module-contract.2",
         "request":request,
         "requestReadinessStatus":readiness_status,
         "modules":{
-            "overview":{"generated":True,"runtimeVerified":False},
+            "overview":{"generated":True,"classification":"diagnostic","runtimeVerified":False},
             "loadout":{
                 "generated":True,
+                "classification":"passive-telemetry",
                 "evidenceAvailable":loadout_supported,
                 "refreshOptionsSeconds":[0.1,0.2,0.5,1.0],
                 "defaultKeybind":"RightShift",
                 "snapshotCount":snapshot["loadoutSnapshotCount"],
+                "nativeDuplicateRisk":"high",
             },
             "movement":{
                 "generated":True,
+                "classification":"functional-utility",
                 "evidenceAvailable":movement_supported,
+                "focusAssistAvailable":movement_focus_supported,
                 "refreshOptionsSeconds":[0.1,0.2,0.5,1.0],
                 "defaultKeybind":"RightControl",
                 "cameraSampleCount":snapshot["cameraSampleCount"],
                 "inputSampleCount":snapshot["inputSampleCount"],
                 "movementActionCounts":snapshot["movementActionCounts"],
             },
-            "settings":{"generated":True,"themes":["Graphite","Slate","Silver","Custom"]},
-            "diagnostics":{"generated":True,"runtimeVerified":False},
+            "settings":{"generated":True,"classification":"functional-utility","themes":["Graphite","Slate","Silver","Custom"]},
+            "diagnostics":{"generated":True,"classification":"diagnostic","runtimeVerified":False},
         },
+        "featureContracts":feature_contracts,
+        "featureTypeSummary":type_counts,
         "behaviorCoverage":behavior,
         "offlineValidation":{
             "syntaxValidated":True,
             "guiInitialized":True,
+            "singleRootGuiValidated":True,
+            "contractControlRegistrationValidated":True,
             "togglePathsValidated":True,
             "cleanupPathValidated":True,
         },
@@ -890,8 +950,14 @@ local loadoutModule = {
 }
 local movementModule = {
     enabled = false,
+    telemetryEnabled = false,
+    functionalAvailable = MOVEMENT_HINT_DATA.cameraSampleCount > 0,
+    focusAssistEnabled = false,
     refreshSeconds = 0.2,
     keybind = Enum.KeyCode.RightControl,
+    focusTargetFov = 70,
+    baselineFov = nil,
+    focusEffectApplied = false,
     changeCount = 0,
     lastHash = "",
     lastSnapshotLines = {"No movement snapshot yet."},
@@ -1087,7 +1153,11 @@ local function rebuildMovementSnapshotLines()
         "Movement action hints: " .. tostring(MOVEMENT_HINT_DATA.movementActionCounts and (MOVEMENT_HINT_DATA.movementActionCounts.sprint or 0) or 0)
             .. " sprint, " .. tostring(MOVEMENT_HINT_DATA.movementActionCounts and (MOVEMENT_HINT_DATA.movementActionCounts.jump or 0) or 0) .. " jump",
         "Signal path count: " .. tostring(MOVEMENT_HINT_DATA.movementSignalPathCount),
-        "Telemetry enabled: " .. tostring(movementModule.enabled),
+        "Module enabled: " .. tostring(movementModule.enabled),
+        "Telemetry enabled: " .. tostring(movementModule.telemetryEnabled),
+        "Focus assist enabled: " .. tostring(movementModule.focusAssistEnabled),
+        "Focus target FOV: " .. tostring(movementModule.focusTargetFov),
+        "Focus effect applied: " .. tostring(movementModule.focusEffectApplied),
         "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
         "Keybind toggle: " .. tostring(movementModule.keybind.Name),
         "Detected movement changes: " .. tostring(movementModule.changeCount),
@@ -1116,13 +1186,51 @@ local function rebuildMovementSnapshotLines()
     movementModule.lastSnapshotLines = lines
 end
 
+local function currentCamera()
+    return workspace and workspace.CurrentCamera or nil
+end
+
+local function applyMovementFocusAssist(enabled)
+    local camera = currentCamera()
+    if not camera then
+        movementModule.focusEffectApplied = false
+        return false, "CurrentCamera unavailable"
+    end
+    if enabled then
+        if type(movementModule.baselineFov) ~= "number" then
+            movementModule.baselineFov = camera.FieldOfView
+        end
+        camera.FieldOfView = movementModule.focusTargetFov
+        movementModule.focusEffectApplied = true
+        return true, "Focus assist applied (FOV=" .. tostring(movementModule.focusTargetFov) .. ")"
+    end
+    if type(movementModule.baselineFov) == "number" then
+        camera.FieldOfView = movementModule.baselineFov
+    end
+    movementModule.focusEffectApplied = false
+    return true, "Focus assist restored to baseline"
+end
+
+local function setMovementEnabled(enabled)
+    local nextEnabled = enabled == true
+    movementModule.enabled = nextEnabled
+    movementModule.telemetryEnabled = nextEnabled
+    movementModule.focusAssistEnabled = nextEnabled
+    local ok, message = applyMovementFocusAssist(nextEnabled)
+    if not ok then
+        movementModule.focusAssistEnabled = false
+    end
+    rebuildMovementSnapshotLines()
+    return ok, message
+end
+
 local function ensureMovementLoop()
     if typeof(movementConnection) == "RBXScriptConnection" then
         return
     end
     local elapsed = 0
     movementConnection = RunService.Heartbeat:Connect(function(delta)
-        if not alive or not movementModule.enabled then
+        if not alive or not movementModule.telemetryEnabled then
             return
         end
         elapsed = elapsed + (tonumber(delta) or 0)
@@ -1516,6 +1624,10 @@ local function show(title,lines)
     output.Text=title.."\\n\\n"..table.concat(lines,"\\n")
 end
 local settingsCycle = 0
+local FOCUS_FOV_OPTIONS = {65, 70, 75, 80}
+local focusFovIndex = 2
+local FEATURE_CONTROL_CONTRACTS = {}
+
 local function button(name,callback)
     local b=Instance.new("TextButton",tabs)
     b.Size=UDim2.new(0.19,-4,1,0)
@@ -1529,7 +1641,18 @@ local function button(name,callback)
         if not ok then show(name.." failed",{tostring(err)}) end
     end))
 end
-button("Overview",function()
+
+local function registerFeatureControl(contract)
+    if type(contract) ~= "table" then
+        return
+    end
+    if type(contract.id) ~= "string" or contract.id == "" then
+        return
+    end
+    FEATURE_CONTROL_CONTRACTS[#FEATURE_CONTROL_CONTRACTS + 1] = contract
+end
+
+local function runOverviewFeature()
     local lines={
         "Requested capability supplied: "..tostring(#REQUEST_STATUS_LINES > 0),
         "Loadout evidence available: "..tostring(LOADOUT_SNAPSHOT_COUNT > 0 or #LOADOUT_HINT_PATHS > 0),
@@ -1549,8 +1672,9 @@ button("Overview",function()
     end
     if #lines<=6 then lines[#lines+1]="No replicated numeric stats found." end
     show("Overview",lines)
-end)
-button("Loadout",function()
+end
+
+local function runLoadoutFeature()
     if LOADOUT_SNAPSHOT_COUNT <= 0 and #LOADOUT_HINT_PATHS == 0 then
         show("Loadout telemetry unavailable",{
             "No loadout runtime evidence was captured in this dataset.",
@@ -1560,10 +1684,9 @@ button("Loadout",function()
     end
     ensureLoadoutLoop()
     loadoutModule.enabled = not loadoutModule.enabled
-    if loadoutModule.enabled then
-        rebuildLoadoutSnapshotLines()
-    end
+    rebuildLoadoutSnapshotLines()
     local lines = {
+        "Feature type: passive telemetry",
         "Loadout module enabled: " .. tostring(loadoutModule.enabled),
         "Toggle keybind: " .. tostring(loadoutModule.keybind.Name),
         "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
@@ -1573,47 +1696,69 @@ button("Loadout",function()
         lines[#lines + 1] = line
     end
     show("Loadout telemetry", lines)
-end)
-button("Movement",function()
-    ensureMovementLoop()
-    movementModule.enabled = not movementModule.enabled
-    if movementModule.enabled then
-        rebuildMovementSnapshotLines()
+end
+
+local function runMovementFeature()
+    if not movementModule.functionalAvailable then
+        setMovementEnabled(false)
+        show("Movement focus assist unavailable", {
+            "No camera evidence samples were available for this run.",
+            "Capture movement-camera evidence and regenerate for focus assist.",
+        })
+        return
     end
+    ensureMovementLoop()
+    local ok, message = setMovementEnabled(not movementModule.enabled)
     local lines = {
+        "Feature type: functional utility",
         "Movement module enabled: " .. tostring(movementModule.enabled),
+        "Telemetry enabled: " .. tostring(movementModule.telemetryEnabled),
+        "Focus assist enabled: " .. tostring(movementModule.focusAssistEnabled),
         "Toggle keybind: " .. tostring(movementModule.keybind.Name),
-        "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+        "Target FOV: " .. tostring(movementModule.focusTargetFov),
+        "Effect message: " .. tostring(message),
         "",
     }
+    if not ok then
+        lines[#lines + 1] = "Focus assist could not be applied for this camera state."
+        lines[#lines + 1] = "The module remains telemetry-only until camera becomes available."
+    end
     for _,line in ipairs(movementModule.lastSnapshotLines) do
         lines[#lines + 1] = line
     end
-    show("Movement telemetry", lines)
-end)
-button("Settings",function()
+    show("Movement focus assist", lines)
+end
+
+local function runSettingsFeature()
     settingsCycle = settingsCycle + 1
     local loadIndex = ((settingsCycle - 1) % #LOADOUT_REFRESH_OPTIONS) + 1
     local moveIndex = ((settingsCycle - 1) % #MOVEMENT_REFRESH_OPTIONS) + 1
+    focusFovIndex = ((focusFovIndex) % #FOCUS_FOV_OPTIONS) + 1
     loadoutModule.refreshSeconds = LOADOUT_REFRESH_OPTIONS[loadIndex]
     movementModule.refreshSeconds = MOVEMENT_REFRESH_OPTIONS[moveIndex]
+    movementModule.focusTargetFov = FOCUS_FOV_OPTIONS[focusFovIndex]
     loadoutModule.includeBackpack = not loadoutModule.includeBackpack
     loadoutModule.keybind = cycleKeybind(LOADOUT_KEYBIND_OPTIONS, loadoutModule.keybind)
     movementModule.keybind = cycleKeybind(MOVEMENT_KEYBIND_OPTIONS, movementModule.keybind)
     local nextTheme = cycleTheme()
+    if movementModule.focusAssistEnabled then
+        applyMovementFocusAssist(true)
+    end
     rebuildLoadoutSnapshotLines()
     rebuildMovementSnapshotLines()
     show("Settings", {
         "Theme preset: " .. nextTheme,
         "Loadout refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
         "Movement refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+        "Movement focus target FOV: " .. tostring(movementModule.focusTargetFov),
         "Loadout keybind: " .. tostring(loadoutModule.keybind.Name),
         "Movement keybind: " .. tostring(movementModule.keybind.Name),
         "Backpack visibility in loadout panel: " .. tostring(loadoutModule.includeBackpack),
         "Graphite / Slate / Silver / Custom theme compatibility enabled.",
     })
-end)
-button("Diagnostics",function()
+end
+
+local function runDiagnosticsFeature()
     local candidates=FEATURE_NAMES
     local provenance=SOURCE_PROVENANCE_LINES
     local gameplay=GAMEPLAY_UNDERSTANDING_LINES
@@ -1654,7 +1799,24 @@ button("Diagnostics",function()
     lines[#lines+1]=""
     for i=1,math.min(6,#candidates) do lines[#lines+1]=candidates[i] end
     show("Diagnostics",lines)
-end)
+end
+
+registerFeatureControl({id="overview",label="Overview",classification="diagnostic",handler=runOverviewFeature})
+registerFeatureControl({id="loadout",label="Loadout",classification="passive-telemetry",handler=runLoadoutFeature})
+registerFeatureControl({id="movement_focus_assist",label="Movement",classification="functional-utility",handler=runMovementFeature})
+registerFeatureControl({id="settings",label="Settings",classification="functional-utility",handler=runSettingsFeature})
+registerFeatureControl({id="diagnostics",label="Diagnostics",classification="diagnostic",handler=runDiagnosticsFeature})
+
+for _,contract in ipairs(FEATURE_CONTROL_CONTRACTS) do
+    button(contract.label,function()
+        local handler=contract.handler
+        if type(handler)~="function" then
+            show(contract.label.." unavailable",{"No handler registered for this control contract."})
+            return
+        end
+        handler()
+    end)
+end
 applyTheme(activeThemeName)
 local dragging,dragInput,dragStart,startPos=false,nil,nil,nil
 table.insert(connections,heading.InputBegan:Connect(function(input)
@@ -1685,10 +1847,9 @@ table.insert(connections,UserInputService.InputBegan:Connect(function(input, gam
         end
         ensureLoadoutLoop()
         loadoutModule.enabled = not loadoutModule.enabled
-        if loadoutModule.enabled then
-            rebuildLoadoutSnapshotLines()
-        end
+        rebuildLoadoutSnapshotLines()
         local lines = {
+            "Feature type: passive telemetry",
             "Loadout module enabled: " .. tostring(loadoutModule.enabled),
             "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
             "Include backpack tools: " .. tostring(loadoutModule.includeBackpack),
@@ -1701,25 +1862,42 @@ table.insert(connections,UserInputService.InputBegan:Connect(function(input, gam
         return
     end
     if input.KeyCode == movementModule.keybind then
-        ensureMovementLoop()
-        movementModule.enabled = not movementModule.enabled
-        if movementModule.enabled then
-            rebuildMovementSnapshotLines()
+        if not movementModule.functionalAvailable then
+            show("Movement focus assist unavailable", {
+                "No camera evidence samples were available for this run.",
+                "Capture movement-camera evidence and regenerate for focus assist.",
+            })
+            return
         end
+        ensureMovementLoop()
+        local ok, message = setMovementEnabled(not movementModule.enabled)
         local lines = {
+            "Feature type: functional utility",
             "Movement module enabled: " .. tostring(movementModule.enabled),
+            "Telemetry enabled: " .. tostring(movementModule.telemetryEnabled),
+            "Focus assist enabled: " .. tostring(movementModule.focusAssistEnabled),
             "Refresh seconds: " .. string.format("%.2f", movementModule.refreshSeconds),
+            "Target FOV: " .. tostring(movementModule.focusTargetFov),
+            "Effect message: " .. tostring(message),
             "",
         }
+        if not ok then
+            lines[#lines + 1] = "Focus assist could not be applied for this camera state."
+        end
         for _,line in ipairs(movementModule.lastSnapshotLines) do
             lines[#lines + 1] = line
         end
-        show("Movement telemetry", lines)
+        show("Movement focus assist", lines)
     end
 end))
 _G.LycolesGeneratedClose=function()
     if not alive then return end
     alive=false
+    pcall(function()
+        setMovementEnabled(false)
+        loadoutModule.enabled = false
+        rebuildLoadoutSnapshotLines()
+    end)
     for _,c in ipairs(connections) do pcall(function() c:Disconnect() end) end
     gui:Destroy()
     _G.LycolesGeneratedClose=nil
@@ -1728,6 +1906,7 @@ table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesGeneratedClos
 show("Ready",{
     "Validated scan inventory loaded.",
     "Unified categories: Overview, Loadout, Movement, Settings, Diagnostics.",
+    "Movement focus assist: " .. tostring(movementModule.functionalAvailable and "available" or "blocked by missing camera evidence") .. ".",
     "Loadout keybind: " .. tostring(loadoutModule.keybind.Name) .. ".",
     "Movement keybind: " .. tostring(movementModule.keybind.Name) .. ".",
     "Gameplay automation and outcomes remain unverified.",
@@ -1788,12 +1967,12 @@ def main():
         admin_lua=admin_generator.render(
             plan["integrity"]["placeId"],understanding,generation_readiness)
         lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
-            +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
+            +(guided_workflow_lua+"\n" if guided_workflow_lua else ""))
         result_builder=load_local_module("lycoles_generated_result","generated_result.py")
         generated_result=result_builder.build(plan["integrity"]["placeId"],
             plan["integrity"].get("scanId","standalone"),lua,plan.get("requestedCapability"),
             {"placeGuard":True,"note":"Generator structural contract; not live runtime validation"},
-            list(ALLOWED_FEATURES)+["Admin Commands"]+
+            list(ALLOWED_FEATURES)+
                 (["Prompt Interactions"] if prompt_trial_generated else [])+
                 (["Tool Activation Trial"] if tool_trial_generated else [])+
                 (["Guided GUI Trial"] if gui_trial_generated else [])+

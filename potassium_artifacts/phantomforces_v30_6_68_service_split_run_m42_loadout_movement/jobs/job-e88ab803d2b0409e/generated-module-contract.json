@@ -1,0 +1,294 @@
+{
+  "behaviorCoverage": {
+    "loadout.cleanup_connections": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.configurable_refresh": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.detect_equipped_tools": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.detect_weapon_changes": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.display_information": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.enable_disable": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.keybind_toggle": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.missing_info_handling": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.periodic_updates": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.read_hud_indicators": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.respawn_recovery": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.track_backpack_changes": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.cleanup_connections": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.configurable_refresh": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.enable_disable": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.functional_control_binding": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.functional_focus_restore": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.functional_focus_toggle": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.grounded_airborne_status": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.keybind_toggle": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.respawn_recovery": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.speed_diagnostics": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.state_diagnostics": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.telemetry_updates": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "ui.contract_registered_controls": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "ui.single_root_window": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "ui.unified_categories": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "workflow.request_aligned_executable": {
+      "evidenceSupported": false,
+      "generated": false,
+      "offlineValidated": false
+    }
+  },
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "featureContracts": [
+    {
+      "availability": true,
+      "behaviorImplementation": "Snapshot reads with bounded periodic refresh and respawn-aware state",
+      "controlToBehaviorBinding": "Loadout control toggles loadout module loop",
+      "duplicateRationale": "Many games already show equipped weapon/tool in HUD",
+      "duplicatesNativeFunctionalityLikely": true,
+      "evidenceRequirements": [
+        "loadout hint path or loadout snapshot evidence"
+      ],
+      "featureId": "loadout_telemetry_reader",
+      "featureType": "passive-telemetry",
+      "gameMechanic": "Client-visible tool inventory and HUD hint text",
+      "guiControl": {
+        "category": "Loadout",
+        "control": "toggle"
+      },
+      "lifecycle": [
+        "register",
+        "initialize",
+        "enable",
+        "update",
+        "disable",
+        "destroy"
+      ],
+      "observableOutcome": "Panel lines update when tools or hint text changes",
+      "playerGoal": "Observe current equipped and backpack tools in one place",
+      "runtimeInputs": [
+        "LocalPlayer.Character",
+        "LocalPlayer.Backpack",
+        "PlayerGui HUD hint paths"
+      ],
+      "userVisibleAction": "Open Loadout category and optionally enable updates",
+      "validationProcedure": "offline-contract-and-mocked-runtime"
+    },
+    {
+      "availability": true,
+      "behaviorImplementation": "Apply target FOV when enabled and restore original FOV when disabled",
+      "blockers": [],
+      "controlToBehaviorBinding": "Movement control toggles focus-assist lifecycle",
+      "duplicatesNativeFunctionalityLikely": false,
+      "evidenceRequirements": [
+        "camera sample evidence"
+      ],
+      "featureId": "movement_focus_assist",
+      "featureType": "functional-utility",
+      "gameMechanic": "Local camera FieldOfView adjustment",
+      "guiControl": {
+        "category": "Movement",
+        "control": "toggle"
+      },
+      "lifecycle": [
+        "register",
+        "initialize",
+        "enable",
+        "update",
+        "disable",
+        "destroy"
+      ],
+      "observableOutcome": "Visible zoom/focus change when enabled and restoration on disable",
+      "playerGoal": "Improve short-term aiming clarity with a reversible local focus view",
+      "runtimeInputs": [
+        "Workspace.CurrentCamera",
+        "movement evidence samples"
+      ],
+      "userVisibleAction": "Toggle Movement focus assist from GUI or keybind",
+      "validationProcedure": "offline-contract-and-mocked-runtime-then-live-potassium"
+    }
+  ],
+  "featureTypeSummary": {
+    "diagnostic": 2,
+    "functional-utility": 1,
+    "gameplay-affecting": 0,
+    "passive-telemetry": 1
+  },
+  "modules": {
+    "diagnostics": {
+      "classification": "diagnostic",
+      "generated": true,
+      "runtimeVerified": false
+    },
+    "loadout": {
+      "classification": "passive-telemetry",
+      "defaultKeybind": "RightShift",
+      "evidenceAvailable": true,
+      "generated": true,
+      "nativeDuplicateRisk": "high",
+      "refreshOptionsSeconds": [
+        0.1,
+        0.2,
+        0.5,
+        1.0
+      ],
+      "snapshotCount": 8
+    },
+    "movement": {
+      "cameraSampleCount": 15,
+      "classification": "functional-utility",
+      "defaultKeybind": "RightControl",
+      "evidenceAvailable": true,
+      "focusAssistAvailable": true,
+      "generated": true,
+      "inputSampleCount": 15,
+      "movementActionCounts": {
+        "jump": 2,
+        "move": 0,
+        "sprint": 12
+      },
+      "refreshOptionsSeconds": [
+        0.1,
+        0.2,
+        0.5,
+        1.0
+      ]
+    },
+    "overview": {
+      "classification": "diagnostic",
+      "generated": true,
+      "runtimeVerified": false
+    },
+    "settings": {
+      "classification": "functional-utility",
+      "generated": true,
+      "themes": [
+        "Graphite",
+        "Slate",
+        "Silver",
+        "Custom"
+      ]
+    }
+  },
+  "offlineValidation": {
+    "cleanupPathValidated": true,
+    "contractControlRegistrationValidated": true,
+    "guiInitialized": true,
+    "singleRootGuiValidated": true,
+    "syntaxValidated": true,
+    "togglePathsValidated": true
+  },
+  "request": "Provide a functional loadout and movement utility with focus assist controls",
+  "requestReadinessStatus": "evidence-only-no-replay-contract",
+  "schemaVersion": "30.6.generated-module-contract.2"
+}

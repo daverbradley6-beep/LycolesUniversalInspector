@@ -3244,3 +3244,41 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Added secondary hardening for oversized interaction-history entries:
   - runtime emits `30.6.interaction-history-fragment.1` fragments when a single history event exceeds batch budget.
   - compile_scan reconstructs history fragments with strict sequence, count, and hex-length validation.
+
+## Update — 2026-11-06 — v30.6.68 Milestone 4.2 unified GUI/control-contract enforcement
+
+### Scope delivered in this pass
+
+- Enforced single-root generated utility ownership and separated Admin Commands artifact ownership.
+- Upgraded request-fulfillment policy (`30.6.request-fulfillment.2`) to fail closed for active-feature requests unless:
+  - functional movement behaviors are present,
+  - active feature contracts are available,
+  - offline contract checks pass,
+  - mocked runtime behavior checks pass.
+- Added stage-level verification reporting (`codeGenerated`, `offlineContractPassed`, `mockedRuntimeBehaviorPassed`, `liveRuntimeObserved`, `gameplayOutcomeVerified`).
+- Extended autonomous planner ranking to include `discoveryScoring` with usefulness/feasibility/confidence/complexity/runtime-validation requirements and duplicate-native penalty.
+- Upgraded generated module contract schema to `30.6.generated-module-contract.2`.
+- Updated release Lua validator to require contract-registered controls rather than legacy literal button tokens.
+- Regenerated Phantom Forces Milestone 4.2 artifact bundle:
+  - job: `job-e88ab803d2b0409e`
+  - utility: `potassium_artifacts/phantomforces_v30_6_68_service_split_run_m42_loadout_movement/jobs/job-e88ab803d2b0409e/LycolesGeneratedUtility.lua`
+  - contract: `.../generated-module-contract.json`
+
+### Validation
+
+- Focused suites: `tests/test_generate_script.py`, `tests/test_build_release.py`, `tests/test_lycoles_generation_service.py`, `tests/test_generated_runtime_harness.py`.
+- Full regression: **1745 passed, 17 skipped, 79 subtests passed**.
+- Service regeneration run passed static/release checks and produced updated artifacts.
+
+### Product capability status snapshot (post-pass)
+
+1. Inspector compiles and loads in Potassium — **Blocked** (pending live user confirmation after latest artifact).
+2. Inspector captures relevant game evidence — **Partially verified**.
+3. Complete inspection reports export reliably — **Partially verified**.
+4. Generation pipeline ingests reports — **Verified** (offline/replay and live-package ingestion paths).
+5. Dedicated AI identifies feasible features — **Partially verified** (deterministic+contract planner output validated offline).
+6. Dedicated AI generates executable game-specific scripts — **Partially verified** (offline deterministic generation validated).
+7. Generated GUIs and controls function correctly — **Partially verified** (offline contract+mock runtime checks).
+8. Generated workflow outcomes verified in-game — **Unverified**.
+9. End-to-end process with minimal manual steps — **Partially verified**.
+10. Product reliability/public distribution readiness — **Unverified**.

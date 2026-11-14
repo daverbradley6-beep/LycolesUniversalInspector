@@ -15,6 +15,7 @@ LOADOUT_REFRESH_OPTIONS = (0.1, 0.2, 0.5, 1.0)
 MOVEMENT_REFRESH_OPTIONS = (0.1, 0.2, 0.5, 1.0)
 LOADOUT_KEYBINDS = ("RightShift", "RightAlt", "LeftShift", "LeftAlt")
 MOVEMENT_KEYBINDS = ("RightControl", "LeftControl", "Z", "X")
+FOCUS_FOV_OPTIONS = (65, 70, 75, 80)
 
 
 @dataclass
@@ -56,6 +57,11 @@ class MockPlayer:
 @dataclass
 class ModuleState:
     enabled: bool = False
+    telemetry_enabled: bool = False
+    focus_assist_enabled: bool = False
+    focus_target_fov: int = 70
+    baseline_fov: float = 90.0
+    current_fov: float = 90.0
     refresh_seconds: float = 0.2
     keybind: str = ""
     change_count: int = 0
@@ -77,7 +83,14 @@ class RuntimeContractHarness:
     def validate_gui_structure(script_source: str) -> dict[str, bool]:
         if not isinstance(script_source, str):
             raise ValueError("script source must be text")
-        return {name: f'button("{name}"' in script_source for name in CATEGORY_BUTTONS}
+        results: dict[str, bool] = {}
+        for name in CATEGORY_BUTTONS:
+            results[name] = (
+                f'button("{name}"' in script_source
+                or f'label="{name}"' in script_source
+                or f'"label":"{name}"' in script_source
+            )
+        return results
 
     @staticmethod
     def _cycle_value(options: tuple[Any, ...], value: Any) -> Any:
@@ -125,12 +138,22 @@ class RuntimeContractHarness:
         if not self.movement.enabled:
             self.connection_count += 1
         self.movement.enabled = not self.movement.enabled
+        self.movement.telemetry_enabled = self.movement.enabled
+        self.movement.focus_assist_enabled = self.movement.enabled
+        if self.movement.focus_assist_enabled:
+            self.movement.current_fov = float(self.movement.focus_target_fov)
+        else:
+            self.movement.current_fov = float(self.movement.baseline_fov)
+
         snapshot_hash = self._movement_snapshot_hash(player)
         if snapshot_hash != self.movement._last_hash:
             self.movement.change_count += 1
             self.movement._last_hash = snapshot_hash
         return {
             "enabled": self.movement.enabled,
+            "telemetryEnabled": self.movement.telemetry_enabled,
+            "focusAssistEnabled": self.movement.focus_assist_enabled,
+            "currentFov": self.movement.current_fov,
             "changeCount": self.movement.change_count,
             "refreshSeconds": self.movement.refresh_seconds,
             "keybind": self.movement.keybind,
@@ -141,10 +164,14 @@ class RuntimeContractHarness:
         self.movement.refresh_seconds = self._cycle_value(MOVEMENT_REFRESH_OPTIONS, self.movement.refresh_seconds)
         self.loadout.keybind = self._cycle_value(LOADOUT_KEYBINDS, self.loadout.keybind)
         self.movement.keybind = self._cycle_value(MOVEMENT_KEYBINDS, self.movement.keybind)
+        self.movement.focus_target_fov = int(self._cycle_value(FOCUS_FOV_OPTIONS, self.movement.focus_target_fov))
+        if self.movement.focus_assist_enabled:
+            self.movement.current_fov = float(self.movement.focus_target_fov)
         self.theme_index = (self.theme_index + 1) % 4
         return {
             "loadoutRefresh": self.loadout.refresh_seconds,
             "movementRefresh": self.movement.refresh_seconds,
+            "movementFocusTargetFov": self.movement.focus_target_fov,
             "loadoutKeybind": self.loadout.keybind,
             "movementKeybind": self.movement.keybind,
             "themeIndex": self.theme_index,
@@ -178,10 +205,16 @@ class RuntimeContractHarness:
     def cleanup(self) -> dict[str, Any]:
         self.loadout.enabled = False
         self.movement.enabled = False
+        self.movement.telemetry_enabled = False
+        self.movement.focus_assist_enabled = False
+        self.movement.current_fov = float(self.movement.baseline_fov)
         self.connection_count = 0
         return {
             "alive": False,
             "loadoutEnabled": self.loadout.enabled,
             "movementEnabled": self.movement.enabled,
+            "movementTelemetryEnabled": self.movement.telemetry_enabled,
+            "movementFocusAssistEnabled": self.movement.focus_assist_enabled,
+            "movementCurrentFov": self.movement.current_fov,
             "connectionCount": self.connection_count,
         }

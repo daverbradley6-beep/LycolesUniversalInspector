@@ -101,14 +101,15 @@ class ReleaseBuilderTests(unittest.TestCase):
             self.assertIn("interactionstop=",source)
 
             module_contract=json.loads((base/"out"/"generated-module-contract.json").read_text())
-            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.1")
+            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.2")
             self.assertEqual(manifest["generatedModuleContract"]["schemaVersion"],
-                "30.6.generated-module-contract.1")
+                "30.6.generated-module-contract.2")
             self.assertEqual(manifest["generatedModuleContract"]["sha256"],
                 hashlib.sha256((base/"out"/"generated-module-contract.json").read_bytes()).hexdigest())
 
+            admin=(base/"out"/"LycolesAdminCommands.lua").read_text()
             self.assertIn('_G.LycolesGameCommands={',source)
-            self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',source)
+            self.assertIn('definition.category:match("^Game[:%w%s%-]+$")',admin)
             self.assertTrue((base/"out"/"LycolesPromptInteractions.lua").exists())
             self.assertFalse((base/"out"/"LycolesEggAutofarm.lua").exists())
 
@@ -477,12 +478,14 @@ class ReleaseBuilderTests(unittest.TestCase):
                 ["fly","unfly","noclip","clip","tp","goto","speed","jump",
                  "coords","systems","readiness","reset","rejoin","cmds","help","stopall","hidegui"])
             self.assertFalse(first["adminCommandFramework"]["runtimeVerified"])
-            self.assertIn("Admin Commands",first["implementedClientControls"])
+            self.assertNotIn("Admin Commands",first["implementedClientControls"])
+            self.assertFalse(first["adminCommandFramework"]["integratedInGeneratedUtility"])
+            self.assertEqual(first["adminCommandFramework"]["activation"],"manual-separate-script")
             self.assertIn("Lycoles universal local utility commands",admin)
             self.assertIn("System candidates (unverified)",admin)
             self.assertIn("Generation readiness: no-capability-requested",admin)
             self.assertIn("bounded generated: 0",admin)
-            self.assertIn(admin,combined)
+            self.assertNotIn('panel.Name="AdminCommands"',combined)
             self.assertNotIn("FireServer(",admin)
             self.assertNotIn("InvokeServer(",admin)
             gameplay=json.loads((base/"out"/"gameplay-understanding.json").read_text())

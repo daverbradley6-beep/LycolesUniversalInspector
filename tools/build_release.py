@@ -33,7 +33,11 @@ def validate_lua(lua,place_id):
         raise ValueError("Missing place guard")
     required=('local Players = game:GetService("Players")',
               'LycolesGeneratedClose','gui:Destroy()',
-              'button("Overview"','button("Loadout"','button("Movement"','button("Settings"','button("Diagnostics"')
+              'registerFeatureControl({id="overview"',
+              'registerFeatureControl({id="loadout"',
+              'registerFeatureControl({id="movement_focus_assist"',
+              'registerFeatureControl({id="settings"',
+              'registerFeatureControl({id="diagnostics"')
     for token in required:
         if token not in lua: raise ValueError("Missing generated component: "+token)
     # These must not appear in a diagnostic-only build, including comments.
@@ -41,7 +45,7 @@ def validate_lua(lua,place_id):
             "hookmetamethod(", "loadstring(", "setclipboard(")
     for pattern in banned:
         if pattern.lower() in lua.lower(): raise ValueError("Forbidden generated operation: "+pattern)
-    if lua.count('button("') < 5:
+    if lua.count('registerFeatureControl({id="') < 5:
         raise ValueError("Unexpected number of generated controls")
     return {"placeGuard":True,"expectedControls":5,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}
@@ -701,7 +705,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
     admin_lua=admin_generator.render(
         place,gameplay_understanding,generation_readiness)
     lua=(utility_lua+"\n"+(prompt_interactions_lua+"\n" if prompt_interactions_lua else "")
-        +(guided_workflow_lua+"\n" if guided_workflow_lua else "")+admin_lua)
+        +(guided_workflow_lua+"\n" if guided_workflow_lua else ""))
     validation=validate_lua(lua,place)
     output=pathlib.Path(output)
     if guided_workflow_bytes is None:
@@ -836,7 +840,7 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
         "reviewedActionsGuiGenerated":actions_gui_lua is not None,
         "reviewedActionsGuiValidation":gui_validation,
         "generatedReadOnlyClientActions":sorted(set(c["action"] for c in validated_contracts["contracts"])) if validated_contracts else [],
-        "implementedClientControls":["Overview","Loadout","Movement","Settings","Diagnostics","Admin Commands"]+
+        "implementedClientControls":["Overview","Loadout","Movement","Settings","Diagnostics"]+
             (["Prompt Interactions"] if prompt_trial_generated else [])+
             (["Tool Activation Trial"] if tool_trial_generated else [])+
             (["Guided GUI Trial"] if gui_trial_generated else [])+
@@ -846,6 +850,8 @@ def build(parts_dir,output,contracts_path=None,observation_dirs=None,feedback_pa
             "commands":list(admin_generator.COMMANDS),"prefix":";",
             "keyboardShortcut":"RightBracket","chatCommandSupport":"where-player-chat-events-are-supported",
             "sharedFeatureState":True,"staticValidationPassed":True,"runtimeVerified":False,
+            "integratedInGeneratedUtility":False,
+            "activation":"manual-separate-script",
             "sha256":sha(admin_lua.encode("utf-8"))},
         "sourceProvenance":source_provenance,
         "validation":validation,

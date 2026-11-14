@@ -22,11 +22,11 @@ class GeneratorTests(unittest.TestCase):
     def test_generates_client_utility(self):
         result=generator.render(self.plan())
         self.assertIn("3623096087",result)
-        self.assertIn('button("Overview"',result)
-        self.assertIn('button("Loadout"',result)
-        self.assertIn('button("Movement"',result)
-        self.assertIn('button("Settings"',result)
-        self.assertIn('button("Diagnostics"',result)
+        self.assertIn('registerFeatureControl({id="overview"',result)
+        self.assertIn('registerFeatureControl({id="loadout"',result)
+        self.assertIn('registerFeatureControl({id="movement_focus_assist"',result)
+        self.assertIn('registerFeatureControl({id="settings"',result)
+        self.assertIn('registerFeatureControl({id="diagnostics"',result)
         self.assertIn('RightShift',result)
         self.assertIn('RightControl',result)
         self.assertNotIn('button("Features"',result)
@@ -58,8 +58,8 @@ class GeneratorTests(unittest.TestCase):
         result=generator.render(plan)
         self.assertIn('LocalPlayer.PlayerGui.HUD.WeaponLabel',result)
         self.assertIn('LOADOUT_SNAPSHOT_COUNT = 1',result)
-        self.assertIn('button("Loadout"',result)
-        self.assertIn('button("Settings"',result)
+        self.assertIn('registerFeatureControl({id="loadout"',result)
+        self.assertIn('registerFeatureControl({id="settings"',result)
         self.assertIn('rebuildLoadoutSnapshotLines',result)
 
 
@@ -80,7 +80,7 @@ class GeneratorTests(unittest.TestCase):
             }
         }
         contract=generator.build_generated_module_contract(plan,{"request":{"status":"evidence-only-no-replay-contract"}})
-        self.assertEqual(contract["schemaVersion"],"30.6.generated-module-contract.1")
+        self.assertEqual(contract["schemaVersion"],"30.6.generated-module-contract.2")
         self.assertTrue(contract["modules"]["loadout"]["evidenceAvailable"])
         self.assertTrue(contract["modules"]["movement"]["evidenceAvailable"])
         self.assertTrue(contract["behaviorCoverage"]["loadout.detect_equipped_tools"]["evidenceSupported"])
@@ -219,11 +219,11 @@ class GeneratorTests(unittest.TestCase):
                              "114.generated-workflow-plan.1")
             self.assertEqual(manifest["generatedWorkflowPlan"]["summary"],workflows["summary"])
             self.assertEqual(manifest["generatedModuleContract"]["schemaVersion"],
-                             "30.6.generated-module-contract.1")
+                             "30.6.generated-module-contract.2")
             self.assertEqual(manifest["generatedModuleContract"]["sha256"],
                 generator.hashlib.sha256((output/"generated-module-contract.json").read_bytes()).hexdigest())
             self.assertIn("movement",manifest["generatedModuleContract"]["modules"])
-            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.1")
+            self.assertEqual(module_contract["schemaVersion"],"30.6.generated-module-contract.2")
 
             self.assertFalse(manifest["generatedWorkflowPlan"]["automaticallyExecutable"])
             self.assertEqual(manifest["generatedWorkflowPlan"]["temporalAdjacency"]["timedEvents"],0)
@@ -254,7 +254,8 @@ class GeneratorTests(unittest.TestCase):
             self.assertIn("Generation request: evidence-only-no-replay-contract",combined)
             self.assertIn("Generation readiness: evidence-only-no-replay-contract",commands)
             self.assertIn("full request implemented: false",commands)
-            self.assertIn('panel.Name="AdminCommands"',combined)
+            self.assertNotIn('panel.Name="AdminCommands"',combined)
+            self.assertIn('panel.Name="AdminCommands"',commands)
 
 
     def test_claim_request_emits_only_claim_control_and_controlled_contract(self):

@@ -735,8 +735,8 @@ class LycolesGenerationServiceTests(unittest.TestCase):
 
             script_path = pathlib.Path(result["delivery"]["generatedScriptPath"])
             script = script_path.read_text(encoding="utf-8")
-            self.assertIn('button("Loadout"', script)
-            self.assertIn('button("Movement"', script)
+            self.assertIn('registerFeatureControl({id="loadout"', script)
+            self.assertIn('registerFeatureControl({id="movement_focus_assist"', script)
             self.assertIn("LOADOUT_SNAPSHOT_COUNT = ", script)
 
             fulfillment = result.get("requestFulfillment") or {}
@@ -749,12 +749,25 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertGreaterEqual(int(summary.get("targetedSessionsConsumed") or 0), 1)
 
     def test_request_fulfillment_marks_offline_complete_for_loadout_movement_contract(self):
-        behavior_ids = ["ui.unified_categories"] + list(MODULE._LOADOUT_REQUIRED_BEHAVIORS) + list(MODULE._MOVEMENT_REQUIRED_BEHAVIORS)
+        behavior_ids = MODULE._required_behaviors_for_request("Provide loadout and movement telemetry")[0]
         module_contract = {
             "behaviorCoverage": {
                 behavior: {"generated": True, "evidenceSupported": True, "offlineValidated": True}
                 for behavior in behavior_ids
-            }
+            },
+            "featureContracts": [{
+                "featureId": "movement_focus_assist",
+                "featureType": "functional-utility",
+                "availability": True,
+            }],
+            "offlineValidation": {
+                "syntaxValidated": True,
+                "guiInitialized": True,
+                "singleRootGuiValidated": True,
+                "contractControlRegistrationValidated": True,
+                "togglePathsValidated": True,
+                "cleanupPathValidated": True,
+            },
         }
         fulfillment = MODULE._assess_request_fulfillment(
             "Provide loadout and movement telemetry",
@@ -786,6 +799,150 @@ class LycolesGenerationServiceTests(unittest.TestCase):
         self.assertFalse(fulfillment["offlineImplementationComplete"])
         self.assertIn("workflow.request_aligned_executable", fulfillment["missingBehaviors"])
         self.assertEqual(fulfillment["status"], "request-unmet-implementation-gap")
+
+
+    def test_request_fulfillment_rejects_passive_only_coverage_for_active_feature_request(self):
+        required = MODULE._required_behaviors_for_request("Provide a functional movement assist feature")[0]
+        passive_only = [item for item in required if not item.startswith("movement.functional_")]
+        module_contract = {
+            "behaviorCoverage": {
+                behavior: {"generated": True, "evidenceSupported": True, "offlineValidated": True}
+                for behavior in passive_only
+            },
+            "featureContracts": [{
+                "featureId": "loadout_telemetry_reader",
+                "featureType": "passive-telemetry",
+                "availability": True,
+            }],
+            "offlineValidation": {
+                "syntaxValidated": True,
+                "guiInitialized": True,
+                "singleRootGuiValidated": True,
+                "contractControlRegistrationValidated": True,
+                "togglePathsValidated": True,
+                "cleanupPathValidated": True,
+            },
+        }
+        fulfillment = MODULE._assess_request_fulfillment(
+            "Provide a functional movement assist feature",
+            module_contract,
+            {"guidedWorkflowScriptGenerated": False,
+             "requestAlignedExecutionReadyWorkflowCandidates": 0,
+             "requestAlignedExecutableWorkflowAvailable": False},
+            None,
+        )
+        self.assertFalse(fulfillment["offlineImplementationComplete"])
+        self.assertEqual(fulfillment["status"], "request-unmet-functional-outcome-gap")
+        self.assertIn("movement.functional_focus_toggle", fulfillment["missingBehaviors"])
+
+    def test_request_fulfillment_flags_text_only_toggle_without_mocked_runtime_effect(self):
+        required = MODULE._required_behaviors_for_request("Provide a functional movement assist feature")[0]
+        module_contract = {
+            "behaviorCoverage": {
+                behavior: {"generated": True, "evidenceSupported": True, "offlineValidated": True}
+                for behavior in required
+            },
+            "featureContracts": [{
+                "featureId": "movement_focus_assist",
+                "featureType": "functional-utility",
+                "availability": True,
+            }],
+            "offlineValidation": {
+                "syntaxValidated": True,
+                "guiInitialized": True,
+                "singleRootGuiValidated": True,
+                "contractControlRegistrationValidated": True,
+                "togglePathsValidated": False,
+                "cleanupPathValidated": True,
+            },
+        }
+        fulfillment = MODULE._assess_request_fulfillment(
+            "Provide a functional movement assist feature",
+            module_contract,
+            {"guidedWorkflowScriptGenerated": False,
+             "requestAlignedExecutionReadyWorkflowCandidates": 0,
+             "requestAlignedExecutableWorkflowAvailable": False},
+            None,
+        )
+        self.assertFalse(fulfillment["offlineImplementationComplete"])
+        self.assertEqual(fulfillment["status"], "request-unmet-implementation-gap")
+        self.assertIn("offline.mocked_runtime_behavior", fulfillment["offlineValidationGaps"])
+        self.assertFalse(fulfillment["verificationStages"]["mockedRuntimeBehaviorPassed"])
+
+    def test_request_fulfillment_detects_missing_single_root_gui_behavior(self):
+        required = [
+            item for item in MODULE._required_behaviors_for_request("Provide loadout and movement telemetry")[0]
+            if item != "ui.single_root_window"
+        ]
+        module_contract = {
+            "behaviorCoverage": {
+                behavior: {"generated": True, "evidenceSupported": True, "offlineValidated": True}
+                for behavior in required
+            },
+            "featureContracts": [],
+            "offlineValidation": {
+                "syntaxValidated": True,
+                "guiInitialized": True,
+                "singleRootGuiValidated": False,
+                "contractControlRegistrationValidated": True,
+                "togglePathsValidated": True,
+                "cleanupPathValidated": True,
+            },
+        }
+        fulfillment = MODULE._assess_request_fulfillment(
+            "Provide loadout and movement telemetry",
+            module_contract,
+            {"guidedWorkflowScriptGenerated": False,
+             "requestAlignedExecutionReadyWorkflowCandidates": 0,
+             "requestAlignedExecutableWorkflowAvailable": False},
+            None,
+        )
+        self.assertIn("ui.single_root_window", fulfillment["missingBehaviors"])
+        self.assertFalse(fulfillment["offlineImplementationComplete"])
+
+    def test_planner_penalizes_duplicate_passive_features_against_functional_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            planner = MODULE.AutonomousPlanningEngine()
+            bundle = MODULE.EvidenceBundle(
+                mode="multipart",
+                place_id=292439477,
+                scan_id="planner-test",
+                output_dir=root,
+                generation_readiness={"generatedCapabilities": [], "requestFeatureReadiness": {}},
+                generated_module_contract={
+                    "featureContracts": [
+                        {
+                            "featureId": "loadout_telemetry_reader",
+                            "featureType": "passive-telemetry",
+                            "duplicatesNativeFunctionalityLikely": True,
+                            "availability": True,
+                            "guiControl": {"category": "Loadout", "control": "toggle"},
+                        },
+                        {
+                            "featureId": "movement_focus_assist",
+                            "featureType": "functional-utility",
+                            "duplicatesNativeFunctionalityLikely": False,
+                            "availability": True,
+                            "guiControl": {"category": "Movement", "control": "toggle"},
+                        },
+                    ]
+                },
+            )
+            plan = planner.build_plan(
+                bundle,
+                MODULE.GenerationRequest(
+                    evidence_kind="parts_dir",
+                    evidence_path=root,
+                    requested_capability="Provide a functional movement assist feature",
+                ),
+                analysis={},
+                feedback_penalties={},
+            )
+            ranked = (plan.get("featureDiscovery") or {}).get("ranked") or []
+            self.assertGreaterEqual(len(ranked), 2)
+            self.assertEqual(ranked[0].get("targetFeature"), "movement_focus_assist")
+            self.assertFalse(ranked[0].get("duplicatesNativeFunctionalityLikely"))
 
     def test_hard_request_prioritizes_reasoning_generation_route(self):
         with tempfile.TemporaryDirectory() as tmp:

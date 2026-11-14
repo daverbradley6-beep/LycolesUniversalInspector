@@ -177,6 +177,14 @@ _MOVEMENT_REQUEST_TERMS = {
     "movement", "speed", "grounded", "airborne", "jump", "sprint", "telemetry", "navigation", "velocity", "move",
 }
 
+_PASSIVE_TELEMETRY_TERMS = {
+    "telemetry", "diagnostic", "diagnostics", "status", "monitor", "observe", "observation", "counts",
+}
+
+_ACTIVE_FEATURE_REQUEST_TERMS = {
+    "feature", "functional", "functionality", "utility", "assist", "action", "activate", "toggle", "automation", "gameplay",
+}
+
 _LOADOUT_REQUIRED_BEHAVIORS = (
     "loadout.detect_equipped_tools",
     "loadout.track_backpack_changes",
@@ -192,7 +200,7 @@ _LOADOUT_REQUIRED_BEHAVIORS = (
     "loadout.cleanup_connections",
 )
 
-_MOVEMENT_REQUIRED_BEHAVIORS = (
+_MOVEMENT_PASSIVE_REQUIRED_BEHAVIORS = (
     "movement.speed_diagnostics",
     "movement.state_diagnostics",
     "movement.grounded_airborne_status",
@@ -204,20 +212,33 @@ _MOVEMENT_REQUIRED_BEHAVIORS = (
     "movement.cleanup_connections",
 )
 
+_MOVEMENT_ACTIVE_REQUIRED_BEHAVIORS = (
+    "movement.functional_focus_toggle",
+    "movement.functional_focus_restore",
+    "movement.functional_control_binding",
+)
 
-def _required_behaviors_for_request(request_text: Optional[str]) -> tuple[list[str], bool]:
+
+def _required_behaviors_for_request(request_text: Optional[str]) -> tuple[list[str], bool, bool]:
     if not isinstance(request_text, str) or not request_text.strip():
-        return [], False
+        return [], False, False
     tokens = _tokenize_text(request_text)
     automatic_required = _request_requires_automatic_execution(request_text)
-    required: list[str] = ["ui.unified_categories"]
+    required: list[str] = ["ui.single_root_window", "ui.contract_registered_controls", "ui.unified_categories"]
+
+    movement_requested = bool(tokens & _MOVEMENT_REQUEST_TERMS)
+    passive_requested = bool(tokens & _PASSIVE_TELEMETRY_TERMS)
+    active_requested = bool(tokens & _ACTIVE_FEATURE_REQUEST_TERMS)
 
     if tokens & _LOADOUT_REQUEST_TERMS:
         required.extend(_LOADOUT_REQUIRED_BEHAVIORS)
-    if tokens & _MOVEMENT_REQUEST_TERMS:
-        required.extend(_MOVEMENT_REQUIRED_BEHAVIORS)
 
-    if automatic_required or len(required) == 1:
+    if movement_requested:
+        required.extend(_MOVEMENT_PASSIVE_REQUIRED_BEHAVIORS)
+        if active_requested or not passive_requested:
+            required.extend(_MOVEMENT_ACTIVE_REQUIRED_BEHAVIORS)
+
+    if automatic_required or (active_requested and not movement_requested) or len(required) == 3:
         required.append("workflow.request_aligned_executable")
 
     deduped: list[str] = []
@@ -227,7 +248,9 @@ def _required_behaviors_for_request(request_text: Optional[str]) -> tuple[list[s
             continue
         seen.add(behavior)
         deduped.append(behavior)
-    return deduped, automatic_required
+
+    active_feature_required = any(behavior.startswith("movement.functional_") for behavior in deduped)
+    return deduped, automatic_required, active_feature_required
 
 
 def _behavior_coverage_from_contract(module_contract: Optional[dict[str, Any]]) -> dict[str, dict[str, bool]]:
@@ -253,7 +276,7 @@ def _assess_request_fulfillment(
     reconciliation_result: Optional[dict[str, Any]],
 ) -> dict[str, Any]:
     request_provided = bool(isinstance(request_text, str) and request_text.strip())
-    required_behaviors, automatic_required = _required_behaviors_for_request(request_text)
+    required_behaviors, automatic_required, active_feature_required = _required_behaviors_for_request(request_text)
     coverage = _behavior_coverage_from_contract(module_contract)
 
     workflow_payload = executable_workflow if isinstance(executable_workflow, dict) else {}
@@ -300,28 +323,81 @@ def _assess_request_fulfillment(
             "gameplayVerified": False,
         })
 
+    active_behavior_assessments = [
+        item for item in behavior_assessments
+        if isinstance(item.get("behavior"), str) and item["behavior"].startswith("movement.functional_")
+    ]
+    active_behavior_ready = bool(active_behavior_assessments) and all(
+        item.get("generated") is True
+        and item.get("evidenceSupported") is True
+        and item.get("offlineValidated") is True
+        for item in active_behavior_assessments
+    )
+
+    contract_payload = module_contract if isinstance(module_contract, dict) else {}
+    feature_contracts = contract_payload.get("featureContracts") if isinstance(contract_payload.get("featureContracts"), list) else []
+    active_contracts = [
+        item for item in feature_contracts
+        if isinstance(item, dict)
+        and item.get("featureType") in {"functional-utility", "gameplay-affecting"}
+    ]
+    active_contract_ids = [
+        str(item.get("featureId"))
+        for item in active_contracts
+        if isinstance(item.get("featureId"), str)
+    ]
+    active_contract_available = any(item.get("availability") is True for item in active_contracts)
+
+    offline_validation = contract_payload.get("offlineValidation") if isinstance(contract_payload.get("offlineValidation"), dict) else {}
+    contract_offline_passed = bool(
+        offline_validation.get("syntaxValidated") is True
+        and offline_validation.get("guiInitialized") is True
+        and offline_validation.get("singleRootGuiValidated", True) is True
+        and offline_validation.get("contractControlRegistrationValidated", True) is True
+    )
+    mocked_runtime_passed = bool(
+        offline_validation.get("togglePathsValidated") is True
+        and offline_validation.get("cleanupPathValidated") is True
+    )
+
+    if not contract_offline_passed:
+        offline_unvalidated.append("offline.contract_validation")
+    if not mocked_runtime_passed:
+        offline_unvalidated.append("offline.mocked_runtime_behavior")
+
+
+    active_outcome_gap = bool(active_feature_required and not (active_behavior_ready and active_contract_available))
+
     offline_complete = bool(
         request_provided
         and required_behaviors
         and not missing_behaviors
         and not unsupported_by_evidence
         and not offline_unvalidated
+        and contract_offline_passed
+        and mocked_runtime_passed
+        and (not active_feature_required or not active_outcome_gap)
     )
 
     if not request_provided:
         status = "no-request-supplied"
     elif unsupported_by_evidence:
         status = "request-unmet-evidence-gap"
+    elif active_outcome_gap:
+        status = "request-unmet-functional-outcome-gap"
     elif missing_behaviors or offline_unvalidated:
         status = "request-unmet-implementation-gap"
     else:
         status = "offline-implementation-complete-runtime-unverified"
 
     return {
-        "schemaVersion": "30.6.request-fulfillment.1",
+        "schemaVersion": "30.6.request-fulfillment.2",
         "requestProvided": request_provided,
         "request": request_text,
         "automaticExecutionRequired": automatic_required,
+        "activeFeatureRequired": active_feature_required,
+        "activeFeatureContractIds": active_contract_ids,
+        "activeFeatureAvailable": active_contract_available,
         "status": status,
         "requiredBehaviors": required_behaviors,
         "generatedBehaviors": [item["behavior"] for item in behavior_assessments if item["generated"]],
@@ -330,6 +406,13 @@ def _assess_request_fulfillment(
         "offlineValidationGaps": sorted(set(offline_unvalidated)),
         "behaviorAssessments": behavior_assessments,
         "offlineImplementationComplete": offline_complete,
+        "verificationStages": {
+            "codeGenerated": bool([item for item in behavior_assessments if item.get("generated") is True]),
+            "offlineContractPassed": contract_offline_passed,
+            "mockedRuntimeBehaviorPassed": mocked_runtime_passed,
+            "liveRuntimeObserved": False,
+            "gameplayOutcomeVerified": False,
+        },
         "runtimeVerified": False,
         "gameplayVerified": False,
         "requestFulfilled": False,
@@ -1665,11 +1748,41 @@ class AutonomousPlanningEngine:
                 "targetPath": None,
                 "label": candidate.strip(),
                 "classification": "ai-hypothesis",
+                "featureType": "unknown",
+                "duplicatesNativeFunctionalityLikely": False,
                 "automaticMovement": False,
                 "boundedRepeat": False,
                 "operatorStartRequired": True,
                 "commands": [],
                 "source": "ai-analysis",
+            })
+
+        module_contract = bundle.generated_module_contract if isinstance(bundle.generated_module_contract, dict) else {}
+        contract_features = module_contract.get("featureContracts") if isinstance(module_contract.get("featureContracts"), list) else []
+        for item in contract_features:
+            if not isinstance(item, dict):
+                continue
+            feature_id = item.get("featureId") if isinstance(item.get("featureId"), str) else None
+            feature_type = item.get("featureType") if isinstance(item.get("featureType"), str) else "unknown"
+            control = item.get("guiControl") if isinstance(item.get("guiControl"), dict) else {}
+            control_category = control.get("category") if isinstance(control.get("category"), str) else None
+            control_type = control.get("control") if isinstance(control.get("control"), str) else None
+            target_label = feature_id or control_category or feature_type
+            features.append({
+                "id": _safe_feature_id("contract", str(target_label or "feature")),
+                "kind": "contract-feature",
+                "targetFeature": target_label,
+                "targetPath": None,
+                "label": target_label,
+                "classification": f"contract:{feature_type}",
+                "featureType": feature_type,
+                "duplicatesNativeFunctionalityLikely": item.get("duplicatesNativeFunctionalityLikely") is True,
+                "automaticMovement": False,
+                "boundedRepeat": False,
+                "operatorStartRequired": True,
+                "commands": ([control_type] if isinstance(control_type, str) else []),
+                "availability": item.get("availability") is True,
+                "source": "module-contract",
             })
 
         dedup: dict[str, dict[str, Any]] = {}
@@ -1793,6 +1906,7 @@ class AutonomousPlanningEngine:
         discovered = self._extract_features(bundle, analysis)
         request_text = request.requested_capability
         requires_automatic = _request_requires_automatic_execution(request_text)
+        request_tokens = _tokenize_text(request_text)
 
         ranked_features: list[dict[str, Any]] = []
         for item in discovered:
@@ -1804,18 +1918,30 @@ class AutonomousPlanningEngine:
                 feedback_penalties=feedback_penalties,
             )
             top = strategies[0] if strategies else None
-            rank = 0.2
-            if item.get("source") == "generated-capability":
-                rank += 0.35
-            if item.get("automaticMovement") is True:
-                rank += 0.12
-            if item.get("boundedRepeat") is True:
-                rank += 0.08
-            if top and top.get("feasible"):
-                rank += 0.2
-                rank += float(top.get("score") or 0.0) * 0.1
-            if item.get("classification") == "ai-hypothesis":
-                rank -= 0.08
+            feature_type = str(item.get("featureType") or "unknown")
+            duplicate_native = item.get("duplicatesNativeFunctionalityLikely") is True
+            contract_available = item.get("availability") is True
+            label_tokens = _tokenize_text(" ".join([
+                str(item.get("label") or ""),
+                str(item.get("targetFeature") or ""),
+                str(item.get("kind") or ""),
+            ]))
+            request_alignment = bool(request_tokens and (request_tokens & label_tokens))
+
+            usefulness = 0.45
+            if feature_type in {"functional-utility", "gameplay-affecting"}:
+                usefulness += 0.30
+            elif feature_type == "passive-telemetry":
+                usefulness -= 0.15
+            elif feature_type == "diagnostic":
+                usefulness -= 0.18
+            if duplicate_native:
+                usefulness -= 0.20
+            if request_alignment:
+                usefulness += 0.12
+            if item.get("source") == "module-contract" and contract_available:
+                usefulness += 0.06
+            usefulness = max(0.0, min(1.0, usefulness))
 
             feasible_strategies = [entry for entry in strategies if entry.get("feasible") is True]
             rejected_strategies = [entry for entry in strategies if entry.get("feasible") is not True]
@@ -1845,6 +1971,52 @@ class AutonomousPlanningEngine:
                 available_evidence.append("commands:" + str(len(item.get("commands"))))
             available_evidence = sorted(set(available_evidence))
 
+            feasible_count = len(feasible_strategies)
+            feasibility_score = min(1.0, feasible_count / 2.0)
+            if top and top.get("feasible") is True:
+                feasibility_score = max(feasibility_score, float(top.get("score") or 0.0))
+
+            if len(missing_dependencies) >= 3:
+                implementation_complexity = "high"
+                complexity_score = 0.35
+            elif len(missing_dependencies) == 2:
+                implementation_complexity = "medium"
+                complexity_score = 0.62
+            else:
+                implementation_complexity = "low"
+                complexity_score = 0.85
+
+            evidence_confidence = (
+                "high" if feasible_count >= 2 else
+                "medium" if feasible_count == 1 else
+                "low"
+            )
+            runtime_validation_requirements = ["offline-contract", "mocked-runtime"]
+            if feature_type in {"functional-utility", "gameplay-affecting"}:
+                runtime_validation_requirements.append("live-runtime-observation")
+            if requires_automatic:
+                runtime_validation_requirements.append("workflow-execution")
+
+            rank = (
+                0.12
+                + usefulness * 0.45
+                + feasibility_score * 0.28
+                + complexity_score * 0.1
+                + (0.1 if request_alignment else 0.0)
+            )
+            if item.get("source") == "generated-capability":
+                rank += 0.08
+            if item.get("automaticMovement") is True:
+                rank += 0.06
+            if item.get("boundedRepeat") is True:
+                rank += 0.04
+            if top and top.get("feasible"):
+                rank += float(top.get("score") or 0.0) * 0.06
+            if item.get("classification") == "ai-hypothesis":
+                rank -= 0.08
+            if duplicate_native:
+                rank -= 0.10
+
             ranked_features.append({
                 "featureId": item.get("id"),
                 "label": self._feature_label(item, category),
@@ -1854,21 +2026,27 @@ class AutonomousPlanningEngine:
                 "targetFeature": item.get("targetFeature"),
                 "targetPath": item.get("targetPath"),
                 "classification": item.get("classification"),
+                "featureType": feature_type,
+                "duplicatesNativeFunctionalityLikely": duplicate_native,
                 "commands": item.get("commands") or [],
                 "rankScore": round(max(0.0, min(1.0, rank)), 4),
                 "availableEvidence": available_evidence,
                 "strategies": strategies,
                 "generationReady": bool(top and top.get("feasible") is True),
+                "discoveryScoring": {
+                    "usefulness": round(usefulness, 4),
+                    "feasibility": round(feasibility_score, 4),
+                    "evidenceConfidence": evidence_confidence,
+                    "implementationComplexity": implementation_complexity,
+                    "runtimeValidationRequirements": runtime_validation_requirements,
+                    "duplicatesNativeFunctionalityLikely": duplicate_native,
+                },
                 "feasibility": {
-                    "feasibleStrategyCount": len(feasible_strategies),
+                    "feasibleStrategyCount": feasible_count,
                     "rejectedStrategyCount": len(rejected_strategies),
                     "missingDependencies": missing_dependencies,
                     "rejectionReasons": rejection_reasons,
-                    "confidence": (
-                        "high" if len(feasible_strategies) >= 2 else
-                        "medium" if len(feasible_strategies) == 1 else
-                        "low"
-                    ),
+                    "confidence": evidence_confidence,
                     "verificationStatus": "partially-verified" if feasible_strategies else "unverified",
                 },
             })
