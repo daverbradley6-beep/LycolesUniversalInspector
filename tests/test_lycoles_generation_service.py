@@ -408,6 +408,91 @@ class CountingProvider(MODULE.BaseLLMProvider):
             "retriesUsed": 0,
         }
 
+    def generate(self, _bundle, _analysis, model):
+        return None, {
+            "tokens": 64,
+            "costGbp": 0.00064,
+            "attempts": 1,
+            "retriesUsed": 0,
+            "model": model,
+        }
+
+    def repair(self, code, _analysis, model):
+        return code, {
+            "tokens": 48,
+            "costGbp": 0.00048,
+            "attempts": 1,
+            "retriesUsed": 0,
+            "model": model,
+        }
+
+
+def make_split_live_observation_parts(part_one, part_two, scan_id="live-observation-split-1"):
+    payload = {
+        "schemaVersion": "30.6.live-observation-export.1",
+        "exportKind": "dynamic-observations",
+        "scanId": "service_scan_001",
+        "baselineScanId": "service_scan_001",
+        "integrity": {
+            "scanComplete": True,
+            "placeId": 3623096087,
+            "scanId": scan_id,
+            "baselineScanId": "service_scan_001",
+            "parts": 2,
+            "interactionEvents": 0,
+        },
+        "sourceDiagnostics": {
+            "scanMode": "dynamic-observations",
+            "requiresFullObjectRescan": False,
+            "baselineScanId": "service_scan_001",
+        },
+        "sourceProvenance": {
+            "schemaVersion": "30.2.source-provenance.1",
+            "inputMode": "local-multipart",
+            "scanId": scan_id,
+            "placeId": 3623096087,
+            "partCount": 2,
+            "receiverStoredPayloadDigestsVerified": False,
+            "receiverStoredPayloadDigestsRevalidatedThisRun": False,
+            "receiverAcknowledgementDigestEquivalent": False,
+            "receiverIntegrityVerified": False,
+            "resumeCheckpointAuthenticated": False,
+            "receiverResponseAuthenticityVerified": False,
+            "localPayloadEquivalent": False,
+            "sourceAuthenticityVerified": False,
+            "causalityProven": False,
+            "serverAuthorityVerified": False,
+            "replayable": False,
+            "gameplayVerified": False,
+            "actionOutcomesVerified": False,
+        },
+        "features": [],
+        "targetedCaptureSession": {
+            "schemaVersion": "31.0.targeted-evidence-session.1",
+            "requestProgress": {
+                "loadout-runtime-observation": {
+                    "status": "satisfied",
+                    "missingEvidence": [],
+                }
+            },
+            "samples": {
+                "loadoutSnapshots": [
+                    {
+                        "equippedTools": ["Rifle"],
+                        "backpackTools": ["Knife"],
+                        "hudWeaponIndicatorPaths": ["LocalPlayer.PlayerGui.HUD.WeaponLabel"],
+                        "hudWeaponIndicators": ["Rifle"],
+                    }
+                ],
+                "weaponSnapshots": [{"equippedTools": ["Rifle"], "hasCombatTool": True}],
+                "inputSamples": [{"mousePrimaryInputs": 3}],
+            },
+        },
+    }
+    serialized = json.dumps(payload, ensure_ascii=False)
+    midpoint = len(serialized) // 2
+    part_one.write_text(serialized[:midpoint], encoding="utf-8")
+    part_two.write_text(serialized[midpoint:], encoding="utf-8")
 
 
 class LycolesGenerationServiceTests(unittest.TestCase):
@@ -622,6 +707,41 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "Executable workflow required but unavailable"):
                 service.run_sync(request)
+
+    def test_parts_job_accepts_split_live_observation_parts_and_builds_loadout_module(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            parts = root / "parts"
+            parts.mkdir()
+            make_parts(parts, request="Track loadout observations")
+
+            part_one = root / "PhantomForces_v30.6.68_Observation_Part_1_of_2.txt"
+            part_two = root / "PhantomForces_v30.6.68_Observation_Part_2_of_2.txt"
+            make_split_live_observation_parts(part_one, part_two)
+
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            request = MODULE.GenerationRequest(
+                evidence_kind="parts_dir",
+                evidence_path=parts,
+                requested_capability="Track loadout observations",
+                observation_paths=(part_one, part_two),
+            )
+            result = service.run_sync(request)
+
+            self.assertEqual(result["status"], "succeeded")
+            warnings = result.get("analysis", {}).get("evidenceWarnings") or []
+            self.assertTrue(any("Combined split observation parts" in item for item in warnings))
+            self.assertTrue(any("Synthesized" in item for item in warnings))
+
+            script_path = pathlib.Path(result["delivery"]["generatedScriptPath"])
+            script = script_path.read_text(encoding="utf-8")
+            self.assertIn('button("Loadout"', script)
+            self.assertIn("LOADOUT_SNAPSHOT_COUNT = ", script)
+
+            reconciliation = result.get("evidenceReconciliation") or {}
+            self.assertTrue(reconciliation.get("generated"))
+            summary = reconciliation.get("summary") or {}
+            self.assertGreaterEqual(int(summary.get("targetedSessionsConsumed") or 0), 1)
 
     def test_hard_request_prioritizes_reasoning_generation_route(self):
         with tempfile.TemporaryDirectory() as tmp:

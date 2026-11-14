@@ -538,6 +538,41 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
     status_list="\n".join("    "+lua_quote(line)+"," for line in status_lines)
 
     history=plan.get("observedInteractionHistory",[])
+    loadout_hint_paths=[]
+    loadout_hint_seen=set()
+    loadout_snapshot_count=0
+    if isinstance(history,list):
+        for event in history:
+            if not isinstance(event,dict):
+                continue
+            path=event.get("path")
+            if not isinstance(path,str) or not path or len(path)>400:
+                continue
+            feature_candidate=(event.get("featureCandidate")
+                if isinstance(event.get("featureCandidate"),str) else "")
+            tokens={token.casefold() for token in re.findall(r"[^\\W_]+",path,flags=re.UNICODE)}
+            if feature_candidate in {"inventory","combat"} or tokens&{"weapon","loadout","hud","backpack","inventory"}:
+                if path not in loadout_hint_seen:
+                    loadout_hint_seen.add(path)
+                    loadout_hint_paths.append(path)
+
+    interaction_diagnostics=(plan.get("interactionDiagnostics")
+        if isinstance(plan.get("interactionDiagnostics"),dict) else {})
+    targeted_summary=(interaction_diagnostics.get("targetedCaptureSessionSummary")
+        if isinstance(interaction_diagnostics.get("targetedCaptureSessionSummary"),dict) else {})
+    targeted_samples=(targeted_summary.get("samples")
+        if isinstance(targeted_summary.get("samples"),dict) else {})
+    loadout_samples=[item for item in (targeted_samples.get("loadoutSnapshots") or []) if isinstance(item,dict)]
+    loadout_snapshot_count=len(loadout_samples)
+    for sample in loadout_samples:
+        for path in sample.get("hudWeaponIndicatorPaths") or []:
+            if isinstance(path,str) and path and len(path)<=400 and path not in loadout_hint_seen:
+                loadout_hint_seen.add(path)
+                loadout_hint_paths.append(path)
+
+    loadout_hint_paths=loadout_hint_paths[:64]
+    loadout_hint_list="\n".join("    "+lua_quote(path)+"," for path in loadout_hint_paths)
+
     action_candidates={}
     if not claim_request and isinstance(history,list):
         for event in history:
@@ -642,6 +677,7 @@ def render(plan,gameplay_understanding=None,generation_readiness=None):
 -- Gameplay-assistance controls only; no remote fabrication or server authority claims.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 assert(game.PlaceId == PLACE_ID, "Wrong Roblox place for generated utility")
 if type(_G.LycolesGeneratedClose) == "function" then pcall(_G.LycolesGeneratedClose) end
@@ -695,6 +731,19 @@ layout.Padding=UDim.new(0,4)
 local ACTION_TARGETS = ACTION_TARGETS_DATA
 local CONTROLLED_REQUEST = CONTROLLED_REQUEST_DATA
 local CONTROLLED_STATUS_LINES = CONTROLLED_STATUS_LINES_DATA
+local LOADOUT_HINT_PATHS = LOADOUT_HINT_PATHS_DATA
+local LOADOUT_SNAPSHOT_COUNT = LOADOUT_SNAPSHOT_COUNT_DATA
+local LOADOUT_REFRESH_OPTIONS = {0.1, 0.2, 0.5, 1.0}
+local loadoutModule = {
+    enabled = false,
+    includeBackpack = true,
+    refreshSeconds = 0.2,
+    keybind = Enum.KeyCode.RightShift,
+    changeCount = 0,
+    lastHash = "",
+    lastSnapshotLines = {"No loadout snapshot yet."},
+}
+local loadoutConnection = nil
 local selectedActionIndex = 1
 local gameplayAttempts, gameplaySuccesses, gameplayFailures = 0, 0, 0
 local controlledClaimAttempted = false
@@ -726,6 +775,101 @@ local function resolvePath(path)
         if not current then return nil, "missing segment: " .. parts[i] end
     end
     return current, nil
+end
+
+local function collectToolNames(container)
+    local names = {}
+    if typeof(container) ~= "Instance" then
+        return names
+    end
+    for _, item in ipairs(container:GetChildren()) do
+        if item:IsA("Tool") then
+            names[#names + 1] = item.Name
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+local function extractHudHints()
+    local hints = {}
+    for i = 1, math.min(#LOADOUT_HINT_PATHS, 24) do
+        local path = LOADOUT_HINT_PATHS[i]
+        local node = resolvePath(path)
+        if typeof(node) == "Instance" then
+            local text = nil
+            if node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox") then
+                text = node.Text
+            elseif node:IsA("ValueBase") then
+                text = tostring(node.Value)
+            end
+            if type(text) == "string" and text ~= "" then
+                hints[#hints + 1] = node.Name .. ": " .. text
+            else
+                hints[#hints + 1] = node.Name
+            end
+        end
+    end
+    return hints
+end
+
+local function rebuildLoadoutSnapshotLines()
+    local lines = {
+        "Loadout evidence snapshots: " .. tostring(LOADOUT_SNAPSHOT_COUNT),
+        "Hint paths tracked: " .. tostring(#LOADOUT_HINT_PATHS),
+        "Tracking enabled: " .. tostring(loadoutModule.enabled),
+        "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
+        "Include backpack tools: " .. tostring(loadoutModule.includeBackpack),
+        "Keybind toggle: " .. tostring(loadoutModule.keybind.Name),
+        "Detected loadout changes: " .. tostring(loadoutModule.changeCount),
+        "",
+    }
+
+    local character = player.Character
+    local equipped = collectToolNames(character)
+    local backpack = collectToolNames(player:FindFirstChild("Backpack"))
+    local hudHints = extractHudHints()
+
+    lines[#lines + 1] = "Equipped tools: " .. (#equipped > 0 and table.concat(equipped, ", ") or "none")
+    if loadoutModule.includeBackpack then
+        lines[#lines + 1] = "Backpack tools: " .. (#backpack > 0 and table.concat(backpack, ", ") or "none")
+    else
+        lines[#lines + 1] = "Backpack tools: hidden by setting"
+    end
+    if #hudHints > 0 then
+        lines[#lines + 1] = "HUD indicators:"
+        for i = 1, math.min(8, #hudHints) do
+            lines[#lines + 1] = "  - " .. hudHints[i]
+        end
+    else
+        lines[#lines + 1] = "HUD indicators: none resolved from evidence paths"
+    end
+
+    local hash = table.concat(equipped, "|") .. "::" .. table.concat(backpack, "|") .. "::" .. table.concat(hudHints, "|")
+    if hash ~= loadoutModule.lastHash then
+        loadoutModule.changeCount = loadoutModule.changeCount + 1
+        loadoutModule.lastHash = hash
+    end
+    loadoutModule.lastSnapshotLines = lines
+end
+
+local function ensureLoadoutLoop()
+    if typeof(loadoutConnection) == "RBXScriptConnection" then
+        return
+    end
+    local elapsed = 0
+    loadoutConnection = RunService.Heartbeat:Connect(function(delta)
+        if not alive or not loadoutModule.enabled then
+            return
+        end
+        elapsed = elapsed + (tonumber(delta) or 0)
+        if elapsed < loadoutModule.refreshSeconds then
+            return
+        end
+        elapsed = 0
+        rebuildLoadoutSnapshotLines()
+    end)
+    table.insert(connections, loadoutConnection)
 end
 
 local function instancePath(instance)
@@ -1091,7 +1235,7 @@ local function show(title,lines)
 end
 local function button(name,callback)
     local b=Instance.new("TextButton",tabs)
-    b.Size=UDim2.new(0.2,-4,1,0)
+    b.Size=UDim2.new(0.16,-4,1,0)
     b.Text=name
     b.TextSize=12
     b.BackgroundColor3=Color3.fromRGB(48,78,103)
@@ -1133,6 +1277,50 @@ button("Prompts",function()
     end
     if #lines==0 then lines={"No proximity prompts found."} end
     show("World prompts (read-only)",lines)
+end)
+button("Loadout",function()
+    if LOADOUT_SNAPSHOT_COUNT <= 0 and #LOADOUT_HINT_PATHS == 0 then
+        show("Loadout telemetry unavailable",{
+            "No loadout runtime evidence was captured in this dataset.",
+            "Capture targeted loadout observation and replay this generation run.",
+        })
+        return
+    end
+    ensureLoadoutLoop()
+    loadoutModule.enabled = not loadoutModule.enabled
+    if loadoutModule.enabled then
+        rebuildLoadoutSnapshotLines()
+    end
+    local lines = {
+        "Loadout module enabled: " .. tostring(loadoutModule.enabled),
+        "Use keybind " .. tostring(loadoutModule.keybind.Name) .. " to toggle quickly.",
+        "Use LoadCfg to change refresh interval and backpack visibility.",
+        "",
+    }
+    for _,line in ipairs(loadoutModule.lastSnapshotLines) do
+        lines[#lines + 1] = line
+    end
+    show("Loadout telemetry", lines)
+end)
+button("LoadCfg",function()
+    ensureLoadoutLoop()
+    local idx = 1
+    for i = 1, #LOADOUT_REFRESH_OPTIONS do
+        if math.abs(LOADOUT_REFRESH_OPTIONS[i] - loadoutModule.refreshSeconds) < 0.0001 then
+            idx = i
+            break
+        end
+    end
+    idx = (idx % #LOADOUT_REFRESH_OPTIONS) + 1
+    loadoutModule.refreshSeconds = LOADOUT_REFRESH_OPTIONS[idx]
+    loadoutModule.includeBackpack = not loadoutModule.includeBackpack
+    rebuildLoadoutSnapshotLines()
+    show("Loadout settings", {
+        "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
+        "Include backpack tools: " .. tostring(loadoutModule.includeBackpack),
+        "Keybind toggle: " .. tostring(loadoutModule.keybind.Name),
+        "Detected loadout changes: " .. tostring(loadoutModule.changeCount),
+    })
 end)
 button("Gameplay",function()
     local candidates=FEATURE_NAMES
@@ -1192,10 +1380,39 @@ end))
 table.insert(connections,heading.InputEnded:Connect(function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
 end))
-table.insert(connections,game:GetService("UserInputService").InputChanged:Connect(function(input)
+table.insert(connections,UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
         local d=input.Position-dragStart
         frame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+    end
+end))
+table.insert(connections,UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not alive then
+        return
+    end
+    if input.KeyCode == loadoutModule.keybind then
+        if LOADOUT_SNAPSHOT_COUNT <= 0 and #LOADOUT_HINT_PATHS == 0 then
+            show("Loadout telemetry unavailable", {
+                "No loadout runtime evidence was captured in this dataset.",
+                "Capture targeted loadout observation and replay this generation run.",
+            })
+            return
+        end
+        ensureLoadoutLoop()
+        loadoutModule.enabled = not loadoutModule.enabled
+        if loadoutModule.enabled then
+            rebuildLoadoutSnapshotLines()
+        end
+        local lines = {
+            "Loadout module enabled: " .. tostring(loadoutModule.enabled),
+            "Refresh seconds: " .. string.format("%.2f", loadoutModule.refreshSeconds),
+            "Include backpack tools: " .. tostring(loadoutModule.includeBackpack),
+            "",
+        }
+        for _,line in ipairs(loadoutModule.lastSnapshotLines) do
+            lines[#lines + 1] = line
+        end
+        show("Loadout telemetry", lines)
     end
 end))
 _G.LycolesGeneratedClose=function()
@@ -1206,11 +1423,19 @@ _G.LycolesGeneratedClose=function()
     _G.LycolesGeneratedClose=nil
 end
 table.insert(connections,close.MouseButton1Click:Connect(_G.LycolesGeneratedClose))
-show("Ready",{"Validated scan inventory loaded.","Gameplay action controls available.","Gameplay automation has not been verified."})
+show("Ready",{
+    "Validated scan inventory loaded.",
+    "Gameplay action controls available.",
+    "Loadout telemetry module available via Loadout tab.",
+    "Keybind: RightShift toggles loadout telemetry.",
+    "Gameplay automation has not been verified.",
+})
 """.replace("PLACE_ID",str(place)).replace(
         "ACTION_TARGETS_DATA", "{\n"+action_target_list+"\n}").replace(
         "CONTROLLED_REQUEST_DATA", controlled_request_data).replace(
         "CONTROLLED_STATUS_LINES_DATA", "{\n"+status_list+"\n}").replace(
+        "LOADOUT_HINT_PATHS_DATA", "{\n"+loadout_hint_list+"\n}").replace(
+        "LOADOUT_SNAPSHOT_COUNT_DATA", str(int(loadout_snapshot_count))).replace(
         "FEATURE_NAMES", "{\n"+feature_list+"\n}").replace(
         "SOURCE_PROVENANCE_LINES", "{\n"+provenance_list+"\n}").replace(
         "GAMEPLAY_UNDERSTANDING_LINES", "{\n"+gameplay_list+"\n}").replace(

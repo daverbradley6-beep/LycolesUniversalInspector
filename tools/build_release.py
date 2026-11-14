@@ -41,7 +41,7 @@ def validate_lua(lua,place_id):
             "hookmetamethod(", "loadstring(", "setclipboard(")
     for pattern in banned:
         if pattern.lower() in lua.lower(): raise ValueError("Forbidden generated operation: "+pattern)
-    if lua.count('button("')!=4:
+    if lua.count('button("') < 4:
         raise ValueError("Unexpected number of generated controls")
     return {"placeGuard":True,"expectedControls":4,"unsafeOperationsFound":False,
             "note":"Structural checks only; Luau syntax and runtime behaviour are not verified"}

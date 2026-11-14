@@ -139,6 +139,8 @@ def _aggregate_targeted_signals(targeted_sessions: list[dict[str, Any]]) -> dict
         "inputSamples": 0,
         "primaryInputEvents": 0,
         "hudWeaponIndicators": 0,
+        "requestStatus": {},
+        "requestMissingEvidence": {},
     }
     gui_paths: list[str] = []
     for session in targeted_sessions:
@@ -172,7 +174,27 @@ def _aggregate_targeted_signals(targeted_sessions: list[dict[str, Any]]) -> dict
         aggregate["inputSamples"] += len(input_samples)
         aggregate["primaryInputEvents"] += sum(int(item.get("mousePrimaryInputs") or 0) for item in input_samples)
         aggregate["hudWeaponIndicators"] += sum(len(item.get("hudWeaponIndicators") or []) for item in loadout_samples)
+
+        request_progress = session.get("requestProgress") if isinstance(session.get("requestProgress"), dict) else {}
+        for request_id, request_state in request_progress.items():
+            if not isinstance(request_id, str) or not isinstance(request_state, dict):
+                continue
+            status = request_state.get("status")
+            if isinstance(status, str) and status:
+                current = aggregate["requestStatus"].get(request_id)
+                if current != "satisfied":
+                    aggregate["requestStatus"][request_id] = status
+            missing = [item for item in (request_state.get("missingEvidence") or []) if isinstance(item, str)]
+            if missing:
+                aggregate["requestMissingEvidence"][request_id] = missing
+
     aggregate["guiPaths"] = gui_paths
+    aggregate["satisfiedRequestIds"] = sorted(
+        request_id for request_id, status in aggregate["requestStatus"].items() if status == "satisfied"
+    )
+    aggregate["collectingRequestIds"] = sorted(
+        request_id for request_id, status in aggregate["requestStatus"].items() if status == "collecting"
+    )
     return aggregate
 
 
@@ -293,6 +315,23 @@ def _extract_evidence_signals(
         "objectives": {
             "objectiveSignalCount": int(objective_signal_count),
         },
+        "targeted": {
+            "cameraSamples": int(targeted.get("cameraSamples") or 0),
+            "cameraCorrelations": int(targeted.get("cameraCorrelations") or 0),
+            "entitySnapshots": int(targeted.get("entitySnapshots") or 0),
+            "teamSignals": int(targeted.get("teamSignals") or 0),
+            "weaponSnapshots": int(targeted.get("weaponSnapshots") or 0),
+            "loadoutSnapshots": int(targeted.get("loadoutSnapshots") or 0),
+            "loadoutToolSignals": int(targeted.get("loadoutToolSignals") or 0),
+            "hudWeaponIndicators": int(targeted.get("hudWeaponIndicators") or 0),
+            "objectiveSignals": int(targeted.get("objectiveSignals") or 0),
+            "objectiveTransitions": int(targeted.get("objectiveTransitions") or 0),
+            "stateTransitions": int(targeted.get("stateTransitions") or 0),
+            "requestStatus": dict(targeted.get("requestStatus") or {}),
+            "requestMissingEvidence": dict(targeted.get("requestMissingEvidence") or {}),
+            "satisfiedRequestIds": list(targeted.get("satisfiedRequestIds") or []),
+            "collectingRequestIds": list(targeted.get("collectingRequestIds") or []),
+        },
         "world": {
             "regionCount": len(discovery.get("regions") or []),
             "interactableCount": len(discovery.get("interactables") or []),
@@ -334,6 +373,8 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
     world = signals["world"]
     tokens = signals["pathTokenCounts"]
     objective_signals = signals["objectives"]["objectiveSignalCount"]
+    targeted = signals.get("targeted") if isinstance(signals.get("targeted"), dict) else {}
+    targeted_request_status = targeted.get("requestStatus") if isinstance(targeted.get("requestStatus"), dict) else {}
 
     def available(reason: str, provenance: list[str]) -> RequirementResult:
         return RequirementResult(requirement_id, "available", True, reason, provenance)
@@ -379,6 +420,25 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
                        ["observation.inputGestureObservations.intent.physicalGesture.cameraTurnDegrees"])
 
     if requirement_id == "camera_movement_correlation":
+        targeted_correlations = int(targeted.get("cameraCorrelations") or 0)
+        if targeted_correlations > 0 and combat["mousePrimaryInputCount"] > 0:
+            if combat["weaponStateSignalCount"] > 0 or signals["stateChangeTotal"] > 0:
+                return available(
+                    "Targeted camera correlations and combat inputs have temporal state-support candidates.",
+                    [
+                        "targetedCaptureSession.samples.cameraCorrelations",
+                        "targetedCaptureSession.samples.inputSamples",
+                        "plan.observedInteractionHistory",
+                    ],
+                )
+            return captured_not_classified(
+                "Targeted camera correlations are present but validating state transitions remain weakly classified.",
+                [
+                    "targetedCaptureSession.samples.cameraCorrelations",
+                    "targetedCaptureSession.samples.inputSamples",
+                    "plan.stateChanges",
+                ],
+            )
         if camera["cameraTurnGestureCount"] > 0 and combat["mousePrimaryInputCount"] > 0:
             if combat["weaponStateSignalCount"] > 0 or signals["stateChangeTotal"] > 0:
                 return available("Camera movement and combat inputs have temporal candidates with state support.", [
@@ -392,6 +452,12 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
         return missing("Insufficient camera/combat overlap for temporal correlation.", ["observation.inputGestureObservations"])
 
     if requirement_id == "weapon_equipped_signal":
+        if int(targeted.get("loadoutToolSignals") or 0) > 0:
+            return available(
+                "Targeted loadout snapshots include equipped/backpack tool identities.",
+                ["targetedCaptureSession.samples.loadoutSnapshots.equippedTools",
+                 "targetedCaptureSession.samples.loadoutSnapshots.backpackTools"],
+            )
         if combat["weaponToolClassCount"] > 0:
             return available("Tool class evidence indicates weapon/tool entities are present.", ["plan.classCounts.Tool"])
         if tokens.get("weapon", 0) > 0 or tokens.get("loadout", 0) > 0:
@@ -403,8 +469,14 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
 
     if requirement_id == "weapon_state_signal":
         count = combat["weaponStateSignalCount"]
+        targeted_weapon_snapshots = int(targeted.get("weaponSnapshots") or 0)
         if count > 0:
             return available(f"{count} weapon-related state changes observed.", ["plan.observedInteractionHistory.stateChanges"])
+        if targeted_weapon_snapshots > 0:
+            return available(
+                f"{targeted_weapon_snapshots} targeted weapon snapshots provide runtime weapon-state samples.",
+                ["targetedCaptureSession.samples.weaponSnapshots"],
+            )
         if combat["mousePrimaryInputCount"] > 0:
             return captured_not_classified(
                 "Primary firing-like input exists but no weapon-state transitions were captured/classified.",
@@ -431,11 +503,19 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
         return missing("No player/character entity set evidence.", ["plan.classCounts.Player", "plan.classCounts.Humanoid"])
 
     if requirement_id == "team_relationship_signal":
+        if targeted_request_status.get("character-entity-observation") == "satisfied":
+            return available(
+                "Targeted character entity request satisfied with team relationship signal coverage.",
+                ["targetedCaptureSession.requestProgress.character-entity-observation"],
+            )
         count = entities["teamCount"]
         if count >= 2:
             return available("Team relationship entities observed.", ["plan.classCounts.Team", "plan.classCounts.Teams"])
-        if count == 1:
-            return captured_not_classified("Single team signal observed without relationship coverage.", ["plan.classCounts.Team"])
+        if count == 1 or int(targeted.get("teamSignals") or 0) > 0:
+            return captured_not_classified(
+                "Partial team signals observed without complete relationship coverage.",
+                ["plan.classCounts.Team", "targetedCaptureSession.samples.characterEntities.team"],
+            )
         return missing("No team relationship evidence.", ["plan.classCounts.Team", "plan.classCounts.Teams"])
 
     if requirement_id == "character_spatial_positions":
@@ -474,11 +554,26 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
         return missing("No map geometry evidence.", ["plan.classCounts"])
 
     if requirement_id == "loadout_gui_structures":
+        if targeted_request_status.get("loadout-runtime-observation") == "satisfied":
+            return available(
+                "Targeted loadout-runtime request is satisfied with GUI/loadout runtime snapshots.",
+                ["targetedCaptureSession.requestProgress.loadout-runtime-observation"],
+            )
+        if int(targeted.get("loadoutSnapshots") or 0) > 0:
+            return available(
+                "Targeted loadout snapshots provide bounded GUI/loadout structures.",
+                ["targetedCaptureSession.samples.loadoutSnapshots"],
+            )
         if tokens.get("loadout", 0) > 0 or tokens.get("weapon", 0) > 0:
             return available("Loadout/weapon GUI paths were observed.", ["observation.clickTargetObservations.guiCandidates.path"])
         return missing("No loadout/weapon GUI structures observed.", ["observation.clickTargetObservations.guiCandidates.path"])
 
     if requirement_id == "hud_weapon_indicators":
+        if int(targeted.get("hudWeaponIndicators") or 0) > 0:
+            return available(
+                "Targeted loadout snapshots include HUD weapon indicators.",
+                ["targetedCaptureSession.samples.loadoutSnapshots.hudWeaponIndicators"],
+            )
         if tokens.get("hud", 0) > 0 and tokens.get("weapon", 0) > 0:
             return available("HUD and weapon-related paths co-occur in observed GUI structures.", ["observation.clickTargetObservations.guiCandidates.path"])
         if tokens.get("hud", 0) > 0:
@@ -498,6 +593,11 @@ def _evaluate_requirement(requirement_id: str, signals: dict[str, Any]) -> Requi
     if requirement_id == "objective_hud_signals":
         if objective_signals > 0:
             return available("Objective/timer/score state signals were observed.", ["plan.observedInteractionHistory.stateChanges"])
+        if targeted_request_status.get("match-objective-state-observation") == "collecting":
+            return captured_not_classified(
+                "Targeted objective request is collecting but state transitions are not yet strongly classified.",
+                ["targetedCaptureSession.requestProgress.match-objective-state-observation"],
+            )
         if tokens.get("score", 0) > 0 or tokens.get("objective", 0) > 0 or tokens.get("timer", 0) > 0:
             return captured_not_classified(
                 "GUI objective-like tokens exist but no dynamic objective state transitions were captured.",
@@ -784,6 +884,8 @@ def _build_capability_contracts(signals: dict[str, Any]) -> dict[str, Any]:
                     continue
                 if dep == "schema normalizer" and _evaluate_requirement("feature_summary", signals).available:
                     continue
+                if dep == "tool identity resolver" and int((signals.get("targeted") or {}).get("loadoutToolSignals") or 0) > 0:
+                    continue
                 dependency_missing.append(dep)
 
             stage = _stage_from_requirements(required, dependency_missing)
@@ -792,6 +894,15 @@ def _build_capability_contracts(signals: dict[str, Any]) -> dict[str, Any]:
                 and capability["capabilityId"] == "movement_navigation_assist.movement_telemetry_overlay"
                 and signals["movement"]["playerPositionSampleCount"] > 0
                 and signals["movement"]["movementActionCount"] > 0
+            ):
+                stage = "Implementation ready"
+            if (
+                stage == "Implementation dependencies satisfied"
+                and capability["capabilityId"] in {
+                    "loadout_information_suite.loadout_gui_reader",
+                    "loadout_information_suite.runtime_weapon_state",
+                }
+                and int((signals.get("targeted") or {}).get("loadoutSnapshots") or 0) > 0
             ):
                 stage = "Implementation ready"
             feature_stage_rank = max(feature_stage_rank, stage_order.index(stage))

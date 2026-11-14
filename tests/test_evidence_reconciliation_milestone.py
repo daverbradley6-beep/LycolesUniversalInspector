@@ -346,7 +346,14 @@ class EvidenceReconciliationMilestoneTests(unittest.TestCase):
             reqs = {item["requirementId"]: item for item in contracts["requirements"]}
             self.assertEqual(reqs["camera_state_samples"]["status"], "available")
             self.assertEqual(reqs["weapon_equipped_signal"]["status"], "available")
+            self.assertEqual(reqs["loadout_gui_structures"]["status"], "available")
+            self.assertEqual(reqs["hud_weapon_indicators"]["status"], "available")
             self.assertIn(reqs["objective_hud_signals"]["status"], {"available", "captured-not-classified"})
+
+            loadout_feature = next(item for item in contracts["features"] if item["featureId"] == "loadout_information_suite")
+            loadout_stages = {cap["capabilityId"]: cap["stage"] for cap in loadout_feature["capabilities"]}
+            self.assertEqual(loadout_stages["loadout_information_suite.loadout_gui_reader"], "Implementation ready")
+            self.assertEqual(loadout_stages["loadout_information_suite.runtime_weapon_state"], "Implementation ready")
 
     def test_movement_overlay_module_exposes_runtime_contract_methods(self):
         with tempfile.TemporaryDirectory() as tmp:

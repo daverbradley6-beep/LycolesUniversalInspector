@@ -268,6 +268,7 @@ class EvidenceBundle:
     generation_readiness: Optional[dict[str, Any]] = None
     generated_script: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
+    normalized_observation_paths: tuple[Path, ...] = ()
 
 
 @dataclass
@@ -850,6 +851,252 @@ class EvidenceProcessor:
         return observation_dirs, observation_files
 
     @staticmethod
+    def _combine_split_observation_files(
+        observation_files: list[Path],
+        *,
+        output_dir: Path,
+        warnings: list[str],
+    ) -> list[Path]:
+        part_pattern = re.compile(
+            r"^(?P<base>.+)_Part_(?P<index>\d+)_of_(?P<total>\d+)(?P<ext>\.[^.]+)$",
+            re.IGNORECASE,
+        )
+        grouped: dict[tuple[str, str, str], list[tuple[int, int, Path]]] = {}
+        passthrough: list[Path] = []
+        for path in observation_files:
+            match = part_pattern.match(path.name)
+            if not match:
+                passthrough.append(path)
+                continue
+            total = int(match.group("total"))
+            index = int(match.group("index"))
+            if total <= 1:
+                passthrough.append(path)
+                continue
+            key = (str(path.parent.resolve()), match.group("base"), match.group("ext"))
+            grouped.setdefault(key, []).append((index, total, path))
+
+        if not grouped:
+            return observation_files
+
+        normalized_dir = output_dir / "normalized-observations"
+        normalized_dir.mkdir(parents=True, exist_ok=True)
+        combined_paths: list[Path] = []
+
+        for key, entries in sorted(grouped.items()):
+            _parent, base_name, ext = key
+            totals = {total for _, total, _ in entries}
+            expected_total = max(totals) if totals else 0
+            indexes = {index for index, _, _ in entries}
+            if len(totals) != 1 or expected_total < 2 or indexes != set(range(1, expected_total + 1)):
+                warnings.append(
+                    f"Observation split sequence incomplete; using raw parts for {base_name} ({len(entries)} found, expected {expected_total})."
+                )
+                passthrough.extend(path for _, _, path in sorted(entries, key=lambda item: item[0]))
+                continue
+            ordered_entries = sorted(entries, key=lambda item: item[0])
+            try:
+                merged_text = "".join(path.read_text(encoding="utf-8") for _, _, path in ordered_entries)
+            except OSError as exc:
+                warnings.append(f"Failed reading split observation parts for {base_name}: {exc}")
+                passthrough.extend(path for _, _, path in ordered_entries)
+                continue
+
+            merged_name = f"{base_name}_combined{ext}"
+            merged_path = normalized_dir / merged_name
+            merged_path.write_text(merged_text, encoding="utf-8")
+            combined_paths.append(merged_path)
+            warnings.append(
+                f"Combined split observation parts into {merged_path.name} ({expected_total} parts)."
+            )
+
+        return sorted(passthrough + combined_paths, key=lambda item: str(item))
+
+    @staticmethod
+    def _normalize_dynamic_observation_payload(
+        payload: dict[str, Any],
+        *,
+        source_name: str,
+        warnings: list[str],
+    ) -> tuple[dict[str, Any], bool]:
+        export_kind = payload.get("exportKind")
+        diagnostics = payload.get("sourceDiagnostics") if isinstance(payload.get("sourceDiagnostics"), dict) else {}
+        scan_mode = diagnostics.get("scanMode")
+        is_dynamic = export_kind == "dynamic-observations" or scan_mode == "dynamic-observations"
+        if not is_dynamic:
+            return payload, False
+
+        normalized = _json_clone(payload)
+        changed = False
+
+        targeted = normalized.get("targetedCaptureSession")
+        if not isinstance(targeted, dict):
+            targeted = ((normalized.get("interactionDiagnostics") or {}).get("targetedCaptureSessionSummary")
+                        if isinstance(normalized.get("interactionDiagnostics"), dict)
+                        else None)
+        samples = targeted.get("samples") if isinstance(targeted, dict) and isinstance(targeted.get("samples"), dict) else {}
+
+        interaction_diagnostics = normalized.get("interactionDiagnostics")
+        if not isinstance(interaction_diagnostics, dict):
+            interaction_diagnostics = {}
+            normalized["interactionDiagnostics"] = interaction_diagnostics
+
+        observed_history = normalized.get("observedInteractionHistory")
+        if not isinstance(observed_history, list):
+            observed_history = []
+            normalized["observedInteractionHistory"] = observed_history
+
+        recent = interaction_diagnostics.get("recentInteractions")
+        if not isinstance(recent, list):
+            recent = []
+
+        if not recent and not observed_history:
+            synthetic_events: list[dict[str, Any]] = []
+            for sample in samples.get("loadoutSnapshots") or []:
+                if not isinstance(sample, dict):
+                    continue
+                hud_paths = [item for item in (sample.get("hudWeaponIndicatorPaths") or []) if isinstance(item, str)]
+                state_changes = [
+                    {"key": "equippedToolsCount", "after": len(sample.get("equippedTools") or [])},
+                    {"key": "backpackToolsCount", "after": len(sample.get("backpackTools") or [])},
+                    {"key": "hasCombatTool", "after": bool(sample.get("hasCombatTool") is True)},
+                    {"key": "hudWeaponIndicators", "after": len(sample.get("hudWeaponIndicators") or [])},
+                ]
+                synthetic_events.append({
+                    "featureCandidate": "inventory",
+                    "controlType": "DynamicObservation.LoadoutSnapshot",
+                    "actionKind": "observe",
+                    "path": hud_paths[0] if hud_paths else "LocalPlayer.Backpack",
+                    "stateChanges": state_changes,
+                })
+            for sample in samples.get("weaponSnapshots") or []:
+                if not isinstance(sample, dict):
+                    continue
+                synthetic_events.append({
+                    "featureCandidate": "combat",
+                    "controlType": "DynamicObservation.WeaponSnapshot",
+                    "actionKind": "observe",
+                    "path": "LocalPlayer.Character",
+                    "stateChanges": [
+                        {"key": "weaponEquippedToolsCount", "after": len(sample.get("equippedTools") or [])},
+                        {"key": "weaponHasCombatTool", "after": bool(sample.get("hasCombatTool") is True)},
+                    ],
+                })
+
+            if synthetic_events:
+                interaction_diagnostics["recentInteractions"] = synthetic_events
+                normalized["observedInteractionHistory"] = list(synthetic_events)
+                changed = True
+                warnings.append(
+                    f"Synthesized {len(synthetic_events)} interaction events from targeted samples for {source_name}."
+                )
+
+        features = normalized.get("features")
+        if not isinstance(features, list) or not features:
+            loadout_count = len([item for item in (samples.get("loadoutSnapshots") or []) if isinstance(item, dict)])
+            weapon_count = len([item for item in (samples.get("weaponSnapshots") or []) if isinstance(item, dict)])
+            objective_count = len([item for item in (samples.get("matchStateSamples") or []) if isinstance(item, dict)])
+            entity_count = len([item for item in (samples.get("characterEntities") or []) if isinstance(item, dict)])
+            camera_count = len([item for item in (samples.get("cameraCorrelations") or []) if isinstance(item, dict)])
+
+            synthesized_features: list[dict[str, Any]] = []
+            if loadout_count > 0:
+                synthesized_features.append({
+                    "feature": "inventory",
+                    "interactionEvents": loadout_count,
+                    "observedEvents": loadout_count,
+                    "verifiedClientOutcomes": 0,
+                    "clientCorroboratedEvents": 0,
+                    "temporalTransitionEvents": 0,
+                })
+            if weapon_count > 0 or camera_count > 0:
+                observed = max(weapon_count, camera_count)
+                synthesized_features.append({
+                    "feature": "combat",
+                    "interactionEvents": observed,
+                    "observedEvents": observed,
+                    "verifiedClientOutcomes": 0,
+                    "clientCorroboratedEvents": 0,
+                    "temporalTransitionEvents": 0,
+                })
+            if objective_count > 0:
+                synthesized_features.append({
+                    "feature": "quests",
+                    "interactionEvents": objective_count,
+                    "observedEvents": objective_count,
+                    "verifiedClientOutcomes": 0,
+                    "clientCorroboratedEvents": 0,
+                    "temporalTransitionEvents": 0,
+                })
+            if entity_count > 0:
+                synthesized_features.append({
+                    "feature": "progression",
+                    "interactionEvents": entity_count,
+                    "observedEvents": entity_count,
+                    "verifiedClientOutcomes": 0,
+                    "clientCorroboratedEvents": 0,
+                    "temporalTransitionEvents": 0,
+                })
+            if synthesized_features:
+                normalized["features"] = synthesized_features
+                changed = True
+                warnings.append(
+                    f"Synthesized {len(synthesized_features)} feature overlays from targeted samples for {source_name}."
+                )
+
+        return normalized, changed
+
+    def _materialize_observation_files(
+        self,
+        observation_files: list[Path],
+        *,
+        output_dir: Path,
+        warnings: list[str],
+    ) -> list[Path]:
+        expanded_files = self._combine_split_observation_files(
+            observation_files,
+            output_dir=output_dir,
+            warnings=warnings,
+        )
+        if not expanded_files:
+            return []
+
+        normalized_dir = output_dir / "normalized-observations"
+        normalized_dir.mkdir(parents=True, exist_ok=True)
+
+        result: list[Path] = []
+        for path in expanded_files:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, json.JSONDecodeError):
+                result.append(path)
+                continue
+            if not isinstance(payload, dict):
+                result.append(path)
+                continue
+            normalized_payload, changed = self._normalize_dynamic_observation_payload(
+                payload,
+                source_name=path.name,
+                warnings=warnings,
+            )
+            if not changed:
+                result.append(path)
+                continue
+            target = normalized_dir / f"{path.stem}.normalized.json"
+            target.write_text(json.dumps(normalized_payload, ensure_ascii=False), encoding="utf-8")
+            result.append(target)
+
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for item in sorted(result, key=lambda value: str(value)):
+            key = str(item.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
+    @staticmethod
     def _partition_observation_overlay_files(
         observation_files: list[Path],
     ) -> tuple[list[Path], list[Path], list[str]]:
@@ -899,7 +1146,15 @@ class EvidenceProcessor:
         warnings: list[str],
     ) -> EvidenceBundle:
         observation_dirs, observation_files = self._collect_observation_inputs(observation_paths)
-        dynamic_observation_files, _targeted_observation_files, partition_warnings = self._partition_observation_overlay_files(observation_files)
+        normalized_observation_files = self._materialize_observation_files(
+            observation_files,
+            output_dir=output_dir,
+            warnings=warnings,
+        )
+        dynamic_observation_files, targeted_observation_files, partition_warnings = self._partition_observation_overlay_files(
+            normalized_observation_files
+        )
+        reconciliation_observation_files = tuple(dynamic_observation_files + targeted_observation_files)
         if partition_warnings:
             warnings.extend(partition_warnings)
         try:
@@ -945,6 +1200,7 @@ class EvidenceProcessor:
                         generation_readiness=generation_readiness,
                         generated_script=generated_script,
                         warnings=warnings,
+                        normalized_observation_paths=reconciliation_observation_files,
                     )
 
             warnings.append(
@@ -1021,6 +1277,7 @@ class EvidenceProcessor:
             generation_readiness=generation_readiness,
             generated_script=generated_script,
             warnings=warnings,
+            normalized_observation_paths=reconciliation_observation_files,
         )
 
 
@@ -2263,7 +2520,7 @@ class LycolesGenerationService:
                 reconciliation_result = self.evidence_reconciliation.run_from_artifacts(
                     capability_plan_path=capability_plan_path,
                     output_dir=bundle.output_dir / "evidence-reconciliation-v121",
-                    observation_files=request.observation_paths,
+                    observation_files=(bundle.normalized_observation_paths or request.observation_paths),
                     integration_context={
                         "source": "lycoles_generation_service",
                         "jobId": job_id,

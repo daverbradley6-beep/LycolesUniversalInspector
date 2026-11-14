@@ -1014,3 +1014,41 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Packaging diagnostics upgraded (`30.6.packaging-diagnostics.3`):
   - tracks fragmented record count, total fragments, per-record encoded bytes + field path (bounded list), total part bytes, duration, overflow count, largest part.
 - Additional hardening in v30.6.68 patchline: oversized `interactionHistoryChunk` records now use schema `30.6.interaction-history-fragment.1` and are reconstructed fail-closed in `compile_scan.py`.
+
+## Update — 2026-11-14 — Milestone 4 split-observation ingestion + loadout module
+
+- Generation service split observation support (`tools/lycoles_generation_service.py`):
+  - Added `_collect_observation_inputs(...)` classification for directories, direct files, and split part fragments.
+  - Added deterministic split recombination (`_combine_split_observation_files`) using filename pattern `*_Part_<n>_of_<m>.*` with strict continuity checks.
+  - Added dynamic-observation normalization/materialization (`_normalize_observation_inputs`) that can synthesize bounded feature overlays from `targetedCaptureSession` samples when original `features` are sparse.
+  - `EvidenceBundle` now carries `normalized_observation_paths`; reconciliation call path now prefers normalized files over raw request paths.
+
+- Reconciliation upgrade (`tools/evidence_reconciliation_milestone.py`):
+  - Aggregates targeted `requestProgress` states and missing-evidence maps.
+  - Requirement evaluation now consumes targeted runtime signals for:
+    - `weapon_equipped_signal`, `weapon_state_signal`, `loadout_gui_structures`, `hud_weapon_indicators`, `team_relationship_signal`, and `camera_movement_correlation`.
+  - Capability dependency rules now treat `tool identity resolver` as satisfied when loadout tool signals are present.
+  - Loadout capabilities (`loadout_gui_reader`, `runtime_weapon_state`) can be promoted to `Implementation ready` when targeted loadout snapshots are available.
+
+- Generated gameplay module (`tools/generate_script.py`):
+  - Added first functional gameplay-focused loadout telemetry module integrated into the main generated utility:
+    - new tabs: `Loadout`, `LoadCfg`
+    - runtime sampling of equipped/backpack tools
+    - HUD indicator extraction from evidence-grounded paths
+    - runtime-bound refresh configuration and backpack visibility setting
+    - diagnostics (`changeCount`, evidence snapshot counters)
+    - keybind toggle (`RightShift`)
+  - Updated control layout sizing to accommodate expanded tab set.
+
+- Validation adjustment (`tools/build_release.py`):
+  - Lua validator now requires a minimum of 4 generated controls instead of exactly 4, preserving compatibility with expanded validated modules.
+
+- Regression coverage additions:
+  - `tests/test_lycoles_generation_service.py`: split observation part ingestion + loadout module generation assertions.
+  - `tests/test_evidence_reconciliation_milestone.py`: targeted loadout requirements and `Implementation ready` stage assertions.
+  - `tests/test_generate_script.py`: loadout module/tab/keybind + targeted snapshot hint rendering assertions.
+
+- Verified real-evidence service run:
+  - Real Phantom Forces scan + split observation fragments (derived from authentic combined observation export) successfully processed.
+  - Service emitted warnings for split recombination + synthetic feature overlay generation and produced static-checked release outputs.
+  - Reconciliation summary reported gameplay implementation-ready capabilities including `loadout_information_suite.loadout_gui_reader`.

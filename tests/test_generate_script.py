@@ -25,12 +25,41 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('button("Stats"',result)
         self.assertIn('button("Menus"',result)
         self.assertIn('button("Gameplay"',result)
+        self.assertIn('button("Loadout"',result)
+        self.assertIn('button("LoadCfg"',result)
+        self.assertIn('RightShift',result)
         self.assertNotIn('button("Features"',result)
         self.assertIn('activateGameplayAction',result)
         self.assertIn("Receiver payload digests: unavailable",result)
         self.assertIn("Response authenticity: unverified",result)
         self.assertNotIn("FireServer(",result)
         self.assertNotIn("InvokeServer(",result)
+    def test_loadout_telemetry_uses_targeted_snapshot_hints(self):
+        plan=self.plan()
+        plan["observedInteractionHistory"]= [{
+            "featureCandidate":"inventory",
+            "path":"LocalPlayer.PlayerGui.HUD.WeaponFrame",
+            "controlType":"DynamicObservation.LoadoutSnapshot",
+            "stateChanges":[{"key":"equippedToolsCount","after":1}],
+        }]
+        plan["interactionDiagnostics"]={
+            "targetedCaptureSessionSummary":{
+                "samples":{
+                    "loadoutSnapshots":[{
+                        "equippedTools":["Rifle"],
+                        "backpackTools":["Knife"],
+                        "hudWeaponIndicatorPaths":["LocalPlayer.PlayerGui.HUD.WeaponLabel"],
+                        "hudWeaponIndicators":["Rifle"],
+                    }]
+                }
+            }
+        }
+        result=generator.render(plan)
+        self.assertIn('LocalPlayer.PlayerGui.HUD.WeaponLabel',result)
+        self.assertIn('LOADOUT_SNAPSHOT_COUNT = 1',result)
+        self.assertIn('button("Loadout"',result)
+        self.assertIn('rebuildLoadoutSnapshotLines',result)
+
     def test_gameplay_understanding_is_displayed_without_verification(self):
         result=generator.render(self.plan(),self.gameplay())
         self.assertIn("Gameplay systems: 1",result)
