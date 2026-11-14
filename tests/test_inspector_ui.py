@@ -108,8 +108,11 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('close.Position = UDim2.fromOffset(356, 8)', SRC)
         self.assertIn('TextTruncate = Enum.TextTruncate.AtEnd', SRC)
         self.assertIn('url.Size = UDim2.fromOffset(446, 30)', SRC)
-        self.assertIn('send.Size = UDim2.fromOffset(170, 40)', SRC)
-        self.assertIn('automatic.Size = UDim2.fromOffset(268, 40)', SRC)
+        self.assertIn('Name = "FinishGenerateButton"', SRC)
+        self.assertIn('Text = "FINISH INSPECTION & GENERATE SCRIPT"', SRC)
+        self.assertIn('send.Size = UDim2.fromOffset(278, 40)', SRC)
+        self.assertIn('Name = "OpenGeneratorButton"', SRC)
+        self.assertIn('automatic.Size = UDim2.fromOffset(168, 40)', SRC)
 
 
     def test_runtime_diagnostics_surface_and_stage_markers_exist(self):
@@ -590,6 +593,59 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('clickLinkMissReasonCounts=observerStats.clickLinkMissReasonCounts', SRC)
         self.assertIn('clickLinkMissSamples=observerStats.clickLinkMissSamples', SRC)
         self.assertNotIn('local x=_numeric(screen.x)', SRC)
+
+    def test_generation_windows_and_session_manager_foundation(self):
+        self.assertIn('generationUi = _G.LycolesGenerationUi or {ready=false}', SRC)
+        self.assertIn('_G.LycolesGenerationUi = generationUi', SRC)
+        self.assertIn('Name = "FeatureGeneratorWindow"', SRC)
+        self.assertIn('Name = "GeneratedScriptWindow"', SRC)
+        self.assertIn('local generatorSession = {', SRC)
+        self.assertIn('generationUi.backendContract = {', SRC)
+        self.assertIn('submitInspection = true', SRC)
+        self.assertIn('retrieveGameplayAnalysis = true', SRC)
+        self.assertIn('retrieveRecommendations = true', SRC)
+        self.assertIn('submitGenerationRequest = true', SRC)
+        self.assertIn('pollGenerationStatus = true', SRC)
+        self.assertIn('retrieveGeneratedScript = true', SRC)
+        self.assertIn('requestRevision = true', SRC)
+        self.assertIn('anthropicAdapter = {', SRC)
+        self.assertIn('configured = false', SRC)
+
+    def test_finish_handoff_and_recovery_paths_exist(self):
+        self.assertIn('local function validateFinishedInspection()', SRC)
+        self.assertIn('Snapshot is partial. Run a complete scan before generation handoff.', SRC)
+        self.assertIn('local function startGenerationHandoff()', SRC)
+        self.assertIn('status.Text = "Finalizing inspection snapshot and transferring to generator..."', SRC)
+        self.assertIn('status.Text = "Generation handoff failed: snapshot preserved; retry after checking evidence readiness."', SRC)
+        self.assertIn('setWindowVisibility("generator")', SRC)
+        self.assertIn('status.Text = "Inspection handoff complete. Generator window opened."', SRC)
+        self.assertIn('send.MouseButton1Click:Connect(function()', SRC)
+        self.assertIn('generationUi.startGenerationHandoff()', SRC)
+
+    def test_generator_result_revision_and_history_controls_exist(self):
+        self.assertIn('local function startGenerationRequest(isRevision)', SRC)
+        self.assertIn('backend:requestRevision(generatorSession.sessionId, selectedLabels, requestText, callback)', SRC)
+        self.assertIn('generatorSession.scripts[#generatorSession.scripts + 1] = {', SRC)
+        self.assertIn('Name = "ResultPreviousVersion"', SRC)
+        self.assertIn('Name = "ResultNextVersion"', SRC)
+        self.assertIn('Name = "ResultCopy"', SRC)
+        self.assertIn('Name = "ResultSave"', SRC)
+        self.assertIn('resultStatus.Text = ok and "Script copied to clipboard" or "Copy failed"', SRC)
+        self.assertIn('local filename = "LycolesGeneratedScript_" .. tostring(game.PlaceId) .. "_v" .. tostring(index) .. ".lua"', SRC)
+
+    def test_rightshift_and_minimize_restore_use_shared_window_visibility(self):
+        self.assertIn('if input.KeyCode ~= Enum.KeyCode.RightShift then return end', SRC)
+        self.assertIn('local function hideAllWindows()', SRC)
+        self.assertIn('local function restoreWindows()', SRC)
+        self.assertIn('minimise.MouseButton1Click:Connect(function()', SRC)
+        self.assertIn('generationUi.hideAllWindows()', SRC)
+        self.assertIn('mini.MouseButton1Click:Connect(function()', SRC)
+        self.assertIn('generationUi.restoreWindows()', SRC)
+
+    def test_no_embedded_claude_or_api_credentials(self):
+        self.assertNotRegex(SRC, r"sk-[A-Za-z0-9]{20,}")
+        self.assertNotIn("ANTHROPIC_API_KEY=", SRC)
+        self.assertNotIn("x-api-key", SRC.lower())
 
 
 

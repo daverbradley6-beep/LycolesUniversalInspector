@@ -1083,3 +1083,23 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Offline completion must fail closed when mocked runtime behavior checks fail (`offline.mocked_runtime_behavior`), preventing text-only toggle regressions from being marked complete.
 - Discovery ranking now includes contract-aware scoring fields (`discoveryScoring`) and penalizes duplicate native functionality while prioritizing functional utility for active requests.
 - `tools/build_release.py` validator expectations changed from legacy `button("...")` tokens to contract registration tokens (`registerFeatureControl({id="..."`) to avoid false validation failures.
+
+## Session notes — 2026-11-14 AI generation integration Milestone 1 foundation (v30.6.68)
+
+- Inspector completion controls now prioritize generation handoff:
+  - replaced `SEND JSON` / `AUTO-SEND` UI controls with `FINISH INSPECTION & GENERATE SCRIPT` and `OPEN GENERATOR`.
+  - manual local export (`SAVE REPORT`) remains available.
+- Added shared generation session/window orchestration with RightShift visibility control and minimize/restore integration across inspector, generator, and results windows.
+- Added mock asynchronous generation backend contract in-inspector with explicit methods for:
+  - inspection submission,
+  - gameplay analysis retrieval,
+  - recommendation retrieval,
+  - generation request,
+  - status polling,
+  - result retrieval,
+  - revision requests.
+- Added explicit Anthropic adapter scaffold metadata (`configured=false`) and credential-safe constraints (no client-side embedded API secrets).
+- Feature recommendations are now derived dynamically from captured `featureEvidence` and readiness blockers; recommendations are labeled as evidence-backed candidates or uncertain, not as verified gameplay.
+- Generated script results support multi-version history, copy/save, revision regeneration from existing evidence, and return-to-generator navigation without rescanning.
+- Rescan flow no longer hard-blocks on unsent parts after removing direct SEND JSON control; old unsent parts are superseded by new scans.
+- Root local pressure remained within Potassium safety budget after scoping generation UI setup into an initializer function.

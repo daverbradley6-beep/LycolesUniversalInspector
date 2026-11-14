@@ -16,7 +16,7 @@ local CONFIG_FILE = "LycolesInspectorReceiver.txt"
 local VERSION = "30.6.68"
 
 local endpoint = ""
-local autoSend = true
+local autoSend = false
 local last = nil
 local pendingParts = nil
 local pendingManifest = nil
@@ -158,6 +158,9 @@ local LIMITS = {
 local alive = true
 local watchEnabled = true
 local watchConnections = {}
+generationUi = _G.LycolesGenerationUi or {ready=false}
+_G.LycolesGenerationUi = generationUi
+
 local watchQueue = {}
 local watchCount = 0
 local watchBusy = false
@@ -1655,12 +1658,20 @@ local mini = create("TextButton", {
     Active = true
 }, gui)
 minimise.MouseButton1Click:Connect(function()
-    panel.Visible = false
-    mini.Visible = true
+    if generationUi.ready and generationUi.hideAllWindows then
+        generationUi.hideAllWindows()
+    else
+        panel.Visible = false
+        mini.Visible = true
+    end
 end)
 mini.MouseButton1Click:Connect(function()
-    mini.Visible = false
-    panel.Visible = true
+    if generationUi.ready and generationUi.restoreWindows then
+        generationUi.restoreWindows()
+    else
+        mini.Visible = false
+        panel.Visible = true
+    end
 end)
 
 local scan = button("SCAN", 12)
@@ -1746,24 +1757,26 @@ local url = create("TextBox", {
 }, config)
 
 local send = create("TextButton", {
-    Size = UDim2.fromOffset(180, 38),
-    Position = UDim2.fromOffset(12, 45),
-    Text = "SEND JSON",
+    Name = "FinishGenerateButton",
+    Size = UDim2.fromOffset(278, 40),
+    Position = UDim2.fromOffset(14, 52),
+    Text = "FINISH INSPECTION & GENERATE SCRIPT",
     TextColor3 = Color3.new(1, 1, 1),
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextWrapped = false,
-    BackgroundColor3 = Color3.fromRGB(90, 90, 90),
+    BackgroundColor3 = Color3.fromRGB(48, 116, 150),
     BorderSizePixel = 2
 }, config)
 
 local automatic = create("TextButton", {
-    Size = UDim2.fromOffset(290, 38),
-    Position = UDim2.fromOffset(208, 45),
-    Text = "AUTO-SEND: ON",
+    Name = "OpenGeneratorButton",
+    Size = UDim2.fromOffset(168, 40),
+    Position = UDim2.fromOffset(292, 52),
+    Text = "OPEN GENERATOR",
     TextColor3 = Color3.new(1, 1, 1),
     TextTruncate = Enum.TextTruncate.AtEnd,
     TextWrapped = false,
-    BackgroundColor3 = Color3.fromRGB(90, 90, 90),
+    BackgroundColor3 = Color3.fromRGB(72, 92, 116),
     BorderSizePixel = 2
 }, config)
 
@@ -1848,10 +1861,10 @@ config.Size = UDim2.fromOffset(474, 108)
 config.Position = UDim2.fromOffset(8, 244)
 url.Size = UDim2.fromOffset(446, 30)
 url.Position = UDim2.fromOffset(14, 8)
-send.Size = UDim2.fromOffset(170, 40)
+send.Size = UDim2.fromOffset(278, 40)
 send.Position = UDim2.fromOffset(14, 52)
-automatic.Size = UDim2.fromOffset(268, 40)
-automatic.Position = UDim2.fromOffset(192, 52)
+automatic.Size = UDim2.fromOffset(168, 40)
+automatic.Position = UDim2.fromOffset(292, 52)
 watchToggle.Size = UDim2.fromOffset(220, 30)
 
 scan.ZIndex = 4
@@ -1888,7 +1901,15 @@ inspectorTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("inspe
 captureTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("capture") end)
 automationTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("automation") end)
 settingsTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("settings") end)
-generatedScriptTab.MouseButton1Click:Connect(function() showGeneratedScriptPane("generated") end)
+
+generatedScriptTab.MouseButton1Click:Connect(function()
+    if generationUi.ready and generationUi.session and generationUi.session.sessionId
+        and generationUi.openGeneratorIfReady then
+        generationUi.openGeneratorIfReady()
+    else
+        showGeneratedScriptPane("generated")
+    end
+end)
 showGeneratedScriptPane("inspector")
 local function refreshGeneratedHandoff(phase)
     if not pendingManifest then return end
@@ -1937,6 +1958,784 @@ local function refreshGeneratedHandoff(phase)
         .."; integrity unverified"
         .."\n"..downstreamLine
         .."\nGeneration: offline compilation/validation pending; gameplay unverified"
+end
+
+do
+    local function initializeGenerationUi()
+    local generatorSession = {
+        sessionId = nil,
+        inspection = nil,
+        recommendations = {},
+        selected = {},
+        scripts = {},
+        scriptIndex = 0,
+        pendingJobId = nil,
+        activeView = "inspector",
+        hidden = false,
+        analysisStatus = "idle",
+        lastError = nil,
+    }
+
+    local backend = {
+        sessions = {},
+        jobs = {},
+        sessionCounter = 0,
+        jobCounter = 0,
+        provider = "mock-provider-v1",
+        anthropicAdapter = {
+            provider = "anthropic-claude-adapter",
+            configured = false,
+            reason = "Requires secure server-side credentialed backend",
+        },
+    }
+
+    local function safeLower(value)
+        return type(value) == "string" and value:lower() or ""
+    end
+
+    local function titleCase(value)
+        if type(value) ~= "string" or value == "" then return "Unknown" end
+        local transformed = value:gsub("[_%-]", " ")
+        local words = {}
+        for token in transformed:gmatch("%S+") do
+            words[#words + 1] = token:sub(1, 1):upper() .. token:sub(2):lower()
+        end
+        return #words > 0 and table.concat(words, " ") or "Unknown"
+    end
+
+    local function sanitizeId(value)
+        local text = tostring(value or "feature")
+        text = text:gsub("[^%w]+", "_")
+        text = text:gsub("_+", "_")
+        text = text:gsub("^_", ""):gsub("_$", "")
+        return text ~= "" and text:sub(1, 80) or "feature"
+    end
+
+    function backend:deriveRecommendations(snapshot)
+        local list = {}
+        local seen = {}
+        local evidence = snapshot and snapshot.featureEvidence
+        if type(evidence) == "table" then
+            for featureName, featureData in pairs(evidence) do
+                if type(featureName) == "string" and featureName ~= "" then
+                    local id = "recommendation_" .. sanitizeId(featureName)
+                    if not seen[id] then
+                        seen[id] = true
+                        local count = 0
+                        if type(featureData) == "table" then
+                            count = tonumber(featureData.interactionEvents)
+                                or tonumber(featureData.observedEvents)
+                                or tonumber(featureData.count)
+                                or 0
+                        end
+                        list[#list + 1] = {
+                            id = id,
+                            label = titleCase(featureName) .. " utility controls",
+                            supported = true,
+                            confidence = "evidence-backed-candidate",
+                            reason = "Observed feature evidence entries: " .. tostring(math.max(0, math.floor(count + 0.5))),
+                        }
+                    end
+                end
+            end
+        end
+
+        local diagnostics = snapshot and snapshot.interactionDiagnostics
+        local readiness = diagnostics and diagnostics.requestedCapabilityAssessment
+        if type(readiness) == "table" and type(readiness.blockers) == "table" and #readiness.blockers > 0 then
+            list[#list + 1] = {
+                id = "recommendation_blockers",
+                label = "Resolve observed workflow blockers",
+                supported = false,
+                confidence = "uncertain",
+                reason = "Evidence indicates unresolved blockers for full request fulfillment",
+            }
+        end
+
+        if #list == 0 then
+            list[1] = {
+                id = "recommendation_custom_request",
+                label = "Custom request from available evidence",
+                supported = false,
+                confidence = "uncertain",
+                reason = "No high-confidence feature families were discovered in this snapshot",
+            }
+        end
+
+        table.sort(list, function(a, b)
+            local left = safeLower(a.label)
+            local right = safeLower(b.label)
+            if left == right then return safeLower(a.id) < safeLower(b.id) end
+            return left < right
+        end)
+        return list
+    end
+
+    function backend:submitInspection(snapshot, callback)
+        self.sessionCounter = self.sessionCounter + 1
+        local sessionId = "inspection-session-" .. tostring(self.sessionCounter)
+        local recommendations = self:deriveRecommendations(snapshot)
+        local payload = {
+            sessionId = sessionId,
+            gameName = snapshot and snapshot.gameName or "Unknown",
+            placeId = snapshot and snapshot.placeId or game.PlaceId,
+            scanId = snapshot and snapshot.scanId or "unknown",
+            analysisStatus = "analysis-complete-mock",
+            analysisSummary = "Mock evidence analysis complete. Recommendations are evidence-scoped candidates only.",
+            recommendations = recommendations,
+            provider = self.provider,
+            runtimeVerified = false,
+            gameplayVerified = false,
+        }
+        self.sessions[sessionId] = payload
+        task.spawn(function()
+            task.wait(0.08)
+            callback(true, payload)
+        end)
+    end
+
+    function backend:getGameplayAnalysis(sessionId, callback)
+        local session = self.sessions[sessionId]
+        task.spawn(function()
+            task.wait(0.04)
+            if not session then
+                callback(false, {error = "unknown-inspection-session"})
+                return
+            end
+            callback(true, {
+                sessionId = sessionId,
+                gameName = session.gameName,
+                placeId = session.placeId,
+                scanId = session.scanId,
+                analysisStatus = session.analysisStatus,
+                analysisSummary = session.analysisSummary,
+                runtimeVerified = false,
+                gameplayVerified = false,
+            })
+        end)
+    end
+
+    function backend:getRecommendations(sessionId, callback)
+        local session = self.sessions[sessionId]
+        task.spawn(function()
+            task.wait(0.05)
+            if not session then
+                callback(false, {error = "unknown-inspection-session"})
+                return
+            end
+            callback(true, {
+                sessionId = sessionId,
+                recommendations = session.recommendations,
+                analysisStatus = session.analysisStatus,
+                analysisSummary = session.analysisSummary,
+                runtimeVerified = false,
+                gameplayVerified = false,
+            })
+        end)
+    end
+
+    function backend:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
+        local session = self.sessions[sessionId]
+        if not session then
+            callback(false, {error = "unknown-inspection-session"})
+            return
+        end
+        self.jobCounter = self.jobCounter + 1
+        local jobId = "generation-job-" .. tostring(self.jobCounter)
+        self.jobs[jobId] = {
+            jobId = jobId,
+            sessionId = sessionId,
+            status = "queued",
+            selectedFeatures = selectedFeatures,
+            customRequest = customRequest,
+            createdAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            result = nil,
+        }
+        task.spawn(function()
+            task.wait(0.1)
+            local job = self.jobs[jobId]
+            if not job then return end
+            job.status = "running"
+            task.wait(0.15)
+            local featureLines = {}
+            for _, item in ipairs(selectedFeatures) do
+                if type(item) == "string" then featureLines[#featureLines + 1] = "-- selected: " .. item end
+            end
+            if #featureLines == 0 then
+                featureLines[1] = "-- selected: custom-request-only"
+            end
+            local scriptLines = {
+                "-- Lycoles generated script (mock provider output)",
+                "-- Evidence-scoped candidate utility. Runtime/gameplay outcomes are unverified.",
+                "local Players = game:GetService(\"Players\")",
+                "local player = Players.LocalPlayer",
+                "if not player then return end",
+                "",
+            }
+            for _, line in ipairs(featureLines) do scriptLines[#scriptLines + 1] = line end
+            scriptLines[#scriptLines + 1] = "-- custom-request: " .. (customRequest ~= "" and customRequest or "none")
+            scriptLines[#scriptLines + 1] = "local function describe()"
+            scriptLines[#scriptLines + 1] = "    return \"Generated candidate utility from inspection evidence\""
+            scriptLines[#scriptLines + 1] = "end"
+            scriptLines[#scriptLines + 1] = "print(describe())"
+            job.result = {
+                script = table.concat(scriptLines, "\n"),
+                validation = {
+                    syntaxValid = true,
+                    runtimeVerified = false,
+                    gameplayVerified = false,
+                    note = "Mock provider output for UI workflow testing only",
+                },
+                provider = self.provider,
+                generatedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            }
+            job.status = "completed"
+        end)
+        callback(true, {jobId = jobId, status = "queued", provider = self.provider})
+    end
+
+    function backend:pollGeneration(jobId, callback)
+        task.spawn(function()
+            task.wait(0.04)
+            local job = self.jobs[jobId]
+            if not job then
+                callback(false, {error = "unknown-generation-job"})
+                return
+            end
+            callback(true, {
+                jobId = jobId,
+                status = job.status,
+                sessionId = job.sessionId,
+            })
+        end)
+    end
+
+    function backend:getGenerationResult(jobId, callback)
+        task.spawn(function()
+            task.wait(0.03)
+            local job = self.jobs[jobId]
+            if not job then
+                callback(false, {error = "unknown-generation-job"})
+                return
+            end
+            if job.status ~= "completed" or type(job.result) ~= "table" then
+                callback(false, {error = "generation-not-complete"})
+                return
+            end
+            callback(true, job.result)
+        end)
+    end
+
+    function backend:requestRevision(sessionId, selectedFeatures, customRequest, callback)
+        self:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
+    end
+
+    local generatorWindow = create("Frame", {
+        Name = "FeatureGeneratorWindow", Size = UDim2.fromOffset(520, 420),
+        Position = UDim2.new(0.5, -260, 0.5, -210), BackgroundColor3 = Color3.fromRGB(55, 55, 55),
+        BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, Visible = false, ZIndex = 20,
+    }, gui)
+    local generatorHeader = create("TextLabel", {
+        Name = "GeneratorHeader", Text = "Lycoles | Feature Selection", Size = UDim2.fromOffset(470, 34),
+        Position = UDim2.fromOffset(10, 8), BackgroundTransparency = 1,
+        TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 16, ZIndex = 21,
+    }, generatorWindow)
+    local generatorMinimize = create("TextButton", {
+        Name = "GeneratorMinimize", Text = "_", Size = UDim2.fromOffset(32, 28),
+        Position = UDim2.new(1, -40, 0, 8), BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+        TextColor3 = Color3.new(1, 1, 1), TextSize = 18, ZIndex = 21,
+    }, generatorWindow)
+    local generatorGameLabel = create("TextLabel", {
+        Name = "GeneratorGameLabel", Text = "Game: unknown", Size = UDim2.fromOffset(494, 20),
+        Position = UDim2.fromOffset(12, 46), BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(226, 234, 240), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorStatusLabel = create("TextLabel", {
+        Name = "GeneratorStatusLabel", Text = "Analysis status: waiting for inspection handoff", Size = UDim2.fromOffset(494, 28),
+        Position = UDim2.fromOffset(12, 66), BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(210, 220, 230), TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local recommendationContainer = create("ScrollingFrame", {
+        Name = "RecommendationContainer", Size = UDim2.fromOffset(494, 168), Position = UDim2.fromOffset(12, 98),
+        BackgroundColor3 = Color3.fromRGB(35, 35, 35), BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 1,
+        ScrollBarThickness = 6, CanvasSize = UDim2.fromOffset(0, 168), AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ZIndex = 21,
+    }, generatorWindow)
+    local customRequestInput = create("TextBox", {
+        Name = "GeneratorCustomRequest", Text = "", PlaceholderText = "Optional custom instructions for script generation",
+        Size = UDim2.fromOffset(494, 72), Position = UDim2.fromOffset(12, 274),
+        BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.new(1, 1, 1),
+        PlaceholderColor3 = Color3.fromRGB(165, 172, 180), TextSize = 12,
+        TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 21,
+    }, generatorWindow)
+    local generatorButton = create("TextButton", {
+        Name = "GeneratorGenerateButton", Text = "GENERATE SCRIPT", Size = UDim2.fromOffset(176, 34), Position = UDim2.fromOffset(12, 356),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorOpenResults = create("TextButton", {
+        Name = "GeneratorOpenResults", Text = "OPEN RESULTS", Size = UDim2.fromOffset(150, 34), Position = UDim2.fromOffset(198, 356),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+    local generatorBackInspector = create("TextButton", {
+        Name = "GeneratorBackInspector", Text = "BACK TO INSPECTOR", Size = UDim2.fromOffset(158, 34), Position = UDim2.fromOffset(348, 356),
+        BackgroundColor3 = Color3.fromRGB(80, 80, 80), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 21,
+    }, generatorWindow)
+
+    local resultWindow = create("Frame", {
+        Name = "GeneratedScriptWindow", Size = UDim2.fromOffset(560, 450),
+        Position = UDim2.new(0.5, -280, 0.5, -225), BackgroundColor3 = Color3.fromRGB(55, 55, 55),
+        BorderColor3 = Color3.new(0, 0, 0), BorderSizePixel = 2, Visible = false, ZIndex = 22,
+    }, gui)
+    local resultHeader = create("TextLabel", {
+        Name = "ResultHeader", Text = "Lycoles | Generated Script", Size = UDim2.fromOffset(510, 34),
+        Position = UDim2.fromOffset(10, 8), BackgroundTransparency = 1,
+        TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 16, ZIndex = 23,
+    }, resultWindow)
+    local resultMinimize = create("TextButton", {
+        Name = "ResultMinimize", Text = "_", Size = UDim2.fromOffset(32, 28),
+        Position = UDim2.new(1, -40, 0, 8), BackgroundColor3 = Color3.fromRGB(95, 95, 95),
+        TextColor3 = Color3.new(1, 1, 1), TextSize = 18, ZIndex = 23,
+    }, resultWindow)
+    local resultStatus = create("TextLabel", {
+        Name = "ResultStatus", Text = "No generation job has completed yet.", Size = UDim2.fromOffset(534, 36), Position = UDim2.fromOffset(12, 46),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(226, 234, 240), TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultVersion = create("TextLabel", {
+        Name = "ResultVersion", Text = "Version: none", Size = UDim2.fromOffset(260, 20), Position = UDim2.fromOffset(12, 84),
+        BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205, 216, 228), TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultCode = create("TextBox", {
+        Name = "ResultCode", Text = "-- Generated script will appear here after completion.",
+        Size = UDim2.fromOffset(534, 260), Position = UDim2.fromOffset(12, 108),
+        BackgroundColor3 = Color3.fromRGB(30, 33, 39), TextColor3 = Color3.fromRGB(180, 190, 198),
+        TextSize = 11, Font = Enum.Font.Code, TextWrapped = false, MultiLine = true,
+        TextEditable = false, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, ClearTextOnFocus = false, ZIndex = 23,
+    }, resultWindow)
+    local resultPrev = create("TextButton", {
+        Name = "ResultPreviousVersion", Text = "PREV VERSION", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(12, 378),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultNext = create("TextButton", {
+        Name = "ResultNextVersion", Text = "NEXT VERSION", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(136, 378),
+        BackgroundColor3 = Color3.fromRGB(72, 92, 116), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultCopy = create("TextButton", {
+        Name = "ResultCopy", Text = "COPY SCRIPT", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(260, 378),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultSave = create("TextButton", {
+        Name = "ResultSave", Text = "SAVE SCRIPT", Size = UDim2.fromOffset(120, 34), Position = UDim2.fromOffset(384, 378),
+        BackgroundColor3 = Color3.fromRGB(48, 116, 150), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+    local resultBack = create("TextButton", {
+        Name = "ResultBackToGenerator", Text = "BACK TO GENERATOR", Size = UDim2.fromOffset(162, 34), Position = UDim2.fromOffset(384, 414),
+        BackgroundColor3 = Color3.fromRGB(80, 80, 80), TextColor3 = Color3.new(1, 1, 1), TextSize = 12, ZIndex = 23,
+    }, resultWindow)
+
+    local recommendationRows = {}
+
+    local function setWindowVisibility(view)
+        local active = view or generatorSession.activeView
+        generatorSession.activeView = active
+        if generatorSession.hidden then
+            panel.Visible = false
+            generatorWindow.Visible = false
+            resultWindow.Visible = false
+            mini.Visible = true
+            return
+        end
+        panel.Visible = active == "inspector"
+        generatorWindow.Visible = active == "generator"
+        resultWindow.Visible = active == "results"
+        mini.Visible = false
+    end
+
+    local function hideAllWindows()
+        generatorSession.hidden = true
+        setWindowVisibility(generatorSession.activeView)
+    end
+
+    local function restoreWindows()
+        generatorSession.hidden = false
+        setWindowVisibility(generatorSession.activeView)
+    end
+
+    local function attachDrag(frameRef, headerRef)
+        local dragState = {active = false, start = nil, origin = nil, input = nil}
+        headerRef.Active = true
+        table.insert(watchConnections, headerRef.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.input = input
+            end
+        end))
+        table.insert(watchConnections, headerRef.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.active = true
+                dragState.start = input.Position
+                dragState.origin = frameRef.Position
+            end
+        end))
+        table.insert(watchConnections, UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragState.active = false
+            end
+        end))
+        table.insert(watchConnections, UserInputService.InputChanged:Connect(function(input)
+            if not dragState.active or not dragState.start then return end
+            if input ~= dragState.input and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local delta = input.Position - dragState.start
+            frameRef.Position = UDim2.new(
+                dragState.origin.X.Scale, dragState.origin.X.Offset + delta.X,
+                dragState.origin.Y.Scale, dragState.origin.Y.Offset + delta.Y
+            )
+        end))
+    end
+
+    attachDrag(generatorWindow, generatorHeader)
+    attachDrag(resultWindow, resultHeader)
+
+    local function renderRecommendations()
+        for _, row in ipairs(recommendationRows) do
+            if row and row.Destroy then pcall(function() row:Destroy() end) end
+        end
+        recommendationRows = {}
+        local y = 4
+        local recommendations = generatorSession.recommendations
+        if type(recommendations) ~= "table" then recommendations = {} end
+        if #recommendations == 0 then
+            local empty = create("TextLabel", {
+                Name = "RecommendationEmpty", Text = "No recommendations available yet.",
+                Size = UDim2.fromOffset(472, 22), Position = UDim2.fromOffset(8, y),
+                BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(205, 214, 224),
+                TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12, ZIndex = 22,
+            }, recommendationContainer)
+            recommendationRows[1] = empty
+            recommendationContainer.CanvasSize = UDim2.fromOffset(0, 34)
+            return
+        end
+        for _, item in ipairs(recommendations) do
+            if type(item) == "table" then
+                local id = tostring(item.id or "unknown")
+                local selected = generatorSession.selected[id] == true
+                local toggle = create("TextButton", {
+                    Name = "Recommendation_" .. sanitizeId(id),
+                    Text = (selected and "[x] " or "[ ] ") .. tostring(item.label or id),
+                    Size = UDim2.fromOffset(472, 22), Position = UDim2.fromOffset(8, y),
+                    BackgroundColor3 = item.supported and Color3.fromRGB(60, 84, 106) or Color3.fromRGB(74, 74, 74),
+                    TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left,
+                    TextSize = 12, ZIndex = 22,
+                }, recommendationContainer)
+                table.insert(watchConnections, toggle.MouseButton1Click:Connect(function()
+                    if not item.supported then return end
+                    local current = generatorSession.selected[id] == true
+                    generatorSession.selected[id] = not current
+                    renderRecommendations()
+                end))
+                recommendationRows[#recommendationRows + 1] = toggle
+                y = y + 24
+                local reason = create("TextLabel", {
+                    Name = "Reason_" .. sanitizeId(id), Text = "- " .. tostring(item.reason or "evidence uncertain"),
+                    Size = UDim2.fromOffset(466, 18), Position = UDim2.fromOffset(14, y),
+                    BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(188, 198, 209),
+                    TextXAlignment = Enum.TextXAlignment.Left, TextSize = 11, ZIndex = 22,
+                }, recommendationContainer)
+                recommendationRows[#recommendationRows + 1] = reason
+                y = y + 20
+            end
+        end
+        recommendationContainer.CanvasSize = UDim2.fromOffset(0, math.max(168, y + 4))
+    end
+
+    local function updateGeneratorSummary(summaryLine)
+        local inspection = generatorSession.inspection
+        local gameName = inspection and tostring(inspection.gameName or "Unknown") or "Unknown"
+        local scanId = inspection and tostring(inspection.scanId or "unknown") or "unknown"
+        generatorGameLabel.Text = "Game: " .. gameName .. " | Scan: " .. scanId
+        generatorStatusLabel.Text = "Analysis status: " .. tostring(generatorSession.analysisStatus)
+            .. "\n" .. tostring(summaryLine or "Recommendations are evidence-backed candidates; gameplay is unverified.")
+    end
+
+    local function updateResultView()
+        local scripts = generatorSession.scripts
+        if #scripts == 0 then
+            resultVersion.Text = "Version: none"
+            resultStatus.Text = "No generated script versions available yet."
+            resultCode.Text = "-- Generated script will appear here after completion."
+            return
+        end
+        generatorSession.scriptIndex = math.clamp(generatorSession.scriptIndex, 1, #scripts)
+        local entry = scripts[generatorSession.scriptIndex]
+        resultVersion.Text = "Version " .. tostring(generatorSession.scriptIndex) .. "/" .. tostring(#scripts)
+            .. " | Provider: " .. tostring(entry.provider or "mock")
+        resultStatus.Text = tostring(entry.statusLine or "Generation completed")
+        resultCode.Text = tostring(entry.script or "-- unavailable")
+    end
+
+    local function collectSelectedFeatureLabels()
+        local labels = {}
+        for _, item in ipairs(generatorSession.recommendations) do
+            if type(item) == "table" and generatorSession.selected[tostring(item.id or "")] == true then
+                labels[#labels + 1] = tostring(item.label or item.id)
+            end
+        end
+        table.sort(labels)
+        return labels
+    end
+
+    local function validateFinishedInspection()
+        if not pendingManifest or type(pendingManifest) ~= "table" then
+            return false, "No inspection snapshot is available yet. Run SCAN first."
+        end
+        if type(pendingManifest.scanStats) == "table" and pendingManifest.scanStats.complete ~= true then
+            return false, "Snapshot is partial. Run a complete scan before generation handoff."
+        end
+        if type(pendingManifest.scanId) ~= "string" or pendingManifest.scanId == "" then
+            return false, "Inspection snapshot is missing scan identity."
+        end
+        if type(pendingParts) ~= "table" or #pendingParts == 0 then
+            return false, "Inspection parts are missing. Complete a scan before handoff."
+        end
+        for index, part in ipairs(pendingParts) do
+            if type(part) ~= "string" or #part == 0 or #part > MAX_PART_BYTES then
+                return false, "Inspection part " .. tostring(index) .. " is invalid for generation handoff."
+            end
+        end
+        return true, nil
+    end
+
+    local function startGenerationHandoff()
+        local ok, err = validateFinishedInspection()
+        if not ok then
+            status.Text = err
+            return
+        end
+        local snapshot = {
+            gameName = pendingManifest.gameName,
+            placeId = pendingManifest.placeId,
+            scanId = pendingManifest.scanId,
+            partCount = #pendingParts,
+            featureEvidence = pendingManifest.featureEvidence,
+            featureReadiness = pendingManifest.featureReadiness,
+            interactionDiagnostics = pendingManifest.interactionDiagnostics,
+            scanStats = pendingManifest.scanStats,
+            inspectedAt = pendingManifest.inspectedAt,
+            reportTransport = pendingManifest.reportTransport,
+            localExport = pendingManifest.localExport,
+        }
+        status.Text = "Finalizing inspection snapshot and transferring to generator..."
+        backend:submitInspection(snapshot, function(success, payload)
+            if not success or type(payload) ~= "table" then
+                status.Text = "Generation handoff failed: snapshot preserved; retry after checking evidence readiness."
+                return
+            end
+            generatorSession.sessionId = payload.sessionId
+            generatorSession.inspection = snapshot
+            generatorSession.recommendations = payload.recommendations or {}
+            generatorSession.analysisStatus = payload.analysisStatus or "analysis-complete-mock"
+            generatorSession.selected = generatorSession.selected or {}
+            updateGeneratorSummary(payload.analysisSummary)
+            renderRecommendations()
+            refreshGeneratedHandoff("Inspection handoff complete")
+            generatorSession.hidden = false
+            setWindowVisibility("generator")
+            status.Text = "Inspection handoff complete. Generator window opened."
+        end)
+    end
+
+    local function openGeneratorIfReady()
+        if not generatorSession.sessionId then
+            status.Text = "Generator session unavailable. Finish inspection handoff first."
+            return
+        end
+        backend:getGameplayAnalysis(generatorSession.sessionId, function(analysisOk, analysisPayload)
+            if analysisOk and type(analysisPayload) == "table" then
+                generatorSession.analysisStatus = analysisPayload.analysisStatus or generatorSession.analysisStatus
+                updateGeneratorSummary(analysisPayload.analysisSummary)
+            end
+            backend:getRecommendations(generatorSession.sessionId, function(success, payload)
+                if success and type(payload) == "table" then
+                    generatorSession.recommendations = payload.recommendations or {}
+                    generatorSession.analysisStatus = payload.analysisStatus or generatorSession.analysisStatus
+                    updateGeneratorSummary(payload.analysisSummary)
+                    renderRecommendations()
+                end
+                generatorSession.hidden = false
+                setWindowVisibility("generator")
+            end)
+        end)
+    end
+
+    local function pollGeneration(jobId)
+        backend:pollGeneration(jobId, function(success, state)
+            if not success or type(state) ~= "table" then
+                resultStatus.Text = "Generation status failed: " .. tostring(state and state.error or "unknown")
+                generatorSession.pendingJobId = nil
+                return
+            end
+            if state.status == "completed" then
+                backend:getGenerationResult(jobId, function(resultOk, resultPayload)
+                    if not resultOk or type(resultPayload) ~= "table" then
+                        resultStatus.Text = "Generation result retrieval failed: " .. tostring(resultPayload and resultPayload.error or "unknown")
+                        generatorSession.pendingJobId = nil
+                        return
+                    end
+                    generatorSession.pendingJobId = nil
+                    local selectedLabels = collectSelectedFeatureLabels()
+                    local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
+                    local statusLine = "Validation: syntax=" .. tostring(resultPayload.validation and resultPayload.validation.syntaxValid == true)
+                        .. " | runtime=false | gameplay=false"
+                    generatorSession.scripts[#generatorSession.scripts + 1] = {
+                        script = resultPayload.script,
+                        provider = resultPayload.provider,
+                        generatedAt = resultPayload.generatedAt,
+                        selectedFeatures = selectedLabels,
+                        customRequest = requestText,
+                        statusLine = statusLine,
+                    }
+                    generatorSession.scriptIndex = #generatorSession.scripts
+                    updateResultView()
+                end)
+                return
+            end
+            resultStatus.Text = "Generation status: " .. tostring(state.status) .. " (mock async provider)"
+            task.delay(0.15, function()
+                if alive and generatorSession.pendingJobId == jobId then pollGeneration(jobId) end
+            end)
+        end)
+    end
+
+    local function startGenerationRequest(isRevision)
+        if not generatorSession.sessionId then
+            updateGeneratorSummary("Generator session unavailable. Finish inspection handoff first.")
+            return
+        end
+        local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
+        customRequestInput.Text = requestText
+        local selectedLabels = collectSelectedFeatureLabels()
+        if #selectedLabels == 0 and requestText == "" then
+            updateGeneratorSummary("Select evidence-supported features or enter a custom request first.")
+            return
+        end
+        resultStatus.Text = "Generation status: queued"
+        resultCode.Text = "-- Waiting for generation job completion..."
+        resultVersion.Text = "Version: pending"
+        generatorSession.hidden = false
+        setWindowVisibility("results")
+        local callback = function(success, payload)
+            if not success or type(payload) ~= "table" then
+                resultStatus.Text = "Generation request failed: " .. tostring(payload and payload.error or "unknown")
+                return
+            end
+            generatorSession.pendingJobId = payload.jobId
+            resultStatus.Text = "Generation status: queued (" .. tostring(payload.jobId) .. ")"
+            pollGeneration(payload.jobId)
+        end
+        if isRevision then
+            backend:requestRevision(generatorSession.sessionId, selectedLabels, requestText, callback)
+        else
+            backend:requestGeneration(generatorSession.sessionId, selectedLabels, requestText, callback)
+        end
+    end
+
+    table.insert(watchConnections, generatorButton.MouseButton1Click:Connect(function()
+        startGenerationRequest(#generatorSession.scripts > 0)
+    end))
+    table.insert(watchConnections, generatorOpenResults.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("results")
+        updateResultView()
+    end))
+    table.insert(watchConnections, generatorBackInspector.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("inspector")
+    end))
+    table.insert(watchConnections, resultBack.MouseButton1Click:Connect(function()
+        generatorSession.hidden = false
+        setWindowVisibility("generator")
+    end))
+    table.insert(watchConnections, resultPrev.MouseButton1Click:Connect(function()
+        if #generatorSession.scripts == 0 then return end
+        generatorSession.scriptIndex = math.max(1, generatorSession.scriptIndex - 1)
+        updateResultView()
+    end))
+    table.insert(watchConnections, resultNext.MouseButton1Click:Connect(function()
+        if #generatorSession.scripts == 0 then return end
+        generatorSession.scriptIndex = math.min(#generatorSession.scripts, generatorSession.scriptIndex + 1)
+        updateResultView()
+    end))
+    table.insert(watchConnections, resultCopy.MouseButton1Click:Connect(function()
+        if type(setclipboard) ~= "function" then
+            resultStatus.Text = "Copy unavailable in this executor"
+            return
+        end
+        local ok = pcall(setclipboard, resultCode.Text)
+        resultStatus.Text = ok and "Script copied to clipboard" or "Copy failed"
+    end))
+    table.insert(watchConnections, resultSave.MouseButton1Click:Connect(function()
+        if type(writefile) ~= "function" then
+            resultStatus.Text = "Save unavailable in this executor"
+            return
+        end
+        local index = math.max(1, generatorSession.scriptIndex)
+        local filename = "LycolesGeneratedScript_" .. tostring(game.PlaceId) .. "_v" .. tostring(index) .. ".lua"
+        local ok, err = pcall(writefile, filename, resultCode.Text)
+        resultStatus.Text = ok and ("Saved script to " .. filename) or ("Save failed: " .. tostring(err))
+    end))
+    table.insert(watchConnections, generatorMinimize.MouseButton1Click:Connect(hideAllWindows))
+    table.insert(watchConnections, resultMinimize.MouseButton1Click:Connect(hideAllWindows))
+    table.insert(watchConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode ~= Enum.KeyCode.RightShift then return end
+        if generatorSession.hidden then
+            restoreWindows()
+        else
+            hideAllWindows()
+        end
+    end))
+
+    generationUi.ready = true
+    generationUi.startGenerationHandoff = startGenerationHandoff
+    generationUi.openGeneratorIfReady = openGeneratorIfReady
+    generationUi.hideAllWindows = hideAllWindows
+    generationUi.restoreWindows = restoreWindows
+    generationUi.setWindowVisibility = setWindowVisibility
+    generationUi.session = generatorSession
+    generationUi.backendContract = {
+        submitInspection = true,
+        retrieveGameplayAnalysis = true,
+        retrieveRecommendations = true,
+        submitGenerationRequest = true,
+        pollGenerationStatus = true,
+        retrieveGeneratedScript = true,
+        requestRevision = true,
+        provider = backend.provider,
+        anthropicAdapter = backend.anthropicAdapter,
+    }
+
+    _G.LycolesGenerationSession = function()
+        return {
+            sessionId = generatorSession.sessionId,
+            activeView = generatorSession.activeView,
+            hidden = generatorSession.hidden,
+            recommendationCount = #generatorSession.recommendations,
+            generatedVersionCount = #generatorSession.scripts,
+            pendingJobId = generatorSession.pendingJobId,
+            provider = backend.provider,
+            anthropicConfigured = backend.anthropicAdapter.configured,
+        }
+    end
+
+    updateGeneratorSummary("Finish inspection handoff to unlock generation recommendations.")
+    renderRecommendations()
+    updateResultView()
+    end
+
+    initializeGenerationUi()
 end
 
 do
@@ -2443,6 +3242,11 @@ _G.LycolesInspectorClose = function()
     for _, connection in ipairs(watchConnections) do connection:Disconnect() end
     dragEndConnection:Disconnect()
     dragMoveConnection:Disconnect()
+    generationUi.ready = false
+    generationUi.session = nil
+    generationUi.backendContract = nil
+    _G.LycolesGenerationUi = nil
+    _G.LycolesGenerationSession = nil
     gui:Destroy()
 end
 
@@ -2596,7 +3400,7 @@ local function transmit()
         if failed then
             uploadState.status="failed"
             uploadState.lastError=failed
-            status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry SEND JSON"
+            status.Text = "ACK " .. succeeded .. "/" .. partCount .. ": " .. failed .. "; retry upload with receiver tooling"
             pushRuntimeFailure("transmitting", failed)
         elseif succeeded == partCount then
             uploadState.status="acknowledged"
@@ -2607,7 +3411,7 @@ local function transmit()
         else
             uploadState.status="incomplete"
             uploadState.lastError="not all parts acknowledged"
-            status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry SEND JSON"
+            status.Text = "Upload incomplete: " .. succeeded .. "/" .. partCount .. "; retry upload with receiver tooling"
             pushRuntimeFailure("transmitting", "not-all-parts-acknowledged")
         end
         refreshLocalManifest("post-upload")
@@ -2632,7 +3436,7 @@ local function cancelActiveOperation()
         pushRuntimeFailure("transmitting", "operator-cancelled")
         refreshLocalManifest("upload-cancelled")
         refreshGeneratedHandoff("Upload cancelled")
-        status.Text = "Upload cancelled; SEND JSON to resume from acknowledged parts"
+        status.Text = "Upload cancelled; resume with receiver upload tooling when ready"
         return true
     end
     status.Text = "No active scan or upload to cancel"
@@ -9304,12 +10108,13 @@ local function inspect(requestType, featureRequest)
         return false
     end
     if pendingParts and #pendingParts > 0 then
+        local unsent = 0
         for i = 1, #pendingParts do
-            if not pendingAcknowledged[i] then
-                status.Text = "Unsent parts remain; press SEND JSON to retry before rescanning"
-                pushRuntimeFailure("scan-requested", "unsent-parts-remain")
-                return false
-            end
+            if not pendingAcknowledged[i] then unsent = unsent + 1 end
+        end
+        if unsent > 0 then
+            status.Text = "Proceeding with rescan; previous upload had " .. tostring(unsent) .. " unsent part(s)."
+            pushRuntimeFailure("scan-requested", "unsent-parts-superseded-by-rescan")
         end
     end
 
@@ -10197,7 +11002,7 @@ local function inspect(requestType, featureRequest)
                 .. "\\nObserver activations: " .. tostring(observerStats.activationCount)
                 .. "\\nScan type: " .. tostring(observerStats.scanRequestType)
                 .. "\\nObserver ready: " .. tostring(interactionObserveEnabled and observerStats.sweepCompleted)
-                .. "\\nAUTO-SEND: " .. (autoSend and "ON" or "OFF")
+                .. "\\nGeneration handoff: finish button available for snapshot transfer"
             refreshGeneratedHandoff("Scan complete")
             if autoSend and validEndpoint(endpoint) then
                 pushRuntimeStage("transmitting", "auto-send")
@@ -11026,20 +11831,19 @@ url.FocusLost:Connect(function()
 end)
 
 send.MouseButton1Click:Connect(function()
-    endpoint = trim(url.Text)
-    transmit()
+    if generationUi.ready and generationUi.startGenerationHandoff then
+        generationUi.startGenerationHandoff()
+    else
+        status.Text = "Generation handoff UI not initialized"
+    end
 end)
 
 automatic.MouseButton1Click:Connect(function()
-    autoSend = not autoSend
-
-    automatic.Text = autoSend
-        and "AUTO-SEND: ON"
-        or "AUTO-SEND: OFF"
-
-    status.Text = autoSend
-        and "Automatic uploads enabled"
-        or "Automatic uploads disabled"
+    if generationUi.ready and generationUi.openGeneratorIfReady then
+        generationUi.openGeneratorIfReady()
+    else
+        status.Text = "Generator session controls unavailable"
+    end
 end)
 
 pushRuntimeStage("callbacks-registered", "ui-controls")

@@ -3282,3 +3282,48 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 8. Generated workflow outcomes verified in-game — **Unverified**.
 9. End-to-end process with minimal manual steps — **Partially verified**.
 10. Product reliability/public distribution readiness — **Unverified**.
+
+## Update — 2026-11-14 — v30.6.68 Milestone 1 AI generation GUI integration foundation
+
+### Delivered
+
+- Replaced inspector delivery controls:
+  - `SEND JSON` -> `FINISH INSPECTION & GENERATE SCRIPT`
+  - `AUTO-SEND` -> `OPEN GENERATOR`
+- Added generation session/window manager with three coordinated GUI surfaces:
+  - Inspector (existing)
+  - Feature Selection / Script Generator window
+  - Generated Script Results window
+- Added shared lifecycle controls:
+  - drag + minimize for generation/results windows,
+  - RightShift global hide/restore,
+  - duplicate-safe reinit via existing `_G.LycolesInspectorClose` bootstrap path,
+  - session-preserving transitions between windows.
+- Added asynchronous mock backend contract in `LycolesUniversalInspector.lua`:
+  - submit inspection,
+  - retrieve gameplay analysis,
+  - retrieve recommendations,
+  - submit generation request,
+  - poll generation status,
+  - retrieve generated script,
+  - request revisions.
+- Added Anthropic Claude adapter scaffold metadata (`configured=false`) with explicit server-side credential requirement.
+- Added dynamic evidence-driven recommendations from `featureEvidence` plus readiness blocker context.
+- Added generated-script version history controls (prev/next), copy/save, and revision generation from existing evidence without rescanning.
+- Preserved local manual export flow (`SAVE REPORT`) and scan/report validation behaviors.
+
+### Validation
+
+- `python3 -m pytest -q tests/test_inspector_compiler_limits.py tests/test_inspector_ui.py`  
+  **61 passed, 9 subtests passed**
+- `python3 -m pytest -q tests/test_real_inspector_schema.py tests/test_fetch_receiver_scan.py tests/test_build_release.py tests/test_generate_script.py`  
+  **74 passed, 13 subtests passed**
+- `node --test tests/test_luau_syntax.mjs`  
+  **4 passed**
+- `python3 -m pytest` (full suite)  
+  **1750 passed, 17 skipped**
+
+### Notes
+
+- This milestone intentionally uses a mock provider for end-to-end GUI workflow verification.
+- No live Claude API call path is claimed operational in-client.
