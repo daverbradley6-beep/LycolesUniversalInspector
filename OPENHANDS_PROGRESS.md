@@ -3327,3 +3327,51 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 - This milestone intentionally uses a mock provider for end-to-end GUI workflow verification.
 - No live Claude API call path is claimed operational in-client.
+
+
+## Update — 2026-11-17 — Session-based generation backend contract + Claude gating foundation
+
+### Scope
+
+- Extended `tools/lycoles_generation_service.py` with a first-class inspection-session backend contract:
+  - `POST /v1/generation/sessions` to submit sanitized inspection snapshots,
+  - `GET /v1/generation/sessions/{sessionId}` (+ optional `includeSnapshot/includeVersions/includeScripts` query flags),
+  - `GET /v1/generation/sessions/{sessionId}/analysis`,
+  - `GET /v1/generation/sessions/{sessionId}/recommendations`,
+  - `POST /v1/generation/sessions/{sessionId}/jobs` for generation/revision requests,
+  - `GET /v1/generation/session-jobs/{jobId}` for status polling,
+  - `GET /v1/generation/session-jobs/{jobId}/result` for generated-script retrieval,
+  - `GET /v1/generation/provider-contract` exposing GUI-facing operation mapping.
+- Added structured session/job persistence under `output_root/sessions/` with:
+  - evidence digest (`sha256`) per sanitized snapshot,
+  - generated version history,
+  - revision lineage (`revisionOfVersionId`),
+  - reproducible request digest metadata.
+- Added snapshot sanitization and validation helpers:
+  - bounded text normalization,
+  - positive placeId validation,
+  - required feature-evidence validation,
+  - bounded requested-capability assessment blockers.
+- Added deterministic session generation implementation for offline-safe behavior while preserving explicit unverified claims (`runtimeVerified=false`, `gameplayVerified=false`).
+- Added Anthropic Claude provider scaffold (`AnthropicClaudeProvider`) and provider routing support with explicit paid-usage gate:
+  - `LYCOLES_LLM_PROVIDER=anthropic|claude|anthropic-claude` recognized,
+  - calls remain disabled unless `LYCOLES_ENABLE_PAID_LLM=true`,
+  - missing-key and disabled-state reasons surface through provider metadata.
+- Integrated Lua GUI contract hook for backend replacement:
+  - `LycolesUniversalInspector.lua` now supports `_G.LycolesGenerationBackendProvider` when it implements the required callback contract,
+  - retains existing in-client mock backend fallback.
+
+### Validation
+
+- `python3 -m pytest -q tests/test_lycoles_generation_service.py tests/test_lycoles_generation_service_provider.py tests/test_inspector_ui.py`
+  **97 passed**
+- `python3 -m pytest -q`
+  **1756 passed, 17 skipped, 79 subtests passed**
+- `node --test tests/test_luau_syntax.mjs`
+  **4 passed**
+
+### Notes
+
+- Paid Anthropic calls are intentionally disabled by default in this milestone.
+- Session backend architecture is now available for live secure server deployment, but no paid API execution is claimed in this environment.
+- Live Potassium/Roblox runtime validation still requires user-side execution.

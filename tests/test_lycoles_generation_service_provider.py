@@ -118,5 +118,71 @@ class ProviderSelectionTests(unittest.TestCase):
                     os.environ["LYCOLES_LLM_PROVIDER"] = old_provider
 
 
+
+    def test_anthropic_provider_requires_explicit_paid_flag(self):
+        old_provider = os.environ.get("LYCOLES_LLM_PROVIDER")
+        old_paid = os.environ.get("LYCOLES_ENABLE_PAID_LLM")
+        old_key = os.environ.get("LYCOLES_ANTHROPIC_API_KEY")
+        old_key_alt = os.environ.get("ANTHROPIC_API_KEY")
+        try:
+            os.environ["LYCOLES_LLM_PROVIDER"] = "anthropic"
+            os.environ["LYCOLES_ANTHROPIC_API_KEY"] = "fake-key"
+            os.environ.pop("LYCOLES_ENABLE_PAID_LLM", None)
+            provider, info = MODULE._provider_from_environment()
+            self.assertIsInstance(provider, MODULE.DeterministicLLMProvider)
+            self.assertEqual(info.provider, "anthropic-claude")
+            self.assertFalse(info.enabled)
+            self.assertIn("disabled", info.reason.lower())
+        finally:
+            if old_provider is None:
+                os.environ.pop("LYCOLES_LLM_PROVIDER", None)
+            else:
+                os.environ["LYCOLES_LLM_PROVIDER"] = old_provider
+            if old_paid is None:
+                os.environ.pop("LYCOLES_ENABLE_PAID_LLM", None)
+            else:
+                os.environ["LYCOLES_ENABLE_PAID_LLM"] = old_paid
+            if old_key is None:
+                os.environ.pop("LYCOLES_ANTHROPIC_API_KEY", None)
+            else:
+                os.environ["LYCOLES_ANTHROPIC_API_KEY"] = old_key
+            if old_key_alt is None:
+                os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                os.environ["ANTHROPIC_API_KEY"] = old_key_alt
+
+    def test_anthropic_provider_missing_key_when_paid_enabled(self):
+        old_provider = os.environ.get("LYCOLES_LLM_PROVIDER")
+        old_paid = os.environ.get("LYCOLES_ENABLE_PAID_LLM")
+        old_key = os.environ.get("LYCOLES_ANTHROPIC_API_KEY")
+        old_key_alt = os.environ.get("ANTHROPIC_API_KEY")
+        try:
+            os.environ["LYCOLES_LLM_PROVIDER"] = "anthropic"
+            os.environ["LYCOLES_ENABLE_PAID_LLM"] = "true"
+            os.environ.pop("LYCOLES_ANTHROPIC_API_KEY", None)
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            provider, info = MODULE._provider_from_environment()
+            self.assertIsInstance(provider, MODULE.DeterministicLLMProvider)
+            self.assertEqual(info.provider, "anthropic-claude")
+            self.assertFalse(info.enabled)
+            self.assertIn("missing", info.reason.lower())
+        finally:
+            if old_provider is None:
+                os.environ.pop("LYCOLES_LLM_PROVIDER", None)
+            else:
+                os.environ["LYCOLES_LLM_PROVIDER"] = old_provider
+            if old_paid is None:
+                os.environ.pop("LYCOLES_ENABLE_PAID_LLM", None)
+            else:
+                os.environ["LYCOLES_ENABLE_PAID_LLM"] = old_paid
+            if old_key is None:
+                os.environ.pop("LYCOLES_ANTHROPIC_API_KEY", None)
+            else:
+                os.environ["LYCOLES_ANTHROPIC_API_KEY"] = old_key
+            if old_key_alt is None:
+                os.environ.pop("ANTHROPIC_API_KEY", None)
+            else:
+                os.environ["ANTHROPIC_API_KEY"] = old_key_alt
+
 if __name__ == "__main__":
     unittest.main()

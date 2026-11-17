@@ -2230,6 +2230,33 @@ do
         self:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
     end
 
+
+    local function hasExternalBackendContract(candidate)
+        return type(candidate) == "table"
+            and type(candidate.submitInspection) == "function"
+            and type(candidate.getGameplayAnalysis) == "function"
+            and type(candidate.getRecommendations) == "function"
+            and type(candidate.requestGeneration) == "function"
+            and type(candidate.pollGeneration) == "function"
+            and type(candidate.getGenerationResult) == "function"
+            and type(candidate.requestRevision) == "function"
+    end
+
+    local externalBackend = _G.LycolesGenerationBackendProvider
+    if hasExternalBackendContract(externalBackend) then
+        backend = externalBackend
+        if type(backend.provider) ~= "string" then
+            backend.provider = "external-generation-provider"
+        end
+        if type(backend.anthropicAdapter) ~= "table" then
+            backend.anthropicAdapter = {
+                provider = "anthropic-claude-adapter",
+                configured = false,
+                reason = "External backend did not expose anthropic adapter metadata",
+            }
+        end
+    end
+
     local generatorWindow = create("Frame", {
         Name = "FeatureGeneratorWindow", Size = UDim2.fromOffset(520, 420),
         Position = UDim2.new(0.5, -260, 0.5, -210), BackgroundColor3 = Color3.fromRGB(55, 55, 55),

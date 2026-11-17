@@ -3,8 +3,11 @@ import json
 import pathlib
 import sys
 import tempfile
+import threading
 import time
 import unittest
+import urllib.error
+import urllib.request
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -67,6 +70,30 @@ def make_parts(directory, event=None, request=None, scan_id="service_scan_001"):
     )
     (directory / "1.json").write_text(json.dumps(one), encoding="utf-8")
     (directory / "2.json").write_text(json.dumps(two), encoding="utf-8")
+
+
+def make_inspection_snapshot(request=None, scan_id="session_scan_001", place_id=3623096087):
+    return {
+        "gameName": "Session Test Game",
+        "placeId": place_id,
+        "scanId": scan_id,
+        "capturedAt": "2026-11-17T18:00:00Z",
+        "requestedCapability": request or "Generate utility controls for observed systems",
+        "featureEvidence": {
+            "pets": {"interactionEvents": 6, "evidenceLevel": "interaction-observed"},
+            "shops": {"interactionEvents": 3, "evidenceLevel": "interaction-observed"},
+        },
+        "interactionDiagnostics": {
+            "requestedCapabilityAssessment": {
+                "status": "blocked-needs-observation",
+                "implementationReady": False,
+                "runtimeVerified": False,
+                "gameplayVerified": False,
+                "evidenceTier": "correlated_observation",
+                "blockers": ["server_side_outcome_contract", "runtime_confirmation"],
+            }
+        },
+    }
 
 
 
@@ -1450,6 +1477,137 @@ class LycolesGenerationServiceTests(unittest.TestCase):
             self.assertTrue(reconciliation.get("generated"))
             summary = reconciliation.get("summary") or {}
             self.assertEqual(summary.get("targetedSessionsConsumed"), 1)
+
+
+
+class SessionBackendContractTests(unittest.TestCase):
+    def _wait_for_session_job(self, service, job_id, timeout=10.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            snapshot = service.get_session_job(job_id)
+            if snapshot and snapshot.get("status") in {"completed", "failed"}:
+                return snapshot
+            time.sleep(0.05)
+        return service.get_session_job(job_id)
+
+    @staticmethod
+    def _json_request(url, method="GET", payload=None):
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"content-type": "application/json"}
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+
+    def test_create_session_and_recommendations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+
+            session = created.get("session") or {}
+            self.assertTrue(session.get("sessionId"))
+            self.assertEqual(session.get("analysisStatus"), "analysis-complete")
+            recommendations = ((created.get("recommendations") or {}).get("items") or [])
+            self.assertGreaterEqual(len(recommendations), 2)
+            self.assertTrue(any(item.get("id") == "recommendation_pets" for item in recommendations))
+
+            analysis = service.get_session_analysis(session["sessionId"])
+            self.assertIsNotNone(analysis)
+            self.assertEqual(analysis.get("schemaVersion"), "30.6.session-analysis.1")
+            self.assertFalse(analysis.get("runtimeVerified"))
+
+    def test_session_job_revision_preserves_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+            session_id = created["session"]["sessionId"]
+            recs = created["recommendations"]["items"]
+            selected = [recs[0]["id"]]
+
+            queued = service.submit_session_job(
+                session_id,
+                selected_feature_ids=selected,
+                custom_request="Generate first draft",
+                revision_of_version_id=None,
+            )
+            first_snapshot = self._wait_for_session_job(service, queued["jobId"])
+            self.assertIsNotNone(first_snapshot)
+            self.assertEqual(first_snapshot.get("status"), "completed")
+            first_result = service.get_session_job_result(queued["jobId"])
+            self.assertIsNotNone(first_result)
+            first_version = first_result["versionId"]
+
+            queued_revision = service.submit_session_job(
+                session_id,
+                selected_feature_ids=selected,
+                custom_request="Refine toggles and cleanup",
+                revision_of_version_id=first_version,
+            )
+            second_snapshot = self._wait_for_session_job(service, queued_revision["jobId"])
+            self.assertIsNotNone(second_snapshot)
+            self.assertEqual(second_snapshot.get("status"), "completed")
+            second_result = service.get_session_job_result(queued_revision["jobId"])
+            self.assertIsNotNone(second_result)
+            self.assertNotEqual(second_result["versionId"], first_version)
+            self.assertEqual(second_result["generationMetadata"]["revisionOfVersionId"], first_version)
+
+            session_view = service.get_session(session_id, include_versions=True, include_scripts=False)
+            self.assertIsNotNone(session_view)
+            versions = session_view.get("generatedVersions") or []
+            self.assertEqual(len(versions), 2)
+            self.assertEqual(versions[1]["revisionOfVersionId"], first_version)
+
+    def test_http_contract_session_endpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            handler = service.make_http_handler()
+            server = MODULE.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_address[1]}"
+                status, contract = self._json_request(f"{base}/v1/generation/provider-contract")
+                self.assertEqual(status, 200)
+                self.assertIn("guiOperations", contract)
+                self.assertIn("submitInspection", contract["guiOperations"])
+
+                status, created = self._json_request(
+                    f"{base}/v1/generation/sessions",
+                    method="POST",
+                    payload={"inspectionSnapshot": make_inspection_snapshot()},
+                )
+                self.assertEqual(status, 201)
+                session_id = created["session"]["sessionId"]
+                rec_id = created["recommendations"]["items"][0]["id"]
+
+                status, queued = self._json_request(
+                    f"{base}/v1/generation/sessions/{session_id}/jobs",
+                    method="POST",
+                    payload={
+                        "selectedFeatureIds": [rec_id],
+                        "customRequest": "Generate session utility",
+                    },
+                )
+                self.assertEqual(status, 202)
+                job_id = queued["jobId"]
+
+                deadline = time.time() + 10
+                while time.time() < deadline:
+                    status, job = self._json_request(f"{base}/v1/generation/session-jobs/{job_id}")
+                    self.assertEqual(status, 200)
+                    if job.get("status") == "completed":
+                        break
+                    time.sleep(0.05)
+
+                status, result = self._json_request(f"{base}/v1/generation/session-jobs/{job_id}/result")
+                self.assertEqual(status, 200)
+                self.assertEqual(result.get("status"), "completed")
+                self.assertIn("script", result)
+            finally:
+                server.shutdown()
+                server.server_close()
 
 if __name__ == "__main__":
     unittest.main()

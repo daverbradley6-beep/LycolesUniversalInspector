@@ -611,6 +611,14 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('anthropicAdapter = {', SRC)
         self.assertIn('configured = false', SRC)
 
+
+    def test_external_generation_backend_contract_hook_exists(self):
+        self.assertIn('local function hasExternalBackendContract(candidate)', SRC)
+        self.assertIn('local externalBackend = _G.LycolesGenerationBackendProvider', SRC)
+        self.assertIn('if hasExternalBackendContract(externalBackend) then', SRC)
+        self.assertIn('backend = externalBackend', SRC)
+        self.assertIn('backend.provider = "external-generation-provider"', SRC)
+
     def test_finish_handoff_and_recovery_paths_exist(self):
         self.assertIn('local function validateFinishedInspection()', SRC)
         self.assertIn('Snapshot is partial. Run a complete scan before generation handoff.', SRC)

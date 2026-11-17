@@ -1103,3 +1103,23 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Generated script results support multi-version history, copy/save, revision regeneration from existing evidence, and return-to-generator navigation without rescanning.
 - Rescan flow no longer hard-blocks on unsent parts after removing direct SEND JSON control; old unsent parts are superseded by new scans.
 - Root local pressure remained within Potassium safety budget after scoping generation UI setup into an initializer function.
+
+
+## Session notes — 2026-11-17 session backend contract + paid Claude gating
+
+- Added session-oriented backend API contract in `tools/lycoles_generation_service.py` for GUI flow alignment:
+  - submit inspection snapshot,
+  - retrieve analysis,
+  - retrieve recommendations,
+  - submit generation/revision jobs,
+  - poll job status,
+  - retrieve generated result.
+- Session snapshots are now sanitized and normalized server-side before persistence.
+- Session generation outputs now carry reproducible metadata (`evidenceDigest`, `requestDigest`, `versionId`, revision lineage) and explicit non-verified claims.
+- Added provider-contract endpoint (`/v1/generation/provider-contract`) so clients can discover expected operation routes.
+- Added Anthropic provider scaffold with strict paid-usage gate:
+  - no Anthropic API call path is active unless `LYCOLES_ENABLE_PAID_LLM=true` and key configured.
+- Lua GUI integration now allows replacing mock backend with `_G.LycolesGenerationBackendProvider` when it implements required contract methods; fallback remains mock provider.
+- Regression expectation after this milestone:
+  - full pytest baseline increased to **1756 passed, 17 skipped**.
+  - session endpoint and revision tests live in `tests/test_lycoles_generation_service.py` (`SessionBackendContractTests`).

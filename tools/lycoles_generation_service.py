@@ -16,6 +16,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+from urllib.parse import parse_qs, urlsplit
 import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,7 +32,209 @@ FALSE_CLAIMS = {
     "actionOutcomesVerified": False,
 }
 
+_SESSION_SCHEMA_VERSION = "30.6.inspection-session.1"
+_SESSION_ANALYSIS_SCHEMA_VERSION = "30.6.session-analysis.1"
+_SESSION_RECOMMENDATIONS_SCHEMA_VERSION = "30.6.feature-recommendations.1"
+_SESSION_GENERATED_RESULT_SCHEMA_VERSION = "30.6.session-generated-result.1"
+
+_MAX_SESSION_FEATURES = 128
+_MAX_SESSION_RECOMMENDATIONS = 96
+_MAX_SESSION_CUSTOM_REQUEST = 1200
+
+
+def _paid_llm_enabled_from_env() -> bool:
+    return (os.environ.get("LYCOLES_ENABLE_PAID_LLM") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sanitize_free_text(value: Any, *, max_len: int) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    collapsed = re.sub(r"[\x00-\x1f\x7f]+", " ", value)
+    collapsed = re.sub(r"\s+", " ", collapsed).strip()
+    if not collapsed:
+        return None
+    return collapsed[:max_len]
+
+
+def _sanitize_identifier(value: Any, *, max_len: int = 80) -> Optional[str]:
+    text = _sanitize_free_text(value, max_len=max_len)
+    if not text:
+        return None
+    token = re.sub(r"[^A-Za-z0-9_-]+", "_", text)
+    token = re.sub(r"_+", "_", token).strip("_")
+    return token[:max_len] if token else None
+
+
+def _normalize_feature_evidence(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw_evidence = snapshot.get("featureEvidence")
+    if not isinstance(raw_evidence, dict):
+        return {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, payload in raw_evidence.items():
+        feature_name = _sanitize_free_text(key, max_len=64)
+        if not feature_name:
+            continue
+        if len(normalized) >= _MAX_SESSION_FEATURES:
+            break
+        details = payload if isinstance(payload, dict) else {}
+        count = int(
+            details.get("interactionEvents")
+            or details.get("observedEvents")
+            or details.get("count")
+            or 0
+        )
+        if count < 0:
+            count = 0
+        normalized[feature_name] = {
+            "interactionEvents": min(count, 1000000),
+            "evidenceLevel": _sanitize_free_text(details.get("evidenceLevel"), max_len=80) or "observed",
+        }
+    return normalized
+
+
+def _sanitize_requested_capability_assessment(value: Any) -> Optional[dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    blockers = _coerce_text_list(value.get("blockers"), max_items=32, max_len=120)
+    return {
+        "status": _sanitize_free_text(value.get("status"), max_len=80) or "unknown",
+        "implementationReady": value.get("implementationReady") is True,
+        "runtimeVerified": False,
+        "gameplayVerified": False,
+        "evidenceTier": _sanitize_free_text(value.get("evidenceTier"), max_len=80) or "unknown",
+        "blockers": blockers,
+    }
+
+
+def _sanitize_inspection_snapshot(snapshot: Any) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise ValueError("inspectionSnapshot must be an object")
+    place_id = snapshot.get("placeId")
+    if isinstance(place_id, bool):
+        place_id = None
+    if isinstance(place_id, (int, float)):
+        place_id = int(place_id)
+    else:
+        place_id = None
+    if place_id is not None and place_id <= 0:
+        raise ValueError("inspectionSnapshot.placeId must be a positive integer")
+
+    scan_id = _sanitize_identifier(snapshot.get("scanId"), max_len=120) or f"scan-{uuid.uuid4().hex[:12]}"
+    feature_evidence = _normalize_feature_evidence(snapshot)
+    if not feature_evidence:
+        raise ValueError("inspectionSnapshot.featureEvidence must include at least one feature")
+
+    interaction_diagnostics = snapshot.get("interactionDiagnostics") if isinstance(snapshot.get("interactionDiagnostics"), dict) else {}
+    capability_assessment = _sanitize_requested_capability_assessment(interaction_diagnostics.get("requestedCapabilityAssessment"))
+
+    sanitized = {
+        "schemaVersion": _SESSION_SCHEMA_VERSION,
+        "scanId": scan_id,
+        "placeId": place_id,
+        "gameName": _sanitize_free_text(snapshot.get("gameName"), max_len=120) or "Unknown",
+        "capturedAt": _sanitize_free_text(snapshot.get("capturedAt"), max_len=64) or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "requestedCapability": _sanitize_free_text(snapshot.get("requestedCapability"), max_len=280),
+        "featureEvidence": feature_evidence,
+        "interactionDiagnostics": {
+            "requestedCapabilityAssessment": capability_assessment,
+        },
+        "claims": dict(FALSE_CLAIMS),
+    }
+    return sanitized
+
+
+def _snapshot_digest(snapshot: dict[str, Any]) -> str:
+    canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _recommendation_id(feature_name: str) -> str:
+    key = _sanitize_identifier(feature_name, max_len=64) or "feature"
+    return f"recommendation_{key.lower()}"
+
+
+def _derive_session_analysis(snapshot: dict[str, Any]) -> dict[str, Any]:
+    feature_evidence = snapshot.get("featureEvidence") if isinstance(snapshot.get("featureEvidence"), dict) else {}
+    mechanics: list[dict[str, Any]] = []
+    for feature_name, info in sorted(feature_evidence.items(), key=lambda item: item[0].lower()):
+        if not isinstance(info, dict):
+            continue
+        mechanics.append({
+            "feature": feature_name,
+            "observedEvents": int(info.get("interactionEvents") or 0),
+            "evidenceLevel": _sanitize_free_text(info.get("evidenceLevel"), max_len=80) or "observed",
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+        })
+
+    blockers = []
+    diagnostics = snapshot.get("interactionDiagnostics") if isinstance(snapshot.get("interactionDiagnostics"), dict) else {}
+    capability_assessment = diagnostics.get("requestedCapabilityAssessment") if isinstance(diagnostics.get("requestedCapabilityAssessment"), dict) else {}
+    if isinstance(capability_assessment.get("blockers"), list):
+        blockers = [item for item in capability_assessment.get("blockers") if isinstance(item, str)]
+
+    return {
+        "schemaVersion": _SESSION_ANALYSIS_SCHEMA_VERSION,
+        "status": "analysis-complete",
+        "summary": f"Identified {len(mechanics)} evidence-backed feature families from inspection snapshot.",
+        "mechanics": mechanics,
+        "blockers": blockers,
+        "runtimeVerified": False,
+        "gameplayVerified": False,
+        "claims": dict(FALSE_CLAIMS),
+    }
+
+
+def _derive_session_recommendations(snapshot: dict[str, Any], analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    feature_evidence = snapshot.get("featureEvidence") if isinstance(snapshot.get("featureEvidence"), dict) else {}
+    for feature_name, info in sorted(feature_evidence.items(), key=lambda item: item[0].lower()):
+        details = info if isinstance(info, dict) else {}
+        count = int(details.get("interactionEvents") or 0)
+        recommendations.append({
+            "id": _recommendation_id(feature_name),
+            "label": f"{feature_name.title()} utility controls",
+            "supported": True,
+            "confidence": "evidence-backed-candidate",
+            "reason": f"Observed interaction events: {count}",
+            "evidence": {
+                "feature": feature_name,
+                "observedEvents": count,
+            },
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+        })
+        if len(recommendations) >= _MAX_SESSION_RECOMMENDATIONS:
+            break
+
+    blockers = analysis.get("blockers") if isinstance(analysis.get("blockers"), list) else []
+    if blockers:
+        recommendations.append({
+            "id": "recommendation_resolve_blockers",
+            "label": "Resolve observed workflow blockers",
+            "supported": False,
+            "confidence": "uncertain",
+            "reason": "Inspection diagnostics report unresolved blockers before full automation.",
+            "evidence": {"blockers": blockers[:8]},
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+        })
+
+    if not recommendations:
+        recommendations = [{
+            "id": "recommendation_custom_request",
+            "label": "Custom request from available evidence",
+            "supported": False,
+            "confidence": "uncertain",
+            "reason": "No evidence-backed feature families were detected.",
+            "evidence": {},
+            "runtimeVerified": False,
+            "gameplayVerified": False,
+        }]
+    return recommendations
+
 _AUTOMATIC_REQUEST_TERMS = {
+
     "auto",
     "automate",
     "automatic",
@@ -555,6 +758,84 @@ class JobRecord:
 
 
 @dataclass
+class SessionRecord:
+    session_id: str
+    created_at: float
+    updated_at: float
+    evidence_digest: str
+    snapshot: dict[str, Any]
+    analysis: dict[str, Any]
+    recommendations: list[dict[str, Any]]
+    generated_versions: list[dict[str, Any]] = field(default_factory=list)
+    last_job_id: Optional[str] = None
+
+    def to_dict(self, *, include_snapshot: bool = False, include_versions: bool = False, include_scripts: bool = False) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "sessionId": self.session_id,
+            "schemaVersion": _SESSION_SCHEMA_VERSION,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+            "evidenceDigest": self.evidence_digest,
+            "placeId": self.snapshot.get("placeId"),
+            "scanId": self.snapshot.get("scanId"),
+            "gameName": self.snapshot.get("gameName"),
+            "analysisStatus": self.analysis.get("status"),
+            "recommendationCount": len(self.recommendations),
+            "generatedVersionCount": len(self.generated_versions),
+            "lastJobId": self.last_job_id,
+        }
+        if include_snapshot:
+            payload["inspectionSnapshot"] = self.snapshot
+        if include_versions:
+            versions: list[dict[str, Any]] = []
+            for item in self.generated_versions:
+                if not isinstance(item, dict):
+                    continue
+                current = dict(item)
+                if not include_scripts:
+                    current.pop("script", None)
+                versions.append(current)
+            payload["generatedVersions"] = versions
+        return payload
+
+
+@dataclass
+class SessionJobRecord:
+    job_id: str
+    session_id: str
+    selected_feature_ids: list[str]
+    custom_request: str
+    revision_of_version_id: Optional[str]
+    status: str = "queued"
+    created_at: float = field(default_factory=time.time)
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    retries_used: int = 0
+    max_retries: int = 0
+    error: Optional[str] = None
+    result: Optional[dict[str, Any]] = None
+
+    def snapshot(self, *, include_result: bool = False) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "jobId": self.job_id,
+            "sessionId": self.session_id,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "startedAt": self.started_at,
+            "finishedAt": self.finished_at,
+            "retriesUsed": self.retries_used,
+            "maxRetries": self.max_retries,
+            "error": self.error,
+            "selectedFeatureIds": list(self.selected_feature_ids),
+            "customRequest": self.custom_request,
+            "revisionOfVersionId": self.revision_of_version_id,
+        }
+        if include_result:
+            payload["result"] = self.result
+        return payload
+
+
+@dataclass
 class FeedbackRecord:
     feedback_id: str
     created_at: float
@@ -1003,6 +1284,156 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         return (text or code), self._usage(payload, "repair", meta)
 
 
+class AnthropicClaudeProvider(BaseLLMProvider):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float,
+        retries: int,
+        cost_config: ProviderCostConfig,
+        base_url: str,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._retries = max(0, retries)
+        self._cost_config = cost_config
+        self._base_url = base_url.rstrip("/")
+        self._info = ProviderInfo(provider="anthropic-claude", enabled=True, reason="provider configured")
+
+    def info(self) -> ProviderInfo:
+        return self._info
+
+    def _usage(self, payload: dict[str, Any], stage: str, meta: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        tokens = input_tokens + output_tokens
+        if stage == "analysis":
+            rate = self._cost_config.analysis_cost_gbp_per_1k_tokens
+        elif stage == "generation":
+            rate = self._cost_config.generation_cost_gbp_per_1k_tokens
+        else:
+            rate = self._cost_config.repair_cost_gbp_per_1k_tokens
+        metadata = meta if isinstance(meta, dict) else {}
+        return {
+            "tokens": tokens,
+            "costGbp": (tokens / 1000.0) * rate,
+            "attempts": int(metadata.get("attempts") or 1),
+            "retriesUsed": int(metadata.get("retriesUsed") or 0),
+            "transientFailures": int(metadata.get("transientFailures") or 0),
+        }
+
+    def _extract_text(self, payload: dict[str, Any]) -> str:
+        content = payload.get("content") if isinstance(payload.get("content"), list) else []
+        chunks: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "text":
+                continue
+            text = item.get("text")
+            if isinstance(text, str):
+                chunks.append(text)
+        return "\n".join(chunks)
+
+    def _call_messages_api(self, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        endpoint = f"{self._base_url}/messages"
+        payload = {
+            "model": self._model,
+            "max_tokens": 2000,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+            ],
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "x-api-key": self._api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        transient = {408, 425, 429, 500, 502, 503, 504}
+        last_error: Optional[str] = None
+        transient_failures = 0
+
+        for attempt in range(self._retries + 1):
+            request = urllib.request.Request(endpoint, data=body, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                    return data, {
+                        "attempts": attempt + 1,
+                        "retriesUsed": attempt,
+                        "transientFailures": transient_failures,
+                    }
+            except urllib.error.HTTPError as exc:
+                status = exc.code
+                text = exc.read().decode("utf-8", errors="replace")
+                exc.close()
+                last_error = f"HTTP {status}: {text[:400]}"
+                if status in transient:
+                    transient_failures += 1
+                if status not in transient or attempt == self._retries:
+                    raise ValueError(f"Provider request failed: {last_error}") from None
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                last_error = str(exc)
+                transient_failures += 1
+                if attempt == self._retries:
+                    raise ValueError(f"Provider request failed: {last_error}") from None
+            time.sleep(0.4 * (2 ** attempt))
+
+        raise ValueError(f"Provider request failed: {last_error or 'unknown error'}")
+
+    def analyze(self, bundle: EvidenceBundle, model: str) -> tuple[Optional[dict[str, Any]], dict[str, Any]]:
+        del model
+        system_prompt = (
+            "You are Lycoles feature-analysis AI. Return only one JSON object. "
+            "Never claim runtime/gameplay/server authority verification."
+        )
+        user_prompt = (
+            "Analyze this Roblox inspection evidence summary and return JSON with keys: "
+            "candidateFeatures (array of short strings), risks (array), and notes (array).\n"
+            f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}"
+        )
+        payload, meta = self._call_messages_api(system_prompt, user_prompt)
+        parsed = _extract_first_json_object(self._extract_text(payload))
+        return (parsed if isinstance(parsed, dict) else None), self._usage(payload, "analysis", meta)
+
+    def generate(self, bundle: EvidenceBundle, analysis: dict[str, Any], model: str) -> tuple[Optional[str], dict[str, Any]]:
+        del model
+        system_prompt = (
+            "You are Lycoles script-generation AI. Output only Lua/Luau source code. "
+            "Do not fabricate server-authoritative capabilities."
+        )
+        user_prompt = (
+            "Generate a Roblox Lua/Luau script with a functional GUI from this evidence summary. "
+            "Include duplicate-execution protection, nil-safe lookups, and explicit unsupported-feature notices.\n"
+            f"Evidence:\n{json.dumps(_bundle_prompt_summary(bundle), ensure_ascii=False)}\n"
+            f"Analysis:\n{json.dumps(analysis, ensure_ascii=False)}"
+        )
+        payload, meta = self._call_messages_api(system_prompt, user_prompt)
+        text = _strip_lua_fences(self._extract_text(payload))
+        return (text or None), self._usage(payload, "generation", meta)
+
+    def repair(self, code: str, analysis: dict[str, Any], model: str) -> tuple[str, dict[str, Any]]:
+        del model
+        system_prompt = (
+            "You are Lycoles repair AI. Output only fixed Lua/Luau source code. "
+            "Preserve place guard and safe client-only behavior."
+        )
+        user_prompt = (
+            "Repair this Lua/Luau script so it remains client-safe and preserves behavior.\n"
+            f"Analysis context: {json.dumps(analysis, ensure_ascii=False)}\n"
+            f"Code:\n{code}"
+        )
+        payload, meta = self._call_messages_api(system_prompt, user_prompt)
+        text = _strip_lua_fences(self._extract_text(payload))
+        return (text or code), self._usage(payload, "repair", meta)
+
+
 def _provider_from_environment() -> tuple[BaseLLMProvider, ProviderInfo]:
     provider = (os.environ.get("LYCOLES_LLM_PROVIDER") or "deterministic").strip().lower()
     if provider in {"", "deterministic", "none"}:
@@ -1028,6 +1459,35 @@ def _provider_from_environment() -> tuple[BaseLLMProvider, ProviderInfo]:
             timeout_seconds=timeout_seconds,
             retries=retries,
             cost_config=cost_config,
+        )
+        return value, value.info()
+
+    if provider in {"anthropic", "claude", "anthropic-claude"}:
+        if not _paid_llm_enabled_from_env():
+            value = DeterministicLLMProvider(
+                "LYCOLES_ENABLE_PAID_LLM is false; Anthropic API calls disabled until explicit approval"
+            )
+            return value, ProviderInfo(provider="anthropic-claude", enabled=False, reason=value.info().reason)
+        api_key = os.environ.get("LYCOLES_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            value = DeterministicLLMProvider("missing ANTHROPIC_API_KEY/LYCOLES_ANTHROPIC_API_KEY")
+            return value, ProviderInfo(provider="anthropic-claude", enabled=False, reason=value.info().reason)
+        model = (os.environ.get("LYCOLES_ANTHROPIC_MODEL") or "claude-sonnet-4-20250514").strip()
+        timeout_seconds = _env_float("LYCOLES_ANTHROPIC_TIMEOUT_SECONDS", 45.0)
+        retries = int(_env_float("LYCOLES_ANTHROPIC_RETRIES", 2.0))
+        base_url = os.environ.get("LYCOLES_ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1")
+        cost_config = ProviderCostConfig(
+            analysis_cost_gbp_per_1k_tokens=_env_float("LYCOLES_ANALYSIS_COST_GBP_PER_1K", 0.0),
+            generation_cost_gbp_per_1k_tokens=_env_float("LYCOLES_GENERATION_COST_GBP_PER_1K", 0.0),
+            repair_cost_gbp_per_1k_tokens=_env_float("LYCOLES_REPAIR_COST_GBP_PER_1K", 0.0),
+        )
+        value = AnthropicClaudeProvider(
+            api_key=api_key,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            retries=retries,
+            cost_config=cost_config,
+            base_url=base_url,
         )
         return value, value.info()
 
@@ -2694,8 +3154,441 @@ class LycolesGenerationService:
         self._feedback_penalties: dict[str, int] = {}
         self._load_feedback_log()
 
+        self._sessions_dir = self.output_root / "sessions"
+        self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._sessions: dict[str, SessionRecord] = {}
+        self._sessions_lock = threading.Lock()
+
+        self._session_jobs: dict[str, SessionJobRecord] = {}
+        self._session_jobs_lock = threading.Lock()
+        self._session_job_retries = max(0, int(_env_float("LYCOLES_SESSION_JOB_RETRIES", 1.0)))
+        self._load_sessions()
+
     def _output_dir_for(self, job_id: str) -> Path:
         return self.output_root / job_id
+
+
+    def _session_dir_for(self, session_id: str) -> Path:
+        return self._sessions_dir / session_id
+
+    def _session_file_for(self, session_id: str) -> Path:
+        return self._session_dir_for(session_id) / "session.json"
+
+    def _session_job_file_for(self, session_id: str, job_id: str) -> Path:
+        return self._session_dir_for(session_id) / f"{job_id}.json"
+
+    def _provider_contract_payload(self) -> dict[str, Any]:
+        return {
+            "schemaVersion": "30.6.generation-provider-contract.1",
+            "provider": {
+                "name": self.provider_info.provider,
+                "enabled": self.provider_info.enabled,
+                "reason": self.provider_info.reason,
+                "paidInferenceEnabled": _paid_llm_enabled_from_env(),
+            },
+            "guiOperations": {
+                "submitInspection": {"method": "POST", "path": "/v1/generation/sessions"},
+                "retrieveGameplayAnalysis": {"method": "GET", "path": "/v1/generation/sessions/{sessionId}/analysis"},
+                "retrieveRecommendations": {"method": "GET", "path": "/v1/generation/sessions/{sessionId}/recommendations"},
+                "submitGenerationRequest": {"method": "POST", "path": "/v1/generation/sessions/{sessionId}/jobs"},
+                "pollGenerationStatus": {"method": "GET", "path": "/v1/generation/session-jobs/{jobId}"},
+                "retrieveGeneratedScript": {"method": "GET", "path": "/v1/generation/session-jobs/{jobId}/result"},
+                "requestRevision": {
+                    "method": "POST",
+                    "path": "/v1/generation/sessions/{sessionId}/jobs",
+                    "note": "Pass revisionOfVersionId",
+                },
+            },
+            "claims": dict(FALSE_CLAIMS),
+        }
+
+    def _persist_session_locked(self, record: SessionRecord) -> None:
+        session_dir = self._session_dir_for(record.session_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        payload = record.to_dict(include_snapshot=True, include_versions=True, include_scripts=True)
+        payload["analysis"] = record.analysis
+        payload["recommendations"] = record.recommendations
+        self._session_file_for(record.session_id).write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    def _persist_session_job_locked(self, job: SessionJobRecord) -> None:
+        session_dir = self._session_dir_for(job.session_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        self._session_job_file_for(job.session_id, job.job_id).write_text(
+            json.dumps(job.snapshot(include_result=True), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    def _load_sessions(self) -> None:
+        loaded: dict[str, SessionRecord] = {}
+        for session_path in sorted(self._sessions_dir.glob("*/session.json")):
+            try:
+                payload = json.loads(session_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            session_id = payload.get("sessionId")
+            snapshot = payload.get("inspectionSnapshot")
+            analysis = payload.get("analysis")
+            recommendations = payload.get("recommendations")
+            if not isinstance(session_id, str) or not isinstance(snapshot, dict):
+                continue
+            if not isinstance(analysis, dict):
+                analysis = _derive_session_analysis(snapshot)
+            if not isinstance(recommendations, list):
+                recommendations = _derive_session_recommendations(snapshot, analysis)
+            loaded[session_id] = SessionRecord(
+                session_id=session_id,
+                created_at=float(payload.get("createdAt") or time.time()),
+                updated_at=float(payload.get("updatedAt") or time.time()),
+                evidence_digest=str(payload.get("evidenceDigest") or _snapshot_digest(snapshot)),
+                snapshot=snapshot,
+                analysis=analysis,
+                recommendations=[item for item in recommendations if isinstance(item, dict)],
+                generated_versions=[item for item in (payload.get("generatedVersions") or []) if isinstance(item, dict)],
+                last_job_id=payload.get("lastJobId") if isinstance(payload.get("lastJobId"), str) else None,
+            )
+        with self._sessions_lock:
+            self._sessions = loaded
+
+    def create_session(self, inspection_snapshot: dict[str, Any]) -> dict[str, Any]:
+        sanitized = _sanitize_inspection_snapshot(inspection_snapshot)
+        analysis = _derive_session_analysis(sanitized)
+        recommendations = _derive_session_recommendations(sanitized, analysis)
+        now = time.time()
+        session_id = "inspection-session-" + uuid.uuid4().hex[:16]
+        record = SessionRecord(
+            session_id=session_id,
+            created_at=now,
+            updated_at=now,
+            evidence_digest=_snapshot_digest(sanitized),
+            snapshot=sanitized,
+            analysis=analysis,
+            recommendations=recommendations,
+        )
+        with self._sessions_lock:
+            self._sessions[session_id] = record
+            self._persist_session_locked(record)
+        return {
+            "session": record.to_dict(include_snapshot=False, include_versions=False),
+            "analysis": analysis,
+            "recommendations": {
+                "schemaVersion": _SESSION_RECOMMENDATIONS_SCHEMA_VERSION,
+                "sessionId": session_id,
+                "items": recommendations,
+                "claims": dict(FALSE_CLAIMS),
+            },
+            "providerContract": self._provider_contract_payload(),
+        }
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        with self._sessions_lock:
+            items = [record.to_dict(include_snapshot=False, include_versions=False) for record in self._sessions.values()]
+        return sorted(items, key=lambda item: float(item.get("createdAt") or 0.0), reverse=True)
+
+    def get_session(
+        self,
+        session_id: str,
+        *,
+        include_snapshot: bool = False,
+        include_versions: bool = False,
+        include_scripts: bool = False,
+    ) -> Optional[dict[str, Any]]:
+        with self._sessions_lock:
+            record = self._sessions.get(session_id)
+            if record is None:
+                return None
+            payload = record.to_dict(
+                include_snapshot=include_snapshot,
+                include_versions=include_versions,
+                include_scripts=include_scripts,
+            )
+            payload["analysis"] = record.analysis
+            payload["recommendations"] = record.recommendations
+            return payload
+
+    def get_session_analysis(self, session_id: str) -> Optional[dict[str, Any]]:
+        with self._sessions_lock:
+            record = self._sessions.get(session_id)
+            if record is None:
+                return None
+            return {
+                "sessionId": session_id,
+                **record.analysis,
+            }
+
+    def get_session_recommendations(self, session_id: str) -> Optional[dict[str, Any]]:
+        with self._sessions_lock:
+            record = self._sessions.get(session_id)
+            if record is None:
+                return None
+            return {
+                "schemaVersion": _SESSION_RECOMMENDATIONS_SCHEMA_VERSION,
+                "sessionId": session_id,
+                "analysisStatus": record.analysis.get("status"),
+                "analysisSummary": record.analysis.get("summary"),
+                "recommendations": record.recommendations,
+                "claims": dict(FALSE_CLAIMS),
+            }
+
+    def _deterministic_session_script(
+        self,
+        *,
+        session: SessionRecord,
+        selected_labels: list[str],
+        selected_ids: list[str],
+        custom_request: str,
+        revision_of: Optional[dict[str, Any]],
+    ) -> tuple[str, str]:
+        lines = [
+            "-- Lycoles generated script (session backend deterministic output)",
+            "-- Evidence-scoped candidate utility. Runtime/gameplay outcomes are unverified.",
+            "local Players = game:GetService(\"Players\")",
+            "local player = Players.LocalPlayer",
+            "if not player then return end",
+            "",
+            f"-- session-id: {session.session_id}",
+            f"-- scan-id: {session.snapshot.get('scanId')}",
+        ]
+        for label in selected_labels:
+            lines.append(f"-- selected: {label}")
+        if not selected_labels:
+            lines.append("-- selected: custom-request-only")
+        lines.append(f"-- selected-recommendation-ids: {', '.join(selected_ids) if selected_ids else 'none'}")
+        lines.append(f"-- custom-request: {custom_request or 'none'}")
+        if isinstance(revision_of, dict):
+            lines.append(f"-- revision-of-version: {revision_of.get('versionId')}")
+            previous_request = revision_of.get("customRequest") if isinstance(revision_of.get("customRequest"), str) else "none"
+            lines.append(f"-- prior-custom-request: {previous_request}")
+        lines.extend([
+            "",
+            "local function describe()",
+            "    return \"Generated candidate utility from inspection session evidence\"",
+            "end",
+            "print(describe())",
+        ])
+        return "\n".join(lines), "deterministic"
+
+    def _generate_session_result(self, job: SessionJobRecord) -> dict[str, Any]:
+        with self._sessions_lock:
+            session = self._sessions.get(job.session_id)
+            if session is None:
+                raise ValueError("unknown-inspection-session")
+            recommendations = list(session.recommendations)
+            revision_of = None
+            if job.revision_of_version_id:
+                revision_of = next(
+                    (item for item in session.generated_versions if item.get("versionId") == job.revision_of_version_id),
+                    None,
+                )
+                if revision_of is None:
+                    raise ValueError("unknown-revision-version")
+
+            recommendation_by_id = {
+                item.get("id"): item
+                for item in recommendations
+                if isinstance(item, dict) and isinstance(item.get("id"), str)
+            }
+            selected_ids = [item for item in job.selected_feature_ids if item in recommendation_by_id]
+            selected_labels = [recommendation_by_id[item].get("label") for item in selected_ids]
+            selected_labels = [item for item in selected_labels if isinstance(item, str)]
+
+            script, provider_name = self._deterministic_session_script(
+                session=session,
+                selected_labels=selected_labels,
+                selected_ids=selected_ids,
+                custom_request=job.custom_request,
+                revision_of=revision_of,
+            )
+
+            generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            version_number = len(session.generated_versions) + 1
+            version_id = f"version-{version_number:03d}"
+            version_digest_payload = {
+                "evidenceDigest": session.evidence_digest,
+                "selectedFeatureIds": selected_ids,
+                "customRequest": job.custom_request,
+                "revisionOfVersionId": job.revision_of_version_id,
+                "provider": provider_name,
+            }
+            request_digest = hashlib.sha256(
+                json.dumps(version_digest_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+
+            validation = {
+                "syntaxValid": isinstance(script, str) and bool(script.strip()),
+                "runtimeVerified": False,
+                "gameplayVerified": False,
+                "note": "Session backend generation is static validation only; live gameplay verification required.",
+            }
+
+            version_payload = {
+                "versionId": version_id,
+                "versionNumber": version_number,
+                "createdAt": generated_at,
+                "provider": provider_name,
+                "selectedFeatureIds": selected_ids,
+                "selectedFeatureLabels": selected_labels,
+                "customRequest": job.custom_request,
+                "revisionOfVersionId": job.revision_of_version_id,
+                "evidenceDigest": session.evidence_digest,
+                "requestDigest": request_digest,
+                "validation": validation,
+                "claims": dict(FALSE_CLAIMS),
+                "script": script,
+            }
+            session.generated_versions.append(version_payload)
+            session.updated_at = time.time()
+            session.last_job_id = job.job_id
+            self._persist_session_locked(session)
+
+        return {
+            "schemaVersion": _SESSION_GENERATED_RESULT_SCHEMA_VERSION,
+            "sessionId": job.session_id,
+            "jobId": job.job_id,
+            "status": "completed",
+            "versionId": version_payload["versionId"],
+            "versionNumber": version_payload["versionNumber"],
+            "script": script,
+            "validation": validation,
+            "provider": provider_name,
+            "generatedAt": generated_at,
+            "generationMetadata": {
+                "evidenceDigest": version_payload["evidenceDigest"],
+                "requestDigest": version_payload["requestDigest"],
+                "selectedFeatureIds": selected_ids,
+                "selectedFeatureLabels": selected_labels,
+                "customRequest": job.custom_request,
+                "revisionOfVersionId": job.revision_of_version_id,
+                "claims": dict(FALSE_CLAIMS),
+            },
+            "claims": dict(FALSE_CLAIMS),
+        }
+
+    def submit_session_job(
+        self,
+        session_id: str,
+        *,
+        selected_feature_ids: list[str],
+        custom_request: Optional[str],
+        revision_of_version_id: Optional[str],
+    ) -> dict[str, Any]:
+        selected_ids: list[str] = []
+        for item in selected_feature_ids:
+            rec_id = item.strip() if isinstance(item, str) else ""
+            if not rec_id:
+                continue
+            if rec_id not in selected_ids:
+                selected_ids.append(rec_id)
+            if len(selected_ids) >= _MAX_SESSION_RECOMMENDATIONS:
+                break
+
+        request_text = _sanitize_free_text(custom_request, max_len=_MAX_SESSION_CUSTOM_REQUEST) or ""
+        revision_id = _sanitize_identifier(revision_of_version_id, max_len=120) if revision_of_version_id else None
+        if not selected_ids and not request_text:
+            raise ValueError("Select at least one recommendation or provide customRequest")
+
+        with self._sessions_lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                raise ValueError("unknown-inspection-session")
+            recommendation_ids = {
+                item.get("id")
+                for item in session.recommendations
+                if isinstance(item, dict) and isinstance(item.get("id"), str)
+            }
+            invalid = [item for item in selected_ids if item not in recommendation_ids]
+            if invalid:
+                raise ValueError("unknown recommendation ids: " + ", ".join(sorted(invalid)[:8]))
+
+        job_id = "session-job-" + uuid.uuid4().hex[:16]
+        job = SessionJobRecord(
+            job_id=job_id,
+            session_id=session_id,
+            selected_feature_ids=selected_ids,
+            custom_request=request_text,
+            revision_of_version_id=revision_id,
+            max_retries=self._session_job_retries,
+        )
+        with self._session_jobs_lock:
+            self._session_jobs[job_id] = job
+            self._persist_session_job_locked(job)
+
+        thread = threading.Thread(target=self._run_session_job_async, args=(job_id,), daemon=True)
+        thread.start()
+        return {
+            "jobId": job_id,
+            "sessionId": session_id,
+            "status": "queued",
+            "statusUrl": f"/v1/generation/session-jobs/{job_id}",
+            "resultUrl": f"/v1/generation/session-jobs/{job_id}/result",
+        }
+
+    def _run_session_job_async(self, job_id: str) -> None:
+        with self._session_jobs_lock:
+            record = self._session_jobs.get(job_id)
+            if record is None:
+                return
+            record.status = "running"
+            record.started_at = time.time()
+            self._persist_session_job_locked(record)
+
+        for attempt in range(record.max_retries + 1):
+            try:
+                result = self._generate_session_result(record)
+                with self._session_jobs_lock:
+                    current = self._session_jobs.get(job_id)
+                    if current is None:
+                        return
+                    current.retries_used = attempt
+                    current.status = "completed"
+                    current.result = result
+                    current.finished_at = time.time()
+                    self._persist_session_job_locked(current)
+                return
+            except Exception as exc:  # pylint: disable=broad-except
+                with self._session_jobs_lock:
+                    current = self._session_jobs.get(job_id)
+                    if current is None:
+                        return
+                    current.retries_used = attempt
+                    current.error = str(exc)
+                    should_retry = attempt < current.max_retries
+                    if should_retry:
+                        current.status = "running"
+                    else:
+                        current.status = "failed"
+                        current.finished_at = time.time()
+                    self._persist_session_job_locked(current)
+                if should_retry:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                return
+
+    def get_session_job(self, job_id: str) -> Optional[dict[str, Any]]:
+        with self._session_jobs_lock:
+            job = self._session_jobs.get(job_id)
+            if job is None:
+                return None
+            return job.snapshot(include_result=False)
+
+    def get_session_job_result(self, job_id: str) -> Optional[dict[str, Any]]:
+        with self._session_jobs_lock:
+            job = self._session_jobs.get(job_id)
+            if job is None:
+                return None
+            if job.status != "completed" or not isinstance(job.result, dict):
+                return None
+            return dict(job.result)
+
+    def list_session_jobs(self) -> list[dict[str, Any]]:
+        with self._session_jobs_lock:
+            jobs = [job.snapshot(include_result=False) for job in self._session_jobs.values()]
+        return sorted(jobs, key=lambda item: float(item.get("createdAt") or 0.0), reverse=True)
+
 
     def _load_analysis_cache(self) -> None:
         if not self._analysis_cache_path.is_file():
@@ -3203,7 +4096,57 @@ class LycolesGenerationService:
                 return
 
             def do_GET(self):  # noqa: N802
-                parts = [part for part in self.path.split("?")[0].split("/") if part]
+                parsed = urlsplit(self.path)
+                query = parse_qs(parsed.query)
+                parts = [part for part in parsed.path.split("/") if part]
+
+                if parts == ["v1", "generation", "provider-contract"]:
+                    return self._json(service._provider_contract_payload())
+
+                if parts == ["v1", "generation", "sessions"]:
+                    return self._json({"sessions": service.list_sessions()})
+
+                if len(parts) == 4 and parts[:3] == ["v1", "generation", "sessions"]:
+                    include_snapshot = (query.get("includeSnapshot", ["false"])[0].lower() == "true")
+                    include_versions = (query.get("includeVersions", ["false"])[0].lower() == "true")
+                    include_scripts = (query.get("includeScripts", ["false"])[0].lower() == "true")
+                    session = service.get_session(
+                        parts[3],
+                        include_snapshot=include_snapshot,
+                        include_versions=include_versions,
+                        include_scripts=include_scripts,
+                    )
+                    if session is None:
+                        return self._json({"error": "Session not found"}, 404)
+                    return self._json(session)
+
+                if len(parts) == 5 and parts[:3] == ["v1", "generation", "sessions"] and parts[4] == "analysis":
+                    analysis = service.get_session_analysis(parts[3])
+                    if analysis is None:
+                        return self._json({"error": "Session not found"}, 404)
+                    return self._json(analysis)
+
+                if len(parts) == 5 and parts[:3] == ["v1", "generation", "sessions"] and parts[4] == "recommendations":
+                    recommendations = service.get_session_recommendations(parts[3])
+                    if recommendations is None:
+                        return self._json({"error": "Session not found"}, 404)
+                    return self._json(recommendations)
+
+                if parts == ["v1", "generation", "session-jobs"]:
+                    return self._json({"jobs": service.list_session_jobs()})
+
+                if len(parts) == 4 and parts[:3] == ["v1", "generation", "session-jobs"]:
+                    job = service.get_session_job(parts[3])
+                    if job is None:
+                        return self._json({"error": "Session job not found"}, 404)
+                    return self._json(job)
+
+                if len(parts) == 5 and parts[:3] == ["v1", "generation", "session-jobs"] and parts[4] == "result":
+                    result = service.get_session_job_result(parts[3])
+                    if result is None:
+                        return self._json({"error": "Session job result not ready"}, 404)
+                    return self._json(result)
+
                 if parts == ["v1", "generation", "jobs"]:
                     return self._json({"jobs": service.list_jobs()})
                 if len(parts) == 4 and parts[:3] == ["v1", "generation", "jobs"]:
@@ -3217,6 +4160,36 @@ class LycolesGenerationService:
 
             def do_POST(self):  # noqa: N802
                 parts = [part for part in self.path.split("?")[0].split("/") if part]
+
+                if parts == ["v1", "generation", "sessions"]:
+                    try:
+                        payload = self._read_json()
+                        snapshot = payload.get("inspectionSnapshot") if isinstance(payload.get("inspectionSnapshot"), dict) else payload
+                        created = service.create_session(snapshot)
+                        return self._json(created, 201)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        return self._json({"error": str(exc)}, 400)
+
+                if len(parts) == 5 and parts[:3] == ["v1", "generation", "sessions"] and parts[4] == "jobs":
+                    try:
+                        payload = self._read_json()
+                        selected_features = payload.get("selectedFeatureIds")
+                        if selected_features is None:
+                            selected_features = payload.get("selectedFeatures")
+                        if not isinstance(selected_features, list):
+                            raise ValueError("selectedFeatureIds must be a list")
+                        custom_request = payload.get("customRequest")
+                        revision_of = payload.get("revisionOfVersionId")
+                        queued = service.submit_session_job(
+                            parts[3],
+                            selected_feature_ids=selected_features,
+                            custom_request=custom_request,
+                            revision_of_version_id=revision_of,
+                        )
+                        return self._json(queued, 202)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        return self._json({"error": str(exc)}, 400)
+
                 if parts == ["v1", "generation", "jobs"]:
                     try:
                         payload = self._read_json()
@@ -3237,6 +4210,7 @@ class LycolesGenerationService:
                         return self._json({"jobId": job_id, "status": "queued", "statusUrl": f"/v1/generation/jobs/{job_id}"}, 202)
                     except Exception as exc:  # pylint: disable=broad-except
                         return self._json({"error": str(exc)}, 400)
+
                 if parts == ["v1", "generation", "feedback"]:
                     try:
                         payload = self._read_json()
