@@ -3592,3 +3592,19 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
     **1775 passed, 17 skipped, 79 subtests passed**
   - `node --test tests/test_luau_syntax.mjs`
     **4 passed**
+
+
+### Follow-up — malformed persisted session-job recovery coverage
+
+- Added regression test `test_restart_recovers_malformed_session_job_fields_safely` to ensure persisted session-job records with malformed numeric/string/list fields are restored with safe defaults and explicit failure state when completed-result payload is invalid.
+
+#### Updated validation
+
+- Targeted suites:
+  - `python3 -m pytest -q tests/test_lycoles_generation_service.py tests/test_lycoles_backend_manager.py tests/test_inspector_ui.py tests/test_windows_backend_bridge_script.py`
+    **113 passed**
+- Full regressions:
+  - `python3 -m pytest -q`
+    **1776 passed, 17 skipped, 79 subtests passed**
+  - `node --test tests/test_luau_syntax.mjs`
+    **4 passed**

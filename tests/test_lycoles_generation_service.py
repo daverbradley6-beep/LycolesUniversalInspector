@@ -1668,6 +1668,54 @@ class SessionBackendContractTests(unittest.TestCase):
             summary = health.get("sessionSummary") or {}
             self.assertEqual(int(summary.get("restoredInterruptedSessionJobs") or 0), 1)
 
+
+    def test_restart_recovers_malformed_session_job_fields_safely(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+            session_id = created["session"]["sessionId"]
+            job_id = "session-job-malformed-recovery"
+            job_path = root / "jobs" / "sessions" / session_id / f"{job_id}.json"
+            malformed_payload = {
+                "jobId": job_id,
+                "sessionId": session_id,
+                "status": "completed",
+                "createdAt": "not-a-number",
+                "startedAt": {"unexpected": True},
+                "finishedAt": "invalid-time",
+                "retriesUsed": "bad-int",
+                "maxRetries": "-20",
+                "selectedFeatureIds": ["  recommendation_movement  ", 123, "", "recommendation_combat"],
+                "customRequest": 12345,
+                "revisionOfVersionId": 999,
+                "error": 17,
+                "result": [],
+            }
+            job_path.write_text(json.dumps(malformed_payload), encoding="utf-8")
+
+            restarted = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            restored = restarted.get_session_job(job_id)
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.get("status"), "failed")
+            self.assertEqual(restored.get("selectedFeatureIds"), ["recommendation_movement", "recommendation_combat"])
+            self.assertEqual(restored.get("customRequest"), "")
+            self.assertIsNone(restored.get("revisionOfVersionId"))
+            self.assertEqual(restored.get("retriesUsed"), 0)
+            self.assertEqual(restored.get("maxRetries"), 0)
+            self.assertIn("completed-job-missing-result", str(restored.get("error") or ""))
+
+            created_at = restored.get("createdAt")
+            finished_at = restored.get("finishedAt")
+            self.assertIsInstance(created_at, (int, float))
+            self.assertIsInstance(finished_at, (int, float))
+            self.assertGreaterEqual(float(finished_at), float(created_at))
+
+
+            health = restarted._health_payload()
+            summary = health.get("sessionSummary") or {}
+            self.assertGreaterEqual(int(summary.get("restoredSessionJobs") or 0), 1)
+
     def test_http_shared_token_auth_when_configured(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

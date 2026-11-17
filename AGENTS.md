@@ -1167,3 +1167,4 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Backend manager supports `--shared-token` and forwards auth headers in health/smoke/network probes.
 - Windows host bridge setup script: `tools/windows_setup_lycoles_backend_bridge.ps1` (creates/replaces `lycoles-backend-proxy` sidecar and keeps `openhands-app` container unchanged).
 - End-to-end contract coverage now includes a live manager smoke lifecycle test against real `LycolesGenerationService` HTTP endpoints in shared-token mode (`tests/test_lycoles_backend_manager.py`).
+- Persistence hardening regression: `tests/test_lycoles_generation_service.py::test_restart_recovers_malformed_session_job_fields_safely` verifies malformed persisted session-job fields are safely coerced and surfaced as failed instead of crashing restore.
