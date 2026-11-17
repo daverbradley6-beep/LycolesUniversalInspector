@@ -3517,3 +3517,18 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   **1766 passed, 17 skipped, 79 subtests passed**
 - `node --test tests/test_luau_syntax.mjs`
   **4 passed**
+
+
+### Follow-up — network diagnostics extension
+
+- Extended backend manager with `network-report` command to verify:
+  - localhost/container-IP reachability for backend health endpoint,
+  - Docker daemon accessibility from current runtime context,
+  - executor-relevant transport notes (no browser CORS dependency, no auth header requirement).
+- Validation executed:
+  - `python3 tools/lycoles_backend_manager.py deploy` -> smoke completed,
+  - `python3 tools/lycoles_backend_manager.py network-report` -> localhost reachable, container IP reachable, docker daemon unavailable in this sandbox,
+  - `python3 tools/lycoles_backend_manager.py stop` -> clean supervisor/service shutdown.
+- Additional tests:
+  - `python3 -m pytest -q tests/test_lycoles_backend_manager.py tests/test_lycoles_generation_service.py`
+    **43 passed**

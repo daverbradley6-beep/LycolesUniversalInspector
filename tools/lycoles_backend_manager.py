@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -190,6 +191,91 @@ def _health_probe(config: BackendConfig) -> dict[str, Any]:
         }
     )
     return result
+
+
+def _probe_health_host(config: BackendConfig, host: str) -> dict[str, Any]:
+    url = f"http://{host}:{config.port}/v1/generation/health"
+    try:
+        status, payload = _json_request(url, timeout=config.health_timeout)
+        return {
+            "host": host,
+            "reachable": status == 200,
+            "statusCode": status,
+            "status": payload.get("status") if isinstance(payload, dict) else None,
+        }
+    except Exception as exc:  # pylint: disable=broad-except
+        return {
+            "host": host,
+            "reachable": False,
+            "error": str(exc),
+        }
+
+
+def _candidate_hosts() -> list[str]:
+    candidates = ["127.0.0.1"]
+    try:
+        _, _, addresses = socket.gethostbyname_ex(socket.gethostname())
+    except OSError:
+        addresses = []
+    for address in addresses:
+        if address and address not in candidates:
+            candidates.append(address)
+    return candidates
+
+
+def _docker_daemon_access() -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except FileNotFoundError:
+        return {
+            "available": False,
+            "reason": "docker-cli-not-found",
+        }
+    except Exception as exc:  # pylint: disable=broad-except
+        return {
+            "available": False,
+            "reason": "docker-probe-failed",
+            "error": str(exc),
+        }
+
+    if completed.returncode == 0:
+        containers = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+        return {
+            "available": True,
+            "containersVisible": containers,
+        }
+
+    return {
+        "available": False,
+        "reason": "docker-daemon-unavailable",
+        "stderr": (completed.stderr or "").strip(),
+    }
+
+
+def _network_report(config: BackendConfig) -> dict[str, Any]:
+    hosts = _candidate_hosts()
+    probes = [_probe_health_host(config, host) for host in hosts]
+    localhost_probe = next((entry for entry in probes if entry.get("host") == "127.0.0.1"), None)
+    return {
+        "schemaVersion": "30.6.backend-network-report.1",
+        "checkedAt": _now_iso(),
+        "port": config.port,
+        "hostsProbed": probes,
+        "localhostReachable": bool(localhost_probe and localhost_probe.get("reachable") is True),
+        "dockerDaemon": _docker_daemon_access(),
+        "notes": [
+            "Roblox executor HTTP requests are not browser CORS-limited.",
+            "Backend currently requires no authentication headers.",
+            "Windows host publish/route still depends on Docker Desktop port mapping.",
+        ],
+    }
+
 
 
 def _service_command(config: BackendConfig) -> list[str]:
@@ -675,7 +761,7 @@ def _build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--restart-backoff-seconds", type=float, default=DEFAULT_RESTART_BACKOFF)
         sub.add_argument("--restart-backoff-max-seconds", type=float, default=DEFAULT_RESTART_BACKOFF_MAX)
 
-    for name in ("setup-check", "start", "stop", "status", "health", "ensure", "deploy", "smoke", "_supervise"):
+    for name in ("setup-check", "start", "stop", "status", "health", "network-report", "ensure", "deploy", "smoke", "_supervise"):
         command_parser = subparsers.add_parser(name)
         add_common(command_parser)
         if name == "start":
@@ -717,6 +803,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.command == "health":
         print(json.dumps(_health_probe(config), indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "network-report":
+        print(json.dumps(_network_report(config), indent=2, sort_keys=True))
         return 0
 
     if args.command == "start":

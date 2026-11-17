@@ -1160,3 +1160,4 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `LYCOLES_ENABLE_PAID_LLM=false`,
   - `LYCOLES_LLM_PROVIDER=deterministic`.
 - Environment limitation: this sandbox lacks Docker daemon permissions (`docker ps` denied), so host-level port publication changes must be executed in a Docker-authorized context.
+- Network diagnostics command added: `python3 tools/lycoles_backend_manager.py network-report` (probes localhost/container-IP health reachability + Docker daemon access visibility).

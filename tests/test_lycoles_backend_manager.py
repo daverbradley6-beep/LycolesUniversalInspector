@@ -95,6 +95,23 @@ class BackendManagerTests(unittest.TestCase):
             self.assertEqual(result["jobId"], "job-1")
             self.assertEqual(result["sessionId"], "session-1")
 
+
+    def test_network_report_includes_host_probes_and_docker_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self._config(pathlib.Path(tmp))
+            with mock.patch.object(MODULE, "_candidate_hosts", return_value=["127.0.0.1", "172.17.0.2"]), \
+                    mock.patch.object(MODULE, "_probe_health_host", side_effect=[
+                        {"host": "127.0.0.1", "reachable": True, "statusCode": 200, "status": "ok"},
+                        {"host": "172.17.0.2", "reachable": True, "statusCode": 200, "status": "ok"},
+                    ]), \
+                    mock.patch.object(MODULE, "_docker_daemon_access", return_value={"available": False, "reason": "docker-daemon-unavailable"}):
+                payload = MODULE._network_report(config)
+
+            self.assertEqual(payload["schemaVersion"], "30.6.backend-network-report.1")
+            self.assertTrue(payload["localhostReachable"])
+            self.assertEqual(len(payload["hostsProbed"]), 2)
+            self.assertEqual(payload["dockerDaemon"]["reason"], "docker-daemon-unavailable")
+
     def test_start_dry_run_returns_supervisor_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = self._config(pathlib.Path(tmp))
