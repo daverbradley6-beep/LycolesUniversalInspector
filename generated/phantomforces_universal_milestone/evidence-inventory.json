@@ -1,0 +1,54 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "countsExplanation": {
+    "extractedPartCount": "Count of baseline part JSON files physically present after archive extraction.",
+    "manifestExpectedParts": "Manifest-declared multipart target when available.",
+    "manifestUploadedParts": "Uploader-side transport counter captured at scan time; may differ from local extraction coverage."
+  },
+  "extractedDirectory": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/replay/phantomforces_292439477_208A9A11/extracted",
+  "extractedPartCount": 914,
+  "firstPart": "Lycoles_292439477_208A9A11-D4A1-404E-B78C-C6800E7D7DF7_part-0001.json",
+  "lastPart": "Lycoles_292439477_208A9A11-D4A1-404E-B78C-C6800E7D7DF7_part-0914.json",
+  "manifestExpectedParts": 914,
+  "manifestGameName": "Phantom Forces",
+  "manifestPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/replay/phantomforces_292439477_208A9A11/extracted/Lycoles_292439477_208A9A11-D4A1-404E-B78C-C6800E7D7DF7_manifest.json",
+  "manifestPreliminarySignals": {
+    "featureReadinessKeys": [
+      "bosses",
+      "combat",
+      "inventory",
+      "pets",
+      "progression",
+      "quests",
+      "rebirth",
+      "rewards",
+      "shops",
+      "training",
+      "travel"
+    ],
+    "interactionWindowsExpected": 219,
+    "objectCount": 92466,
+    "scanMode": "client-visible-read-only"
+  },
+  "manifestUploadedParts": 543,
+  "manifestVersion": "30.6.60",
+  "observationIdentity": {
+    "baselineScanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7",
+    "liveObservationScanId": "live-observation-B440BBA3-9465-4142-8FA2-1E25291D3AFB",
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "observationIdentityMatchesManifest": true,
+  "observationPath": "/home/openhands/workspace/project/b45f0e606f7a4b9fb2ca4528ff4cee0a/Pasted text(20261113-183954).txt",
+  "partIndexContiguous": true,
+  "placeId": 292439477,
+  "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7",
+  "schemaVersion": "120.evidence-inventory.1"
+}

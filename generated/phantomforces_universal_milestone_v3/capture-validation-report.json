@@ -1,0 +1,74 @@
+{
+  "available": true,
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false
+  },
+  "identityChecks": {
+    "baselineScanIdMatches": true,
+    "placeIdMatches": true
+  },
+  "requestValidation": [
+    {
+      "missingEvidence": [],
+      "requestId": "character-entity-observation",
+      "satisfiedEvidence": [
+        "player_entity_set",
+        "team_relationship_signal",
+        "character_spatial_positions"
+      ],
+      "status": "complete"
+    },
+    {
+      "missingEvidence": [],
+      "requestId": "combat-camera-weapon-correlation",
+      "satisfiedEvidence": [
+        "camera_state_samples",
+        "camera_movement_correlation",
+        "weapon_equipped_signal",
+        "mouse_primary_input"
+      ],
+      "status": "complete"
+    },
+    {
+      "missingEvidence": [],
+      "requestId": "match-objective-state-observation",
+      "satisfiedEvidence": [
+        "objective_hud_signals",
+        "state_change_signals"
+      ],
+      "status": "complete"
+    },
+    {
+      "missingEvidence": [],
+      "requestId": "loadout-runtime-observation",
+      "satisfiedEvidence": [
+        "weapon_equipped_signal",
+        "hud_weapon_indicators",
+        "loadout_gui_structures"
+      ],
+      "status": "complete"
+    }
+  ],
+  "schemaVersion": "122.capture-validation-report.1",
+  "status": "validated",
+  "summary": {
+    "completeRequests": 4,
+    "sampleCounts": {
+      "cameraCorrelations": 1,
+      "cameraSamples": 6,
+      "characterEntities": 2,
+      "entityEvents": 1,
+      "errors": 0,
+      "inputSamples": 1,
+      "loadoutSnapshots": 1,
+      "matchStateSamples": 1,
+      "progressLogs": 0,
+      "timelineEvents": 1,
+      "transitions": 1,
+      "weaponSnapshots": 1
+    },
+    "totalRequests": 4
+  }
+}

@@ -1,0 +1,474 @@
+{
+  "actionAuditObservedActions": 0,
+  "actionCapabilities": {
+    "artifact": "action-capabilities.json",
+    "correlatedEggTargets": 0,
+    "eggTargets": 0,
+    "generationReadyGuiTargets": 0,
+    "generationReadyToolTargets": 1,
+    "guiTargets": 0,
+    "promptTargets": 1,
+    "schemaVersion": "111.action-capabilities.1",
+    "sha256": "68bcb53b8842ae9d742da695e6a536de236031a180ee7b58601d3d9bf93eada2",
+    "toolTargets": 1,
+    "trialReadyPromptTargets": 1
+  },
+  "adminCommandFramework": {
+    "artifact": "LycolesAdminCommands.lua",
+    "chatCommandSupport": "where-player-chat-events-are-supported",
+    "commands": [
+      "fly",
+      "unfly",
+      "noclip",
+      "clip",
+      "tp",
+      "goto",
+      "speed",
+      "jump",
+      "coords",
+      "systems",
+      "readiness",
+      "reset",
+      "rejoin",
+      "cmds",
+      "help",
+      "stopall",
+      "hidegui"
+    ],
+    "keyboardShortcut": "RightBracket",
+    "prefix": ";",
+    "runtimeVerified": false,
+    "sha256": "ba5490432c6ae5b2a18d8f5edda33ddcbb343bc2e3b8eb181e9a1443566db445",
+    "sharedFeatureState": true,
+    "staticValidationPassed": true
+  },
+  "clientActionsFailed": 0,
+  "clientActionsReturned": 0,
+  "coverageFeatures": 2,
+  "dynamicEvidenceOverlays": 0,
+  "eggAutofarmTrial": {
+    "artifact": null,
+    "compatibilityAlias": true,
+    "gameplayVerified": false,
+    "generated": false,
+    "multiHatchReady": false,
+    "runtimeVerified": false
+  },
+  "evidenceOverlayProvenance": {
+    "artifact": "evidence-overlay-provenance.json",
+    "overlayCount": 0,
+    "schemaVersion": "30.3.evidence-overlay-provenance.1",
+    "sha256": "f37368df73976f00380165e548955d31c336652cad1c19fbc0c1b3883ca5b35c"
+  },
+  "featuresByReadiness": {
+    "workflow-observed": 2
+  },
+  "gameplayUnderstanding": {
+    "artifact": "gameplay-understanding.json",
+    "requestedCapabilityAssessment": {
+      "blockers": [
+        "clean_stop_behavior",
+        "live_failure_validation",
+        "observed_interaction_evidence",
+        "permitted_action_contract"
+      ],
+      "evidenceTier": "temporal_state_correlation",
+      "gameplayVerified": false,
+      "implementationReady": false,
+      "matchedObservedActions": [],
+      "matchedResourceIds": [],
+      "matchedResources": [],
+      "matchedSystems": [
+        "commerce",
+        "resource_progression"
+      ],
+      "request": "Automatically train and open shop prompt",
+      "runtimeVerified": false,
+      "status": "insufficient_interaction_evidence"
+    },
+    "schemaVersion": "110.gameplay-understanding.2",
+    "sha256": "c5639cf89388749d41c7b2033352ff456012428d819c7ad77f733e05001149de",
+    "summary": {
+      "evidenceGaps": 4,
+      "implementationReadyOpportunities": 0,
+      "mechanicCandidates": 0,
+      "objectiveCandidates": 2,
+      "observedActions": 0,
+      "omittedSystemCandidates": 0,
+      "progressionLoops": 0,
+      "progressionRelationships": 0,
+      "requestRelevantEvidenceGaps": 4,
+      "resources": 2,
+      "systems": 2,
+      "topAutomationMechanic": null
+    }
+  },
+  "generatedLuaSHA256": "4a5581d88d02afbdec2c2231a908f423c82334ca733d4b0b8947f88110b5a806",
+  "generatedReadOnlyClientActions": [],
+  "generatedResult": {
+    "artifact": "Lycoles-3623096087-generated-result.json",
+    "displayOnly": true,
+    "executionAuthorized": false,
+    "schemaVersion": "113.generated-result.1",
+    "sha256": "6cddda79c816509f8d6202a41c7de52c18e64601e7c55f46b57a71aa26a1730b"
+  },
+  "generatedWorkflowPlan": {
+    "artifact": "generated-workflow-plan.json",
+    "automaticallyExecutable": true,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "guiRevealFollowups": {
+      "candidateCount": 0,
+      "causalityProven": false,
+      "usedForWorkflowLinkage": false
+    },
+    "runtimeVerified": false,
+    "schemaVersion": "114.generated-workflow-plan.1",
+    "sha256": "a61ad12954875309f144a7237215b97ea950fd4d40b10cddd819cb2b82c023c9",
+    "summary": {
+      "automaticExecutionReadyWorkflows": 1,
+      "automaticallyExecutableWorkflows": 1,
+      "executionReadyWorkflows": 1,
+      "explicitRecordingTransactions": 0,
+      "generationReadySteps": 2,
+      "guiRevealFollowupCandidates": 0,
+      "guidedTrialGenerationReadyWorkflows": 1,
+      "linkedTransactions": 1,
+      "multiEventTransactions": 1,
+      "partiallyMappedTransactions": 0,
+      "planningStatus": "execution-ready-candidates",
+      "requestAlignedAutomaticExecutionReadyWorkflows": 1,
+      "requestAlignedReviewOnlyLinkedCandidates": 0,
+      "requestAlignedWorkflows": 1,
+      "reviewOnlyLinkedCandidates": 0,
+      "selectedExecutionCandidateId": "c61922a1b15c979e64f8",
+      "selectedReviewOnlyCandidateId": null,
+      "singleStepExecutionReadyWorkflows": 0,
+      "singletonTransactions": 0,
+      "transactionGroups": 1,
+      "transactionsOverStepBound": 0,
+      "transactionsWithInsufficientGenerationReadySteps": 0,
+      "unlinkedEvents": 0,
+      "workflowCandidates": 1,
+      "workflowsWithAutomaticActionCandidates": 0,
+      "workflowsWithBurstCadenceSignals": 0,
+      "workflowsWithSustainedCadenceSignals": 0
+    },
+    "temporalAdjacency": {
+      "timedEvents": 0,
+      "unlinkedAdjacentPairs": 0,
+      "usedForWorkflowLinkage": false
+    }
+  },
+  "generationReadiness": {
+    "actionOutcomesVerified": false,
+    "artifact": "generation-readiness.json",
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "request": {
+      "actionOutcomesVerified": false,
+      "causalityProven": false,
+      "fullRequestImplemented": false,
+      "gameplayVerified": false,
+      "generatedSubsetAvailable": true,
+      "implementationReady": false,
+      "matchedGeneratedCapabilityIds": [
+        "prompt-interaction-trial",
+        "linked-gameplay-workflow-trial"
+      ],
+      "request": "Automatically train and open shop prompt",
+      "runtimeVerified": false,
+      "status": "generated-bounded-subset",
+      "supportedSubset": [
+        "select one exact observed prompt target",
+        "move the local character to its observed anchor",
+        "run the exact observed linked action order as one bounded trial",
+        "check each exact target and prerequisite snapshot before activation",
+        "stop on the first unavailable target, prerequisite drift, activation failure, or unobserved outcome",
+        "run an operator-started bounded repeat trial",
+        "observe one selected client-visible scalar direction",
+        "stop cleanly after request, close, three uncorroborated attempts, or 25 total attempts"
+      ]
+    },
+    "requestFeatureReadiness": {
+      "actionOutcomesVerified": false,
+      "causalityProven": false,
+      "explicitBlockers": [
+        "discovery-only:world-interaction",
+        "request-assessment:clean_stop_behavior",
+        "request-assessment:live_failure_validation",
+        "request-assessment:observed_interaction_evidence",
+        "request-assessment:permitted_action_contract"
+      ],
+      "featureEvidence": {
+        "matchSignalsBounded": true,
+        "matchedFeatures": [
+          {
+            "evidenceClassification": "discovered-no-interaction-evidence",
+            "feature": "shops",
+            "featureGuiCorrelations": 0,
+            "featureStateCorrelations": 0,
+            "gameplayPriorityScore": 22,
+            "implementationReady": false,
+            "interactionEvents": 1,
+            "matchedTerms": [
+              "shop"
+            ],
+            "observableOutcomeCandidates": 0,
+            "status": "discovered",
+            "tokenEvidenceOnly": true
+          },
+          {
+            "evidenceClassification": "discovered-no-interaction-evidence",
+            "feature": "training",
+            "featureGuiCorrelations": 0,
+            "featureStateCorrelations": 0,
+            "gameplayPriorityScore": 2,
+            "implementationReady": false,
+            "interactionEvents": 1,
+            "matchedTerms": [
+              "train"
+            ],
+            "observableOutcomeCandidates": 0,
+            "status": "discovered",
+            "tokenEvidenceOnly": true
+          }
+        ],
+        "omittedMatches": 0
+      },
+      "gameplayVerified": false,
+      "generatedEvidence": {
+        "generatedCapabilityCount": 3,
+        "generatedCapabilityIds": [
+          "prompt-interaction-trial",
+          "tool-activation-trial",
+          "linked-gameplay-workflow-trial"
+        ],
+        "matchedGeneratedCapabilityIds": [
+          "prompt-interaction-trial",
+          "linked-gameplay-workflow-trial"
+        ]
+      },
+      "implementationReady": false,
+      "nameMatchingSufficientForImplementation": false,
+      "request": "Automatically train and open shop prompt",
+      "requestedTerms": [
+        "open",
+        "prompt",
+        "shop",
+        "train"
+      ],
+      "runtimeVerified": false,
+      "schemaVersion": "113.request-feature-readiness.1",
+      "status": "bounded-generated-subset",
+      "summary": {
+        "automaticExecutionReadyWorkflows": 1,
+        "automaticExecutionRequired": true,
+        "blockers": 5,
+        "matchedFeatures": 2,
+        "matchedObservedActions": 1,
+        "matchedResources": 0,
+        "matchedSystems": 2,
+        "meaningfulGameplayFeatureMatches": 2,
+        "requestAlignedAutomaticExecutionReadyWorkflows": 1,
+        "requestAlignedExecutionReadyWorkflows": 1,
+        "requestAlignedReviewOnlyGuiTransitions": 0
+      },
+      "temporalCorrelationSufficientForImplementation": false,
+      "workflowEvidence": {
+        "automaticExecutionReadyCandidates": 1,
+        "automaticExecutionRequired": true,
+        "available": true,
+        "executionReadyCandidates": 1,
+        "planningStatus": "execution-ready-candidates",
+        "requestAlignedAutomaticExecutionReadyCandidates": 1,
+        "requestAlignedExecutionReadyCandidates": 1,
+        "requestAlignedReviewOnlyGuiTransitionCandidates": 0,
+        "requestAlignedReviewOnlyGuiTransitionPaths": [],
+        "reviewOnlyGuiTransitionCandidates": 0,
+        "selectedCandidateAutomaticallyExecutable": true,
+        "selectedCandidateId": "c61922a1b15c979e64f8",
+        "selectedCandidateRequestAligned": true,
+        "temporalCorrelationOnly": true
+      }
+    },
+    "runtimeVerified": false,
+    "schemaVersion": "113.generation-readiness.1",
+    "sha256": "21be9760fc584390f0c36176857140e0a98e4fde65c205ab621cc578eca7d66c",
+    "summary": {
+      "discoveryOnlyCapabilityFamilies": 1,
+      "generatedCapabilities": 3,
+      "guidedFeedbackSessions": 0,
+      "guidedFeedbackStatusConflicts": 0,
+      "requestFeatureBlockers": 5,
+      "requestFeatureMatches": 2,
+      "requestMatchedGeneratedCapabilities": 2,
+      "unavailableRequestedBehavior": 0
+    }
+  },
+  "guidedGuiTrial": {
+    "artifact": null,
+    "automaticActivation": false,
+    "causalityProven": false,
+    "exactControlHighlighting": false,
+    "gameplayVerified": false,
+    "generated": false,
+    "manualActivationRequired": false,
+    "runtimeVerified": false
+  },
+  "guidedWorkflowFeedback": {
+    "aggregateArtifact": null,
+    "aggregateSHA256": null,
+    "aggregateSummary": null,
+    "artifact": null,
+    "causalityProven": false,
+    "completeSequenceRecurrenceObserved": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "sessionCount": 0,
+    "sha256": null,
+    "summary": null
+  },
+  "guidedWorkflowTrial": {
+    "artifact": "LycolesGuidedWorkflow.lua",
+    "automaticActivation": true,
+    "candidateId": "c61922a1b15c979e64f8",
+    "causalityProven": false,
+    "executionMode": "bounded-automatic",
+    "feedbackSchema": "115.guided-workflow-feedback.1",
+    "feedbackWorkflowPlanSHA256": "9c6354ae7c1f9f08986b955508eaa261b07e3db124843eeae504dbffed5c4a03",
+    "gameplayVerified": false,
+    "generated": true,
+    "integratedInGeneratedUtility": true,
+    "manualActivationRequired": false,
+    "runtimeVerified": false,
+    "sha256": "24806c33ee0f92cb10b9d3992757a8cbc5189c772a95f9967fdbc71b4ddb0d9e"
+  },
+  "implementationBacklogCandidates": 2,
+  "implementedClientControls": [
+    "Stats",
+    "Menus",
+    "Prompts",
+    "Gameplay",
+    "Admin Commands",
+    "Prompt Interactions",
+    "Tool Activation Trial",
+    "Linked Workflow Trial"
+  ],
+  "implementedGameplayAutomation": [],
+  "manualVerificationChecks": 0,
+  "observedWorkflowSequences": 2,
+  "placeId": 3623096087,
+  "promptInteractionTrial": {
+    "artifact": "LycolesPromptInteractions.lua",
+    "automaticMovement": true,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "generated": true,
+    "runtimeVerified": false
+  },
+  "promptTrialFeedback": {
+    "actionOutcomesVerified": false,
+    "artifact": null,
+    "attempts": 0,
+    "causalityProven": false,
+    "expectedChangesObserved": 0,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "sha256": null,
+    "submitted": false
+  },
+  "readOnlyActionProposals": 1,
+  "releaseStatus": "GENERATED_STATIC_CHECKED_NOT_LIVE_TESTED",
+  "requestedCapability": "Automatically train and open shop prompt",
+  "reviewRequiredContractCandidates": 1,
+  "reviewTemplateContracts": 1,
+  "reviewedActionsGuiGenerated": false,
+  "reviewedActionsGuiValidation": null,
+  "runtimeVerified": false,
+  "scanId": "automatic_workflow_live_package",
+  "schemaVersion": "30.0",
+  "sourceFeatureCandidates": 2,
+  "sourceProvenance": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "downloadedPartCount": 0,
+    "gameplayVerified": false,
+    "inputMode": "local-multipart",
+    "localPartContentDigestsComputed": true,
+    "localPayloadEquivalent": false,
+    "partContentDigests": [
+      {
+        "partIndex": 1,
+        "sha256": "770742a2c9882d39b4b4952edecc6ac7077222fa2e4bf5fc30dbe84e4ad76b33"
+      },
+      {
+        "partIndex": 2,
+        "sha256": "da07c385ceb70bda1be500ddb6ec7ca7d421904d943082246ff9dd5b4daf93d8"
+      }
+    ],
+    "partCount": 2,
+    "placeId": 3623096087,
+    "receiverAcknowledgementDigestEquivalent": false,
+    "receiverIntegrityVerified": false,
+    "receiverResponseAuthenticityVerified": false,
+    "receiverStoredPayloadDigestsRevalidatedThisRun": false,
+    "receiverStoredPayloadDigestsVerified": false,
+    "replayable": false,
+    "resumableRetrievalEnabled": false,
+    "resumeCheckpointAuthenticated": false,
+    "resumedPartCount": 0,
+    "scanId": "automatic_workflow_live_package",
+    "schemaVersion": "30.2.source-provenance.2",
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "submittedRuntimeObservations": 0,
+  "toolActivationTrial": {
+    "artifact": "LycolesPromptInteractions.lua",
+    "automaticMovement": false,
+    "boundedEquip": true,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "generated": true,
+    "officialActivation": true,
+    "runtimeVerified": false
+  },
+  "universalGameplayIntelligence": {
+    "artifact": "universal-gameplay-intelligence.json",
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "schemaVersion": "111.universal-gameplay-intelligence.1",
+    "sha256": "7da12cbfc0ec701f99d2299a1c1b2356106f21ffb749eb4d098e6f6e509c03ff",
+    "summary": {
+      "actionRecords": 2,
+      "actionSourceBreakdown": {
+        "proximity-prompt": 1,
+        "tool": 1
+      },
+      "economySignals": 0,
+      "inputActionRecords": 1,
+      "interactables": 2,
+      "regions": 0,
+      "relationships": 2,
+      "stateSignals": 2,
+      "workflowCandidates": 1
+    }
+  },
+  "validatedClientActionContracts": 0,
+  "validation": {
+    "expectedControls": 4,
+    "note": "Structural checks only; Luau syntax and runtime behaviour are not verified",
+    "placeGuard": true,
+    "unsafeOperationsFound": false
+  },
+  "workflowEvidenceSummary": {
+    "automaticallyExecutable": 0,
+    "clientCorroborated": 0,
+    "discovered": 2,
+    "featuresWithObservableOutcomeCandidates": 0,
+    "observableOutcomeCandidates": 0,
+    "observed": 2
+  }
+}

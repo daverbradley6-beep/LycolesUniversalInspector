@@ -1,0 +1,28 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "contractPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-auto-train/observation-tool-contract.json",
+  "executableLogic": {
+    "automaticExecutionReadyWorkflowCandidates": 1,
+    "automaticExecutionRequired": true,
+    "requestAlignedAutomaticExecutionReadyWorkflows": 1,
+    "requestExecutableStatus": "request-executable-ready",
+    "requestImplementationReady": false,
+    "requestStatus": "generated-bounded-subset",
+    "selectedWorkflowCandidateId": "observation-recovery-tool-contract"
+  },
+  "generatedScriptKind": "observation-tool-auto-train",
+  "generatedScriptPath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-auto-train/LycolesGeneratedAutoTrain.lua",
+  "loaderTemplatePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/build/live-observation-exercise/muscle-legends-auto-train/PotassiumLoaderTemplate.lua",
+  "outcomeStateKeyCount": 12,
+  "primaryOutcomePath": "leaderstats.Strength",
+  "questRepetitionStatePathCount": 1,
+  "schemaVersion": "117.observation-recovery-summary.1",
+  "status": "generated-observation-contract",
+  "toolPath": "LocalPlayer.Backpack.Weight"
+}

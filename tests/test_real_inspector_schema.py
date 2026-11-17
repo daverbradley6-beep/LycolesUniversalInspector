@@ -11,7 +11,8 @@ class RealSchemaTests(unittest.TestCase):
             diagnostics={"complete":True,"rootAccountingValid":True},
             featureReadiness={"rebirth":{"readiness":"state-change-candidate-needs-validation"}},
             featureEvidence={"rebirth":{"status":"candidate-needs-verification"}},
-            interactionDiagnostics={"historyTotal":1})
+            interactionDiagnostics={"historyTotal":1},
+            featureRequest="Show observable rebirth status")
         event={"featureCandidate":"rebirth","evidenceLevel":"temporal-state-change-observed",
                "clientStateCorroborated":True,"outcomeVerified":False,
                "stateChanges":[{"key":"leaderstats.Rebirths","before":8,"after":9}]}
@@ -31,7 +32,17 @@ class RealSchemaTests(unittest.TestCase):
             self.assertEqual(plan["features"][0]["clientCorroboratedEvents"],1)
             self.assertEqual(plan["features"][0]["verifiedClientOutcomes"],0)
             self.assertFalse(plan["features"][0]["implementationReady"])
+            self.assertEqual(plan["requestedCapability"],"Show observable rebirth status")
             self.assertTrue(plan["sourceDiagnostics"]["rootAccountingValid"])
+    def test_invalid_feature_request_fails_closed(self):
+        for request in ("x"*241,"🙂"*61,"Show\u0085status"):
+            with self.subTest(request=repr(request)),tempfile.TemporaryDirectory() as temp:
+                p=pathlib.Path(temp);self.make(p)
+                metadata=json.loads((p/"part-1.json").read_text())
+                metadata["featureRequest"]=request
+                (p/"part-1.json").write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(ValueError,"Invalid feature request"):
+                    compiler.compile_scan(p)
     def test_incomplete_diagnostics(self):
         with tempfile.TemporaryDirectory() as temp:
             p=pathlib.Path(temp);self.make(p)

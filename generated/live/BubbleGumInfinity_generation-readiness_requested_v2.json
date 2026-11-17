@@ -1,0 +1,350 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "discoveryOnlyCapabilities": [
+    {
+      "candidateCount": 1,
+      "family": "world-interaction",
+      "observedCount": 0,
+      "reason": "Names and observed activation do not establish a generic replay operation.",
+      "replayContractAvailable": false
+    },
+    {
+      "candidateCount": 2617,
+      "family": "gui-control",
+      "observedCount": 0,
+      "reason": "Names and observed activation do not establish a generic replay operation.",
+      "replayContractAvailable": false
+    }
+  ],
+  "generatedCapabilities": [
+    {
+      "actionOutcomeVerified": false,
+      "attemptLimit": 25,
+      "automaticMovement": true,
+      "boundedRepeat": true,
+      "causalityProven": false,
+      "classification": "generated-evidence-bounded-trial",
+      "commands": [
+        "interaction",
+        "interactionstart",
+        "interactionstop",
+        "interactions",
+        "egg",
+        "eggmode",
+        "eggstart",
+        "eggstop",
+        "eggs"
+      ],
+      "expectedChange": "increased",
+      "failureLimit": 3,
+      "fullGameplayMechanicImplemented": false,
+      "gameplayVerified": false,
+      "id": "prompt-interaction-trial",
+      "kind": "proximity-prompt-trial",
+      "observationBaseline": {
+        "activationCallbackEvents": 1,
+        "causalityProven": false,
+        "classification": "callback-fallback-present",
+        "events": 1,
+        "gameplayVerified": false,
+        "possibleSynchronousLoss": true,
+        "preActivationEvents": 0,
+        "readinessImpact": "limitations-only",
+        "runtimeVerified": false,
+        "unknownTimingEvents": 0
+      },
+      "operatorStartRequired": true,
+      "runtimeVerified": false,
+      "selectedOutcomeKey": "leaderstats.🥚 Hatches",
+      "targetFeature": "pets",
+      "targetLabel": "1,000 Tickets",
+      "targetPath": "Workspace.Rendered.Chunker.Showman Egg.Prompt.ProximityPrompt"
+    }
+  ],
+  "guidedWorkflowFeedbackCorrelation": {
+    "available": false,
+    "claims": {
+      "actionOutcomesVerified": false,
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "runtimeVerified": false,
+      "serverAuthorityVerified": false,
+      "sourceAuthenticityVerified": false
+    },
+    "readinessImpact": "none",
+    "reason": "No digest-bound guided feedback was supplied",
+    "workflowCandidates": 4
+  },
+  "interactionObservationCoverage": {
+    "available": true,
+    "callbackBaselinesUsed": 1,
+    "callbacksFired": 180,
+    "causalityProven": false,
+    "classification": "possible-evidence-loss",
+    "evidenceLossPossible": true,
+    "gameplayVerified": false,
+    "limitations": [
+      "callback-time baselines may miss synchronous activation changes"
+    ],
+    "observationWindowAccountingValid": true,
+    "observationWindowsCompleted": 540,
+    "observationWindowsExpected": 540,
+    "observationWindowsFailed": 0,
+    "pendingObservationEvents": 0,
+    "preActivationBaselinesUsed": 179,
+    "preActivationCaptureFailures": 0,
+    "readinessImpact": "limitations-only",
+    "runtimeVerified": false
+  },
+  "limitations": [
+    "Interaction timing or delayed-window coverage may have lost client-visible changes",
+    "Generation readiness describes emitted code, not successful gameplay",
+    "Prompt and Tool outcomes remain temporal correlations without causal proof",
+    "Executor-provided prompt activation is checked only at runtime",
+    "Linked workflow order and state continuity do not prove cross-step gameplay causality",
+    "Generated mixed workflows stop when a selected client-visible outcome is not observed",
+    "Generated Tool trials use official local equip/Activate methods but remain unverified in Roblox",
+    "Guided GUI trials highlight exact controls but require normal user activation because GuiButton has no public automatic Activate method",
+    "Repeated guided feedback reports client-observed correlation only and cannot establish causality or implementation readiness",
+    "Remaining generic candidates stay unavailable without exact action contracts"
+  ],
+  "placeId": 85896571713843,
+  "request": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "fullRequestImplemented": false,
+    "gameplayVerified": false,
+    "generatedSubsetAvailable": true,
+    "implementationReady": false,
+    "matchedGeneratedCapabilityIds": [
+      "prompt-interaction-trial"
+    ],
+    "request": "Automatically hatch eggs and claim rewards",
+    "runtimeVerified": false,
+    "status": "generated-bounded-subset",
+    "supportedSubset": [
+      "select one exact observed prompt target",
+      "move the local character to its observed anchor",
+      "run an operator-started bounded repeat trial",
+      "observe one selected client-visible scalar direction",
+      "stop cleanly after request, close, three uncorroborated attempts, or 25 total attempts"
+    ]
+  },
+  "requestFeatureReadiness": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "explicitBlockers": [
+      "discovery-only:gui-control",
+      "discovery-only:world-interaction",
+      "no_execution_ready_workflow_candidates",
+      "request-assessment:affordability_and_cost_observation",
+      "request-assessment:clean_stop_behavior",
+      "request-assessment:egg_selection_observation",
+      "request-assessment:failure_outcomes",
+      "request-assessment:hatch_result_observation",
+      "request-assessment:interaction_mechanism",
+      "request-assessment:inventory_capacity_observation",
+      "request-assessment:live_failure_validation",
+      "request-assessment:mode_semantics",
+      "request-assessment:navigation_contract",
+      "request-assessment:observable_result",
+      "request-assessment:observed_interaction_evidence",
+      "request-assessment:permitted_action_contract",
+      "request-assessment:resource_requirement",
+      "request-assessment:selected_target_identity",
+      "unavailable:auto-game-mode"
+    ],
+    "featureEvidence": {
+      "matchSignalsBounded": true,
+      "matchedFeatures": [
+        {
+          "evidenceClassification": "observable-outcome-candidate-unverified",
+          "feature": "rewards",
+          "featureGuiCorrelations": 10,
+          "featureStateCorrelations": 0,
+          "gameplayPriorityScore": 90,
+          "implementationReady": false,
+          "interactionEvents": 15,
+          "matchedTerms": [
+            "reward",
+            "rewards"
+          ],
+          "observableOutcomeCandidates": 10,
+          "status": "observable-outcome-candidate-unverified",
+          "tokenEvidenceOnly": true
+        }
+      ],
+      "omittedMatches": 0
+    },
+    "gameplayVerified": false,
+    "generatedEvidence": {
+      "generatedCapabilityCount": 1,
+      "generatedCapabilityIds": [
+        "prompt-interaction-trial"
+      ],
+      "matchedGeneratedCapabilityIds": [
+        "prompt-interaction-trial"
+      ]
+    },
+    "implementationReady": false,
+    "nameMatchingSufficientForImplementation": false,
+    "request": "Automatically hatch eggs and claim rewards",
+    "requestedTerms": [
+      "claim",
+      "eggs",
+      "hatch",
+      "reward",
+      "rewards"
+    ],
+    "runtimeVerified": false,
+    "schemaVersion": "113.request-feature-readiness.1",
+    "status": "bounded-generated-subset",
+    "summary": {
+      "blockers": 19,
+      "matchedFeatures": 1,
+      "matchedObservedActions": 2,
+      "matchedResources": 0,
+      "matchedSystems": 6,
+      "meaningfulGameplayFeatureMatches": 1,
+      "requestAlignedExecutionReadyWorkflows": 0,
+      "requestAlignedReviewOnlyGuiTransitions": 12
+    },
+    "temporalCorrelationSufficientForImplementation": false,
+    "workflowEvidence": {
+      "available": true,
+      "executionReadyCandidates": 0,
+      "planningStatus": "review-only-candidates",
+      "requestAlignedExecutionReadyCandidates": 0,
+      "requestAlignedReviewOnlyGuiTransitionCandidates": 12,
+      "requestAlignedReviewOnlyGuiTransitionPaths": [
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.2.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.3.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.4.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.5.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.HUD.Left.Buttons.DailyRewards.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.HUD.Right.Season.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 11.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 12.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 13.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 14.Action.Button",
+        "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 15.Action.Button"
+      ],
+      "reviewOnlyGuiTransitionCandidates": 32,
+      "selectedCandidateId": null,
+      "selectedCandidateRequestAligned": false,
+      "temporalCorrelationOnly": true
+    }
+  },
+  "scanId": "AC79D385-BCB0-4928-85D5-6C3D960C44AE",
+  "schemaVersion": "113.generation-readiness.1",
+  "summary": {
+    "discoveryOnlyCapabilityFamilies": 2,
+    "generatedCapabilities": 1,
+    "guidedFeedbackSessions": 0,
+    "guidedFeedbackStatusConflicts": 0,
+    "requestFeatureBlockers": 19,
+    "requestFeatureMatches": 1,
+    "requestMatchedGeneratedCapabilities": 1,
+    "unavailableRequestedBehavior": 1
+  },
+  "unavailableRequestedBehavior": [
+    {
+      "blockers": [
+        "observed Auto GUI activation has no validated client replay primitive",
+        "no observable Auto-enabled state transition was captured",
+        "no unattended hatch outcome was observed after Auto activation"
+      ],
+      "id": "auto-game-mode",
+      "minimumLiveObservations": [
+        "activate the Auto control once while the inspector records its component identity",
+        "capture a persistent observable Auto-enabled value/attribute before and after activation",
+        "observe a later hatch-counter increment with no manual prompt activation",
+        "identify and validate a permitted client-side replay primitive for that exact control"
+      ],
+      "reason": "Generated repeat trials do not reproduce the game's Auto control or prove unattended hatching.",
+      "status": "unavailable"
+    }
+  ],
+  "workflowSelection": {
+    "available": true,
+    "candidates": [
+      {
+        "candidateId": "39122440ce289701ba55",
+        "executionMode": "review-only",
+        "executionReady": false,
+        "matchedTerms": [
+          "claim",
+          "reward",
+          "rewards"
+        ],
+        "requestScore": 14,
+        "selected": false,
+        "selectionReason": "not-execution-ready"
+      },
+      {
+        "candidateId": "170785c54d301c26c7b6",
+        "executionMode": "review-only",
+        "executionReady": false,
+        "matchedTerms": [
+          "claim",
+          "reward",
+          "rewards"
+        ],
+        "requestScore": 14,
+        "selected": false,
+        "selectionReason": "not-execution-ready"
+      },
+      {
+        "candidateId": "f573926b16d4e836abad",
+        "executionMode": "review-only",
+        "executionReady": false,
+        "matchedTerms": [],
+        "requestScore": 0,
+        "selected": false,
+        "selectionReason": "not-execution-ready"
+      },
+      {
+        "candidateId": "118bda29b363e7a2e180",
+        "executionMode": "review-only",
+        "executionReady": false,
+        "matchedTerms": [],
+        "requestScore": 0,
+        "selected": false,
+        "selectionReason": "not-execution-ready"
+      }
+    ],
+    "omittedCandidates": 0,
+    "planningDiagnostics": {
+      "causalityProven": false,
+      "executionReadyWorkflows": 0,
+      "explicitRecordingTransactions": 0,
+      "gameplayVerified": false,
+      "linkedTransactions": 5,
+      "multiEventTransactions": 5,
+      "partiallyMappedTransactions": 0,
+      "readinessImpact": "limitations-only",
+      "requestAlignedReviewOnlyLinkedCandidates": 2,
+      "reviewOnlyLinkedCandidates": 4,
+      "runtimeVerified": false,
+      "selectedReviewOnlyCandidateId": "39122440ce289701ba55",
+      "singletonTransactions": 170,
+      "status": "review-only-candidates",
+      "transactionGroups": 175,
+      "transactionsOverStepBound": 0,
+      "transactionsWithInsufficientGenerationReadySteps": 5,
+      "unlinkedEvents": 0,
+      "workflowCandidates": 4
+    },
+    "selectedCandidateId": null,
+    "shownCandidates": 4,
+    "totalCandidates": 4
+  }
+}

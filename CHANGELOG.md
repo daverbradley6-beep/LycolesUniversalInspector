@@ -1,3 +1,407 @@
+## v30.6.35 — Manifest-assisted output surfaces generation blockers and coverage diagnostics
+
+- Extend `tools/build_release.py` manifest-assisted Lua status rendering to include:
+  - generation readiness status (`ready`/`blocked`)
+  - bounded generation blocker summary
+- Propagate readiness-analysis context into `manifest-assisted-workflow.json`:
+  - `generationReadinessBlockers`
+  - `interactionCoverageDiagnostics`
+- Bump manifest-assisted metadata schema to `30.6.manifest-assisted-workflow.5`.
+- Extend `tests/test_build_release.py` to validate the new Lua status context and schema `.5` metadata contract.
+
+## v30.6.34 — Manifest-readiness exposes legacy outcome-candidate coverage gaps
+
+- Extend `tools/manifest_readiness_v109.py` with `interactionCoverageDiagnostics`, reporting interaction-signal density over available history:
+  - events with state changes
+  - events with GUI changes
+  - observable-change events
+  - explicit `observableOutcomeCandidate` field/candidate counts
+  - `featureStateEvidence` and `outcomeVerified` event counts
+- Add fail-closed generation-readiness blockers when legacy manifests show observable interaction changes but no explicit outcome-candidate fields:
+  - `legacy_manifest_missing_outcome_candidate_field`
+  - `explicit_outcome_candidate_events_unavailable`
+- Extend `tests/test_manifest_readiness_v109.py` regression coverage for the real Bubble Gum fixture subset and new blockers/diagnostics.
+
+## v30.6.33 — Manifest-assisted Lua UI shows upload/readiness context
+
+- Extend `tools/build_release.py` manifest-assisted Lua generation so every status view includes:
+  - transport readiness status
+  - transport blockers summary
+- Feed `transportReadiness.status` and bounded `transportReadiness.blockers` through the template as sanitized constants.
+- Keep execution bounded and fail-closed: this change is diagnostic/context only and does not alter activation authority, causality, runtime, or gameplay verification claims.
+- Extend `tests/test_build_release.py` to assert transport readiness status/blocker visibility in `LycolesManifestAssistedWorkflow.lua`.
+
+## v30.6.32 — Manifest-assisted metadata includes upload-readiness context
+
+- Extend `tools/build_release.py` manifest-only artifact emission so `manifest-assisted-workflow.json` includes:
+  - `transportReadinessStatus`
+  - `transportReadinessBlockers`
+  - `scriptGenerationReady`
+- Bump manifest-assisted workflow metadata schema to `30.6.manifest-assisted-workflow.4`.
+- Preserve existing fail-closed verification claims (`runtimeVerified`, `gameplayVerified`, `causalityProven` remain false).
+- Extend `tests/test_build_release.py` coverage to verify new metadata fields and expected legacy upload-readiness context from real fixture input.
+
+## v30.6.31 — Outcome-candidate-aware manifest target prioritization
+
+- Extend `tools/build_release.py` manifest-assisted target extraction to consider event-level `observableOutcomeCandidate` evidence when selecting and ranking controls.
+- Preserve noise suppression for unattributed interactions by requiring at least one observed GUI/state transition or an explicit observable outcome candidate.
+- Prioritize target ordering by:
+  1. feature attribution,
+  2. observable outcome candidate presence,
+  3. observed transitions,
+  before count-based tie-breakers.
+- Expose `observableOutcomeCandidate` in generated `manifest-assisted-workflow.json` target metadata and in `LycolesManifestAssistedWorkflow.lua` target context display.
+- Bump manifest-assisted workflow schema to `30.6.manifest-assisted-workflow.3` and extend `tests/test_build_release.py` regression checks.
+
+## v30.6.30 — Legacy upload lifecycle diagnostics distinguish placeholder, attempted, and local-export states
+
+- Refine `tools/manifest_readiness_v109.py` transport-readiness mapping for `uploadStatus == unknown_legacy_manifest_snapshot` so `uploadedParts`/legacy telemetry cases are explicitly separated:
+  - `legacy-local-export-observed-upload-state-unknown`
+  - `legacy-partial-local-export-observed-upload-state-unknown`
+  - `legacy-upload-attempt-observed-state-unknown`
+  - `legacy-pre-upload-placeholder`
+- Add conservative legacy blockers:
+  - `legacy_upload_attempt_observed_without_lifecycle`
+  - `legacy_uploaded_parts_zero_pre_upload_placeholder`
+- Tailor next-action guidance per legacy state so users can distinguish first-upload-needed placeholders from ambiguous post-upload lifecycles.
+- Extend `tests/test_manifest_readiness_v109.py` with regression coverage for the pre-upload placeholder case and updated complete-local-export readiness status.
+
+## v30.6.29 — Conservative post-capture outcome-candidate backfill for interaction history
+
+- Add a bounded post-capture fallback pass in `LycolesUniversalInspector.lua` that derives missing `observableOutcomeCandidate` entries from already-captured interaction evidence when feature-consistent state/GUI changes are present in the event or its observation windows.
+- Preserve fail-closed semantics: backfilled outcomes remain `feature-consistent-observable-change` candidates with `causalityProven=false`, `serverAuthorityVerified=false`, and `gameplayVerified=false`.
+- Add `workflowStats.backfilledOutcomeCandidates` and export `interactionDiagnostics.backfilledOutcomeCandidates` for explicit reporting of recovered candidates.
+- Record fallback provenance in `featureEvidenceRules` via `post-capture-window-evidence-backfill`.
+- Extend `tests/test_inspector_ui.py` static regressions to assert fallback function presence, diagnostics wiring, and provenance rule export.
+
+## v30.6.28 — Manifest-assisted target ranking prioritizes observable feature transitions
+
+- Refine `tools/build_release.py` manifest-only target extraction so generated manifest-assisted workflows prioritize feature-attributed interactions that include observed state/GUI transitions.
+- Add bounded target metadata fields for manifest-assisted generation:
+  - `stateChangeCount`
+  - `guiStateChangeCount`
+  - `observableChange`
+- Filter out unattributed interactions with no observed state/GUI transition from manifest-assisted target selection to reduce non-actionable noise.
+- Surface observed state/GUI change counts in generated `LycolesManifestAssistedWorkflow.lua` target status text for clearer evidence review.
+- Bump `manifest-assisted-workflow.json` schema version to `30.6.manifest-assisted-workflow.2`.
+- Extend `tests/test_build_release.py` to verify new metadata fields, schema bump, unattributed-no-change filtering guarantees, and rendered evidence-count lines.
+
+## v30.6.27 — Workflow root-cause diagnostics for feature-attributed transitions without outcome contracts
+
+- Extend `tools/manifest_readiness_v109.py` with derived transition diagnostics from `interactionDiagnostics.recentInteractions`:
+  - `eventsWithObservableChanges`
+  - `featureAttributedTransitionEvents`
+  - `featureAttributedStateTransitionEvents`
+  - `featureAttributedGuiTransitionEvents`
+  - `unattributedTransitionEvents`
+  - `featureTransitionCounts`
+- Add conservative linkage blocker `feature_attributed_transitions_without_outcome_contract` when interactions include feature-attributed observable changes but no completed workflow candidates can be formed.
+- Improve capture guidance for single-use transaction sessions by explicitly recommending visible scalar contract capture alongside explicit multi-step workflow recording.
+- Extend `tests/test_manifest_readiness_v109.py` regression coverage for the new blocker and diagnostics fields.
+
+## v30.6.26 — Manifest-assisted activation support expanded to Prompt and Tool controls
+
+- Extend `tools/build_release.py` manifest-assisted workflow Lua fallback so **Activate** now supports three bounded observed control contracts:
+  - `GuiButton.Activated` via official `GuiButton:Activate()`
+  - `ProximityPrompt.Triggered` via optional executor-provided `fireproximityprompt` when available
+  - `Tool.Activated` via bounded official equip (`Humanoid:EquipTool`) + `Tool:Activate()`
+- Preserve fail-closed behavior and explicit negative verification claims: every branch reports before/after state-hint snapshots and still labels runtime/gameplay evidence as unverified.
+- Extend `tests/test_build_release.py` manifest fallback assertions to cover Prompt and Tool branch emission in generated Lua.
+
+## v30.6.25 — Manifest-assisted functional script fallback and integrated v108 manifest handling
+
+- Extend `tools/build_release.py` manifest-only flow to emit a functional, game-specific assisted script (`LycolesManifestAssistedWorkflow.lua`) and structured target metadata (`manifest-assisted-workflow.json`) from observed interaction evidence while preserving fail-closed release blocking when numbered multipart object parts are unavailable.
+- Add bounded manifest target extraction from interaction history (exact observed paths, feature candidates, control contracts, and sampled state-hint keys) with conservative per-feature caps and deterministic ordering.
+- Generate a two-tab-equivalent operational fallback UI for manifest-only sessions with explicit **Prev/Next/Probe/Activate/Close** controls, exact-path resolution, bounded GUI activation attempts for observed `GuiButton.Activated` controls, and before/after hint snapshots without upgrading runtime/gameplay verification claims.
+- Update `tools/integrated_pipeline_v108.py` CLI to detect manifest-only inspection sources, route them through readiness + assisted-workflow generation, and return a structured blocked summary instead of crashing with `invalid inspection`.
+- Extend regression coverage:
+  - `tests/test_build_release.py` verifies manifest-only assisted Lua + metadata artifacts while release ZIP generation remains blocked.
+  - `tests/test_integrated_pipeline_v108.py` verifies CLI manifest-only blocked summary plus fallback artifact emission.
+  - `tests/test_luau_syntax.mjs` now parses manifest-assisted fallback Lua to prevent syntax regressions.
+
+## v30.6.24 — Workflow linkage root-cause diagnostics for single-use transaction IDs
+
+- Extend `tools/manifest_readiness_v109.py` workflow linkage diagnostics with transaction ID reuse analysis from observed interaction history.
+- Surface bounded transaction-linkage fields (`transactionIdReuseObserved`, `eventsWithTransactionId`, `uniqueTransactionIds`, `reusedTransactionIds`, `singleUseTransactionIds`) to explain why linked workflows were not formed.
+- Emit explicit blocker `transaction_ids_not_reused_across_steps` when interaction callbacks carry only single-use transaction IDs and no linked workflow events.
+- Improve capture guidance by recommending explicit workflow recording when linkage is absent due to single-use transaction IDs.
+- Extend `tests/test_manifest_readiness_v109.py` to verify the new blocker and recommendation behavior on the Bubble Gum INFINITY sanitized regression fixture.
+
+## v30.6.23 — Legacy upload lifecycle diagnostics clarified with local export telemetry
+
+- Improve `tools/manifest_readiness_v109.py` legacy transport interpretation when `reportTransport` is absent: distinguish unknown upload state from observed local multipart export telemetry (`localPerformance.uploadParts/uploadBytes`).
+- Add bounded legacy diagnostics fields in transport output: `legacyLocalMultipartParts`, `legacyLocalMultipartBytes`, `legacyLocalMultipartComplete`, and richer `legacyUploadAttemptInference` values.
+- Add legacy lifecycle blockers and next-action guidance that differentiate complete local export vs partial export when receiver upload lifecycle is unknown.
+- Extend regressions in `tests/test_manifest_readiness_v109.py` for complete/partial local export legacy inference and actionable transport readiness messaging.
+
+## v30.6.22 — Review-only linked GUI workflow candidate surfacing
+
+- Extend `tools/plan_generated_workflows.py` with conservative review-only linked workflow candidate synthesis when linked GUI transactions have transition evidence but lack resolvable scalar outcomes.
+- Add strict validation of review-only GUI diagnostics (`reviewOnlyTemporalOutcomeCandidates`, `reviewOnlyTargetPaths`) and fail-closed ambiguity/shape checks.
+- Enrich planner summary diagnostics with bounded review-only linked candidate fields: `reviewOnlyLinkedCandidates`, `requestAlignedReviewOnlyLinkedCandidates`, and `selectedReviewOnlyCandidateId`.
+- Propagate and validate these fields in `tools/assess_generation_readiness.py` workflow-selection diagnostics without promoting generation-ready status.
+- Add regressions in `tests/test_generated_workflow_planning.py` and `tests/test_generation_readiness.py` covering review-only linked candidate surfacing and downstream reporting.
+
+## v30.6.21 — Request-aligned review-only GUI transition readiness diagnostics
+
+- Extend `tools/assess_generation_readiness.py` request-feature synthesis with strict review-only GUI transition accounting from `guiInteractions` (`reviewOnlyTemporalOutcomeCandidates` and `reviewOnlyTargetPaths`) and request-term alignment analysis.
+- Add explicit fail-closed blocker `request_aligned_gui_transition_outcomes_without_scalar_contract` when a request aligns to GUI transition evidence but no generation-ready scalar outcome contract exists.
+- Expose bounded review-only GUI transition diagnostics in `requestFeatureReadiness.workflowEvidence` and summary counters without promoting implementation readiness.
+- Add regression coverage in `tests/test_generation_readiness.py` proving request-aligned GUI-transition-only evidence remains non-generated while surfacing precise blocker guidance.
+
+## v30.6.20 — Workflow selection normalization consistency hardening
+
+- Align request-term token normalization across `tools/plan_generated_workflows.py`, `tools/assess_generation_readiness.py`, and `tools/generate_guided_workflow.py` so planner selection scoring and guided-workflow validation use the same canonical term rules.
+- Remove invalid synthetic `*e` stems from gerund/past normalization (for example, preventing artifacts like `traine`) while preserving conservative plural/gerund/past normalization and bounded alias mapping.
+- Add regression coverage for gerund-label request alignment compatibility between planner and guided workflow validation (`tests/test_generated_workflow_planning.py`) and readiness synthesis (`tests/test_generation_readiness.py`).
+
+## v30.6.19 — Deterministic workflow-candidate artifact integration
+
+- Add deterministic interaction-history normalization to `tools/release_pipeline_v104.py` so bounded `observedInteractionHistory` records are preserved as typed workflow evidence (`observedInteractionHistory*` counters included) without inventing server-side outcomes.
+- Integrate `tools/workflow_candidates_v107.py` into `tools/integrated_pipeline_v106.py` generation and verification: emit `workflow-candidates.json`, enrich diagnostics with workflow/completion/review-only counts, and fail-close verification when workflow artifacts are missing or tampered.
+- Extend v104/v106 regression coverage (`tests/test_release_pipeline_v104.py`, `tests/test_integrated_pipeline_v106.py`) and add dedicated `tests/test_workflow_candidates_v107.py` for schema, determinism, filtering, capping, and validation guardrails.
+- Full local validation gate passed: focused pipeline suites, full Python suite, Node receiver/Luau parser tests, Luau compilation checks, and metadata consistency checks.
+
+## v30.6.18 — Review-only GUI outcome diagnostics for sparse scalar sessions
+
+- Extend `tools/discover_action_capabilities.py` GUI target diagnostics with explicit `observableOutcomeEvidenceKind` classification (`resolvable-scalar`, `gui-transition-only`, `none`) while keeping scalar-outcome requirements unchanged for trial readiness.
+- Add `reviewOnlyTemporalOutcomeCandidate` per GUI target and aggregate `reviewOnlyTemporalOutcomeCandidates`/`reviewOnlyTargetPaths` in `guiInteractions` so mixed GUI+state sessions can distinguish useful review-only evidence from fully generation-ready targets.
+- Refine GUI blockers and aggregate messaging to explicitly disclose when only GUI transition outcomes were observed without resolvable scalar state identity.
+- Add regression coverage in `tests/test_action_capability_discovery.py` proving GUI-transition-only evidence remains review-only and never auto-promotes generation readiness.
+
+## v30.6.17 — Follow-ups-only workflow guidance refinement
+
+- Refine `tools/manifest_readiness_v109.py` linkage guidance so follow-up-only linked sessions now receive a targeted recommendation to capture one confirmation/cancel step in the same menu while preserving observable before/after values.
+- Add regression coverage in `tests/test_manifest_readiness_v109.py` asserting the specialized follow-up-only recommendation text.
+
+## v30.6.16 — Linkage evidence typing for manifest-readiness workflow diagnostics
+
+- Extend `tools/manifest_readiness_v109.py` workflow-linkage diagnostics with explicit linkage evidence typing (`none`, `confirmations-only`, `followups-only`, `confirmations-and-followups`) and a `linkedWorkflowEvents` count.
+- Preserve backward-compatible status/blocker mapping while exposing clearer diagnostics for follow-up-only linkage sessions so readiness interpretation distinguishes absence of linkage from non-confirm linkage.
+- Add regression assertions in `tests/test_manifest_readiness_v109.py` for the new linkage evidence fields on both no-linkage and follow-up-only evidence cases.
+
+## v30.6.15 — Conservative non-confirm follow-up linkage for workflow correlation
+
+- Improve `LycolesUniversalInspector.lua` workflow linkage by adding bounded non-confirm follow-up linking (`FOLLOWUP_LINK_MAX_AGE_SECONDS=6`, `FOLLOWUP_LINK_MIN_CONTEXT_OVERLAP=3`) so semantically meaningful consecutive actions can share a transaction when feature/context overlap is strong.
+- Preserve conservative behavior: confirmation linking remains unchanged, no causality/runtime/gameplay claims are introduced, and only bounded context-token overlap in short windows can create follow-up links.
+- Add explicit diagnostics counters for `linkedFollowups` and `linkedWorkflowEvents`, and treat either confirmation links or follow-up links as linkage evidence in workflow-generation diagnostics.
+- Improve interaction records with explicit `observed-followup-link` transaction source labeling and `linked-followup-heuristic` attribution disclosure when feature attribution is inferred from linkage context.
+- Extend `tools/manifest_readiness_v109.py` and tests to surface follow-up linkage coverage and avoid falsely reporting `workflow_linkage_not_observed` when follow-up linkage evidence exists.
+
+## v30.6.14 — Guided GUI generation compatibility for text-only metadata drift
+
+- Improve `tools/discover_action_capabilities.py` guided GUI readiness so text-only metadata drift can remain generation-ready when all non-text availability and identity fields are stable, while non-text drift still blocks readiness.
+- Add explicit `guiMetadataTextDynamic` to guided GUI targets, preserving strict non-text prerequisite checks and availability requirements.
+- Update `tools/generate_prompt_interactions.py` validation/runtime so generated guided trials can tolerate dynamic GUI text while still fail-closing on control-class, visibility/active/scrolling, and interactable drift.
+- Update `tools/plan_generated_workflows.py` workflow-step evidence matching to allow the same text-dynamic GUI tolerance without relaxing exact path identity or state-outcome identity contracts.
+- Add regressions for text-only GUI drift compatibility in discovery and workflow planning.
+
+## v30.6.13 — Upload-state clarity and stronger passive workflow initiation
+
+- Extend `tools/manifest_readiness_v109.py` with explicit `transportReadiness`, `evidence.uploadLifecycle`, and `evidence.workflowLinkageDiagnostics` outputs so legacy/live manifests more clearly distinguish generated-report state, upload-attempt ambiguity, receiver visibility, and linkage gaps.
+- Add legacy transport inference for nonzero `uploadedParts` snapshots (`legacyUploadedParts`, `legacyUploadAttemptInference`) without claiming upload success or receiver availability.
+- Surface `generationReadiness.workflowCaptureRecommendation` so offline outputs provide one concrete next capture target when linkage/corroboration evidence is missing.
+- Improve passive workflow initiation/linking in `LycolesUniversalInspector.lua` by expanding bounded yes/no token detection, widening dialog-context cues (`prompt`, `purchase`, `unlock`), and adding conservative feature-default action inference for generic controls (`shops→purchase`, `rewards/quests→claim`, `rebirth`, `travel`).
+- Add regressions for new readiness diagnostics and legacy upload-attempt inference behavior.
+
+## v30.6.12 — Linked transaction outcome inheritance for generation readiness
+
+- Extend `tools/discover_action_capabilities.py` to inherit resolvable state-outcome signals from later events in the same linked transaction when the initiating control has no direct scalar outcome evidence.
+- Preserve provenance for inherited signals (`inheritedFromLinkedTransaction`, `sourcePath`, `sourceSequence`) and expose per-event `outcomeEvidenceSource` in `observedActions`.
+- Enable initiating GUI controls to become trial-generation-ready when an exact linked confirmation step carries the only resolvable scalar outcome, improving practical script-generation coverage for confirmation-driven UI flows.
+- Add regression coverage proving linked transaction inheritance can unlock a GUI target without introducing positive causality/runtime/gameplay claims.
+
+## v30.6.11 — Interaction attribution and workflow-correlation improvements
+
+- Improve interaction attribution with bounded context scoring: combine control name, control text, ancestor names, and path segments while requiring a strong unique score before assigning a feature.
+- Expand deterministic menu feature hints for real Bubble Gum INFINITY UI contexts (`season`, `dailyperks`, `runecrafting`, `enchants`, `gemgenie`, `powerups`, `boxcondenser`, `potions`, `shadowleviathan`, `robuxshop`) to reduce unattributed interactions without fabricating authority.
+- Add bounded context-token overlap linking for confirmation dialogs, so generic yes/no confirmations can link to the most recent compatible initiator when feature/kind matching alone is insufficient.
+- Carry inferred feature defaults from unambiguous action kinds (`purchase`, `claim`, `hatch`, `travel`, `rebirth`, etc.) into pending workflow context and linked followups.
+- Add inspector regressions that lock context-scored attribution and context-token confirmation linking semantics.
+
+## v30.6.10 — Workflow-gap root causes and cancelled-upload compatibility
+
+- Add `workflowGenerationDiagnostics` into inspector `interactionDiagnostics` with deterministic blockers (for example: explicit recording not armed, no linked confirmations, no corroborated outcomes), so high interaction counts with zero completed workflow candidates are explained without lowering evidence standards.
+- Accept and classify cancelled upload snapshots in `manifest_readiness_v109` (`uploadStatus: cancelled`, `manifestSnapshotPhase: upload-cancelled`) while preserving partial-acknowledgement visibility.
+- Extend transport lifecycle fixtures and tests to cover cancelled states and keep legacy `uploadedParts: 0` interpreted as a pre-upload placeholder rather than automatic receiver failure.
+
+- Bump manifest-readiness schema to `109.manifest-readiness.3`, surface parsed `workflowGenerationDiagnostics` in evidence output, map key workflow blockers into generation-readiness diagnostics, and infer conservative workflow-linkage/attribution blockers for legacy manifests that predate explicit root-cause fields.
+- Update `tools/build_release.py` manifest-only CLI blocking logic to treat any `109.manifest-readiness.*` schema as blocked-release input, preventing schema-minor updates from silently returning success.
+
+## v30.6.9 — Quick scan profile, stage timing, and cancellation recovery
+
+- Add explicit Inspector controls for `SCAN MODE` (FULL/QUICK) and configurable auto-evidence observation delay (`OBSERVE: Ns`).
+- Introduce a bounded QUICK profile (`quick-targeted-snapshot-v1`) with targeted object capture, reduced per-object enrichment, and default auto-rescan budget of one; FULL profile remains available for comprehensive evidence packages.
+- Preserve fail-closed accounting while disclosing profile-filtered omissions and scan profile metadata in scan stats, diagnostics, automation diagnostics, and Generated Script handoff status.
+- Split handoff visibility into snapshot, packaging, and upload stages with local timing output, so local completion is not conflated with export/upload completion.
+- Add operator cancellation and recovery paths: `SCAN` now cancels active scan/upload work, records cancelled lifecycle state, and keeps resumable upload retries explicit.
+- Force `PRODUCE SCRIPT` captures to FULL mode to prioritize complete generation evidence over quick targeted snapshots.
+
+## v30.6.8 — Explicit bounded workflow recording
+
+- Add an Inspector-tab control that lets the operator explicitly arm one workflow recording for at most 60 seconds or eight normal observed interactions.
+- Assign a shared random transaction identity and consecutive order only to interactions observed while armed; stop on timeout, capacity, observer disable, inspector close, manual stop, or scan start.
+- Preserve explicit user intent, session timing, limits, and mandatory false causality/runtime/gameplay claims on every recorded event, with bounded lifecycle diagnostics in the report.
+- Validate every explicit recording fail-closed before workflow planning, including exact order, common session/start time, duration, limits, provenance, and all-negative claims.
+- Treat explicit recording as evidence of intended interaction order only. It does not prove causality, successful runtime activation, gameplay outcome, or server authority, and exact action/state contracts remain required for generation readiness.
+
+## v30.6.7 — Observed GUI reveal followup diagnostics
+
+- Preserve exact class/name/sibling-ordinal PlayerGui identity only for GUI nodes whose visibility actually changes, avoiding per-node identity work during every bounded snapshot; sort before deterministic truncation and disclose bounded reveal-queue evictions.
+- Record a bounded review-only candidate when a later normal user activation targets the exact revealed GUI component or one of its descendants within 15 seconds.
+- Require the planner to reconstruct the source transition, source and target identities, session timing, observation window, and all-negative verification claims before reporting a followup episode.
+- Keep reveal followups separate from explicit transactions and generated workflow candidates; neither GUI containment nor timing creates causality, linkage, execution readiness, or gameplay verification.
+- Propagate bounded candidate counts and explicit non-linkage status into generated-result and deterministic-release manifests.
+
+
+## v30.6.6 — Session-relative interaction timing diagnostics
+
+- Record monotonic millisecond session-relative timestamps and session identity on interaction history and change-queue events while preserving UTC display timestamps.
+- Validate optional timing fields during scan compilation, report timing coverage, and preserve legacy reports that predate the fields.
+- Surface bounded adjacent unlinked event pairs in observed-workflow and generated-workflow plans for review without creating transaction links, generation candidates, causality claims, or automatic execution.
+- Propagate timing coverage and explicit non-linkage status into standalone and deterministic release manifests.
+
+
+## v30.6.5 — Integrated linked-workflow utility controls
+
+- Embed the selected evidence-linked workflow trial directly in `LycolesGeneratedUtility.lua` for both standalone generation and deterministic release builds.
+- Keep `LycolesGuidedWorkflow.lua` as a reviewable standalone artifact while allowing one primary utility script to launch diagnostics, prompt/Tool/GUI trials, linked workflows, and Admin Commands together when evidence supports them.
+- Add `Linked Workflow Trial` to implemented control inventories and report `integratedInGeneratedUtility` explicitly without claiming gameplay automation or live verification.
+
+
+## v30.6.4 — Bounded state-dependent workflow repetition
+
+- Add an explicit repeat toggle to generated linked-workflow trials, bounded to five complete sequences and the existing 400-record feedback limit.
+- Require the first sequence to match every exact observed entry-state prerequisite; later sequences proceed only when each selected state still equals the prior observed outcome for that same state identity.
+- Preserve immediate STOP/CLOSE cancellation, per-sequence feedback run identities, exact action order, metadata checks, and stop-on-first-unavailable/drift/failure/unobserved-outcome behavior.
+- Verify five ordered two-step repetitions in the controlled official-Luau environment without upgrading live Roblox runtime, gameplay, causality, server-authority, or action-outcome claims.
+
+
+## v30.6.3 — Explicit workflow-link planning diagnostics
+
+- Distinguish transaction groups, genuine shared multi-event transaction IDs, singleton per-event IDs, absent linkage, insufficient exact action contracts, partial mappings, and over-bound sequences in workflow planning.
+- Stop reporting unique per-event transaction IDs as linked workflows; a singleton ID now remains explicit non-linkage evidence rather than inflating linked-transaction counts.
+- Project recomputed planning diagnostics into generation readiness and the display-only Generated Script tab with a limitations-only classification and all causality/runtime/gameplay claims false.
+- Validate planning status and cross-field accounting independently in readiness, generated-result packaging, and the in-game loader; forged status/count combinations fail closed.
+
+
+## v30.6.2 — Generation-readiness timing provenance
+
+- Preserve normalized pre-activation, activation-callback fallback, and legacy-unknown baseline timing from observed Prompt, Tool, and GUI actions into target evidence, canonical workflow steps, generated capability summaries, and the display-only Generated Script tab.
+- Add scan-wide baseline/window coverage to generation readiness, including explicit pre-activation capture failures and possible evidence loss. Coverage is limitations-only: complete accounting never increases readiness or proves causality, runtime behavior, gameplay, server authority, or source authenticity.
+- Independently validate bounded timing fields in action discovery, workflow planning/generation, generated-result packaging, and the in-game result loader. Malformed, contradictory, non-finite, or oversized provenance fails closed; same-schema legacy artifacts may omit the new fields and remain timing-unknown.
+- Add focused regressions for Prompt/Tool/GUI aggregation, callback fallback, workflow-step propagation, capture failure, forged coverage, legacy compatibility, and display validation.
+
+
+## v30.6.1 — Explicit downstream handoff stages
+
+- Separate report generation, local export, upload-attempt, receiver acknowledgement/integrity, and downstream availability status in the Generated Script handoff instead of compressing them into one receiver line.
+- Distinguish not attempted, blocked before an attempt, previously attempted but currently configuration-blocked, in progress, partially acknowledged, incomplete, fully acknowledged but awaiting integrity, and downstream not validated states without exposing receiver configuration.
+- Preserve complete receiver ACK accounting across a later configuration-blocked retry and continue recommending integrity verification rather than incorrectly treating the report as never uploaded.
+- Derive and validate the same lifecycle labels in v109 manifest readiness; older manifests remain explicitly unknown, and local-write/receiver-ACK claims still do not establish downstream availability, receiver integrity, source authenticity, runtime behavior, or gameplay verification.
+
+
+## v30.6.0 — Pre-activation evidence capture
+
+- Capture bounded LocalPlayer scalar state, nearby GUI state, and character position from supported pre-activation signals for GUI buttons, ProximityPrompts, and newly equipped Tools, reducing the prior blind spot where synchronous changes could occur before an `Activated`/`Triggered` callback baseline.
+- Label every interaction and observation window with pre-activation or activation-callback baseline timing; unsupported, absent, failed, or stale captures use an explicit callback fallback and never imply complete observation.
+- Track attached pre-activation listeners, captures, used/fallback/stale baselines, capture failures, pending/completed/failed observation windows, exact window accounting, and possible evidence loss instead of reporting pending windows as a constant zero.
+- Validate baseline and observation-accounting claims in offline scan compilation, preserve per-feature and per-workflow coverage, reject inconsistent claims, and state exact limitations while keeping causality, server authority, runtime success, and gameplay verification false.
+
+
+## v30.5.2 — Integrated workflow result feedback
+
+- Accepts exact `mixed-action-workflow-trial` capabilities in display-only generated results with selected-candidate identity, bounded step-kind/path, execution-mode, and all-negative verification checks.
+- Validates digest-bound guided workflow feedback through 64 steps and requires the feedback candidate to match the selected generated workflow.
+- Shows the selected workflow plus up to four per-step status/error summaries in the Generated Script tab; additional steps are explicitly omitted from display and all feedback remains informational-only.
+
+## v30.5.1 — Self-consistent report export lifecycle
+
+- Initialize local export status in every manifest and distinguish file-unavailable, partial-part, initial-manifest, and final-manifest failures.
+- Finalize `SAVE REPORT` with a second manifest write so `complete` is present in the manifest actually saved to disk only after every numbered part and the matching final manifest succeed.
+- Surface numbered-part and manifest-save status separately in the Generated Script handoff.
+- Upgrade manifest-readiness output to schema `109.manifest-readiness.2`, preserving v109.1 release routing while validating local export accounting, reporting explicit lifecycle stages, and recommending local or receiver recovery without treating a manifest-only claim as retrieved multipart evidence.
+- Bind local multipart compilation to SHA-256 digests of every exact accepted raw part in `30.2.source-provenance.2`; reject raw-byte-ambiguous duplicate indices and validate v2 coverage in generation and dynamic-overlay consumers. These local hashes are deterministic input identity, not source authenticity or receiver/original-payload equivalence.
+- Keep receiver integrity, source authenticity, causality, server authority, runtime behavior, gameplay, and script-generation readiness unverified.
+
+## v30.5.0 — Actionable gameplay discovery and prompt interaction trials
+
+- Preserve bounded prompt, GUI-control, ClickDetector, and Tool metadata from complete multipart scans for downstream action discovery without retaining the full object inventory in generated plans.
+- Capture prompt labels, keys, activation distance, hold duration, nearest anchor, GUI button labels, passive `Tool.Activated` events, and bounded class/name/sibling-ordinal identities for both interaction targets and observable state values. Ambiguous new state keys cannot authorize a trial.
+- Discover the live Bubble Gum Simulator INFINITY Rainbow Egg prompt and its temporal `🥚 Hatches` increment as an evidence-backed runtime trial target; causality, runtime success, and gameplay success remain false.
+- Generate reusable, place-bound ProximityPrompt trials for observed prompt targets with resolvable scalar outcomes. Request alignment and objective usefulness rank targets ahead of menu-like navigation and select the most aligned useful scalar outcome when several change together. Bounded prompt prerequisite metadata is normalized, distinct snapshots and drift are preserved without overwrite, and malformed or forged evidence fails closed. Generated loops preserve component identities, move to the prompt anchor, expose start/stop controls, monitor only that bounded outcome direction, and stop after three failures.
+- Use the Rainbow Egg as the primary integration example while also generating a synthetic non-egg daily-reward prompt contract. No discovered remote is called and temporal correlation remains non-causal.
+- Keep Auto and Multi game modes unavailable: Auto lacks a validated GUI replay primitive, persistent enabled-state observation, and unattended outcome; Multi lacks a distinct resolved prompt/outcome and an observed hatch delta greater than one. The capability artifact lists exact minimum live observations.
+- Register generic `;interactions`, `;interaction`, `;interactionstart`, and `;interactionstop` plus compatible `;egg*` aliases in shared Admin Commands, including categorized rows and `;stopall` cleanup.
+- Add composable world-interaction, GUI-control, Tool-action, state-signal, and combat candidate families for non-simulator games. Bounded action-to-state/GUI relationships carry explicit evidence tiers and generation blockers without inferring causality or replay contracts from names or timing.
+- Parse generated prompt and combined Admin Luau, then execute generic command dispatch, identity resolution, teleport, prompt activation, hatch-counter observation, unavailable Multi mode, and `;stopall` against bounded official-Luau stubs. This is simulated execution; source authenticity, causality, Roblox runtime, server authority, and gameplay verification remain false.
+- Add explicit fail-closed legacy receiver v11 retrieval for confirmed historical scans: require complete receiver integrity before part retrieval, compute exact local response digests, reject resume, preserve a distinct provenance schema, and never claim receiver-stored digest, response authenticity, local-payload equivalence, runtime, or gameplay verification. Strict v12 digest verification remains the default.
+- Add credential-safe multi-scan receiver diagnostics that name missing configuration without printing values or unrelated record IDs, distinguish authenticated pre-multipart `legacy-single-reports` collections from multipart scan collections, and distinguish v12 persisted-digest deployments from explicit v11 compatibility candidates.
+- Add discovery-digest-bound, 100-entry prompt trial feedback export through `;interactionfeedback` and a strict offline evaluator that rejects unknown targets, unselected outcomes, forged directional changes, excess fields, and positive verification claims. `build_release.py --prompt-feedback` packages the digest-linked evaluation and a false-claim summary into deterministic releases. Accepted records remain operator-supplied client correlation rather than causal, server-authoritative, runtime-verified, or gameplay-verified evidence.
+- Add deterministic `113.generation-readiness.1` synthesis across gameplay understanding and executable action discovery. Releases now distinguish emitted bounded prompt trials, request-matched supported subsets, unavailable Auto/Multi behavior, and discovery-only combat/Tool candidates without upgrading runtime, causality, outcome, or gameplay claims.
+- Add a game-specific target dropdown and shared prompt state so GUI target/mode/start-stop controls and categorized Admin Commands remain synchronized. Controlled official-Luau execution verifies dropdown creation, shared state, command-row state, teleport, prompt activation, outcome observation, and cleanup; this remains simulated rather than live Roblox verification.
+- Upgrade display-only generated results to schema `113.generated-result.1`, embedding the identity-matched generation-readiness artifact. The in-game Generated Script tab accepts legacy schema 110 for display, fail-closes malformed or positive readiness claims, and shows bounded generated capability, target/outcome evidence, unavailable behavior, static-validation status, and unverified runtime/gameplay status without evaluating code.
+- Capture Tool enabled/manual-activation/handle/drop/tooltip prerequisites in scan objects and activation events. Exact, unambiguous Tool identities with selected resolvable scalar outcomes can now generate bounded official `Humanoid:EquipTool()`/`Tool:Activate()` trials in the shared interaction UI and Admin Commands. Observed-disabled or drifted Tool metadata blocks generation, and runtime metadata-drift/disabled/equip feedback remains digest-bound and non-verifying; strict official-Luau stubs cover equip, activation, selected outcome observation, cleanup, the three-failure boundary, and the 25-total-attempt boundary. Release/readiness/result metadata distinguishes Tool trials from prompt movement while preserving false runtime, causality, outcome, server-authority, and gameplay claims.
+
+
+
+
+
+## v30.4.0 — Composable gameplay understanding and local utilities
+
+- Classify bubble generation, capacity progression, selling, and upgrades with feature-consistent, direction-aware client-state evidence while preserving non-causal and unverified outcome status.
+- Replace manifest-only `SAVE JSON` behavior with `SAVE REPORT`, exporting exact numbered multipart bodies and a scan-ID-matched manifest for offline generation when receiver upload is unavailable.
+- Surface scan, local-export, upload-acknowledgement, and pending-validation lifecycle in the Generated Script tab while labeling request text as non-evidence and receiver integrity/gameplay as unverified.
+- Emit a bounded, place-bound, display-only generated-result JSON from release and standalone pipelines; `LOAD RESULT` rejects positive execution/runtime/gameplay/authenticity claims and never evaluates imported code.
+- Add deterministic v110 gameplay understanding for concurrent systems, resources, observed actions, relationships, loop candidates, objective candidates, automation opportunities, and request blockers without forcing a single genre.
+- Emit digest-linked `gameplay-understanding.json` in deterministic releases and display bounded system/request summaries in generated Features panels.
+- Add a reusable Admin Commands section and `;` command bar with autocomplete, history, GUI/chat entry, shared state, feedback, and safe cleanup for local movement/session utilities.
+- Bundle the command framework into generated utilities and reviewed-action GUIs; no arbitrary server remote calls, server-admin authority, or game-specific action mechanics are introduced.
+- Report exact hatch automation gaps including egg selection, affordability, inventory capacity, mode selection, rate limiting, permitted action contracts, failure behavior, and live validation rather than fabricating payloads.
+- Add `;systems` and `;readiness` informational commands that expose bounded v110 system candidates and requested-capability blockers in generated releases while explicitly retaining unverified and implementation-not-ready status.
+- Execute actual generated command Luau against bounded Roblox client stubs to verify shared state, GUI submission, cleanup, character-respawn continuity, deterministic reporting, and place guarding. This is simulated evidence, not live Roblox or gameplay verification; game-specific automation remains blocked until required observations and explicit contracts exist.
+
+## v30.3.0 — Integrated capability request handoff
+
+- Add principal Inspector and Generated Script tabs to the in-game panel while reusing the existing scan, export, and transport controls.
+- Add a bounded capability-request field and `PRODUCE SCRIPT` action that captures a fresh complete evidence package for offline compilation rather than claiming in-game generation.
+- Preserve the request in metadata-bearing multipart reports, local lifecycle manifests, compiled capability plans, release manifests, and generated read-only Luau.
+- Display the requested capability as evidence-review context and keep gameplay implementation and outcomes explicitly unverified.
+- Reject empty, padded, control-character-bearing, and overlong requests during compilation and generation.
+- Validate and preserve each dynamic observation overlay's normalized source provenance separately from baseline provenance, emit deterministic `evidence-overlay-provenance.json`, and surface bounded overlay-source summaries in generated releases.
+
+## v30.2.0 — Receiver payload digest provenance
+
+- Persist a SHA-256 digest for each exact receiver upload body, return it in upload acknowledgements, and expose it with numbered-part retrieval.
+- Repair missing digest sidecars and scan metadata on exact duplicate retries after partial KV write failures; legacy retrieval never fabricates a digest.
+- Require digest-bearing upload acknowledgements in the inspector and preserve sorted per-part acknowledgement digests in refreshed local manifests.
+- Verify every retrieved raw part against its receiver-stored upload digest before JSON parsing or publication; optionally reconcile all parts against a supplied local acknowledgement manifest.
+- Align importer duplicate-object identity with the Worker's path-plus-scan-ordinal contract, including cross-class collisions.
+- Add optional metadata-bound resumable imports with atomic per-part checkpoints, strict cached-part revalidation, bounded-memory reuse, and unchanged atomic final publication.
+- Keep resume checkpoints credential-free and explicitly unauthenticated; report whether all receiver digest records were revalidated during the current run.
+- Strictly revalidate receiver-import manifests and current part bytes during compilation; reject forged authenticity claims, digest drift, malformed resume diagnostics, and accounting conflicts.
+- Add deterministic `source-provenance.json`, propagate normalized status into capability/release manifests, and show retrieval integrity, ACK equivalence, resume reuse, and explicit trust limits in the generated Features panel.
+- Keep response authenticity and original local payload equivalence false: receiver-stored and acknowledgement digest matches do not independently authenticate either record or prove gameplay outcomes.
+
+## v30.1.0 — Live evidence attribution and transport diagnostics
+
+- Derive bounded action candidates from semantic ancestor names when controls use generic names such as `Button` or `Action`.
+- Recognize pet hatch counters and reward `Claimed`/`Completed` visibility as feature-consistent observable outcome candidates.
+- Expand before/after snapshots beyond `leaderstats` and `Data` to a bounded, privacy-filtered registry of other LocalPlayer numeric/boolean ValueBase objects.
+- Separate unrelated temporal state changes from feature-relevant readiness evidence; candidates remain explicitly non-causal, non-authoritative, and unverified.
+- Make `completedCandidates` reachable while preserving `outcomeVerified: false` and zero gameplay-verification claims.
+- Add explicit local report transport lifecycle fields for generation, upload attempt, acknowledgements, failures, receiver integrity, and downstream availability.
+- Add deterministic v109 manifest-only readiness analysis plus a sanitized Bubble Gum Simulator INFINITY regression fixture.
+- Route manifest-file input through `tools/build_release.py` to the v109 readiness artifact, returning blocked status without generating ZIP or Luau output.
+- Preserve validated v30.1 observable outcome candidates and feature-state/GUI correlation counts through capability plans, workflow specifications, release summaries, and implementation reviews without approving execution.
+- Add synthetic pre-upload, retry, ACK, incomplete, transport-failure, and configuration-error regression snapshots across readiness, reconciliation, and release-builder paths, with fail-closed generation/phase validation.
+- Include the multipart `scanId` in new local manifests, expose safe receiver integrity lookup diagnostics, and reject local-manifest/multipart identity or object-count mismatches.
+- Reconcile direct Worker `/integrity` responses separately from local upload snapshots; verified receiver availability does not claim local payload equivalence without hashes.
+- Include `placeId` in receiver integrity output for exact local/receiver identity checks.
+- Add an HTTPS-only receiver scan importer with environment-only read-key handling, redirect rejection, bounded downloads and retries, exact identity/accounting checks, offline compilation, and atomic publication.
+- Add a constant-cost receiver metadata endpoint so importing large reports does not require the Worker's O(part-count) integrity route.
+- Preserve the requirement for complete numbered parts and separately verified receiver integrity before downstream generation.
+
 ## v30.0.0 — Provenance-aware evidence and per-feature verification
 
 - Require matching scan IDs when both reviewed contracts and runtime audit carry scan provenance; retain compatibility with legacy v28 audit exports without scan IDs.

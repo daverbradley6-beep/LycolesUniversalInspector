@@ -1,0 +1,475 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "placeId": 292439477,
+  "proposals": [
+    {
+      "category": "combat_and_targeting",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "cameraSamples",
+          "combatSignals.mousePrimaryInputs"
+        ]
+      },
+      "id": "combat_recoil_assist",
+      "implementation": {
+        "missingDependencies": [
+          "missing evidence: cameraSamples",
+          "dependency: weapon-specific recoil pattern observations"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "camera delta tracking",
+          "weapon firing cadence signal"
+        ]
+      },
+      "mechanicsAddressed": [
+        "camera",
+        "combat",
+        "weapon"
+      ],
+      "status": "Evidence required",
+      "title": "Recoil Assistance",
+      "toolType": "recoil_assist",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "combat_and_targeting",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "combatSignals.mousePrimaryInputs",
+          "inputControlTypes"
+        ]
+      },
+      "id": "combat_target_assist",
+      "implementation": {
+        "missingDependencies": [
+          "dependency: replicated opponent entity map",
+          "dependency: validated visibility check primitive"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "entity tracking",
+          "team relationship signal",
+          "camera orientation signal"
+        ]
+      },
+      "mechanicsAddressed": [
+        "aim",
+        "combat",
+        "target"
+      ],
+      "status": "Evidence required",
+      "title": "Target Assistance",
+      "toolType": "aim_assist",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "combat_and_targeting",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "combatSignals.mousePrimaryInputs",
+          "stateChangeSignals"
+        ]
+      },
+      "id": "combat_trigger_assist",
+      "implementation": {
+        "missingDependencies": [
+          "missing evidence: stateChangeSignals",
+          "dependency: crosshair-target correlation evidence"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "crosshair overlap detection",
+          "team filter"
+        ]
+      },
+      "mechanicsAddressed": [
+        "combat",
+        "fire",
+        "reaction"
+      ],
+      "status": "Evidence required",
+      "title": "Trigger Assistance",
+      "toolType": "trigger_assist",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses combat and targeting workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "esp_and_visuals",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "classDistributionTop",
+          "worldRegions"
+        ]
+      },
+      "id": "esp_player_overlay",
+      "implementation": {
+        "missingDependencies": [
+          "dependency: stable enemy/friendly identity signal"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "character list",
+          "camera projection",
+          "team coloring"
+        ]
+      },
+      "mechanicsAddressed": [
+        "awareness",
+        "combat",
+        "entities"
+      ],
+      "status": "Evidence required",
+      "title": "Player Awareness Overlay",
+      "toolType": "player_esp",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses esp and visuals workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "weapons_and_loadout",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "featureSummary",
+          "inputControlTypes"
+        ]
+      },
+      "id": "loadout_information_suite",
+      "implementation": {
+        "missingDependencies": [
+          "dependency: weapon stat extraction contract"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "current weapon identity",
+          "ammo/weapon state signals"
+        ]
+      },
+      "mechanicsAddressed": [
+        "inventory",
+        "progression",
+        "weapons"
+      ],
+      "status": "Evidence required",
+      "title": "Loadout and Weapon Intelligence",
+      "toolType": "loadout_info",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses weapons and loadout workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "movement_and_navigation",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "worldRegions",
+          "cameraSamples"
+        ]
+      },
+      "id": "movement_navigation_assist",
+      "implementation": {
+        "missingDependencies": [
+          "missing evidence: cameraSamples",
+          "dependency: persistent humanoid root availability"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "pathable anchor points",
+          "character root availability"
+        ]
+      },
+      "mechanicsAddressed": [
+        "movement",
+        "navigation"
+      ],
+      "status": "Evidence required",
+      "title": "Navigation Assistance",
+      "toolType": "navigation_assist",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses movement and navigation workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "information",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "stateChangeSignals",
+          "featureSummary"
+        ]
+      },
+      "id": "objective_status_dashboard",
+      "implementation": {
+        "missingDependencies": [
+          "missing evidence: stateChangeSignals",
+          "dependency: match objective state key mapping"
+        ],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "state signal subscriptions",
+          "ui presentation"
+        ]
+      },
+      "mechanicsAddressed": [
+        "information",
+        "progression"
+      ],
+      "status": "Evidence required",
+      "title": "Objective and Match Status Dashboard",
+      "toolType": "status_dashboard",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses information workflows with bounded evidence-aware controls."
+      }
+    },
+    {
+      "category": "quality_of_life",
+      "challengeLinks": [
+        "challenge-target-identification",
+        "challenge-combat-consistency",
+        "challenge-loadout-and-progression-clarity"
+      ],
+      "claims": {
+        "actionOutcomesVerified": false,
+        "causalityProven": false,
+        "gameplayVerified": false,
+        "runtimeVerified": false,
+        "serverAuthorityVerified": false,
+        "sourceAuthenticityVerified": false
+      },
+      "evidenceSupport": {
+        "availableSignals": {
+          "cameraSamples": 0,
+          "clickSamples": 41,
+          "featureCount": 12,
+          "interactionEvents": 73
+        },
+        "requiredEvidence": [
+          "featureSummary"
+        ]
+      },
+      "id": "profile_and_keybind_manager",
+      "implementation": {
+        "missingDependencies": [],
+        "runtimeBindingStatus": "not-implemented",
+        "runtimeRequirements": [
+          "config persistence layer"
+        ]
+      },
+      "mechanicsAddressed": [
+        "qol",
+        "settings"
+      ],
+      "status": "Feasible",
+      "title": "Profiles and Keybinds",
+      "toolType": "profile_manager",
+      "usefulness": {
+        "evidenceLevel": "supported-inference",
+        "summary": "Addresses quality of life workflows with bounded evidence-aware controls."
+      }
+    }
+  ],
+  "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7",
+  "schemaVersion": "120.universal-tool-discovery.1",
+  "statusCriteria": [
+    {
+      "criteria": "Concept derived from objective->mechanic->challenge reasoning.",
+      "status": "Proposed"
+    },
+    {
+      "criteria": "One or more required runtime/evidence dependencies are missing.",
+      "status": "Evidence required"
+    },
+    {
+      "criteria": "Required evidence exists for bounded implementation planning.",
+      "status": "Feasible"
+    },
+    {
+      "criteria": "Feasible plus explicit runtime contract and safe-stop behavior definition.",
+      "status": "Implementation ready"
+    },
+    {
+      "criteria": "Feature logic exists in generated/runtime script modules.",
+      "status": "Implemented"
+    },
+    {
+      "criteria": "Compilation/schema/dependency checks pass.",
+      "status": "Static validation passed"
+    },
+    {
+      "criteria": "Feature executed in live environment with bounded telemetry.",
+      "status": "Runtime tested"
+    },
+    {
+      "criteria": "Observed gameplay outcome aligns with intended feature effect.",
+      "status": "Gameplay verified"
+    },
+    {
+      "criteria": "Policy or missing evidence prevents safe implementation.",
+      "status": "Blocked"
+    }
+  ],
+  "summary": {
+    "categories": [
+      "combat_and_targeting",
+      "esp_and_visuals",
+      "information",
+      "movement_and_navigation",
+      "quality_of_life",
+      "weapons_and_loadout"
+    ],
+    "evidenceRequired": 7,
+    "feasible": 1,
+    "proposalCount": 8,
+    "proposed": 0
+  }
+}

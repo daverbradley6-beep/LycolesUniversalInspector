@@ -57,4 +57,23 @@ class Tests(unittest.TestCase):
    (Path(d)/'manifest-v104.json').symlink_to(Path(d)/'outside')
    self.assertFalse(audit(d)['ok'])
  def test_deterministic(self):self.assertEqual(build(fixture(),123),build(fixture(),123))
+ def test_interaction_history_normalization(self):
+  source={'placeId':123,'observations':[{'path':'Workspace.Egg','className':'Tool'}],
+      'observedInteractionHistory':[
+       {'sequence':2,'path':'PlayerGui.HUD.Button','featureCandidate':'shop','actionCandidate':'open',
+        'transactionId':'txn-1','stateChanges':[{'key':'Data.Coins','before':10,'after':9}]},
+       {'path':'Workspace.Badge','eventIndex':1,'featureCandidate':'loot','transactionId':5,
+        'guiStateChanges':[{'path':'Data.Badges','before':1,'after':2}]},
+       'invalid']}
+  report=build(source,123)
+  self.assertEqual(report['observedInteractionHistoryCount'],2)
+  self.assertEqual(report['observedInteractionRejectedCount'],1)
+  self.assertEqual(report['observedInteractionHistory'][0]['sequence'],1)
+  self.assertEqual(report['observedInteractionHistory'][0]['transactionId'],'5')
+  self.assertEqual(report['observedInteractionHistory'][1]['transactionId'],'txn-1')
+
+ def test_invalid_interaction_history(self):
+  with self.assertRaises(ValueError):
+   build({'placeId':123,'observations':[],'observedInteractionHistory':{}},123)
+
 if __name__=='__main__':unittest.main()

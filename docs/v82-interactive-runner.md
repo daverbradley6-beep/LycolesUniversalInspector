@@ -1,6 +1,6 @@
-# v82 — Interactive GUI action testing
+# v82 — GUI contract availability testing
 
-v82 adds a visible local Roblox test panel for manually approved GUI action contracts. Each click requests a single local GUI button activation, snapshots leaderstats before and 1.5 seconds after, and prints `LYCOLES_V82_RESULT`. The result is **not** proof of causality or gameplay success.
+v82 generates a visible, place-guarded Roblox panel for manually approved GUI contracts. The panel resolves each exact GUI path and checks that the target and its ancestors are available. It deliberately does **not** call `GuiButton:Activate()`: Roblox exposes the `Activated` event but no public method that safely simulates a user activation. Each test therefore emits a structured `LYCOLES_V82_RESULT` with `requested: false` and an explicit unsupported-activation reason.
 
 ## Generate
 
@@ -9,11 +9,11 @@ py tools/interactive_runner_v82.py --place-id 85896571713843 --contracts approve
 py -m unittest discover -s tests -p "test_interactive_runner_v82.py" -v
 ```
 
-Run `build/release-v82/interactive-runner-v82.luau` in the Roblox client, then click **Test hatch**. The panel reports activation errors, missing or hidden controls, and observed leaderstat changes. Copy full `LYCOLES_V82_RESULT` console lines to review.
+Run `build/release-v82/interactive-runner-v82.luau` in the matching Roblox place and use the panel to diagnose missing, hidden, disabled, or stale GUI paths. Perform real interactions through the game's normal UI and use the later passive recorder workflow when before/after evidence is required.
 
 ## Limitations
 
-- Only explicitly approved GUI button contracts are supported. No keyboard injection, remotes, bypasses or automatic action loops.
-- `GuiButton:Activate()` availability and effects depend on the Roblox runtime and the game's implementation.
-- UI paths are exact and may become stale after UI changes. The target and ancestors must be visible and enabled.
-- Python regression tests do not prove in-game activation.
+- Only explicitly approved GUI button contracts are accepted. No keyboard injection, remote invocation, bypass, or automatic action loop is generated.
+- v82 is an availability and contract diagnostic, not an action executor; it cannot produce successful activation evidence.
+- UI paths are exact and may become stale when a dynamic GUI is rebuilt.
+- Python regression tests validate generated source contracts, not Roblox runtime behavior.

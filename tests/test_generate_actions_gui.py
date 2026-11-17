@@ -19,6 +19,8 @@ class ActionGuiTests(unittest.TestCase):
         self.assertIn("pcall(actions[name])",source)
         self.assertIn("MouseButton1Click:Connect",source)
         self.assertIn("LycolesActionsClose",source)
+        self.assertIn('panel.Name="AdminCommands"',source)
+        self.assertIn('register("stopall"',source)
         self.assertNotIn("FireServer(",source)
         self.assertNotIn("InvokeServer(",source)
     def test_unreviewed_rejected(self):

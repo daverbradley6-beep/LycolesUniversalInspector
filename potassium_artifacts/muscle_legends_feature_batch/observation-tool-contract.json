@@ -1,0 +1,5269 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "deduplicatedFeatures": [],
+  "featureContracts": [
+    {
+      "action": {
+        "allowConcurrentStatRoutines": true,
+        "conflictPolicy": "single-tool-activation-queue",
+        "cycleMode": "round-robin-selected",
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "implicitActions": [
+          "ensure_tool_equipped"
+        ],
+        "intervalSeconds": 0.35,
+        "kind": "tool_activate_selectable",
+        "methodStatMap": {
+          "training_protein_bar": [
+            "stat_backpack_tools_count"
+          ],
+          "training_protein_bar_2": [
+            "stat_character_tools_equippedcount"
+          ],
+          "training_weight": [
+            "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+            "stat_leaderstats_strength",
+            "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+            "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+            "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+            "stat_backpack_tools_count"
+          ]
+        },
+        "methods": [
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42447.85,
+                "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42447.85,
+                "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42443.0,
+                "statId": "stat_leaderstats_strength",
+                "statName": "Strength",
+                "statPath": "leaderstats.Strength"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 276.0,
+                "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+                "statName": "Exp",
+                "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 145.0,
+                "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 12.0,
+                "statId": "stat_backpack_tools_count",
+                "statName": "Count",
+                "statPath": "Backpack.Tools.Count"
+              }
+            ],
+            "defaultSelected": true,
+            "id": "training_weight",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Weight",
+            "observedActivations": 35,
+            "path": "LocalPlayer.Backpack.Weight",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 15,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "positiveDelta": 0.0,
+                "statId": "stat_backpack_tools_count",
+                "statName": "Count",
+                "statPath": "Backpack.Tools.Count"
+              }
+            ],
+            "defaultSelected": false,
+            "id": "training_protein_bar",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Protein Bar",
+            "observedActivations": 1,
+            "path": "Character.Protein Bar",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 1,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "positiveDelta": 0.0,
+                "statId": "stat_character_tools_equippedcount",
+                "statName": "EquippedCount",
+                "statPath": "Character.Tools.EquippedCount"
+              }
+            ],
+            "defaultSelected": false,
+            "id": "training_protein_bar_2",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Protein Bar",
+            "observedActivations": 1,
+            "path": "LocalPlayer.Backpack.Protein Bar",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 1,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "primaryToolName": "Weight",
+        "primaryToolPath": "LocalPlayer.Backpack.Weight",
+        "requiresEquippedTool": true,
+        "statTargets": [
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.61,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+            "lastObservedValue": 326.0,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 145.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 107,
+              "decreases": 0,
+              "increases": 107,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 31,
+              "positiveDelta": 205.0
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "primary-progression",
+            "causalityProven": false,
+            "confidenceLevel": "high",
+            "confidenceScore": 0.81,
+            "dataType": "number",
+            "defaultActive": true,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_leaderstats_strength",
+            "lastObservedValue": 28526.0,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 42443.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Strength",
+            "observedChanges": {
+              "changes": 18,
+              "decreases": 1,
+              "increases": 17,
+              "negativeDelta": 499416.0,
+              "passiveIncreaseHits": 8,
+              "positiveDelta": 61734.0
+            },
+            "path": "leaderstats.Strength",
+            "source": "leaderstats",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.61,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+            "lastObservedValue": 498635.0499999999,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 42447.85,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 16,
+              "decreases": 0,
+              "increases": 16,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 7,
+              "positiveDelta": 56991.75
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.61,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+            "lastObservedValue": 498635.0499999999,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 42447.85,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 16,
+              "decreases": 0,
+              "increases": 16,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 7,
+              "positiveDelta": 56991.75
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.73,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+            "lastObservedValue": 46.0,
+            "methods": [],
+            "name": "Exp",
+            "observedChanges": {
+              "changes": 13,
+              "decreases": 3,
+              "increases": 10,
+              "negativeDelta": 158.0,
+              "passiveIncreaseHits": 4,
+              "positiveDelta": 145.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.73,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+            "lastObservedValue": 8988.0,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 276.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Exp",
+            "observedChanges": {
+              "changes": 12,
+              "decreases": 0,
+              "increases": 12,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 3,
+              "positiveDelta": 369.0
+            },
+            "path": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "inventory-count",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.61,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_weight"
+            ],
+            "id": "stat_backpack_tools_count",
+            "lastObservedValue": 9.0,
+            "methods": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "methodId": "training_weight",
+                "name": "Weight",
+                "path": "LocalPlayer.Backpack.Weight",
+                "positiveDelta": 12.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              },
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "methodId": "training_protein_bar",
+                "name": "Protein Bar",
+                "path": "Character.Protein Bar",
+                "positiveDelta": 0.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "Count",
+            "observedChanges": {
+              "changes": 12,
+              "decreases": 3,
+              "increases": 9,
+              "negativeDelta": 7.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 14.0
+            },
+            "path": "Backpack.Tools.Count",
+            "source": "unknown",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "currency-resource",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.4,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_gems",
+            "lastObservedValue": 530150.0,
+            "methods": [],
+            "name": "Gems",
+            "observedChanges": {
+              "changes": 6,
+              "decreases": 3,
+              "increases": 3,
+              "negativeDelta": 2090000.0,
+              "passiveIncreaseHits": 2,
+              "positiveDelta": 217315.0
+            },
+            "path": "LocalPlayer.Gems",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "medium",
+            "confidenceScore": 0.52,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_level",
+            "lastObservedValue": 8.0,
+            "methods": [],
+            "name": "Level",
+            "observedChanges": {
+              "changes": 3,
+              "decreases": 0,
+              "increases": 3,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 0,
+              "positiveDelta": 3.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.4,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_damage",
+            "lastObservedValue": 25350.0,
+            "methods": [],
+            "name": "Damage",
+            "observedChanges": {
+              "changes": 3,
+              "decreases": 0,
+              "increases": 3,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 0,
+              "positiveDelta": 150.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.4,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_strength",
+            "lastObservedValue": 2535.0,
+            "methods": [],
+            "name": "Strength",
+            "observedChanges": {
+              "changes": 3,
+              "decreases": 0,
+              "increases": 3,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 0,
+              "positiveDelta": 15.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "other-progression",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.44,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_leaderstats_rebirths",
+            "lastObservedValue": 42.0,
+            "methods": [],
+            "name": "Rebirths",
+            "observedChanges": {
+              "changes": 1,
+              "decreases": 0,
+              "increases": 1,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 1.0
+            },
+            "path": "leaderstats.Rebirths",
+            "source": "leaderstats",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.4,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_durability",
+            "lastObservedValue": 2028.0,
+            "methods": [],
+            "name": "Durability",
+            "observedChanges": {
+              "changes": 3,
+              "decreases": 0,
+              "increases": 3,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 0,
+              "positiveDelta": 12.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "equipment-or-pet-experience",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.4,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_agility",
+            "lastObservedValue": 1825.0,
+            "methods": [],
+            "name": "Agility",
+            "observedChanges": {
+              "changes": 3,
+              "decreases": 0,
+              "increases": 3,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 0,
+              "positiveDelta": 10.0
+            },
+            "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.32,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+            "lastObservedValue": 6.0,
+            "methods": [],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 2,
+              "decreases": 0,
+              "increases": 2,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 2,
+              "positiveDelta": 4.0
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "inventory-count",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.48,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [
+              "training_protein_bar_2"
+            ],
+            "id": "stat_character_tools_equippedcount",
+            "lastObservedValue": 1.0,
+            "methods": [
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "methodId": "training_protein_bar_2",
+                "name": "Protein Bar",
+                "path": "LocalPlayer.Backpack.Protein Bar",
+                "positiveDelta": 0.0,
+                "readiness": "observed-activation-candidate",
+                "safeByDefault": true,
+                "source": "inventory-tool"
+              }
+            ],
+            "name": "EquippedCount",
+            "observedChanges": {
+              "changes": 8,
+              "decreases": 4,
+              "increases": 4,
+              "negativeDelta": 4.0,
+              "passiveIncreaseHits": 4,
+              "positiveDelta": 4.0
+            },
+            "path": "Character.Tools.EquippedCount",
+            "source": "character",
+            "temporalCorrelationOnly": true
+          },
+          {
+            "category": "other-progression",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.48,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_character_humanoid_movedirectionmagnitude",
+            "lastObservedValue": 1.0,
+            "methods": [],
+            "name": "MoveDirectionMagnitude",
+            "observedChanges": {
+              "changes": 4,
+              "decreases": 0,
+              "increases": 4,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 3,
+              "positiveDelta": 4.0
+            },
+            "path": "Character.Humanoid.MoveDirectionMagnitude",
+            "source": "character",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.24,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+            "lastObservedValue": 1.0,
+            "methods": [],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 1,
+              "decreases": 0,
+              "increases": 1,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 1.0
+            },
+            "path": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.24,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+            "lastObservedValue": 1.0,
+            "methods": [],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 1,
+              "decreases": 0,
+              "increases": 1,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 1.0
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "quest-progress",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.24,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+            "lastObservedValue": 1.0,
+            "methods": [],
+            "name": "Progress",
+            "observedChanges": {
+              "changes": 1,
+              "decreases": 0,
+              "increases": 1,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 1.0
+            },
+            "path": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          },
+          {
+            "category": "other-progression",
+            "causalityProven": false,
+            "confidenceLevel": "low",
+            "confidenceScore": 0.24,
+            "dataType": "number",
+            "defaultActive": false,
+            "defaultSelectedMethodIds": [],
+            "id": "stat_localplayer_rebirthmultiplier",
+            "lastObservedValue": 210.0,
+            "methods": [],
+            "name": "RebirthMultiplier",
+            "observedChanges": {
+              "changes": 1,
+              "decreases": 0,
+              "increases": 1,
+              "negativeDelta": 0.0,
+              "passiveIncreaseHits": 1,
+              "positiveDelta": 5.0
+            },
+            "path": "LocalPlayer.rebirthMultiplier",
+            "source": "replicated-player",
+            "temporalCorrelationOnly": true,
+            "unsupportedReason": "No evidence-backed training relationship observed"
+          }
+        ]
+      },
+      "actionable": true,
+      "category": "auto-train",
+      "defaultEnabled": true,
+      "destructive": false,
+      "evidence": {
+        "actionStatRelationshipCount": 56,
+        "featureCandidate": "inventory",
+        "interactionEvents": 37,
+        "matchingPathEvents": 35,
+        "observableOutcomeCandidates": 3,
+        "readiness": "observable-outcome-candidate-needs-causal-validation",
+        "statRegistryCount": 30,
+        "statTrainingTargetCount": 21,
+        "trainingMethodCount": 3,
+        "trainingMethods": [
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42447.85,
+                "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42447.85,
+                "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 42443.0,
+                "statId": "stat_leaderstats_strength",
+                "statName": "Strength",
+                "statPath": "leaderstats.Strength"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 276.0,
+                "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+                "statName": "Exp",
+                "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 145.0,
+                "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+                "statName": "Progress",
+                "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+              },
+              {
+                "confidenceLevel": "high",
+                "confidenceScore": 0.88,
+                "positiveDelta": 12.0,
+                "statId": "stat_backpack_tools_count",
+                "statName": "Count",
+                "statPath": "Backpack.Tools.Count"
+              }
+            ],
+            "defaultSelected": true,
+            "id": "training_weight",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Weight",
+            "observedActivations": 35,
+            "path": "LocalPlayer.Backpack.Weight",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 15,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "positiveDelta": 0.0,
+                "statId": "stat_backpack_tools_count",
+                "statName": "Count",
+                "statPath": "Backpack.Tools.Count"
+              }
+            ],
+            "defaultSelected": false,
+            "id": "training_protein_bar",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Protein Bar",
+            "observedActivations": 1,
+            "path": "Character.Protein Bar",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 1,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "candidateStats": [
+              {
+                "confidenceLevel": "low",
+                "confidenceScore": 0.11,
+                "positiveDelta": 0.0,
+                "statId": "stat_character_tools_equippedcount",
+                "statName": "EquippedCount",
+                "statPath": "Character.Tools.EquippedCount"
+              }
+            ],
+            "defaultSelected": false,
+            "id": "training_protein_bar_2",
+            "metadata": {
+              "canBeDropped": false,
+              "enabled": true,
+              "manualActivationOnly": false,
+              "requiresHandle": true,
+              "tooltip": ""
+            },
+            "name": "Protein Bar",
+            "observedActivations": 1,
+            "path": "LocalPlayer.Backpack.Protein Bar",
+            "readiness": "observed-activation-candidate",
+            "relationCount": 1,
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ]
+      },
+      "id": "auto_train",
+      "includeInStartAll": true,
+      "monitor": {
+        "candidateStatePaths": [
+          "leaderstats.Strength",
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+          "leaderstats.Rebirths",
+          "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+        ],
+        "ignoredNoisyStatePaths": [
+          "Character.Humanoid.JumpPower",
+          "Character.Humanoid.WalkSpeed",
+          "Character.RootPart.VelocityMagnitude",
+          "Character.Humanoid.ActiveAnimationCount",
+          "LocalPlayer.Quests.Daily Quests.Steadfast Lifter.requirements.Minutes.progress",
+          "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress"
+        ],
+        "kind": "delayed-cumulative",
+        "pollIntervalSeconds": 0.56,
+        "primaryOutcomePath": "leaderstats.Strength",
+        "questRepetitionStatePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+        ],
+        "stallWindowSeconds": 21.0
+      },
+      "supported": true,
+      "title": "Auto Train"
+    },
+    {
+      "action": {
+        "claimPaths": [
+          "LocalPlayer.PlayerGui.crystalOpeningGui.bulkClaimButton",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox"
+        ],
+        "eligibilityIndicatorPaths": [
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer"
+        ],
+        "guardedPaths": [],
+        "intervalSeconds": 2.0,
+        "kind": "auto_rewards_discovery",
+        "menuOpenPaths": [
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim"
+        ],
+        "paths": [
+          "LocalPlayer.PlayerGui.crystalOpeningGui.bulkClaimButton",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim"
+        ],
+        "rewardContainerPaths": [
+          "LocalPlayer.PlayerGui.crystalOpeningGui",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards",
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs"
+        ]
+      },
+      "actionable": true,
+      "category": "auto-rewards",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "claimPathCount": 2,
+        "eligibilityIndicatorPathCount": 3,
+        "featureCandidate": "rewards",
+        "guardedPathCount": 0,
+        "guiActionPathCount": 3,
+        "menuOpenPathCount": 1,
+        "observableOutcomeCandidates": 2,
+        "readiness": "observable-outcome-candidate-needs-causal-validation",
+        "rewardContainerPathCount": 3
+      },
+      "id": "auto_rewards",
+      "includeInStartAll": true,
+      "monitor": {
+        "candidateStatePaths": [
+          "LocalPlayer.Gems",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.TopElements.ExitButton",
+          "LocalPlayer.PlayerGui.gameGui.groupRewardsMenu.xButton",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.GiftTitle",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
+          "PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim.Notification",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList.ItemName",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList.RewardIcon",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardText",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList.ItemName",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList.RewardIcon"
+        ],
+        "kind": "multi-state"
+      },
+      "outcomeContract": {
+        "kind": "reward-state-change",
+        "statePaths": [
+          "LocalPlayer.Gems",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox",
+          "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.TopElements.ExitButton",
+          "LocalPlayer.PlayerGui.gameGui.groupRewardsMenu.xButton",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Claimed",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.GiftTitle",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.ReadyText",
+          "PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.Base.Timer",
+          "PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim.Notification",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList.ItemName",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardList.RewardIcon",
+          "PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.RewardText",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList.ItemName",
+          "PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.RewardList.RewardIcon"
+        ],
+        "strictlyRequireObservedDelta": true,
+        "verificationWindowSeconds": 4.38
+      },
+      "supported": true,
+      "title": "Auto Rewards"
+    },
+    {
+      "action": {
+        "intervalSeconds": 3.75,
+        "kind": "gui_sequence",
+        "requiresExplicitConfirmation": true,
+        "steps": [
+          {
+            "kind": "gui_activate",
+            "path": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.MiddleLeft.BTNList.Rebirth"
+          },
+          {
+            "kind": "gui_activate",
+            "path": "LocalPlayer.PlayerGui.gameGui.baseChoiceMenu.Content.Buttons.yesButton"
+          }
+        ]
+      },
+      "actionable": true,
+      "category": "auto-rebirth",
+      "defaultEnabled": false,
+      "destructive": true,
+      "evidence": {
+        "confirmPath": "LocalPlayer.PlayerGui.gameGui.baseChoiceMenu.Content.Buttons.yesButton",
+        "featureCandidate": "rebirth",
+        "openPath": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.MiddleLeft.BTNList.Rebirth",
+        "readiness": "observable-outcome-candidate-needs-causal-validation"
+      },
+      "id": "auto_rebirth",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [
+          "leaderstats.Rebirths"
+        ],
+        "kind": "multi-state"
+      },
+      "supported": true,
+      "title": "Auto Rebirth"
+    },
+    {
+      "action": {
+        "intervalSeconds": 2.5,
+        "kind": "gui_activate_many",
+        "paths": [
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.LeftSlots.BoostsButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.LeftSlots.AurasButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.LeftSlots.EggsButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.LeftSlots.PetsButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.Content.PageBG.NextButton.Button",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.SelectButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.Content.ItemsBG.ItemsContainer.ScrollingFrame.Slot1",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.Content.PageBG.PreviousButton.Button",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.PetsRightBase.Content.ButtonList.ActionRow.SellButton",
+          "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.PetsRightBase.Content.ButtonList.EquipRow.EquipButton"
+        ]
+      },
+      "actionable": true,
+      "category": "inventory",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "inventoryGuiPathCount": 10
+      },
+      "id": "inventory_management",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [
+          "Backpack.Tools.Count"
+        ],
+        "kind": "multi-state"
+      },
+      "supported": true,
+      "title": "Inventory Actions"
+    },
+    {
+      "action": {
+        "intervalSeconds": 2.25,
+        "kind": "quest_train_workflow",
+        "questClaimPaths": [
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.CollectButton"
+        ],
+        "questOpenPaths": [
+          "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.TopBtns.Quests",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.skipButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsEnchant.LeftSlots.WeeklyButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.LeftSlots.DailyButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.CollectButton",
+          "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsWeekly.MainBase.Content.List.ScrollingFrame.WeeklyQuests.skipButton"
+        ],
+        "trainFeatureId": "auto_train"
+      },
+      "actionable": true,
+      "category": "quest",
+      "defaultEnabled": false,
+      "destructive": false,
+      "evidence": {
+        "guiQuestPathCount": 7,
+        "questClaimPathCount": 2,
+        "questClaimStatePathCount": 1,
+        "questSelectPathCount": 7,
+        "repetitionStatePathCount": 1,
+        "workflowBasis": "quest claim-state plus actionable quest GUI evidence"
+      },
+      "id": "quest_automation",
+      "includeInStartAll": false,
+      "monitor": {
+        "candidateStatePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+        ],
+        "kind": "quest-repetition"
+      },
+      "outcomeContract": {
+        "kind": "quest-state-change",
+        "statePaths": [
+          "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+        ],
+        "strictlyRequireObservedDelta": true,
+        "verificationWindowSeconds": 5.0
+      },
+      "supported": true,
+      "title": "Quest Automation"
+    }
+  ],
+  "featureDependencies": {
+    "quest_automation": [
+      "auto_train"
+    ]
+  },
+  "gameName": "💪Muscle Legends",
+  "generatedFeatureIds": [
+    "auto_train",
+    "auto_rewards",
+    "auto_rebirth",
+    "inventory_management",
+    "quest_automation"
+  ],
+  "generatorMetadata": {
+    "generatorVersion": "receiver_generation_pipeline.observation-contract.6",
+    "inspectorSchemaVersion": "30.6.live-observation-export.1",
+    "projectVersion": "30.6.48"
+  },
+  "interactionSummary": {
+    "actionStatRelationshipCount": 56,
+    "controlTypesObserved": [
+      "GuiButton.Activated",
+      "Humanoid.Jumping",
+      "InputBegan.Keyboard",
+      "InputBegan.MouseButton1",
+      "InputBegan.MouseButton2",
+      "Tool.Activated",
+      "Tool.Equipped",
+      "Tool.Unequipped"
+    ],
+    "featureCandidatesObserved": [
+      "inventory",
+      "movement",
+      "pets",
+      "quests",
+      "rebirth",
+      "rewards"
+    ],
+    "passiveProgressionSignalCount": 16,
+    "progressionStatCount": 21,
+    "proximityPromptTriggerCount": 0,
+    "questClaimPathCount": 2,
+    "questClaimStatePathCount": 1,
+    "questGuiPathCount": 7,
+    "questRepetitionPathCount": 1,
+    "questSelectPathCount": 7,
+    "rewardActionPathCount": 3,
+    "rewardClaimPathCount": 2,
+    "rewardGuardedPathCount": 0,
+    "rewardMenuOpenPathCount": 1,
+    "rewardStatePathCount": 19,
+    "statRegistryCount": 30,
+    "totalObservedEvents": 180,
+    "trainingMethodCount": 3,
+    "worldTrainingStationCount": 0
+  },
+  "matchingToolActivationEvents": 35,
+  "observationDelaySeconds": 1.25,
+  "outcomeModel": {
+    "candidateStatePaths": [
+      "leaderstats.Strength",
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+      "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+      "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+      "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+      "Backpack.Tools.Count",
+      "LocalPlayer.Gems",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+      "leaderstats.Rebirths",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+      "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+      "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+      "Character.Tools.EquippedCount"
+    ],
+    "ignoredNoisyStatePaths": [
+      "Character.Humanoid.JumpPower",
+      "Character.Humanoid.WalkSpeed",
+      "Character.RootPart.VelocityMagnitude",
+      "Character.Humanoid.ActiveAnimationCount",
+      "LocalPlayer.Quests.Daily Quests.Steadfast Lifter.requirements.Minutes.progress",
+      "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress"
+    ],
+    "kind": "delayed-cumulative",
+    "observedStateKeyCount": 30,
+    "primaryStatePath": "leaderstats.Strength",
+    "questRepetitionStatePaths": [
+      "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+    ]
+  },
+  "outcomeStateKeys": [
+    "leaderstats.Strength",
+    "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+    "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+    "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+    "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+    "Backpack.Tools.Count",
+    "LocalPlayer.Gems",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+    "leaderstats.Rebirths",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+    "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+    "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+    "Character.Tools.EquippedCount"
+  ],
+  "placeId": 3623096087,
+  "requestedCapability": "Automatically train stats, complete quests, claim rewards, and manage pets/inventory in Muscle Legends",
+  "scanId": "FA86C322-0EA1-498D-B284-6EADC1390145",
+  "schemaVersion": "117.observation-tool-contract.6",
+  "stateDeltaEvents": 530,
+  "timing": {
+    "activationIntervalSeconds": 0.35,
+    "delayedOutcomeWindowSeconds": 1.25,
+    "maxActivationIntervalSeconds": 2.0,
+    "maxOutcomeWindowSeconds": 10.0,
+    "minActivationIntervalSeconds": 0.1,
+    "minOutcomeWindowSeconds": 0.25,
+    "pollIntervalSeconds": 0.56,
+    "stallWindowSeconds": 21.0
+  },
+  "toolActivationEvents": 37,
+  "toolMetadata": {
+    "canBeDropped": false,
+    "enabled": true,
+    "manualActivationOnly": false,
+    "requiresHandle": true
+  },
+  "toolName": "Weight",
+  "toolPath": "LocalPlayer.Backpack.Weight",
+  "trainingDiscovery": {
+    "actionStatEvidence": {
+      "causalityProven": false,
+      "passiveProgressionStats": [
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 31,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+        },
+        {
+          "name": "Strength",
+          "passiveIncreaseHits": 8,
+          "source": "leaderstats",
+          "statId": "stat_leaderstats_strength",
+          "statPath": "leaderstats.Strength"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 7,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 7,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress"
+        },
+        {
+          "name": "EquippedCount",
+          "passiveIncreaseHits": 4,
+          "source": "character",
+          "statId": "stat_character_tools_equippedcount",
+          "statPath": "Character.Tools.EquippedCount"
+        },
+        {
+          "name": "Exp",
+          "passiveIncreaseHits": 4,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp"
+        },
+        {
+          "name": "MoveDirectionMagnitude",
+          "passiveIncreaseHits": 3,
+          "source": "character",
+          "statId": "stat_character_humanoid_movedirectionmagnitude",
+          "statPath": "Character.Humanoid.MoveDirectionMagnitude"
+        },
+        {
+          "name": "Exp",
+          "passiveIncreaseHits": 3,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+          "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp"
+        },
+        {
+          "name": "Gems",
+          "passiveIncreaseHits": 2,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_gems",
+          "statPath": "LocalPlayer.Gems"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 2,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+        },
+        {
+          "name": "Count",
+          "passiveIncreaseHits": 1,
+          "source": "unknown",
+          "statId": "stat_backpack_tools_count",
+          "statPath": "Backpack.Tools.Count"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 1,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+          "statPath": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 1,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress"
+        },
+        {
+          "name": "Progress",
+          "passiveIncreaseHits": 1,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress"
+        },
+        {
+          "name": "RebirthMultiplier",
+          "passiveIncreaseHits": 1,
+          "source": "replicated-player",
+          "statId": "stat_localplayer_rebirthmultiplier",
+          "statPath": "LocalPlayer.rebirthMultiplier"
+        },
+        {
+          "name": "Rebirths",
+          "passiveIncreaseHits": 1,
+          "source": "leaderstats",
+          "statId": "stat_leaderstats_rebirths",
+          "statPath": "leaderstats.Rebirths"
+        }
+      ],
+      "relationships": [
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.confirmSellNewMenu.Content.Buttons.yesButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 5315.0,
+          "samples": [
+            {
+              "after": 2408150.0,
+              "before": 2402835.0,
+              "delta": 5315.0,
+              "sessionElapsedSeconds": 258.028
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.TopElements.ExitButton",
+          "negativeDelta": 1000000.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 1408150.0,
+              "before": 2408150.0,
+              "delta": -1000000.0,
+              "sessionElapsedSeconds": 277.927
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.TopElements.ExitButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 2.0,
+              "before": 1.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 277.927
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.TopElements.ExitButton",
+          "negativeDelta": 1.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 7.0,
+              "before": 8.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 295.425
+            }
+          ],
+          "statId": "stat_backpack_tools_count",
+          "statName": "Count",
+          "statPath": "Backpack.Tools.Count",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.TopElements.ExitButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 295.425
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.itemsNewMenu.MainBase.TopElements.ExitButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 295.425
+            }
+          ],
+          "statId": "stat_character_humanoid_movedirectionmagnitude",
+          "statName": "MoveDirectionMagnitude",
+          "statPath": "Character.Humanoid.MoveDirectionMagnitude",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.Input.Keyboard.E",
+          "negativeDelta": 1000000.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 408150.0,
+              "before": 1408150.0,
+              "delta": -1000000.0,
+              "sessionElapsedSeconds": 285.01
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.57,
+          "decreases": 0,
+          "increases": 2,
+          "methodPath": "LocalPlayer.Input.Keyboard.One",
+          "negativeDelta": 0.0,
+          "positiveDelta": 3.0,
+          "samples": [
+            {
+              "after": 291.0,
+              "before": 290.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 296.392
+            },
+            {
+              "after": 292.0,
+              "before": 290.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 296.392
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.86,
+          "decreases": 0,
+          "increases": 4,
+          "methodPath": "LocalPlayer.Input.Keyboard.Two",
+          "negativeDelta": 0.0,
+          "positiveDelta": 10.0,
+          "samples": [
+            {
+              "after": 293.0,
+              "before": 290.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 297.227
+            },
+            {
+              "after": 300.0,
+              "before": 299.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 319.859
+            },
+            {
+              "after": 302.0,
+              "before": 299.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 319.859
+            },
+            {
+              "after": 323.0,
+              "before": 320.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 370.723
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 76,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 145.0,
+          "samples": [
+            {
+              "after": 292.0,
+              "before": 291.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 298.694
+            },
+            {
+              "after": 294.0,
+              "before": 291.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 298.694
+            },
+            {
+              "after": 293.0,
+              "before": 292.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 299.827
+            },
+            {
+              "after": 295.0,
+              "before": 292.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 299.827
+            },
+            {
+              "after": 294.0,
+              "before": 293.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 296.0,
+              "before": 293.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 300.994
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.74,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 10.0,
+          "samples": [
+            {
+              "after": 1822.0,
+              "before": 1818.0,
+              "delta": 4.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 1825.0,
+              "before": 1822.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 372.106
+            },
+            {
+              "after": 1825.0,
+              "before": 1822.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 374.441
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_agility",
+          "statName": "Agility",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.74,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 12.0,
+          "samples": [
+            {
+              "after": 2024.0,
+              "before": 2020.0,
+              "delta": 4.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 2028.0,
+              "before": 2024.0,
+              "delta": 4.0,
+              "sessionElapsedSeconds": 372.106
+            },
+            {
+              "after": 2028.0,
+              "before": 2024.0,
+              "delta": 4.0,
+              "sessionElapsedSeconds": 374.441
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_durability",
+          "statName": "Durability",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.67,
+          "decreases": 3,
+          "increases": 6,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 158.0,
+          "positiveDelta": 77.0,
+          "samples": [
+            {
+              "after": 13.0,
+              "before": 65.0,
+              "delta": -52.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 22.0,
+              "before": 13.0,
+              "delta": 9.0,
+              "sessionElapsedSeconds": 305.342
+            },
+            {
+              "after": 52.0,
+              "before": 22.0,
+              "delta": 30.0,
+              "sessionElapsedSeconds": 323.209
+            },
+            {
+              "after": 61.0,
+              "before": 52.0,
+              "delta": 9.0,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 61.0,
+              "before": 52.0,
+              "delta": 9.0,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 70.0,
+              "before": 61.0,
+              "delta": 9.0,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+          "statName": "Exp",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 9,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 42447.85,
+          "samples": [
+            {
+              "after": 465391.4499999999,
+              "before": 460674.0999999999,
+              "delta": 4717.349999999977,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 470105.7499999999,
+              "before": 465391.4499999999,
+              "delta": 4714.299999999988,
+              "sessionElapsedSeconds": 305.342
+            },
+            {
+              "after": 474817.4499999999,
+              "before": 470105.7499999999,
+              "delta": 4711.700000000012,
+              "sessionElapsedSeconds": 323.209
+            },
+            {
+              "after": 479532.2499999999,
+              "before": 474817.4499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 479532.2499999999,
+              "before": 474817.4499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 484247.0499999999,
+              "before": 479532.2499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 9,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 42443.0,
+          "samples": [
+            {
+              "after": 494702.0,
+              "before": 489985.0,
+              "delta": 4717.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 499416.0,
+              "before": 494702.0,
+              "delta": 4714.0,
+              "sessionElapsedSeconds": 305.342
+            },
+            {
+              "after": 4711.0,
+              "before": 0.0,
+              "delta": 4711.0,
+              "sessionElapsedSeconds": 323.209
+            },
+            {
+              "after": 9425.0,
+              "before": 4711.0,
+              "delta": 4714.0,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 9425.0,
+              "before": 4711.0,
+              "delta": 4714.0,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 14139.0,
+              "before": 9425.0,
+              "delta": 4714.0,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_leaderstats_strength",
+          "statName": "Strength",
+          "statPath": "leaderstats.Strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.74,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 150.0,
+          "samples": [
+            {
+              "after": 25300.0,
+              "before": 25250.0,
+              "delta": 50.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 25350.0,
+              "before": 25300.0,
+              "delta": 50.0,
+              "sessionElapsedSeconds": 372.106
+            },
+            {
+              "after": 25350.0,
+              "before": 25300.0,
+              "delta": 50.0,
+              "sessionElapsedSeconds": 374.441
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_damage",
+          "statName": "Damage",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 9,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 42447.85,
+          "samples": [
+            {
+              "after": 465391.4499999999,
+              "before": 460674.0999999999,
+              "delta": 4717.349999999977,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 470105.7499999999,
+              "before": 465391.4499999999,
+              "delta": 4714.299999999988,
+              "sessionElapsedSeconds": 305.342
+            },
+            {
+              "after": 474817.4499999999,
+              "before": 470105.7499999999,
+              "delta": 4711.700000000012,
+              "sessionElapsedSeconds": 323.209
+            },
+            {
+              "after": 479532.2499999999,
+              "before": 474817.4499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 479532.2499999999,
+              "before": 474817.4499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 484247.0499999999,
+              "before": 479532.2499999999,
+              "delta": 4714.799999999988,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 9,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 276.0,
+          "samples": [
+            {
+              "after": 8805.0,
+              "before": 8771.0,
+              "delta": 34.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 8836.0,
+              "before": 8805.0,
+              "delta": 31.0,
+              "sessionElapsedSeconds": 305.342
+            },
+            {
+              "after": 8864.0,
+              "before": 8836.0,
+              "delta": 28.0,
+              "sessionElapsedSeconds": 323.209
+            },
+            {
+              "after": 8895.0,
+              "before": 8864.0,
+              "delta": 31.0,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 8895.0,
+              "before": 8864.0,
+              "delta": 31.0,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 8926.0,
+              "before": 8895.0,
+              "delta": 31.0,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+          "statName": "Exp",
+          "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.74,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 15.0,
+          "samples": [
+            {
+              "after": 2530.0,
+              "before": 2525.0,
+              "delta": 5.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 2535.0,
+              "before": 2530.0,
+              "delta": 5.0,
+              "sessionElapsedSeconds": 372.106
+            },
+            {
+              "after": 2535.0,
+              "before": 2530.0,
+              "delta": 5.0,
+              "sessionElapsedSeconds": 374.441
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_strength",
+          "statName": "Strength",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.69,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 3.0,
+          "samples": [
+            {
+              "after": 7.0,
+              "before": 6.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 300.994
+            },
+            {
+              "after": 8.0,
+              "before": 7.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 372.106
+            },
+            {
+              "after": 8.0,
+              "before": 7.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 374.441
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_level",
+          "statName": "Level",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 8,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 12.0,
+          "samples": [
+            {
+              "after": 8.0,
+              "before": 7.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 306.441
+            },
+            {
+              "after": 4.0,
+              "before": 2.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 322.14
+            },
+            {
+              "after": 4.0,
+              "before": 2.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 324.325
+            },
+            {
+              "after": 6.0,
+              "before": 4.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 327.658
+            },
+            {
+              "after": 6.0,
+              "before": 4.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 329.959
+            },
+            {
+              "after": 7.0,
+              "before": 6.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 334.309
+            }
+          ],
+          "statId": "stat_backpack_tools_count",
+          "statName": "Count",
+          "statPath": "Backpack.Tools.Count",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.0,
+          "decreases": 3,
+          "increases": 0,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 3.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 0.0,
+              "before": 1.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 306.441
+            },
+            {
+              "after": 0.0,
+              "before": 1.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 343.241
+            },
+            {
+              "after": 0.0,
+              "before": 1.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 373.29
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 375.573
+            }
+          ],
+          "statId": "stat_character_humanoid_movedirectionmagnitude",
+          "statName": "MoveDirectionMagnitude",
+          "statPath": "Character.Humanoid.MoveDirectionMagnitude",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Backpack.Weight",
+          "negativeDelta": 0.0,
+          "positiveDelta": 2000.0,
+          "samples": [
+            {
+              "after": 530150.0,
+              "before": 528150.0,
+              "delta": 2000.0,
+              "sessionElapsedSeconds": 375.573
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 22,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 42.0,
+          "samples": [
+            {
+              "after": 291.0,
+              "before": 290.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 297.527
+            },
+            {
+              "after": 293.0,
+              "before": 290.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 297.527
+            },
+            {
+              "after": 293.0,
+              "before": 291.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 298.708
+            },
+            {
+              "after": 295.0,
+              "before": 294.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 302.174
+            },
+            {
+              "after": 296.0,
+              "before": 294.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 302.174
+            },
+            {
+              "after": 297.0,
+              "before": 294.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 302.174
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.86,
+          "decreases": 0,
+          "increases": 4,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 68.0,
+          "samples": [
+            {
+              "after": 22.0,
+              "before": 13.0,
+              "delta": 9.0,
+              "sessionElapsedSeconds": 306.459
+            },
+            {
+              "after": 52.0,
+              "before": 22.0,
+              "delta": 30.0,
+              "sessionElapsedSeconds": 323.225
+            },
+            {
+              "after": 81.0,
+              "before": 70.0,
+              "delta": 11.0,
+              "sessionElapsedSeconds": 342.157
+            },
+            {
+              "after": 46.0,
+              "before": 28.0,
+              "delta": 18.0,
+              "sessionElapsedSeconds": 383.956
+            }
+          ],
+          "statId": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+          "statName": "Exp",
+          "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 5,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 14343.9,
+          "samples": [
+            {
+              "after": 470105.7499999999,
+              "before": 465391.4499999999,
+              "delta": 4714.299999999988,
+              "sessionElapsedSeconds": 306.459
+            },
+            {
+              "after": 474817.4499999999,
+              "before": 470105.7499999999,
+              "delta": 4711.700000000012,
+              "sessionElapsedSeconds": 323.225
+            },
+            {
+              "after": 488964.9499999999,
+              "before": 484247.0499999999,
+              "delta": 4717.900000000023,
+              "sessionElapsedSeconds": 342.157
+            },
+            {
+              "after": 498535.0499999999,
+              "before": 498435.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 398.638
+            },
+            {
+              "after": 498535.0499999999,
+              "before": 498435.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 400.738
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 6,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 19091.0,
+          "samples": [
+            {
+              "after": 499416.0,
+              "before": 494702.0,
+              "delta": 4714.0,
+              "sessionElapsedSeconds": 306.459
+            },
+            {
+              "after": 4711.0,
+              "before": 0.0,
+              "delta": 4711.0,
+              "sessionElapsedSeconds": 323.225
+            },
+            {
+              "after": 18856.0,
+              "before": 14139.0,
+              "delta": 4717.0,
+              "sessionElapsedSeconds": 342.157
+            },
+            {
+              "after": 28326.0,
+              "before": 23577.0,
+              "delta": 4749.0,
+              "sessionElapsedSeconds": 383.956
+            },
+            {
+              "after": 28426.0,
+              "before": 28326.0,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 398.638
+            },
+            {
+              "after": 28426.0,
+              "before": 28326.0,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 400.738
+            }
+          ],
+          "statId": "stat_leaderstats_strength",
+          "statName": "Strength",
+          "statPath": "leaderstats.Strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "high",
+          "confidenceScore": 0.88,
+          "decreases": 0,
+          "increases": 5,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 14343.9,
+          "samples": [
+            {
+              "after": 470105.7499999999,
+              "before": 465391.4499999999,
+              "delta": 4714.299999999988,
+              "sessionElapsedSeconds": 306.459
+            },
+            {
+              "after": 474817.4499999999,
+              "before": 470105.7499999999,
+              "delta": 4711.700000000012,
+              "sessionElapsedSeconds": 323.225
+            },
+            {
+              "after": 488964.9499999999,
+              "before": 484247.0499999999,
+              "delta": 4717.900000000023,
+              "sessionElapsedSeconds": 342.157
+            },
+            {
+              "after": 498535.0499999999,
+              "before": 498435.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 398.638
+            },
+            {
+              "after": 498535.0499999999,
+              "before": 498435.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 400.738
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.74,
+          "decreases": 0,
+          "increases": 3,
+          "methodPath": "LocalPlayer.Input.MouseButton1.None",
+          "negativeDelta": 0.0,
+          "positiveDelta": 93.0,
+          "samples": [
+            {
+              "after": 8836.0,
+              "before": 8805.0,
+              "delta": 31.0,
+              "sessionElapsedSeconds": 306.459
+            },
+            {
+              "after": 8864.0,
+              "before": 8836.0,
+              "delta": 28.0,
+              "sessionElapsedSeconds": 323.225
+            },
+            {
+              "after": 8960.0,
+              "before": 8926.0,
+              "delta": 34.0,
+              "sessionElapsedSeconds": 342.157
+            }
+          ],
+          "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+          "statName": "Exp",
+          "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 210000.0,
+          "samples": [
+            {
+              "after": 618150.0,
+              "before": 408150.0,
+              "delta": 210000.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 5.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 3.0,
+              "before": 8.0,
+              "delta": -5.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_backpack_tools_count",
+          "statName": "Count",
+          "statPath": "Backpack.Tools.Count",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 499416.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 0.0,
+              "before": 499416.0,
+              "delta": -499416.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_leaderstats_strength",
+          "statName": "Strength",
+          "statPath": "leaderstats.Strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 5.0,
+          "samples": [
+            {
+              "after": 210.0,
+              "before": 205.0,
+              "delta": 5.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_localplayer_rebirthmultiplier",
+          "statName": "RebirthMultiplier",
+          "statPath": "LocalPlayer.rebirthMultiplier",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.rebirthNewMenu.Content.ConfimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 42.0,
+              "before": 41.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 312.175
+            }
+          ],
+          "statId": "stat_leaderstats_rebirths",
+          "statName": "Rebirths",
+          "statPath": "leaderstats.Rebirths",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.62,
+          "decreases": 0,
+          "increases": 2,
+          "methodPath": "LocalPlayer.Backpack.Weight.Equipped",
+          "negativeDelta": 0.0,
+          "positiveDelta": 4.0,
+          "samples": [
+            {
+              "after": 300.0,
+              "before": 299.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 319.86
+            },
+            {
+              "after": 302.0,
+              "before": 299.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 319.86
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.Input.Keyboard.R",
+          "negativeDelta": 90000.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 528150.0,
+              "before": 618150.0,
+              "delta": -90000.0,
+              "sessionElapsedSeconds": 355.69
+            }
+          ],
+          "statId": "stat_localplayer_gems",
+          "statName": "Gems",
+          "statPath": "LocalPlayer.Gems",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.45,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Input.Keyboard.R",
+          "negativeDelta": 0.0,
+          "positiveDelta": 3.0,
+          "samples": [
+            {
+              "after": 6.0,
+              "before": 3.0,
+              "delta": 3.0,
+              "sessionElapsedSeconds": 355.69
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.crystalOpeningGui.bulkClaimButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 366.591
+            }
+          ],
+          "statId": "stat_character_humanoid_movedirectionmagnitude",
+          "statName": "MoveDirectionMagnitude",
+          "statPath": "Character.Humanoid.MoveDirectionMagnitude",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.groupRewardsMenu.xButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 379.04
+            }
+          ],
+          "statId": "stat_character_humanoid_movedirectionmagnitude",
+          "statName": "MoveDirectionMagnitude",
+          "statPath": "Character.Humanoid.MoveDirectionMagnitude",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.groupRewardsMenu.xButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 326.0,
+              "before": 325.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 379.04
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 2.0,
+          "samples": [
+            {
+              "after": 10.0,
+              "before": 8.0,
+              "delta": 2.0,
+              "sessionElapsedSeconds": 397.705
+            }
+          ],
+          "statId": "stat_backpack_tools_count",
+          "statName": "Count",
+          "statPath": "Backpack.Tools.Count",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.questsGui.questsNewMenu.QuestsDaily.MainBase.Content.List.ScrollingFrame.DailyQuests.CollectButton",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 397.705
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "Character.Protein Bar",
+          "negativeDelta": 1.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 9.0,
+              "before": 10.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 399.906
+            }
+          ],
+          "statId": "stat_backpack_tools_count",
+          "statName": "Count",
+          "statPath": "Backpack.Tools.Count",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Input.Keyboard.Zero",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 498635.0499999999,
+              "before": 498535.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.928
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Input.Keyboard.Zero",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 28526.0,
+              "before": 28426.0,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.928
+            }
+          ],
+          "statId": "stat_leaderstats_strength",
+          "statName": "Strength",
+          "statPath": "leaderstats.Strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Input.Keyboard.Zero",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 498635.0499999999,
+              "before": 498535.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.928
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Backpack.Protein Bar.Equipped",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 498635.0499999999,
+              "before": 498535.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.929
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Backpack.Protein Bar.Equipped",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 28526.0,
+              "before": 28426.0,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.929
+            }
+          ],
+          "statId": "stat_leaderstats_strength",
+          "statName": "Strength",
+          "statPath": "leaderstats.Strength",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.5,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.Backpack.Protein Bar.Equipped",
+          "negativeDelta": 0.0,
+          "positiveDelta": 100.0,
+          "samples": [
+            {
+              "after": 498635.0499999999,
+              "before": 498535.0499999999,
+              "delta": 100.0,
+              "sessionElapsedSeconds": 402.929
+            }
+          ],
+          "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "statName": "Progress",
+          "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.11,
+          "decreases": 1,
+          "increases": 0,
+          "methodPath": "LocalPlayer.Backpack.Protein Bar",
+          "negativeDelta": 1.0,
+          "positiveDelta": 0.0,
+          "samples": [
+            {
+              "after": 0.0,
+              "before": 1.0,
+              "delta": -1.0,
+              "sessionElapsedSeconds": 403.257
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.gameGui.hudNewMenu.Right.BottomBTNs.Claim",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 407.371
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        },
+        {
+          "causalityProven": false,
+          "confidenceLevel": "low",
+          "confidenceScore": 0.35,
+          "decreases": 0,
+          "increases": 1,
+          "methodPath": "LocalPlayer.PlayerGui.freeGiftsGui.freeGiftsNewMenu.Content.Rewards.Gift4.HitBox",
+          "negativeDelta": 0.0,
+          "positiveDelta": 1.0,
+          "samples": [
+            {
+              "after": 1.0,
+              "before": 0.0,
+              "delta": 1.0,
+              "sessionElapsedSeconds": 408.571
+            }
+          ],
+          "statId": "stat_character_tools_equippedcount",
+          "statName": "EquippedCount",
+          "statPath": "Character.Tools.EquippedCount",
+          "temporalCorrelationOnly": true
+        }
+      ],
+      "temporalCorrelationOnly": true
+    },
+    "inventoryMethodEvidencePresent": true,
+    "inventoryMethods": [
+      {
+        "candidateStats": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 42447.85,
+            "statId": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+            "statName": "Progress",
+            "statPath": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress"
+          },
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 42447.85,
+            "statId": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+            "statName": "Progress",
+            "statPath": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress"
+          },
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 42443.0,
+            "statId": "stat_leaderstats_strength",
+            "statName": "Strength",
+            "statPath": "leaderstats.Strength"
+          },
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 276.0,
+            "statId": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+            "statName": "Exp",
+            "statPath": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp"
+          },
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 145.0,
+            "statId": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+            "statName": "Progress",
+            "statPath": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress"
+          },
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "positiveDelta": 12.0,
+            "statId": "stat_backpack_tools_count",
+            "statName": "Count",
+            "statPath": "Backpack.Tools.Count"
+          }
+        ],
+        "defaultSelected": true,
+        "id": "training_weight",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "Weight",
+        "observedActivations": 35,
+        "path": "LocalPlayer.Backpack.Weight",
+        "readiness": "observed-activation-candidate",
+        "relationCount": 15,
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "candidateStats": [
+          {
+            "confidenceLevel": "low",
+            "confidenceScore": 0.11,
+            "positiveDelta": 0.0,
+            "statId": "stat_backpack_tools_count",
+            "statName": "Count",
+            "statPath": "Backpack.Tools.Count"
+          }
+        ],
+        "defaultSelected": false,
+        "id": "training_protein_bar",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "Protein Bar",
+        "observedActivations": 1,
+        "path": "Character.Protein Bar",
+        "readiness": "observed-activation-candidate",
+        "relationCount": 1,
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      },
+      {
+        "candidateStats": [
+          {
+            "confidenceLevel": "low",
+            "confidenceScore": 0.11,
+            "positiveDelta": 0.0,
+            "statId": "stat_character_tools_equippedcount",
+            "statName": "EquippedCount",
+            "statPath": "Character.Tools.EquippedCount"
+          }
+        ],
+        "defaultSelected": false,
+        "id": "training_protein_bar_2",
+        "metadata": {
+          "canBeDropped": false,
+          "enabled": true,
+          "manualActivationOnly": false,
+          "requiresHandle": true,
+          "tooltip": ""
+        },
+        "name": "Protein Bar",
+        "observedActivations": 1,
+        "path": "LocalPlayer.Backpack.Protein Bar",
+        "readiness": "observed-activation-candidate",
+        "relationCount": 1,
+        "safeByDefault": true,
+        "source": "inventory-tool"
+      }
+    ],
+    "methodStatMap": {
+      "training_protein_bar": [
+        "stat_backpack_tools_count"
+      ],
+      "training_protein_bar_2": [
+        "stat_character_tools_equippedcount"
+      ],
+      "training_weight": [
+        "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+        "stat_leaderstats_strength",
+        "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+        "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+        "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+        "stat_backpack_tools_count"
+      ]
+    },
+    "statRegistry": {
+      "excludedSignals": [
+        {
+          "path": "Character.Humanoid.MaxHealth",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "LocalPlayer.Agility",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "LocalPlayer.Durability",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "Character.Humanoid.JumpPower",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "Character.Humanoid.WalkSpeed",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "Character.RootPart.VelocityMagnitude",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "Character.Humanoid.ActiveAnimationCount",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "LocalPlayer.Quests.Daily Quests.Steadfast Lifter.requirements.Minutes.progress",
+          "reason": "non-progression-or-noisy-signal"
+        },
+        {
+          "path": "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress",
+          "reason": "non-progression-or-noisy-signal"
+        }
+      ],
+      "stats": [
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": true,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.61,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+          "lastObservedValue": 326.0,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 107,
+            "decreases": 0,
+            "increases": 107,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 31,
+            "positiveDelta": 205.0
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "primary-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": true,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": true,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": true,
+            "is_time": false
+          },
+          "confidenceLevel": "high",
+          "confidenceScore": 0.81,
+          "dataType": "number",
+          "id": "stat_leaderstats_strength",
+          "lastObservedValue": 28526.0,
+          "name": "Strength",
+          "observedChanges": {
+            "changes": 18,
+            "decreases": 1,
+            "increases": 17,
+            "negativeDelta": 499416.0,
+            "passiveIncreaseHits": 8,
+            "positiveDelta": 61734.0
+          },
+          "path": "leaderstats.Strength",
+          "progressionCandidate": true,
+          "source": "leaderstats"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": true,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.61,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+          "lastObservedValue": 498635.0499999999,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 16,
+            "decreases": 0,
+            "increases": 16,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 7,
+            "positiveDelta": 56991.75
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": true,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.61,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+          "lastObservedValue": 498635.0499999999,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 16,
+            "decreases": 0,
+            "increases": 16,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 7,
+            "positiveDelta": 56991.75
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": true,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.73,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+          "lastObservedValue": 46.0,
+          "name": "Exp",
+          "observedChanges": {
+            "changes": 13,
+            "decreases": 3,
+            "increases": 10,
+            "negativeDelta": 158.0,
+            "passiveIncreaseHits": 4,
+            "positiveDelta": 145.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": true,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.73,
+          "dataType": "number",
+          "id": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+          "lastObservedValue": 8988.0,
+          "name": "Exp",
+          "observedChanges": {
+            "changes": 12,
+            "decreases": 0,
+            "increases": 12,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 3,
+            "positiveDelta": 369.0
+          },
+          "path": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "inventory-count",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": true,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": true,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.61,
+          "dataType": "number",
+          "id": "stat_backpack_tools_count",
+          "lastObservedValue": 9.0,
+          "name": "Count",
+          "observedChanges": {
+            "changes": 12,
+            "decreases": 3,
+            "increases": 9,
+            "negativeDelta": 7.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 14.0
+          },
+          "path": "Backpack.Tools.Count",
+          "progressionCandidate": true,
+          "source": "unknown"
+        },
+        {
+          "category": "currency-resource",
+          "classification": {
+            "is_animation": false,
+            "is_currency": true,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "dataType": "number",
+          "id": "stat_localplayer_gems",
+          "lastObservedValue": 530150.0,
+          "name": "Gems",
+          "observedChanges": {
+            "changes": 6,
+            "decreases": 3,
+            "increases": 3,
+            "negativeDelta": 2090000.0,
+            "passiveIncreaseHits": 2,
+            "positiveDelta": 217315.0
+          },
+          "path": "LocalPlayer.Gems",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": true,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "medium",
+          "confidenceScore": 0.52,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_level",
+          "lastObservedValue": 8.0,
+          "name": "Level",
+          "observedChanges": {
+            "changes": 3,
+            "decreases": 0,
+            "increases": 3,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 3.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_damage",
+          "lastObservedValue": 25350.0,
+          "name": "Damage",
+          "observedChanges": {
+            "changes": 3,
+            "decreases": 0,
+            "increases": 3,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 150.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": true,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_strength",
+          "lastObservedValue": 2535.0,
+          "name": "Strength",
+          "observedChanges": {
+            "changes": 3,
+            "decreases": 0,
+            "increases": 3,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 15.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": true,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": true,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.44,
+          "dataType": "number",
+          "id": "stat_leaderstats_rebirths",
+          "lastObservedValue": 42.0,
+          "name": "Rebirths",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 0,
+            "increases": 1,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 1.0
+          },
+          "path": "leaderstats.Rebirths",
+          "progressionCandidate": true,
+          "source": "leaderstats"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_durability",
+          "lastObservedValue": 2028.0,
+          "name": "Durability",
+          "observedChanges": {
+            "changes": 3,
+            "decreases": 0,
+            "increases": 3,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 12.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "equipment-or-pet-experience",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": true,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.4,
+          "dataType": "number",
+          "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_agility",
+          "lastObservedValue": 1825.0,
+          "name": "Agility",
+          "observedChanges": {
+            "changes": 3,
+            "decreases": 0,
+            "increases": 3,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 10.0
+          },
+          "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.32,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+          "lastObservedValue": 6.0,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 2,
+            "decreases": 0,
+            "increases": 2,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 2,
+            "positiveDelta": 4.0
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "inventory-count",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": true,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": true,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.48,
+          "dataType": "number",
+          "id": "stat_character_tools_equippedcount",
+          "lastObservedValue": 1.0,
+          "name": "EquippedCount",
+          "observedChanges": {
+            "changes": 8,
+            "decreases": 4,
+            "increases": 4,
+            "negativeDelta": 4.0,
+            "passiveIncreaseHits": 4,
+            "positiveDelta": 4.0
+          },
+          "path": "Character.Tools.EquippedCount",
+          "progressionCandidate": true,
+          "source": "character"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.48,
+          "dataType": "number",
+          "id": "stat_character_humanoid_movedirectionmagnitude",
+          "lastObservedValue": 1.0,
+          "name": "MoveDirectionMagnitude",
+          "observedChanges": {
+            "changes": 4,
+            "decreases": 0,
+            "increases": 4,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 3,
+            "positiveDelta": 4.0
+          },
+          "path": "Character.Humanoid.MoveDirectionMagnitude",
+          "progressionCandidate": true,
+          "source": "character"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": true,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.24,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+          "lastObservedValue": 1.0,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 0,
+            "increases": 1,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 1.0
+          },
+          "path": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": true,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.24,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+          "lastObservedValue": 1.0,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 0,
+            "increases": 1,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 1.0
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": true,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.24,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+          "lastObservedValue": 1.0,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 0,
+            "increases": 1,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 1.0
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": true,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.24,
+          "dataType": "number",
+          "id": "stat_localplayer_rebirthmultiplier",
+          "lastObservedValue": 210.0,
+          "name": "RebirthMultiplier",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 0,
+            "increases": 1,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 1,
+            "positiveDelta": 5.0
+          },
+          "path": "LocalPlayer.rebirthMultiplier",
+          "progressionCandidate": true,
+          "source": "replicated-player"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.16,
+          "dataType": "number",
+          "id": "stat_character_humanoid_maxhealth",
+          "lastObservedValue": 100.0,
+          "name": "MaxHealth",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 1,
+            "increases": 0,
+            "negativeDelta": 36041.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 0.0
+          },
+          "path": "Character.Humanoid.MaxHealth",
+          "progressionCandidate": false,
+          "source": "character"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.16,
+          "dataType": "number",
+          "id": "stat_localplayer_agility",
+          "lastObservedValue": 20881.5,
+          "name": "Agility",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 1,
+            "increases": 0,
+            "negativeDelta": 20881.5,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 0.0
+          },
+          "path": "LocalPlayer.Agility",
+          "progressionCandidate": false,
+          "source": "replicated-player"
+        },
+        {
+          "category": "other-progression",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.16,
+          "dataType": "number",
+          "id": "stat_localplayer_durability",
+          "lastObservedValue": 0.0,
+          "name": "Durability",
+          "observedChanges": {
+            "changes": 1,
+            "decreases": 1,
+            "increases": 0,
+            "negativeDelta": 36041.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 0.0
+          },
+          "path": "LocalPlayer.Durability",
+          "progressionCandidate": false,
+          "source": "replicated-player"
+        },
+        {
+          "category": "transient-state",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.1,
+          "dataType": "number",
+          "id": "stat_character_humanoid_jumppower",
+          "lastObservedValue": 50.0,
+          "name": "JumpPower",
+          "observedChanges": {
+            "changes": 5,
+            "decreases": 3,
+            "increases": 2,
+            "negativeDelta": 150.0,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 100.0
+          },
+          "path": "Character.Humanoid.JumpPower",
+          "progressionCandidate": false,
+          "source": "character"
+        },
+        {
+          "category": "transient-state",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.1,
+          "dataType": "number",
+          "id": "stat_character_humanoid_walkspeed",
+          "lastObservedValue": 294.42,
+          "name": "WalkSpeed",
+          "observedChanges": {
+            "changes": 6,
+            "decreases": 4,
+            "increases": 2,
+            "negativeDelta": 1294.42,
+            "passiveIncreaseHits": 0,
+            "positiveDelta": 794.42
+          },
+          "path": "Character.Humanoid.WalkSpeed",
+          "progressionCandidate": false,
+          "source": "character"
+        },
+        {
+          "category": "transient-state",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": true,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.39,
+          "dataType": "number",
+          "id": "stat_character_rootpart_velocitymagnitude",
+          "lastObservedValue": 40.18,
+          "name": "VelocityMagnitude",
+          "observedChanges": {
+            "changes": 10,
+            "decreases": 2,
+            "increases": 8,
+            "negativeDelta": 0.23,
+            "passiveIncreaseHits": 4,
+            "positiveDelta": 1750.06
+          },
+          "path": "Character.RootPart.VelocityMagnitude",
+          "progressionCandidate": false,
+          "source": "character"
+        },
+        {
+          "category": "transient-state",
+          "classification": {
+            "is_animation": true,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": false,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": false,
+            "is_quest": false,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.39,
+          "dataType": "number",
+          "id": "stat_character_humanoid_activeanimationcount",
+          "lastObservedValue": 3.0,
+          "name": "ActiveAnimationCount",
+          "observedChanges": {
+            "changes": 25,
+            "decreases": 10,
+            "increases": 15,
+            "negativeDelta": 16.0,
+            "passiveIncreaseHits": 9,
+            "positiveDelta": 25.0
+          },
+          "path": "Character.Humanoid.ActiveAnimationCount",
+          "progressionCandidate": false,
+          "source": "character"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": true,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.41,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_daily_quests_steadfast_lifter_requirements_minutes_progress",
+          "lastObservedValue": 8.299999999999992,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 251,
+            "decreases": 0,
+            "increases": 251,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 171,
+            "positiveDelta": 8.45
+          },
+          "path": "LocalPlayer.Quests.Daily Quests.Steadfast Lifter.requirements.Minutes.progress",
+          "progressionCandidate": false,
+          "source": "replicated-player"
+        },
+        {
+          "category": "quest-progress",
+          "classification": {
+            "is_animation": false,
+            "is_currency": false,
+            "is_equipment": false,
+            "is_experience": false,
+            "is_health": false,
+            "is_inventory_count": false,
+            "is_leaderstats": false,
+            "is_level": false,
+            "is_minutes": true,
+            "is_movement": false,
+            "is_pet": false,
+            "is_primary_strength": false,
+            "is_progress": true,
+            "is_quest": true,
+            "is_rebirth": false,
+            "is_repetition": false,
+            "is_stat_folder": false,
+            "is_strength": false,
+            "is_time": false
+          },
+          "confidenceLevel": "low",
+          "confidenceScore": 0.41,
+          "dataType": "number",
+          "id": "stat_localplayer_quests_weekly_quests_workout_wizard_requirements_minutes_progress",
+          "lastObservedValue": 21.93333333333337,
+          "name": "Progress",
+          "observedChanges": {
+            "changes": 251,
+            "decreases": 0,
+            "increases": 251,
+            "negativeDelta": 0.0,
+            "passiveIncreaseHits": 171,
+            "positiveDelta": 8.45
+          },
+          "path": "LocalPlayer.Quests.Weekly Quests.Workout Wizard.requirements.Minutes.progress",
+          "progressionCandidate": false,
+          "source": "replicated-player"
+        }
+      ]
+    },
+    "statTrainingTargets": [
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.61,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_localplayer_quests_weekly_quests_rep_titan_requirements_reps_progress",
+        "lastObservedValue": 326.0,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 145.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 107,
+          "decreases": 0,
+          "increases": 107,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 31,
+          "positiveDelta": 205.0
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.Rep Titan.requirements.Reps.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "primary-progression",
+        "causalityProven": false,
+        "confidenceLevel": "high",
+        "confidenceScore": 0.81,
+        "dataType": "number",
+        "defaultActive": true,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_leaderstats_strength",
+        "lastObservedValue": 28526.0,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 42443.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Strength",
+        "observedChanges": {
+          "changes": 18,
+          "decreases": 1,
+          "increases": 17,
+          "negativeDelta": 499416.0,
+          "passiveIncreaseHits": 8,
+          "positiveDelta": 61734.0
+        },
+        "path": "leaderstats.Strength",
+        "source": "leaderstats",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.61,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_localplayer_quests_weekly_quests_mega_strong_requirements_strength_progress",
+        "lastObservedValue": 498635.0499999999,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 42447.85,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 16,
+          "decreases": 0,
+          "increases": 16,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 7,
+          "positiveDelta": 56991.75
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.MEGA STRONG.requirements.Strength.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.61,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_localplayer_quests_weekly_quests_mighty_athlete_requirements_strength_progress",
+        "lastObservedValue": 498635.0499999999,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 42447.85,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 16,
+          "decreases": 0,
+          "increases": 16,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 7,
+          "positiveDelta": 56991.75
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.Mighty Athlete.requirements.Strength.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.73,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+        "lastObservedValue": 46.0,
+        "methods": [],
+        "name": "Exp",
+        "observedChanges": {
+          "changes": 13,
+          "decreases": 3,
+          "increases": 10,
+          "negativeDelta": 158.0,
+          "passiveIncreaseHits": 4,
+          "positiveDelta": 145.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.73,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_localplayer_powerupsfolder_unique_eternal_megastrike_exp",
+        "lastObservedValue": 8988.0,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 276.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Exp",
+        "observedChanges": {
+          "changes": 12,
+          "decreases": 0,
+          "increases": 12,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 3,
+          "positiveDelta": 369.0
+        },
+        "path": "LocalPlayer.powerUpsFolder.Unique.Eternal Megastrike.exp",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "inventory-count",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.61,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_weight"
+        ],
+        "id": "stat_backpack_tools_count",
+        "lastObservedValue": 9.0,
+        "methods": [
+          {
+            "confidenceLevel": "high",
+            "confidenceScore": 0.88,
+            "methodId": "training_weight",
+            "name": "Weight",
+            "path": "LocalPlayer.Backpack.Weight",
+            "positiveDelta": 12.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          },
+          {
+            "confidenceLevel": "low",
+            "confidenceScore": 0.11,
+            "methodId": "training_protein_bar",
+            "name": "Protein Bar",
+            "path": "Character.Protein Bar",
+            "positiveDelta": 0.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "Count",
+        "observedChanges": {
+          "changes": 12,
+          "decreases": 3,
+          "increases": 9,
+          "negativeDelta": 7.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 14.0
+        },
+        "path": "Backpack.Tools.Count",
+        "source": "unknown",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "currency-resource",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.4,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_gems",
+        "lastObservedValue": 530150.0,
+        "methods": [],
+        "name": "Gems",
+        "observedChanges": {
+          "changes": 6,
+          "decreases": 3,
+          "increases": 3,
+          "negativeDelta": 2090000.0,
+          "passiveIncreaseHits": 2,
+          "positiveDelta": 217315.0
+        },
+        "path": "LocalPlayer.Gems",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "medium",
+        "confidenceScore": 0.52,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_level",
+        "lastObservedValue": 8.0,
+        "methods": [],
+        "name": "Level",
+        "observedChanges": {
+          "changes": 3,
+          "decreases": 0,
+          "increases": 3,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 0,
+          "positiveDelta": 3.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.level",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.4,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_damage",
+        "lastObservedValue": 25350.0,
+        "methods": [],
+        "name": "Damage",
+        "observedChanges": {
+          "changes": 3,
+          "decreases": 0,
+          "increases": 3,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 0,
+          "positiveDelta": 150.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.4,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_strength",
+        "lastObservedValue": 2535.0,
+        "methods": [],
+        "name": "Strength",
+        "observedChanges": {
+          "changes": 3,
+          "decreases": 0,
+          "increases": 3,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 0,
+          "positiveDelta": 15.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "other-progression",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.44,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_leaderstats_rebirths",
+        "lastObservedValue": 42.0,
+        "methods": [],
+        "name": "Rebirths",
+        "observedChanges": {
+          "changes": 1,
+          "decreases": 0,
+          "increases": 1,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 1.0
+        },
+        "path": "leaderstats.Rebirths",
+        "source": "leaderstats",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.4,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_durability",
+        "lastObservedValue": 2028.0,
+        "methods": [],
+        "name": "Durability",
+        "observedChanges": {
+          "changes": 3,
+          "decreases": 0,
+          "increases": 3,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 0,
+          "positiveDelta": 12.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "equipment-or-pet-experience",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.4,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_agility",
+        "lastObservedValue": 1825.0,
+        "methods": [],
+        "name": "Agility",
+        "observedChanges": {
+          "changes": 3,
+          "decreases": 0,
+          "increases": 3,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 0,
+          "positiveDelta": 10.0
+        },
+        "path": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.32,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+        "lastObservedValue": 6.0,
+        "methods": [],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 2,
+          "decreases": 0,
+          "increases": 2,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 2,
+          "positiveDelta": 4.0
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "inventory-count",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.48,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [
+          "training_protein_bar_2"
+        ],
+        "id": "stat_character_tools_equippedcount",
+        "lastObservedValue": 1.0,
+        "methods": [
+          {
+            "confidenceLevel": "low",
+            "confidenceScore": 0.11,
+            "methodId": "training_protein_bar_2",
+            "name": "Protein Bar",
+            "path": "LocalPlayer.Backpack.Protein Bar",
+            "positiveDelta": 0.0,
+            "readiness": "observed-activation-candidate",
+            "safeByDefault": true,
+            "source": "inventory-tool"
+          }
+        ],
+        "name": "EquippedCount",
+        "observedChanges": {
+          "changes": 8,
+          "decreases": 4,
+          "increases": 4,
+          "negativeDelta": 4.0,
+          "passiveIncreaseHits": 4,
+          "positiveDelta": 4.0
+        },
+        "path": "Character.Tools.EquippedCount",
+        "source": "character",
+        "temporalCorrelationOnly": true
+      },
+      {
+        "category": "other-progression",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.48,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_character_humanoid_movedirectionmagnitude",
+        "lastObservedValue": 1.0,
+        "methods": [],
+        "name": "MoveDirectionMagnitude",
+        "observedChanges": {
+          "changes": 4,
+          "decreases": 0,
+          "increases": 4,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 3,
+          "positiveDelta": 4.0
+        },
+        "path": "Character.Humanoid.MoveDirectionMagnitude",
+        "source": "character",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.24,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+        "lastObservedValue": 1.0,
+        "methods": [],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 1,
+          "decreases": 0,
+          "increases": 1,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 1.0
+        },
+        "path": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.24,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+        "lastObservedValue": 1.0,
+        "methods": [],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 1,
+          "decreases": 0,
+          "increases": 1,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 1.0
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "quest-progress",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.24,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+        "lastObservedValue": 1.0,
+        "methods": [],
+        "name": "Progress",
+        "observedChanges": {
+          "changes": 1,
+          "decreases": 0,
+          "increases": 1,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 1.0
+        },
+        "path": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      },
+      {
+        "category": "other-progression",
+        "causalityProven": false,
+        "confidenceLevel": "low",
+        "confidenceScore": 0.24,
+        "dataType": "number",
+        "defaultActive": false,
+        "defaultSelectedMethodIds": [],
+        "id": "stat_localplayer_rebirthmultiplier",
+        "lastObservedValue": 210.0,
+        "methods": [],
+        "name": "RebirthMultiplier",
+        "observedChanges": {
+          "changes": 1,
+          "decreases": 0,
+          "increases": 1,
+          "negativeDelta": 0.0,
+          "passiveIncreaseHits": 1,
+          "positiveDelta": 5.0
+        },
+        "path": "LocalPlayer.rebirthMultiplier",
+        "source": "replicated-player",
+        "temporalCorrelationOnly": true,
+        "unsupportedReason": "No evidence-backed training relationship observed"
+      }
+    ],
+    "unsupportedStatTargets": [
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_exp",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.exp"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_gems",
+        "statPath": "LocalPlayer.Gems"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_level",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.level"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_damage",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.damage"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_strength",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.strength"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_leaderstats_rebirths",
+        "statPath": "leaderstats.Rebirths"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_durability",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.durability"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_petsfolder_epic_soul_reaper_perksfolder_agility",
+        "statPath": "LocalPlayer.petsFolder.Epic.Soul Reaper.perksFolder.agility"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_quests_weekly_quests_mega_collector_requirements_pets_hatched_progress",
+        "statPath": "LocalPlayer.Quests.Weekly Quests.Mega Collector.requirements.Pets Hatched.progress"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_character_humanoid_movedirectionmagnitude",
+        "statPath": "Character.Humanoid.MoveDirectionMagnitude"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_quests_daily_quests_rebirth_hero_requirements_rebirths_progress",
+        "statPath": "LocalPlayer.Quests.Daily Quests.Rebirth Hero.requirements.Rebirths.progress"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_quests_weekly_quests_colossal_rebirths_requirements_rebirths_progress",
+        "statPath": "LocalPlayer.Quests.Weekly Quests.Colossal Rebirths.requirements.Rebirths.progress"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_quests_weekly_quests_mind_renewal_requirements_rebirths_progress",
+        "statPath": "LocalPlayer.Quests.Weekly Quests.Mind Renewal.requirements.Rebirths.progress"
+      },
+      {
+        "reason": "No evidence-backed training relationship observed",
+        "statId": "stat_localplayer_rebirthmultiplier",
+        "statPath": "LocalPlayer.rebirthMultiplier"
+      }
+    ],
+    "worldStationEvidencePresent": false,
+    "worldStations": []
+  },
+  "unsupportedFeatures": [
+    {
+      "category": "proximity",
+      "evidence": {
+        "observedInteractActionKinds": 5
+      },
+      "id": "proximity_interactions",
+      "reason": "No explicit ProximityPrompt trigger paths were observed",
+      "title": "Proximity Interactions"
+    },
+    {
+      "category": "training-stations",
+      "evidence": {
+        "proximityPromptTriggers": 0,
+        "worldStationCandidates": 0
+      },
+      "id": "world_training_stations",
+      "reason": "No world-space training station interactions were evidenced in this export",
+      "title": "World Training Stations"
+    }
+  ]
+}

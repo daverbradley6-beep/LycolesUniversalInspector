@@ -1,0 +1,135 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "requests": [
+    {
+      "expectedOutputSchema": {
+        "playerEntitySamples": "[{playerId, team, characterPath, humanoidPath, rootPartPath, positionSamples[]}]",
+        "teamSnapshots": "[{timestamp, teams:[{name, memberCount}]}]"
+      },
+      "failureConditions": [
+        "Only local player entities captured",
+        "Character root paths unavailable for all non-local entities"
+      ],
+      "missingEvidence": [
+        "player_entity_set",
+        "team_relationship_signal"
+      ],
+      "requestId": "character-entity-observation",
+      "requiredObservationWindow": "At least one full live round with >=3 visible players.",
+      "safeObservationMethod": "Read-only tracking of PlayerAdded/CharacterAdded, Humanoid, HumanoidRootPart positions, and team changes.",
+      "serviceOrObjectCategory": "Players/Teams/Workspace character models",
+      "successCriteria": [
+        "At least two non-local character entities captured with spatial samples",
+        "Team relationship snapshots captured for the same entities"
+      ],
+      "targetFeatures": [
+        "combat_target_assist:combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist:combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay:esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay:esp_player_overlay.team_and_health_enhancements"
+      ],
+      "whyNeeded": "Targeting and ESP capabilities require opponent entity, team, and spatial evidence."
+    },
+    {
+      "expectedOutputSchema": {
+        "cameraSamples": "[{timestamp, yaw, pitch}]",
+        "firingWindows": "[{start, end, inputSource}]",
+        "weaponStateTransitions": "[{timestamp, key, before, after}]"
+      },
+      "failureConditions": [
+        "Camera samples remain empty",
+        "No weapon-related state transitions during firing"
+      ],
+      "missingEvidence": [
+        "camera_state_samples",
+        "camera_movement_correlation",
+        "weapon_state_signal",
+        "weapon_equipped_signal"
+      ],
+      "requestId": "combat-camera-weapon-correlation",
+      "requiredObservationWindow": "Three burst sequences plus one non-firing camera pan sequence.",
+      "safeObservationMethod": "Read-only sampling of camera orientation, equipped tool identity, and HUD/state changes during controlled firing bursts.",
+      "serviceOrObjectCategory": "CurrentCamera / Tool / HUD weapon state",
+      "successCriteria": [
+        "Camera sample stream available during firing and non-firing windows",
+        "Weapon state transitions aligned to firing windows"
+      ],
+      "targetFeatures": [
+        "combat_recoil_assist:combat_recoil_assist.recoil_camera_compensation",
+        "combat_trigger_assist:combat_trigger_assist.crosshair_fire_condition"
+      ],
+      "whyNeeded": "Recoil and trigger capabilities require camera/weapon temporal evidence, not click-only signals."
+    },
+    {
+      "expectedOutputSchema": {
+        "objectiveSignals": "[{timestamp, path, valueBefore, valueAfter}]",
+        "roundPhases": "[{phase, startTimestamp, endTimestamp}]"
+      },
+      "failureConditions": [
+        "Only static labels captured",
+        "No objective-related value deltas"
+      ],
+      "missingEvidence": [
+        "objective_hud_signals"
+      ],
+      "requestId": "match-objective-state-observation",
+      "requiredObservationWindow": "Pre-round, mid-round, and round-end transition window.",
+      "safeObservationMethod": "Read-only polling and transition capture for score/timer/objective labels across match phases.",
+      "serviceOrObjectCategory": "PlayerGui scoreboard/timer/objective components",
+      "successCriteria": [
+        "At least one timer or objective value transition captured",
+        "Transitions aligned with known round phase change"
+      ],
+      "targetFeatures": [
+        "objective_status_dashboard:objective_status_dashboard.reactive_match_reader"
+      ],
+      "whyNeeded": "Objective dashboard capability requires reactive state transitions, not static HUD paths."
+    },
+    {
+      "expectedOutputSchema": {
+        "equippedTools": "[{timestamp, toolPath, toolName}]",
+        "hudWeaponIndicators": "[{timestamp, path, text}]"
+      },
+      "failureConditions": [
+        "No tool identity changes detected",
+        "HUD indicators static across switches"
+      ],
+      "missingEvidence": [
+        "weapon_equipped_signal",
+        "hud_weapon_indicators"
+      ],
+      "requestId": "loadout-runtime-observation",
+      "requiredObservationWindow": "At least two loadout switches and one in-match weapon swap.",
+      "safeObservationMethod": "Read-only capture while switching weapons/loadouts in menu and live state.",
+      "serviceOrObjectCategory": "Backpack/Character tools and loadout HUD widgets",
+      "successCriteria": [
+        "Tool identity changes captured during switches",
+        "HUD indicators update in sync with tool changes"
+      ],
+      "targetFeatures": [
+        "combat_recoil_assist:combat_recoil_assist.recoil_camera_compensation",
+        "combat_trigger_assist:combat_trigger_assist.crosshair_fire_condition",
+        "loadout_information_suite:loadout_information_suite.runtime_weapon_state"
+      ],
+      "whyNeeded": "Loadout runtime indicators require equipped-weapon and HUD linkage evidence."
+    }
+  ],
+  "scan": {
+    "interactionEvents": 73,
+    "objects": 92466,
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "schemaVersion": "121.targeted-inspection-plan.1",
+  "summary": {
+    "missingRequirementCount": 10,
+    "requestCount": 4
+  }
+}

@@ -1,0 +1,1133 @@
+{
+  "automationDiagnostics": {
+    "automaticRescans": 4,
+    "capturedInteractionCount": 153,
+    "cooldownSeconds": 45,
+    "enabled": true,
+    "idleSeconds": 12,
+    "indexIntegrityWarning": "Use receiver GET /reports/READ_KEY/SCAN_ID/integrity to verify object indexing",
+    "limitations": [
+      "Read-only client observation",
+      "No script source or server authority",
+      "No proof of replayable gameplay actions"
+    ],
+    "maxAutomaticRescans": 4
+  },
+  "diagnostics": {
+    "complete": true,
+    "completeButLimitedToClientVisibleRoots": true,
+    "completenessBasis": "required-root-success-and-object-accounting",
+    "omittedObjects": 68186,
+    "recordedObjects": 128040,
+    "rootAccountingValid": true,
+    "scanMode": "client-visible-read-only",
+    "scannedObjects": 196226
+  },
+  "expectedParts": 1330,
+  "featureEvidence": {
+    "bosses": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 0,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 1
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "combat": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 0,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 0
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "not-discovered"
+    },
+    "inventory": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 4,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 22
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "pets": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 32,
+        "gui": 1,
+        "remotes": 0,
+        "values": 1,
+        "world": 1237
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "quests": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 9,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 12
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "rebirth": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 7,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 16
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "rewards": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 10,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 295
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "shops": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 10,
+        "gui": 3,
+        "remotes": 0,
+        "values": 0,
+        "world": 77
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    },
+    "training": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 0,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 0
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "not-discovered"
+    },
+    "travel": {
+      "confidence": "object-name-candidate-only",
+      "counts": {
+        "controllers": 2,
+        "gui": 0,
+        "remotes": 0,
+        "values": 0,
+        "world": 42
+      },
+      "missingEvidence": [
+        "Observed normal interaction",
+        "Before/after state verification",
+        "Authorised implementation test"
+      ],
+      "serverVerified": false,
+      "status": "candidate-needs-verification"
+    }
+  },
+  "featureReadiness": {
+    "bosses": {
+      "controllerCandidates": 0,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "observed": false,
+      "observedStateChange": false,
+      "readiness": "needs-observed-interaction",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "combat": {
+      "controllerCandidates": 0,
+      "discovered": false,
+      "guiCandidates": 0,
+      "implemented": false,
+      "observed": false,
+      "observedStateChange": false,
+      "readiness": "not-discovered",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "inventory": {
+      "controllerCandidates": 4,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "interactionEvidence": {
+        "count": 17,
+        "stateChanges": 2
+      },
+      "observed": true,
+      "observedStateChange": true,
+      "readiness": "state-change-candidate-needs-validation",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "pets": {
+      "controllerCandidates": 32,
+      "discovered": true,
+      "guiCandidates": 1,
+      "implemented": false,
+      "interactionEvidence": {
+        "count": 16,
+        "stateChanges": 1
+      },
+      "observed": true,
+      "observedStateChange": true,
+      "readiness": "state-change-candidate-needs-validation",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "quests": {
+      "controllerCandidates": 9,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "interactionEvidence": {
+        "count": 8,
+        "stateChanges": 0
+      },
+      "observed": true,
+      "observedStateChange": false,
+      "readiness": "interaction-observed-needs-state-verification",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "rebirth": {
+      "controllerCandidates": 7,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "observed": false,
+      "observedStateChange": false,
+      "readiness": "needs-observed-interaction",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "rewards": {
+      "controllerCandidates": 10,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "interactionEvidence": {
+        "count": 21,
+        "stateChanges": 0
+      },
+      "observed": true,
+      "observedStateChange": false,
+      "readiness": "interaction-observed-needs-state-verification",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "shops": {
+      "controllerCandidates": 10,
+      "discovered": true,
+      "guiCandidates": 3,
+      "implemented": false,
+      "interactionEvidence": {
+        "count": 27,
+        "stateChanges": 5
+      },
+      "observed": true,
+      "observedStateChange": true,
+      "readiness": "state-change-candidate-needs-validation",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "training": {
+      "controllerCandidates": 0,
+      "discovered": false,
+      "guiCandidates": 0,
+      "implemented": false,
+      "observed": false,
+      "observedStateChange": false,
+      "readiness": "not-discovered",
+      "remoteCandidates": 0,
+      "tested": false
+    },
+    "travel": {
+      "controllerCandidates": 2,
+      "discovered": true,
+      "guiCandidates": 0,
+      "implemented": false,
+      "observed": false,
+      "observedStateChange": false,
+      "readiness": "needs-observed-interaction",
+      "remoteCandidates": 0,
+      "tested": false
+    }
+  },
+  "fixtureMetadata": {
+    "historyEventsRetained": 8,
+    "historySubset": true,
+    "note": "Aggregate counts retain the complete manifest values; recentInteractions is a representative subset.",
+    "removed": [
+      "gameName",
+      "sessionId",
+      "snapshotId",
+      "timestamps",
+      "user-identifying ancestry",
+      "feature example paths"
+    ],
+    "sanitized": true,
+    "schemaVersion": "1.0",
+    "source": "real permitted-client manifest"
+  },
+  "interactionDiagnostics": {
+    "attributedEvents": 89,
+    "contextualAttributionIsHeuristic": true,
+    "gameplayOutcomesVerified": 0,
+    "guiStateObservation": "bounded-nearby-visibility-and-active-only",
+    "historyTotal": 153,
+    "observationWindowsSeconds": [
+      0.35,
+      1.25,
+      3
+    ],
+    "pendingWorkflowCount": 0,
+    "recentInteractions": [
+      {
+        "attribution": "ancestor-name",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "interaction-observed",
+        "featureCandidate": "rewards",
+        "guiEvidenceStatus": "temporal-gui-transition-observed",
+        "guiStateChangeCount": 2,
+        "guiStateChanges": [
+          {
+            "afterActive": true,
+            "afterVisible": false,
+            "beforeActive": true,
+            "beforeVisible": true,
+            "path": "Button"
+          },
+          {
+            "afterVisible": true,
+            "beforeVisible": false,
+            "path": "Claimed"
+          }
+        ],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 2,
+            "guiChanges": [
+              {
+                "afterActive": true,
+                "afterVisible": false,
+                "beforeActive": true,
+                "beforeVisible": true,
+                "path": "Button"
+              },
+              {
+                "afterVisible": true,
+                "beforeVisible": false,
+                "path": "Claimed"
+              }
+            ],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.Season.Frame.Content.Rewards.Track.Tier 2.Action.Button",
+        "rewardClaimGuiCandidate": true,
+        "sequence": 16,
+        "stateChangeCount": 0,
+        "transactionId": 16
+      },
+      {
+        "attribution": "unattributed",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "temporal-state-change-observed",
+        "guiEvidenceStatus": "none-observed",
+        "guiStateChangeCount": 0,
+        "guiStateChanges": [],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 9.7
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3100602,
+                "before": 3081447,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 33.7
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3156553,
+                "before": 3081447,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 83.5
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.ShadowLeviathan.Close",
+        "sequence": 29,
+        "stateChangeCount": 2,
+        "stateChanges": [
+          {
+            "after": 3100602,
+            "before": 3081447,
+            "key": "leaderstats.🟣 Bubbles"
+          },
+          {
+            "after": 3156553,
+            "before": 3081447,
+            "key": "leaderstats.🟣 Bubbles"
+          }
+        ],
+        "transactionId": 29
+      },
+      {
+        "attribution": "ancestor-name",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "temporal-state-change-observed",
+        "featureCandidate": "shops",
+        "guiEvidenceStatus": "temporal-gui-transition-observed",
+        "guiStateChangeCount": 2,
+        "guiStateChanges": [
+          {
+            "afterVisible": false,
+            "beforeVisible": true,
+            "path": "Button/Cost"
+          },
+          {
+            "afterVisible": true,
+            "beforeVisible": false,
+            "path": "Button/Equipped"
+          }
+        ],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 2,
+            "guiChanges": [
+              {
+                "afterVisible": false,
+                "beforeVisible": true,
+                "path": "Button/Cost"
+              },
+              {
+                "afterVisible": true,
+                "beforeVisible": false,
+                "path": "Button/Equipped"
+              }
+            ],
+            "seconds": 3,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3175783,
+                "before": 3156553,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 9.7
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Items.Inner.List.Abstract.Button",
+        "sequence": 36,
+        "stateChangeCount": 1,
+        "stateChanges": [
+          {
+            "after": 3175783,
+            "before": 3156553,
+            "key": "leaderstats.🟣 Bubbles"
+          }
+        ],
+        "transactionId": 36
+      },
+      {
+        "attribution": "ancestor-name",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "temporal-state-change-observed",
+        "featureCandidate": "shops",
+        "guiEvidenceStatus": "temporal-gui-transition-observed",
+        "guiStateChangeCount": 1,
+        "guiStateChanges": [
+          {
+            "afterActive": true,
+            "afterVisible": false,
+            "beforeActive": true,
+            "beforeVisible": true,
+            "path": "Button"
+          }
+        ],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 1,
+            "guiChanges": [
+              {
+                "afterActive": true,
+                "afterVisible": false,
+                "beforeActive": true,
+                "beforeVisible": true,
+                "path": "Button"
+              }
+            ],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3175783,
+                "before": 3156553,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 9.4
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3233473,
+                "before": 3156553,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 12.7
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.GumShop.Frame.Selected.Action.Button",
+        "sequence": 37,
+        "stateChangeCount": 2,
+        "stateChanges": [
+          {
+            "after": 3175783,
+            "before": 3156553,
+            "key": "leaderstats.🟣 Bubbles"
+          },
+          {
+            "after": 3233473,
+            "before": 3156553,
+            "key": "leaderstats.🟣 Bubbles"
+          }
+        ],
+        "transactionId": 37
+      },
+      {
+        "attribution": "ancestor-name",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "temporal-state-change-observed",
+        "featureCandidate": "inventory",
+        "guiEvidenceStatus": "none-observed",
+        "guiStateChangeCount": 0,
+        "guiStateChanges": [],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3368241,
+                "before": 3348853,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 10.3
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 3445793,
+                "before": 3348853,
+                "key": "leaderstats.🟣 Bubbles"
+              }
+            ],
+            "travelDistanceStuds": 10.3
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.Inventory.Frame.Top.Close.Button",
+        "sequence": 71,
+        "stateChangeCount": 2,
+        "stateChanges": [
+          {
+            "after": 3368241,
+            "before": 3348853,
+            "key": "leaderstats.🟣 Bubbles"
+          },
+          {
+            "after": 3445793,
+            "before": 3348853,
+            "key": "leaderstats.🟣 Bubbles"
+          }
+        ],
+        "transactionId": 71
+      },
+      {
+        "attribution": "ancestor-name",
+        "controlType": "ProximityPrompt.Triggered",
+        "evidenceLevel": "temporal-state-change-observed",
+        "featureCandidate": "pets",
+        "guiEvidenceStatus": "none-observed",
+        "guiStateChangeCount": 0,
+        "guiStateChanges": [],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 0.35,
+            "stateChangeCount": 1,
+            "stateChanges": [
+              {
+                "after": 286,
+                "before": 285,
+                "key": "leaderstats.🥚 Hatches"
+              }
+            ],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "Workspace.Rendered.Chunker.Rainbow Egg.Prompt.ProximityPrompt",
+        "sequence": 109,
+        "stateChangeCount": 1,
+        "stateChanges": [
+          {
+            "after": 286,
+            "before": 285,
+            "key": "leaderstats.🥚 Hatches"
+          }
+        ],
+        "transactionId": 109
+      },
+      {
+        "attribution": "ancestor-name",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "interaction-observed",
+        "featureCandidate": "rewards",
+        "guiEvidenceStatus": "temporal-gui-transition-observed",
+        "guiStateChangeCount": 2,
+        "guiStateChanges": [
+          {
+            "afterVisible": false,
+            "beforeVisible": true,
+            "path": "Button/Label"
+          },
+          {
+            "afterVisible": true,
+            "beforeVisible": false,
+            "path": "Completed"
+          }
+        ],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 2,
+            "guiChanges": [
+              {
+                "afterVisible": false,
+                "beforeVisible": true,
+                "path": "Button/Label"
+              },
+              {
+                "afterVisible": true,
+                "beforeVisible": false,
+                "path": "Completed"
+              }
+            ],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.DailyRewards.Frame.Playtime.Main.1.Button",
+        "sequence": 115,
+        "stateChangeCount": 0,
+        "transactionId": 115
+      },
+      {
+        "attribution": "unattributed",
+        "controlType": "GuiButton.Activated",
+        "evidenceLevel": "interaction-observed",
+        "guiEvidenceStatus": "temporal-gui-transition-observed",
+        "guiStateChangeCount": 4,
+        "guiStateChanges": [
+          {
+            "beforeActive": true,
+            "beforeVisible": true,
+            "path": "Button",
+            "transition": "disappeared"
+          },
+          {
+            "beforeVisible": false,
+            "path": "Button/Icon",
+            "transition": "disappeared"
+          },
+          {
+            "beforeVisible": true,
+            "path": "Button/Icon/Label",
+            "transition": "disappeared"
+          },
+          {
+            "beforeVisible": true,
+            "path": "Button/Label",
+            "transition": "disappeared"
+          }
+        ],
+        "observationWindows": [
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 4,
+            "guiChanges": [
+              {
+                "beforeActive": true,
+                "beforeVisible": true,
+                "path": "Button",
+                "transition": "disappeared"
+              },
+              {
+                "beforeVisible": false,
+                "path": "Button/Icon",
+                "transition": "disappeared"
+              },
+              {
+                "beforeVisible": true,
+                "path": "Button/Icon/Label",
+                "transition": "disappeared"
+              },
+              {
+                "beforeVisible": true,
+                "path": "Button/Label",
+                "transition": "disappeared"
+              }
+            ],
+            "seconds": 0.35,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 1.25,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          },
+          {
+            "actionEvidence": {
+              "causalVerification": false,
+              "clientStateCorroborated": false,
+              "confidence": "temporal-observation",
+              "serverVerified": false,
+              "signals": []
+            },
+            "guiChangeCount": 0,
+            "guiChanges": [],
+            "seconds": 3,
+            "stateChangeCount": 0,
+            "stateChanges": [],
+            "travelDistanceStuds": 0
+          }
+        ],
+        "outcomeVerified": false,
+        "path": "LocalPlayer.PlayerGui.ScreenGui.Prompt.Frame.Main.Buttons.Template.Button",
+        "sequence": 141,
+        "stateChangeCount": 0,
+        "transactionId": 141
+      }
+    ],
+    "stateDeltaEvents": 10,
+    "totalInteractionEvents": 153,
+    "unattributedEvents": 64,
+    "verificationPolicy": "read-only-client-corroboration-not-server-proof",
+    "workflowStats": {
+      "actionOutcomesCorroborated": 0,
+      "cancelled": 0,
+      "classifiedByContext": 0,
+      "completedCandidates": 0,
+      "expired": 0,
+      "guiTransitions": 88,
+      "linkedConfirmations": 0,
+      "multiWindowSamples": 459,
+      "observationFailures": 0,
+      "rewardClaimGuiCandidates": 9,
+      "travelCandidates": 0,
+      "uniqueGuiEvents": 88,
+      "uniqueStateEvents": 10
+    }
+  },
+  "localPerformance": {
+    "serializationSeconds": 6.127,
+    "uploadBytes": 127812509,
+    "uploadParts": 1330
+  },
+  "note": "Full inspection is uploaded in numbered parts; manifest includes coverage diagnostics",
+  "objectCount": 128040,
+  "partCount": 1330,
+  "placeId": 85896571713843,
+  "scanStats": {
+    "complete": true,
+    "omissions": {
+      "inspectorSelf": 21,
+      "invalidPath": 68186,
+      "overlappingRoots": 68159
+    },
+    "omitted": 68186,
+    "performance": {
+      "rootSeconds": {
+        "Character": 0.021,
+        "Lighting": 0,
+        "LocalPlayer": 0.392,
+        "PlayerGui": 3.971,
+        "ReplicatedFirst": 0,
+        "ReplicatedStorage": 1.281,
+        "SoundService": 0,
+        "Teams": 0,
+        "Workspace": 2.54
+      },
+      "scanSeconds": 8.369,
+      "yieldCount": 469
+    },
+    "recorded": 128040,
+    "scanned": 196226
+  },
+  "uploadedParts": 0,
+  "version": "30.0.0"
+}

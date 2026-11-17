@@ -1,0 +1,94 @@
+{
+  "claims": {
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false
+  },
+  "mockRuntimeChecks": [
+    {
+      "name": "start-with-enabled-config",
+      "passed": true
+    },
+    {
+      "name": "missing-character-handled",
+      "passed": true
+    },
+    {
+      "name": "config-update-restarts-runtime",
+      "passed": true
+    },
+    {
+      "name": "lifecycle-stop-cleans-connections",
+      "passed": true
+    },
+    {
+      "name": "lifecycle-stop-cleans-gui",
+      "passed": true
+    }
+  ],
+  "modulePath": "/home/openhands/workspace/project/e716d1c75342477e819d44e14ce33441/generated/phantomforces_universal_milestone_v3/reconciliation-v3/MovementTelemetryOverlay.lua",
+  "schemaVersion": "122.movement-overlay-validation.1",
+  "stages": [
+    {
+      "automated": true,
+      "name": "luau-syntax-validation",
+      "stage": 1,
+      "status": "passed"
+    },
+    {
+      "automated": true,
+      "name": "module-contract-validation",
+      "stage": 2,
+      "status": "passed"
+    },
+    {
+      "automated": true,
+      "name": "configuration-binding-validation",
+      "stage": 3,
+      "status": "passed"
+    },
+    {
+      "automated": true,
+      "name": "lifecycle-validation",
+      "stage": 4,
+      "status": "passed"
+    },
+    {
+      "automated": true,
+      "name": "mock-runtime-behavioural-testing",
+      "stage": 5,
+      "status": "passed"
+    },
+    {
+      "automated": false,
+      "name": "actual-roblox-runtime-testing",
+      "stage": 6,
+      "status": "pending"
+    },
+    {
+      "automated": false,
+      "name": "gameplay-outcome-verification",
+      "stage": 7,
+      "status": "pending"
+    }
+  ],
+  "staticChecks": {
+    "characterAddedBinding": true,
+    "disconnectCleanup": true,
+    "displayPositionSetting": true,
+    "displayScaleSetting": true,
+    "enabledSetting": true,
+    "guiDestroyCleanup": true,
+    "heartbeatBinding": true,
+    "moduleFactory": true,
+    "opacitySetting": true,
+    "startMethod": true,
+    "statusMethod": true,
+    "stopMethod": true,
+    "strictHeader": true,
+    "textSizeSetting": true,
+    "updateConfigMethod": true,
+    "updateIntervalSetting": true,
+    "visibleFieldsSetting": true
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "consumedArtifacts": [
+    "capability-plan.json",
+    "gameplay-understanding.json",
+    "universal-gameplay-intelligence.json",
+    "capability-evidence-contracts.json",
+    "reassessed-feature-feasibility.json",
+    "targeted-inspection-plan.json"
+  ],
+  "plannerHints": {
+    "blockedCapabilityCount": 10,
+    "gameplayReadyCapabilities": [
+      {
+        "capabilityId": "movement_navigation_assist.movement_telemetry_overlay",
+        "featureId": "movement_navigation_assist",
+        "name": "Movement telemetry overlay"
+      }
+    ],
+    "targetedInspectionRequestCount": 2
+  },
+  "scan": {
+    "interactionEvents": 73,
+    "objects": 92466,
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "schemaVersion": "121.generation-integration-report.1",
+  "serviceIntegration": {
+    "consumption": {
+      "capabilityFeasibility": true,
+      "featureProposals": true,
+      "gameUnderstandingRecords": true,
+      "normalizedEvidence": true,
+      "runtimeConfigSchemas": true,
+      "targetedInspectionRequests": true
+    },
+    "context": {
+      "milestone": "3",
+      "notes": "Targeted session ingestion for capability lifecycle updates",
+      "source": "targeted_capture_milestone"
+    },
+    "integrated": true
+  }
+}

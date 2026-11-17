@@ -1,0 +1,124 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "objectiveAssessments": [
+    {
+      "coverage": "partially-verified",
+      "gaps": [
+        "no dedicated cross-game inspection inventory report artifact",
+        "limited direct summary of camera/entity/tool relationships by genre"
+      ],
+      "id": 1,
+      "name": "Universal Game Inspection",
+      "reusedComponents": [
+        "tools/compile_scan.py",
+        "tools/evidence_replay_import.py",
+        "tools/receiver_generation_pipeline.py",
+        "LycolesUniversalInspector.lua"
+      ],
+      "strengths": [
+        "multipart baseline validation with fail-closed accounting",
+        "client-visible interaction capture and bounded diagnostics",
+        "explicit non-authoritative claims separation"
+      ]
+    },
+    {
+      "coverage": "partially-verified",
+      "gaps": [
+        "no explicit direct-vs-inference-vs-hypothesis-vs-unknown partition",
+        "no game-model artifact designed for downstream universal tool ideation"
+      ],
+      "id": 2,
+      "name": "Game Understanding Engine",
+      "reusedComponents": [
+        "tools/understand_gameplay.py",
+        "tools/universal_gameplay_intelligence.py"
+      ],
+      "strengths": [
+        "machine-readable systems/resources/actions extraction",
+        "workflow and temporal correlation summaries"
+      ]
+    },
+    {
+      "coverage": "unverified",
+      "gaps": [
+        "no objective->mechanic->challenge->tool synthesis stage",
+        "feature categories are not unified into a reusable discovery catalog"
+      ],
+      "id": 3,
+      "name": "Universal Tool Discovery Engine",
+      "reusedComponents": [
+        "tools/discover_action_capabilities.py",
+        "tools/universal_discovery_v89.py"
+      ],
+      "strengths": [
+        "bounded observed interaction capability extraction"
+      ]
+    },
+    {
+      "coverage": "partially-verified",
+      "gaps": [
+        "feasibility lifecycle statuses are not standardized across universal proposals",
+        "missing dependency reasoning is not surfaced for broad tool ideation"
+      ],
+      "id": 4,
+      "name": "Evidence and Feasibility Engine",
+      "reusedComponents": [
+        "tools/assess_generation_readiness.py",
+        "tools/lycoles_generation_service.py"
+      ],
+      "strengths": [
+        "fail-closed blockers and request readiness diagnostics",
+        "delivery metadata separates runtime/gameplay verification claims"
+      ]
+    },
+    {
+      "coverage": "partially-verified",
+      "gaps": [
+        "feature-specific modular generation is still constrained by limited executable contracts",
+        "universal feature modules and runtime binding coverage are incomplete"
+      ],
+      "id": 5,
+      "name": "Script Generation and Testing",
+      "reusedComponents": [
+        "tools/generate_script.py",
+        "tools/lycoles_generation_service.py",
+        "tools/generated_result.py",
+        "tests/test_luau_syntax.mjs"
+      ],
+      "strengths": [
+        "deterministic Luau generation and syntax/contract validation",
+        "runtime/gameplay claims remain false without evidence"
+      ]
+    },
+    {
+      "coverage": "blocked",
+      "gaps": [
+        "settings schemas are not systematically bound to generated controls",
+        "standalone admin GUI pathway still exists outside unified architecture"
+      ],
+      "id": 6,
+      "name": "Unified Game-Specific GUI",
+      "reusedComponents": [
+        "tools/generate_script.py",
+        "tools/generate_admin_commands.py"
+      ],
+      "strengths": [
+        "single combined utility pattern exists"
+      ]
+    }
+  ],
+  "schemaVersion": "120.universal-architecture-audit.1",
+  "summary": {
+    "blocked": 1,
+    "partiallyVerified": 4,
+    "unverified": 1,
+    "verified": 0
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "behaviorCoverage": {
+    "loadout.cleanup_connections": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.configurable_refresh": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.detect_equipped_tools": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.detect_weapon_changes": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.display_information": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.enable_disable": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.keybind_toggle": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.missing_info_handling": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.periodic_updates": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.read_hud_indicators": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.respawn_recovery": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "loadout.track_backpack_changes": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.cleanup_connections": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.configurable_refresh": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.enable_disable": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.grounded_airborne_status": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.keybind_toggle": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.respawn_recovery": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.speed_diagnostics": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.state_diagnostics": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "movement.telemetry_updates": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "ui.unified_categories": {
+      "evidenceSupported": true,
+      "generated": true,
+      "offlineValidated": true
+    },
+    "workflow.request_aligned_executable": {
+      "evidenceSupported": false,
+      "generated": false,
+      "offlineValidated": false
+    }
+  },
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "modules": {
+    "diagnostics": {
+      "generated": true,
+      "runtimeVerified": false
+    },
+    "loadout": {
+      "defaultKeybind": "RightShift",
+      "evidenceAvailable": true,
+      "generated": true,
+      "refreshOptionsSeconds": [
+        0.1,
+        0.2,
+        0.5,
+        1.0
+      ],
+      "snapshotCount": 8
+    },
+    "movement": {
+      "cameraSampleCount": 15,
+      "defaultKeybind": "RightControl",
+      "evidenceAvailable": true,
+      "generated": true,
+      "inputSampleCount": 15,
+      "movementActionCounts": {
+        "jump": 2,
+        "move": 0,
+        "sprint": 12
+      },
+      "refreshOptionsSeconds": [
+        0.1,
+        0.2,
+        0.5,
+        1.0
+      ]
+    },
+    "overview": {
+      "generated": true,
+      "runtimeVerified": false
+    },
+    "settings": {
+      "generated": true,
+      "themes": [
+        "Graphite",
+        "Slate",
+        "Silver",
+        "Custom"
+      ]
+    }
+  },
+  "offlineValidation": {
+    "cleanupPathValidated": true,
+    "guiInitialized": true,
+    "syntaxValidated": true,
+    "togglePathsValidated": true
+  },
+  "request": "Provide loadout and movement telemetry from observed Phantom Forces evidence",
+  "requestReadinessStatus": "evidence-only-no-replay-contract",
+  "schemaVersion": "30.6.generated-module-contract.1"
+}

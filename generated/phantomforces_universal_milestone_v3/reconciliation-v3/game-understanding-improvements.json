@@ -1,0 +1,194 @@
+{
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "evidenceToObjectiveMapping": {
+    "challengeDrivers": [
+      "limited state-change telemetry",
+      "insufficient opponent entity evidence",
+      "camera sample stream missing"
+    ],
+    "inferredObjectives": [
+      "combat effectiveness",
+      "movement/navigation control",
+      "loadout management"
+    ],
+    "observedEvidence": {
+      "cameraTurnGestures": 0,
+      "loadoutPathSignals": 0,
+      "movementActions": 48
+    }
+  },
+  "mechanics": [
+    {
+      "alternativeInterpretations": [
+        "Could be menu/context interaction without gameplay effect"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "low",
+      "label": "Combat and opponent interaction",
+      "mechanicId": "combat",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    },
+    {
+      "alternativeInterpretations": [
+        "Could represent non-core gameplay utility interactions"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "low",
+      "label": "Purchasing and exchange",
+      "mechanicId": "commerce",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    },
+    {
+      "alternativeInterpretations": [
+        "Could represent non-core gameplay utility interactions"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "medium",
+      "label": "Feature candidate: movement",
+      "mechanicId": "feature_movement_a637996908ea",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [
+        "observed interactions: 48"
+      ],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    },
+    {
+      "alternativeInterpretations": [
+        "Could be menu/context interaction without gameplay effect"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "medium",
+      "label": "Inventory and equipment",
+      "mechanicId": "item_management",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [
+        "observed interactions: 3"
+      ],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    },
+    {
+      "alternativeInterpretations": [
+        "Could represent non-core gameplay utility interactions"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "low",
+      "label": "Repeatable stat or resource progression",
+      "mechanicId": "resource_progression",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    },
+    {
+      "alternativeInterpretations": [
+        "Could represent non-core gameplay utility interactions"
+      ],
+      "candidateTools": [
+        "combat_recoil_assist.recoil_camera_compensation",
+        "combat_target_assist.target_candidate_selection",
+        "combat_trigger_assist.crosshair_fire_condition",
+        "esp_player_overlay.basic_entity_boxes",
+        "esp_player_overlay.team_and_health_enhancements",
+        "loadout_information_suite.loadout_gui_reader",
+        "loadout_information_suite.runtime_weapon_state",
+        "movement_navigation_assist.movement_telemetry_overlay"
+      ],
+      "confidence": "low",
+      "label": "Repeatable and milestone rewards",
+      "mechanicId": "reward_collection",
+      "missingEvidence": [
+        "state_change_signals",
+        "player_entity_set"
+      ],
+      "objectiveLink": "improve player effectiveness in live rounds",
+      "supportingObservations": [],
+      "verificationMethod": "Controlled runtime telemetry in a live match with reproducible transitions."
+    }
+  ],
+  "multiGenreNote": {
+    "nonFpsApplicability": "Movement, inventory, objective, and profile capabilities map to non-FPS genres through the same requirement layer.",
+    "principle": "Capability contracts rely on evidence primitives, not fixed FPS labels."
+  },
+  "scan": {
+    "interactionEvents": 73,
+    "objects": 92466,
+    "placeId": 292439477,
+    "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+  },
+  "schemaVersion": "121.game-understanding-improvements.1"
+}

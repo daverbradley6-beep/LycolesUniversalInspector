@@ -1,0 +1,374 @@
+{
+  "challenges": [
+    {
+      "description": "Quickly identify relevant opponents and context in a dynamic scene.",
+      "evidenceLevel": "supported-inference",
+      "id": "challenge-target-identification",
+      "support": [
+        "combat feature candidate",
+        "high object count and camera gesture activity"
+      ]
+    },
+    {
+      "description": "Maintain consistent action timing and control under camera movement.",
+      "evidenceLevel": "hypothesis",
+      "id": "challenge-combat-consistency",
+      "support": [
+        "mouse button gesture observations without corroborated outcomes"
+      ]
+    },
+    {
+      "description": "Understand inventory/loadout state and progression signals during matches.",
+      "evidenceLevel": "supported-inference",
+      "id": "challenge-loadout-and-progression-clarity",
+      "support": [
+        "inventory/shops/progression feature presence"
+      ]
+    }
+  ],
+  "claims": {
+    "actionOutcomesVerified": false,
+    "causalityProven": false,
+    "gameplayVerified": false,
+    "runtimeVerified": false,
+    "serverAuthorityVerified": false,
+    "sourceAuthenticityVerified": false
+  },
+  "directObservations": {
+    "cameraSamples": 0,
+    "claims": {
+      "actionOutcomesVerified": false,
+      "causalityProven": false,
+      "gameplayVerified": false,
+      "runtimeVerified": false,
+      "serverAuthorityVerified": false,
+      "sourceAuthenticityVerified": false
+    },
+    "classDistributionTop": [
+      {
+        "class": "Part",
+        "count": 24459
+      },
+      {
+        "class": "MeshPart",
+        "count": 20591
+      },
+      {
+        "class": "SpecialMesh",
+        "count": 9381
+      },
+      {
+        "class": "IntValue",
+        "count": 8523
+      },
+      {
+        "class": "Model",
+        "count": 5134
+      },
+      {
+        "class": "Frame",
+        "count": 3281
+      },
+      {
+        "class": "Decal",
+        "count": 3187
+      },
+      {
+        "class": "Folder",
+        "count": 2430
+      },
+      {
+        "class": "UnionOperation",
+        "count": 2284
+      },
+      {
+        "class": "ModuleScript",
+        "count": 2129
+      },
+      {
+        "class": "WedgePart",
+        "count": 1648
+      },
+      {
+        "class": "TextLabel",
+        "count": 1544
+      },
+      {
+        "class": "BlockMesh",
+        "count": 1294
+      },
+      {
+        "class": "UIPadding",
+        "count": 1272
+      },
+      {
+        "class": "Texture",
+        "count": 1142
+      },
+      {
+        "class": "ParticleEmitter",
+        "count": 891
+      },
+      {
+        "class": "ImageLabel",
+        "count": 604
+      },
+      {
+        "class": "CornerWedgePart",
+        "count": 368
+      },
+      {
+        "class": "Weld",
+        "count": 275
+      },
+      {
+        "class": "Attachment",
+        "count": 254
+      }
+    ],
+    "clickTargetSamples": 41,
+    "combatSignals": {
+      "combatFeatureEvents": 0,
+      "evidenceLevel": "direct-observation",
+      "mousePrimaryInputs": 11,
+      "mouseSecondaryInputs": 8,
+      "stateSignals": [],
+      "toolClassCount": 0
+    },
+    "featureSummary": [
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "bosses",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "combat",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "inventory",
+        "interactionEvents": 3,
+        "observableOutcomeCandidates": 0,
+        "status": "interaction-observed"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "movement",
+        "interactionEvents": 48,
+        "observableOutcomeCandidates": 0,
+        "status": "interaction-observed"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "pets",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "progression",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "quests",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "rebirth",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "rewards",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "shops",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "training",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      },
+      {
+        "evidenceLevel": "direct-observation",
+        "feature": "travel",
+        "interactionEvents": 0,
+        "observableOutcomeCandidates": 0,
+        "status": "discovered"
+      }
+    ],
+    "gestureSamples": 40,
+    "inputControlTypes": [
+      {
+        "controlType": "InputBegan.Keyboard",
+        "count": 54
+      },
+      {
+        "controlType": "InputBegan.MouseButton1",
+        "count": 11
+      },
+      {
+        "controlType": "InputBegan.MouseButton2",
+        "count": 8
+      }
+    ],
+    "interactables": 8,
+    "scanIdentity": {
+      "evidenceLevel": "direct-observation",
+      "interactionEvents": 73,
+      "objects": 92466,
+      "parts": 914,
+      "placeId": 292439477,
+      "scanComplete": true,
+      "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7"
+    },
+    "stateChangeSignals": [],
+    "worldRegions": 17
+  },
+  "inferenceModel": {
+    "genreCandidates": [
+      {
+        "confidence": "medium",
+        "evidenceLevel": "supported-inference",
+        "genre": "fps-combat",
+        "reasons": [
+          "external game context includes Phantom Forces",
+          "combat feature candidate present"
+        ]
+      },
+      {
+        "confidence": "low",
+        "evidenceLevel": "hypothesis",
+        "genre": "shooter-like",
+        "reasons": [
+          "combat interactions and mouse fire-like inputs observed"
+        ]
+      }
+    ],
+    "hypothesesRequiringValidation": [
+      "weapon fire action is currently represented by mouse input but lacks callback attribution",
+      "world click targets may include camera-only gestures without gameplay causality",
+      "movement and camera patterns may indicate aiming/scouting but are not outcome-verified"
+    ],
+    "primaryObjectives": [
+      {
+        "confidence": "low",
+        "description": "Compete in combat rounds and outlast opponents.",
+        "evidenceLevel": "hypothesis",
+        "id": "objective-round-survival",
+        "support": [
+          "combat feature interactions observed",
+          "mouse fire-like input activity observed"
+        ]
+      }
+    ],
+    "secondaryObjectives": [
+      {
+        "confidence": "medium",
+        "description": "Adjust loadout, inventory, and progression choices.",
+        "evidenceLevel": "supported-inference",
+        "id": "objective-loadout-management",
+        "support": [
+          "inventory and shops feature candidates discovered",
+          "menu gui structures in click target candidates"
+        ]
+      }
+    ],
+    "unknownMechanisms": [
+      "server-side hit registration and damage authority",
+      "replicated team assignment semantics",
+      "projectile simulation authority and lag compensation",
+      "match objective scoring and victory logic"
+    ]
+  },
+  "mechanics": [
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "structural_candidate",
+      "id": "combat",
+      "label": "Combat and opponent interaction",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0
+    },
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "structural_candidate",
+      "id": "commerce",
+      "label": "Purchasing and exchange",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0
+    },
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "interaction_observed",
+      "id": "feature_movement_a637996908ea",
+      "label": "Feature candidate: movement",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 48
+    },
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "interaction_observed",
+      "id": "item_management",
+      "label": "Inventory and equipment",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 3
+    },
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "structural_candidate",
+      "id": "resource_progression",
+      "label": "Repeatable stat or resource progression",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0
+    },
+    {
+      "evidenceLevel": "direct-observation",
+      "evidenceTier": "structural_candidate",
+      "id": "reward_collection",
+      "label": "Repeatable and milestone rewards",
+      "observableOutcomeCandidates": 0,
+      "observedInteractions": 0
+    }
+  ],
+  "placeId": 292439477,
+  "scanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7",
+  "schemaVersion": "120.universal-game-model.1",
+  "universalIntelligenceSummary": {
+    "actionRecords": 73,
+    "actionSourceBreakdown": {
+      "user-input": 73
+    },
+    "economySignals": 0,
+    "inputActionRecords": 73,
+    "interactables": 8,
+    "regions": 17,
+    "relationships": 51,
+    "stateSignals": 0,
+    "workflowCandidates": 13
+  }
+}

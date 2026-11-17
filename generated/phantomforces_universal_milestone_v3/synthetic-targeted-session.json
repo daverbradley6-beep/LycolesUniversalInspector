@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "31.0.targeted-evidence-session.1",
+  "exportKind": "targeted-evidence-session",
+  "sessionId": "synthetic-targeted-phantom-v3",
+  "placeId": 292439477,
+  "baselineScanId": "208A9A11-D4A1-404E-B78C-C6800E7D7DF7",
+  "requestIds": [
+    "character-entity-observation",
+    "combat-camera-weapon-correlation",
+    "match-objective-state-observation",
+    "loadout-runtime-observation"
+  ],
+  "requestProgress": {},
+  "samples": {
+    "characterEntities": [
+      {
+        "player": "Local",
+        "isLocalPlayer": true,
+        "team": "Blue",
+        "position": {
+          "x": 0,
+          "y": 3,
+          "z": 0
+        }
+      },
+      {
+        "player": "Enemy1",
+        "isLocalPlayer": false,
+        "team": "Red",
+        "position": {
+          "x": 22,
+          "y": 3,
+          "z": -10
+        }
+      }
+    ],
+    "entityEvents": [
+      {
+        "eventType": "character-present",
+        "player": "Enemy1"
+      }
+    ],
+    "cameraSamples": [
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      },
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      },
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      },
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      },
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      },
+      {
+        "lookVector": {
+          "x": 0.1,
+          "y": 0.05,
+          "z": -0.98
+        }
+      }
+    ],
+    "cameraCorrelations": [
+      {
+        "mousePrimaryInputDelta": 2,
+        "lookDeltaMagnitude": 0.11
+      }
+    ],
+    "inputSamples": [
+      {
+        "mousePrimaryInputs": 5
+      }
+    ],
+    "weaponSnapshots": [
+      {
+        "equippedTools": [
+          "Rifle"
+        ],
+        "hasCombatTool": true
+      }
+    ],
+    "loadoutSnapshots": [
+      {
+        "equippedTools": [
+          "Rifle"
+        ],
+        "backpackTools": [
+          "Knife"
+        ],
+        "hudWeaponIndicators": [
+          {
+            "path": "LocalPlayer.PlayerGui.HUD.WeaponLabel",
+            "text": "Rifle"
+          }
+        ]
+      }
+    ],
+    "matchStateSamples": [
+      {
+        "signals": {
+          "LocalPlayer.PlayerGui.HUD.ScoreLabel": "4-3",
+          "LocalPlayer.PlayerGui.HUD.Timer": "07:40"
+        }
+      }
+    ],
+    "transitions": [
+      {
+        "path": "LocalPlayer.PlayerGui.HUD.ScoreLabel",
+        "before": "3-3",
+        "after": "4-3"
+      }
+    ],
+    "timelineEvents": [
+      {
+        "category": "camera-sample"
+      }
+    ],
+    "errors": [],
+    "progressLogs": []
+  },
+  "collectionLimitations": [
+    "Client-visible observations only"
+  ],
+  "errors": []
+}
