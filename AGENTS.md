@@ -1140,3 +1140,23 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - surfaced backend diagnostics metadata in GUI and `_G.LycolesGenerationSession()`.
 - Security invariant retained: no client-side Anthropic secrets; paid API path remains disabled unless explicitly enabled server-side.
 - Potassium reproducible runbook recorded in `OPENHANDS_PROGRESS.md` under the 2026-11-17 non-paid integration update.
+
+
+## Session notes — 2026-11-17 backend lifecycle automation manager
+
+- New operational script: `tools/lycoles_backend_manager.py`.
+- Primary commands:
+  - `setup-check`, `start`, `status`, `health`, `ensure`, `deploy`, `smoke`, `stop`.
+- `deploy` is now the fastest reproducible backend validation path:
+  - starts supervisor-managed deterministic backend,
+  - waits for readiness,
+  - runs session lifecycle smoke check (create session -> queue job -> fetch result).
+- Supervisor behavior:
+  - detached monitor process,
+  - bounded restart loop with backoff and restart-window guard,
+  - runtime files/logs in `build/runtime/lycoles-backend/`.
+- Service contract now includes `GET /v1/generation/health` with provider + uptime + session/job summary.
+- Deterministic/non-paid default guard maintained in manager startup environment:
+  - `LYCOLES_ENABLE_PAID_LLM=false`,
+  - `LYCOLES_LLM_PROVIDER=deterministic`.
+- Environment limitation: this sandbox lacks Docker daemon permissions (`docker ps` denied), so host-level port publication changes must be executed in a Docker-authorized context.

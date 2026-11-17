@@ -1598,6 +1598,28 @@ class SessionBackendContractTests(unittest.TestCase):
             self.assertEqual(len(versions), 2)
             self.assertEqual(versions[1]["revisionOfVersionId"], first_version)
 
+
+    def test_http_health_endpoint_reports_provider_and_uptime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            handler = service.make_http_handler()
+            server = MODULE.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_address[1]}"
+                status, payload = self._json_request(f"{base}/v1/generation/health")
+                self.assertEqual(status, 200)
+                self.assertEqual(payload.get("status"), "ok")
+                self.assertIn("provider", payload)
+                self.assertIn("uptimeSeconds", payload)
+                self.assertIn("sessionSummary", payload)
+                self.assertEqual((payload.get("sessionSummary") or {}).get("totalSessions"), 0)
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_http_contract_session_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

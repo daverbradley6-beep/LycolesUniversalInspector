@@ -3114,6 +3114,7 @@ class LycolesGenerationService:
     ) -> None:
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self._service_started_at = time.time()
         self.model_routes = model_routes or ModelRouteConfig()
 
         if llm_provider is None:
@@ -3201,6 +3202,33 @@ class LycolesGenerationService:
             },
             "claims": dict(FALSE_CLAIMS),
         }
+
+    def _health_payload(self) -> dict[str, Any]:
+        with self._sessions_lock:
+            session_count = len(self._sessions)
+        with self._session_jobs_lock:
+            job_count = len(self._session_jobs)
+            pending_jobs = sum(1 for record in self._session_jobs.values() if record.status in {"queued", "running"})
+        return {
+            "status": "ok",
+            "service": "lycoles-generation-service",
+            "startedAt": self._service_started_at,
+            "uptimeSeconds": max(0.0, round(time.time() - self._service_started_at, 3)),
+            "outputRoot": str(self.output_root),
+            "provider": {
+                "name": self.provider_info.provider,
+                "enabled": self.provider_info.enabled,
+                "reason": self.provider_info.reason,
+                "paidInferenceEnabled": _paid_llm_enabled_from_env(),
+            },
+            "sessionSummary": {
+                "totalSessions": session_count,
+                "totalJobs": job_count,
+                "pendingJobs": pending_jobs,
+            },
+            "claims": dict(FALSE_CLAIMS),
+        }
+
 
     def _persist_session_locked(self, record: SessionRecord) -> None:
         session_dir = self._session_dir_for(record.session_id)
@@ -4102,6 +4130,9 @@ class LycolesGenerationService:
 
                 if parts == ["v1", "generation", "provider-contract"]:
                     return self._json(service._provider_contract_payload())
+
+                if parts == ["v1", "generation", "health"]:
+                    return self._json(service._health_payload())
 
                 if parts == ["v1", "generation", "sessions"]:
                     return self._json({"sessions": service.list_sessions()})

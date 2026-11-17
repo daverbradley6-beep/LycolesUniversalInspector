@@ -3459,3 +3459,61 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 
 - This integration milestone enables end-to-end workflow validation without requiring Anthropic credentials.
 - Live gameplay outcomes remain explicitly unverified until user-side in-game execution confirms behavior.
+
+
+## Update — 2026-11-17 — Autonomous backend lifecycle automation + health contract
+
+### Scope
+
+- Added managed backend operations utility: `tools/lycoles_backend_manager.py`.
+- New manager capabilities:
+  - `setup-check`: validates required files/directories + Python/Node availability + deterministic defaults.
+  - `start`: launches a detached supervisor process (no duplicate startup if already healthy).
+  - `status`: reports supervisor/service PID state plus live health/provider diagnostics.
+  - `health`: probes `/v1/generation/health` + `/v1/generation/provider-contract`.
+  - `ensure`: enforces healthy backend state with restart when needed.
+  - `smoke`: runs full HTTP session lifecycle (`sessions -> recommendations -> jobs -> result`) against deterministic backend.
+  - `deploy`: `start + readiness + smoke` as one reproducible deployment validation command.
+  - `stop`: terminates managed processes and writes explicit stopped runtime state.
+  - internal `_supervise`: bounded restart loop with restart-window limits/backoff (prevents infinite restart loops).
+- Added backend runtime artifacts under `build/runtime/lycoles-backend/`:
+  - `supervisor.pid`, `service.pid`, `state.json`, `supervisor.log`, `service.log`.
+- Added deterministic provider enforcement defaults in manager startup environment:
+  - `LYCOLES_ENABLE_PAID_LLM=false`
+  - `LYCOLES_LLM_PROVIDER=deterministic`
+- Extended `tools/lycoles_generation_service.py` with:
+  - service start timestamp tracking,
+  - `GET /v1/generation/health` readiness endpoint with provider/session/job summary.
+
+### Runtime validation executed in this session
+
+- `python3 tools/lycoles_backend_manager.py setup-check`
+  - passed with required files present and deterministic defaults.
+- `python3 tools/lycoles_backend_manager.py deploy`
+  - backend started,
+  - health contract reachable,
+  - full session smoke lifecycle completed with deterministic script result.
+- Recovery test:
+  - terminated active service PID manually,
+  - supervisor restarted service automatically,
+  - status showed incremented restart count and healthy endpoint.
+- Lifecycle control test:
+  - `ensure` returned `already-healthy` when appropriate,
+  - `stop` now cleanly reports supervisor/service stopped and health unreachable post-stop.
+
+### Networking observations and limits
+
+- From inside the container/sandbox, backend is reachable at both:
+  - `http://127.0.0.1:8787`
+  - `http://172.17.0.2:8787`
+- Docker daemon socket is not accessible from this sandbox (`permission denied` on `docker ps`), so host-level port publication changes cannot be executed from this session.
+- Therefore, Windows-host publish/route changes remain an external boundary unless performed in a context with Docker daemon access.
+
+### Automated validation
+
+- `python3 -m pytest -q tests/test_lycoles_backend_manager.py tests/test_lycoles_generation_service.py tests/test_lycoles_generation_service_provider.py tests/test_inspector_ui.py`
+  **107 passed**
+- `python3 -m pytest -q`
+  **1766 passed, 17 skipped, 79 subtests passed**
+- `node --test tests/test_luau_syntax.mjs`
+  **4 passed**
