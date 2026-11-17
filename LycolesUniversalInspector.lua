@@ -2226,10 +2226,22 @@ do
         end)
     end
 
-    function backend:requestRevision(sessionId, selectedFeatures, customRequest, callback)
-        self:requestGeneration(sessionId, selectedFeatures, customRequest, callback)
+    function backend:requestRevision(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)
+        self:requestGeneration(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)
     end
 
+    local function parseJsonResponseBody(rawBody)
+        if type(rawBody) ~= "string" or rawBody == "" then
+            return nil
+        end
+        local ok, decoded = pcall(function()
+            return HttpService:JSONDecode(rawBody)
+        end)
+        if ok and type(decoded) == "table" then
+            return decoded
+        end
+        return nil
+    end
 
     local function hasExternalBackendContract(candidate)
         return type(candidate) == "table"
@@ -2242,7 +2254,313 @@ do
             and type(candidate.requestRevision) == "function"
     end
 
+    local function buildHttpGenerationBackend(config)
+        if type(config) ~= "table" then
+            return nil, "backend config missing"
+        end
+        local baseUrl = trim(config.baseUrl or config.endpoint or config.url or "")
+        if baseUrl == "" then
+            return nil, "backend baseUrl missing"
+        end
+        if not baseUrl:match("^https?://") then
+            return nil, "backend baseUrl must begin with http:// or https://"
+        end
+        baseUrl = baseUrl:gsub("/+$", "")
+
+        local requestFn = config.requestFunction
+        if type(requestFn) ~= "function" then
+            requestFn = (syn and syn.request) or http_request or request
+        end
+        if type(requestFn) ~= "function" then
+            return nil, "HTTP request function unavailable in this executor"
+        end
+
+        local maxAttempts = math.clamp(tonumber(config.maxAttempts) or 2, 1, 5)
+        local timeoutSeconds = math.clamp(tonumber(config.timeoutSeconds) or 15, 2, 60)
+        local pollIntervalSeconds = math.clamp(tonumber(config.pollIntervalSeconds) or 0.2, 0.05, 3)
+        local pollTimeoutSeconds = math.clamp(tonumber(config.pollTimeoutSeconds) or 60, 5, 300)
+        local diagnostics = {
+            provider = "session-backend-http-v1",
+            baseUrl = baseUrl,
+            maxAttempts = maxAttempts,
+            timeoutSeconds = timeoutSeconds,
+            requests = 0,
+            failures = 0,
+            lastRequest = nil,
+            lastError = nil,
+            lastStatusCode = nil,
+        }
+
+        local function isTransientStatus(code)
+            return code == 408 or code == 425 or code == 429
+                or code == 500 or code == 502 or code == 503 or code == 504
+        end
+
+        local function buildHeaders()
+            local headers = {
+                ["Content-Type"] = "application/json",
+                ["Accept"] = "application/json",
+            }
+            if type(config.headers) == "table" then
+                for key, value in pairs(config.headers) do
+                    if type(key) == "string" and type(value) == "string" and key ~= "" then
+                        headers[key] = value
+                    end
+                end
+            end
+            local sessionApiKey = trim(config.sessionApiKey or "")
+            if sessionApiKey ~= "" then
+                headers["X-Session-API-Key"] = sessionApiKey
+            end
+            local authToken = trim(config.authToken or "")
+            local authHeader = trim(config.authHeader or "Authorization")
+            if authToken ~= "" and authHeader ~= "" then
+                if authHeader:lower() == "authorization" and not authToken:match("^Bearer%s+") then
+                    headers[authHeader] = "Bearer " .. authToken
+                else
+                    headers[authHeader] = authToken
+                end
+            end
+            return headers
+        end
+
+        local function requestJson(method, path, payload, callback)
+            task.spawn(function()
+                local url = baseUrl .. path
+                local body = payload ~= nil and HttpService:JSONEncode(payload) or nil
+                local lastError = nil
+                for attempt = 1, maxAttempts do
+                    diagnostics.requests = diagnostics.requests + 1
+                    diagnostics.lastRequest = {
+                        method = method,
+                        path = path,
+                        attempt = attempt,
+                        at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                    }
+                    local ok, response = pcall(requestFn, {
+                        Url = url,
+                        Method = method,
+                        Headers = buildHeaders(),
+                        Body = body,
+                        Timeout = timeoutSeconds,
+                    })
+                    if ok and type(response) == "table" then
+                        local statusCode = tonumber(response.StatusCode or response.Status or response.status_code)
+                        diagnostics.lastStatusCode = statusCode
+                        local rawBody = type(response.Body) == "string" and response.Body
+                            or (type(response.body) == "string" and response.body or "")
+                        local decoded = parseJsonResponseBody(rawBody)
+                        if statusCode and statusCode >= 200 and statusCode < 300 then
+                            callback(true, decoded or {})
+                            return
+                        end
+                        local transient = isTransientStatus(statusCode)
+                        local responseError = decoded and (decoded.error or decoded.message)
+                        lastError = {
+                            error = tostring(responseError or ("HTTP " .. tostring(statusCode or "request-error"))),
+                            statusCode = statusCode,
+                            transient = transient,
+                            attempt = attempt,
+                            path = path,
+                            provider = diagnostics.provider,
+                        }
+                        diagnostics.failures = diagnostics.failures + 1
+                        diagnostics.lastError = lastError
+                        if not transient then
+                            break
+                        end
+                    else
+                        local errorMessage = ok and "invalid-http-response" or tostring(response)
+                        lastError = {
+                            error = errorMessage,
+                            transient = true,
+                            attempt = attempt,
+                            path = path,
+                            provider = diagnostics.provider,
+                        }
+                        diagnostics.failures = diagnostics.failures + 1
+                        diagnostics.lastError = lastError
+                    end
+                    if attempt < maxAttempts then
+                        task.wait(math.min(2, 0.2 * (2 ^ (attempt - 1))))
+                    end
+                end
+                callback(false, lastError or {
+                    error = "request-failed",
+                    path = path,
+                    provider = diagnostics.provider,
+                })
+            end)
+        end
+
+        local adapter = {
+            provider = diagnostics.provider,
+            pollIntervalSeconds = pollIntervalSeconds,
+            pollTimeoutSeconds = pollTimeoutSeconds,
+            anthropicAdapter = {
+                provider = "anthropic-claude-adapter",
+                configured = false,
+                reason = "Claude credentials stay server-side; paid API calls remain disabled client-side",
+            },
+        }
+
+        function adapter:getDiagnostics()
+            return diagnostics
+        end
+
+        function adapter:submitInspection(snapshot, callback)
+            requestJson("POST", "/v1/generation/sessions", {
+                inspectionSnapshot = snapshot,
+            }, function(success, payload)
+                if not success or type(payload) ~= "table" then
+                    callback(false, payload)
+                    return
+                end
+                local session = type(payload.session) == "table" and payload.session or {}
+                local analysis = type(payload.analysis) == "table" and payload.analysis or {}
+                local recommendationBlock = type(payload.recommendations) == "table" and payload.recommendations or {}
+                local recommendations = recommendationBlock.recommendations
+                    or recommendationBlock.items
+                    or {}
+                callback(true, {
+                    sessionId = session.sessionId,
+                    gameName = session.gameName or (snapshot and snapshot.gameName) or "Unknown",
+                    placeId = session.placeId or (snapshot and snapshot.placeId),
+                    scanId = session.scanId or (snapshot and snapshot.scanId),
+                    analysisStatus = analysis.status or session.analysisStatus or "analysis-complete",
+                    analysisSummary = analysis.summary
+                        or recommendationBlock.analysisSummary
+                        or "Backend analysis complete.",
+                    recommendations = recommendations,
+                    provider = self.provider,
+                    runtimeVerified = false,
+                    gameplayVerified = false,
+                })
+            end)
+        end
+
+        function adapter:getGameplayAnalysis(sessionId, callback)
+            requestJson("GET", "/v1/generation/sessions/" .. HttpService:UrlEncode(tostring(sessionId)) .. "/analysis", nil,
+                function(success, payload)
+                    if not success or type(payload) ~= "table" then
+                        callback(false, payload)
+                        return
+                    end
+                    callback(true, {
+                        sessionId = payload.sessionId or sessionId,
+                        analysisStatus = payload.status or payload.analysisStatus or "analysis-complete",
+                        analysisSummary = payload.summary or payload.analysisSummary or "Backend analysis complete.",
+                        runtimeVerified = payload.runtimeVerified == true,
+                        gameplayVerified = payload.gameplayVerified == true,
+                    })
+                end)
+        end
+
+        function adapter:getRecommendations(sessionId, callback)
+            requestJson("GET", "/v1/generation/sessions/" .. HttpService:UrlEncode(tostring(sessionId)) .. "/recommendations", nil,
+                function(success, payload)
+                    if not success or type(payload) ~= "table" then
+                        callback(false, payload)
+                        return
+                    end
+                    callback(true, {
+                        sessionId = payload.sessionId or sessionId,
+                        recommendations = payload.recommendations or payload.items or {},
+                        analysisStatus = payload.analysisStatus or "analysis-complete",
+                        analysisSummary = payload.analysisSummary or "Backend recommendations ready.",
+                        runtimeVerified = false,
+                        gameplayVerified = false,
+                    })
+                end)
+        end
+
+        function adapter:requestGeneration(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)
+            local selected = {}
+            if type(selectedFeatures) == "table" then
+                for _, item in ipairs(selectedFeatures) do
+                    if type(item) == "string" and item ~= "" then
+                        selected[#selected + 1] = item
+                    end
+                end
+            end
+            local body = {
+                selectedFeatureIds = selected,
+                customRequest = type(customRequest) == "string" and customRequest or "",
+            }
+            if type(revisionOfVersionId) == "string" and revisionOfVersionId ~= "" then
+                body.revisionOfVersionId = revisionOfVersionId
+            end
+            requestJson("POST", "/v1/generation/sessions/" .. HttpService:UrlEncode(tostring(sessionId)) .. "/jobs", body,
+                function(success, payload)
+                    if not success or type(payload) ~= "table" then
+                        callback(false, payload)
+                        return
+                    end
+                    callback(true, {
+                        jobId = payload.jobId,
+                        status = payload.status or "queued",
+                        provider = self.provider,
+                    })
+                end)
+        end
+
+        function adapter:pollGeneration(jobId, callback)
+            requestJson("GET", "/v1/generation/session-jobs/" .. HttpService:UrlEncode(tostring(jobId)), nil,
+                function(success, payload)
+                    if not success or type(payload) ~= "table" then
+                        callback(false, payload)
+                        return
+                    end
+                    callback(true, {
+                        jobId = payload.jobId or jobId,
+                        status = payload.status or "unknown",
+                        sessionId = payload.sessionId,
+                        retriesUsed = payload.retriesUsed,
+                        maxRetries = payload.maxRetries,
+                    })
+                end)
+        end
+
+        function adapter:getGenerationResult(jobId, callback)
+            requestJson("GET", "/v1/generation/session-jobs/" .. HttpService:UrlEncode(tostring(jobId)) .. "/result", nil,
+                function(success, payload)
+                    if not success or type(payload) ~= "table" then
+                        callback(false, payload)
+                        return
+                    end
+                    callback(true, {
+                        script = payload.script,
+                        validation = payload.validation,
+                        provider = payload.provider or self.provider,
+                        generatedAt = payload.generatedAt or os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                        versionId = payload.versionId,
+                        versionNumber = payload.versionNumber,
+                        generationMetadata = payload.generationMetadata,
+                    })
+                end)
+        end
+
+        function adapter:requestRevision(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)
+            self:requestGeneration(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)
+        end
+
+        return adapter, nil
+    end
+
     local externalBackend = _G.LycolesGenerationBackendProvider
+    if not hasExternalBackendContract(externalBackend) then
+        local backendConfig = _G.LycolesGenerationBackendConfig
+        if type(backendConfig) == "table" and backendConfig.enabled ~= false then
+            local httpBackend, setupError = buildHttpGenerationBackend(backendConfig)
+            if httpBackend and hasExternalBackendContract(httpBackend) then
+                externalBackend = httpBackend
+            else
+                backend.anthropicAdapter.reason = "External session backend disabled: "
+                    .. tostring(setupError or "invalid backend contract")
+            end
+        end
+    end
+
     if hasExternalBackendContract(externalBackend) then
         backend = externalBackend
         if type(backend.provider) ~= "string" then
@@ -2497,17 +2815,45 @@ do
         end
         generatorSession.scriptIndex = math.clamp(generatorSession.scriptIndex, 1, #scripts)
         local entry = scripts[generatorSession.scriptIndex]
+        local versionSuffix = type(entry.versionId) == "string" and entry.versionId ~= ""
+            and (" | Backend version: " .. entry.versionId)
+            or ""
         resultVersion.Text = "Version " .. tostring(generatorSession.scriptIndex) .. "/" .. tostring(#scripts)
-            .. " | Provider: " .. tostring(entry.provider or "mock")
+            .. " | Provider: " .. tostring(entry.provider or "mock") .. versionSuffix
         resultStatus.Text = tostring(entry.statusLine or "Generation completed")
         resultCode.Text = tostring(entry.script or "-- unavailable")
     end
 
-    local function collectSelectedFeatureLabels()
-        local labels = {}
+    local function collectSelectedFeatureIds()
+        local ids = {}
         for _, item in ipairs(generatorSession.recommendations) do
-            if type(item) == "table" and generatorSession.selected[tostring(item.id or "")] == true then
-                labels[#labels + 1] = tostring(item.label or item.id)
+            if type(item) == "table" then
+                local id = tostring(item.id or "")
+                if id ~= "" and generatorSession.selected[id] == true then
+                    ids[#ids + 1] = id
+                end
+            end
+        end
+        table.sort(ids)
+        return ids
+    end
+
+    local function collectSelectedFeatureLabels(selectedIds)
+        local labels = {}
+        local selectedById = {}
+        if type(selectedIds) == "table" then
+            for _, id in ipairs(selectedIds) do
+                if type(id) == "string" and id ~= "" then
+                    selectedById[id] = true
+                end
+            end
+        end
+        for _, item in ipairs(generatorSession.recommendations) do
+            if type(item) == "table" then
+                local id = tostring(item.id or "")
+                if id ~= "" and (selectedById[id] == true or (selectedIds == nil and generatorSession.selected[id] == true)) then
+                    labels[#labels + 1] = tostring(item.label or item.id)
+                end
             end
         end
         table.sort(labels)
@@ -2535,6 +2881,59 @@ do
         return true, nil
     end
 
+    local function backendDiagnosticSuffix()
+        if type(backend) == "table" and type(backend.getDiagnostics) == "function" then
+            local ok, diagnostics = pcall(function()
+                return backend:getDiagnostics()
+            end)
+            if ok and type(diagnostics) == "table" then
+                local provider = tostring(diagnostics.provider or "backend")
+                local statusCode = diagnostics.lastStatusCode and tostring(diagnostics.lastStatusCode) or nil
+                local requestPath = type(diagnostics.lastRequest) == "table"
+                    and type(diagnostics.lastRequest.path) == "string"
+                    and diagnostics.lastRequest.path
+                    or nil
+                local failures = tonumber(diagnostics.failures or 0) or 0
+                local details = provider
+                if requestPath then details = details .. " " .. requestPath end
+                if statusCode then details = details .. " HTTP " .. statusCode end
+                details = details .. " failures=" .. tostring(math.max(0, math.floor(failures + 0.5)))
+                return " [" .. details .. "]"
+            end
+        end
+        return ""
+    end
+
+    local function describeBackendError(payload)
+        if type(payload) == "table" then
+            local message = tostring(payload.error or payload.message or "unknown")
+            local statusCode = payload.statusCode and tostring(payload.statusCode) or nil
+            local attempt = payload.attempt and tostring(payload.attempt) or nil
+            if statusCode then message = message .. " (HTTP " .. statusCode .. ")" end
+            if attempt then message = message .. " [attempt " .. attempt .. "]" end
+            return message
+        end
+        return tostring(payload or "unknown")
+    end
+
+    local function backendPollIntervalSeconds()
+        local value = type(backend.pollIntervalSeconds) == "number" and backend.pollIntervalSeconds or 0.15
+        return math.clamp(value, 0.05, 3)
+    end
+
+    local function backendPollTimeoutSeconds()
+        local value = type(backend.pollTimeoutSeconds) == "number" and backend.pollTimeoutSeconds or 60
+        return math.clamp(value, 5, 300)
+    end
+
+    local function activeRevisionVersionId()
+        if #generatorSession.scripts == 0 then return nil end
+        local index = math.clamp(generatorSession.scriptIndex, 1, #generatorSession.scripts)
+        local entry = generatorSession.scripts[index] or generatorSession.scripts[#generatorSession.scripts]
+        return type(entry) == "table" and type(entry.versionId) == "string" and entry.versionId ~= ""
+            and entry.versionId or nil
+    end
+
     local function startGenerationHandoff()
         local ok, err = validateFinishedInspection()
         if not ok then
@@ -2557,13 +2956,18 @@ do
         status.Text = "Finalizing inspection snapshot and transferring to generator..."
         backend:submitInspection(snapshot, function(success, payload)
             if not success or type(payload) ~= "table" then
-                status.Text = "Generation handoff failed: snapshot preserved; retry after checking evidence readiness."
+                status.Text = "Generation handoff failed: " .. describeBackendError(payload)
+                    .. backendDiagnosticSuffix()
+                return
+            end
+            if type(payload.sessionId) ~= "string" or payload.sessionId == "" then
+                status.Text = "Generation handoff failed: backend did not return a session ID."
                 return
             end
             generatorSession.sessionId = payload.sessionId
             generatorSession.inspection = snapshot
             generatorSession.recommendations = payload.recommendations or {}
-            generatorSession.analysisStatus = payload.analysisStatus or "analysis-complete-mock"
+            generatorSession.analysisStatus = payload.analysisStatus or "analysis-complete"
             generatorSession.selected = generatorSession.selected or {}
             updateGeneratorSummary(payload.analysisSummary)
             renderRecommendations()
@@ -2583,6 +2987,9 @@ do
             if analysisOk and type(analysisPayload) == "table" then
                 generatorSession.analysisStatus = analysisPayload.analysisStatus or generatorSession.analysisStatus
                 updateGeneratorSummary(analysisPayload.analysisSummary)
+            elseif not analysisOk then
+                updateGeneratorSummary("Analysis refresh failed: " .. describeBackendError(analysisPayload)
+                    .. backendDiagnosticSuffix())
             end
             backend:getRecommendations(generatorSession.sessionId, function(success, payload)
                 if success and type(payload) == "table" then
@@ -2590,6 +2997,9 @@ do
                     generatorSession.analysisStatus = payload.analysisStatus or generatorSession.analysisStatus
                     updateGeneratorSummary(payload.analysisSummary)
                     renderRecommendations()
+                else
+                    updateGeneratorSummary("Recommendation refresh failed: " .. describeBackendError(payload)
+                        .. backendDiagnosticSuffix())
                 end
                 generatorSession.hidden = false
                 setWindowVisibility("generator")
@@ -2597,41 +3007,74 @@ do
         end)
     end
 
-    local function pollGeneration(jobId)
+    local function pollGeneration(jobId, startedAt, pollCount)
+        local beganAt = startedAt or tick()
+        local count = (pollCount or 0) + 1
+        if tick() - beganAt > backendPollTimeoutSeconds() then
+            resultStatus.Text = "Generation status timed out after "
+                .. tostring(math.floor(backendPollTimeoutSeconds()))
+                .. "s; retry OPEN RESULTS or regenerate." .. backendDiagnosticSuffix()
+            generatorSession.pendingJobId = nil
+            return
+        end
         backend:pollGeneration(jobId, function(success, state)
             if not success or type(state) ~= "table" then
-                resultStatus.Text = "Generation status failed: " .. tostring(state and state.error or "unknown")
+                resultStatus.Text = "Generation status failed: " .. describeBackendError(state)
+                    .. backendDiagnosticSuffix()
                 generatorSession.pendingJobId = nil
                 return
             end
-            if state.status == "completed" then
+            local jobStatus = tostring(state.status or "unknown")
+            if jobStatus == "completed" then
                 backend:getGenerationResult(jobId, function(resultOk, resultPayload)
                     if not resultOk or type(resultPayload) ~= "table" then
-                        resultStatus.Text = "Generation result retrieval failed: " .. tostring(resultPayload and resultPayload.error or "unknown")
+                        resultStatus.Text = "Generation result retrieval failed: " .. describeBackendError(resultPayload)
+                            .. backendDiagnosticSuffix()
                         generatorSession.pendingJobId = nil
                         return
                     end
                     generatorSession.pendingJobId = nil
-                    local selectedLabels = collectSelectedFeatureLabels()
-                    local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
+                    local metadata = type(resultPayload.generationMetadata) == "table" and resultPayload.generationMetadata or {}
+                    local selectedIds = metadata.selectedFeatureIds
+                    local selectedLabels = type(metadata.selectedFeatureLabels) == "table"
+                        and metadata.selectedFeatureLabels
+                        or collectSelectedFeatureLabels(selectedIds)
+                    local requestText = type(metadata.customRequest) == "string"
+                        and metadata.customRequest
+                        or trim(customRequestInput.Text:gsub("[%c]+", " "))
                     local statusLine = "Validation: syntax=" .. tostring(resultPayload.validation and resultPayload.validation.syntaxValid == true)
                         .. " | runtime=false | gameplay=false"
+                    if type(resultPayload.versionId) == "string" and resultPayload.versionId ~= "" then
+                        statusLine = statusLine .. " | version=" .. resultPayload.versionId
+                    end
                     generatorSession.scripts[#generatorSession.scripts + 1] = {
                         script = resultPayload.script,
                         provider = resultPayload.provider,
                         generatedAt = resultPayload.generatedAt,
                         selectedFeatures = selectedLabels,
+                        selectedFeatureIds = selectedIds,
                         customRequest = requestText,
                         statusLine = statusLine,
+                        versionId = resultPayload.versionId,
+                        versionNumber = resultPayload.versionNumber,
+                        generationMetadata = metadata,
                     }
                     generatorSession.scriptIndex = #generatorSession.scripts
                     updateResultView()
                 end)
                 return
             end
-            resultStatus.Text = "Generation status: " .. tostring(state.status) .. " (mock async provider)"
-            task.delay(0.15, function()
-                if alive and generatorSession.pendingJobId == jobId then pollGeneration(jobId) end
+            if jobStatus == "failed" or jobStatus == "error" then
+                resultStatus.Text = "Generation job failed: " .. describeBackendError(state)
+                    .. backendDiagnosticSuffix()
+                generatorSession.pendingJobId = nil
+                return
+            end
+            resultStatus.Text = "Generation status: " .. jobStatus .. " (poll " .. tostring(count) .. ")"
+            task.delay(backendPollIntervalSeconds(), function()
+                if alive and generatorSession.pendingJobId == jobId then
+                    pollGeneration(jobId, beganAt, count)
+                end
             end)
         end)
     end
@@ -2643,8 +3086,8 @@ do
         end
         local requestText = trim(customRequestInput.Text:gsub("[%c]+", " "))
         customRequestInput.Text = requestText
-        local selectedLabels = collectSelectedFeatureLabels()
-        if #selectedLabels == 0 and requestText == "" then
+        local selectedIds = collectSelectedFeatureIds()
+        if #selectedIds == 0 and requestText == "" then
             updateGeneratorSummary("Select evidence-supported features or enter a custom request first.")
             return
         end
@@ -2655,17 +3098,28 @@ do
         setWindowVisibility("results")
         local callback = function(success, payload)
             if not success or type(payload) ~= "table" then
-                resultStatus.Text = "Generation request failed: " .. tostring(payload and payload.error or "unknown")
+                resultStatus.Text = "Generation request failed: " .. describeBackendError(payload)
+                    .. backendDiagnosticSuffix()
+                return
+            end
+            if type(payload.jobId) ~= "string" or payload.jobId == "" then
+                resultStatus.Text = "Generation request failed: backend did not return a job ID."
                 return
             end
             generatorSession.pendingJobId = payload.jobId
             resultStatus.Text = "Generation status: queued (" .. tostring(payload.jobId) .. ")"
-            pollGeneration(payload.jobId)
+            pollGeneration(payload.jobId, tick(), 0)
         end
         if isRevision then
-            backend:requestRevision(generatorSession.sessionId, selectedLabels, requestText, callback)
+            backend:requestRevision(
+                generatorSession.sessionId,
+                selectedIds,
+                requestText,
+                callback,
+                activeRevisionVersionId()
+            )
         else
-            backend:requestGeneration(generatorSession.sessionId, selectedLabels, requestText, callback)
+            backend:requestGeneration(generatorSession.sessionId, selectedIds, requestText, callback, nil)
         end
     end
 
@@ -2742,9 +3196,17 @@ do
         requestRevision = true,
         provider = backend.provider,
         anthropicAdapter = backend.anthropicAdapter,
+        supportsBackendDiagnostics = type(backend.getDiagnostics) == "function",
+        pollIntervalSeconds = backendPollIntervalSeconds(),
+        pollTimeoutSeconds = backendPollTimeoutSeconds(),
     }
 
     _G.LycolesGenerationSession = function()
+        local diagnostics = nil
+        if type(backend.getDiagnostics) == "function" then
+            local ok, payload = pcall(function() return backend:getDiagnostics() end)
+            diagnostics = ok and payload or nil
+        end
         return {
             sessionId = generatorSession.sessionId,
             activeView = generatorSession.activeView,
@@ -2754,6 +3216,7 @@ do
             pendingJobId = generatorSession.pendingJobId,
             provider = backend.provider,
             anthropicConfigured = backend.anthropicAdapter.configured,
+            diagnostics = diagnostics,
         }
     end
 

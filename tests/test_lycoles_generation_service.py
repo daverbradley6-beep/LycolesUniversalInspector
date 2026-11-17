@@ -1498,6 +1498,46 @@ class SessionBackendContractTests(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=8) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
 
+
+    @staticmethod
+    def _json_request_allow_error(url, method="GET", payload=None):
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"content-type": "application/json"}
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            payload = json.loads(exc.read().decode("utf-8"))
+            return exc.code, payload
+
+    def test_create_session_rejects_missing_feature_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            bad_snapshot = {
+                "gameName": "Broken",
+                "placeId": 123,
+                "scanId": "missing-evidence",
+                "featureEvidence": {},
+            }
+            with self.assertRaisesRegex(ValueError, "featureEvidence"):
+                service.create_session(bad_snapshot)
+
+    def test_session_job_rejects_unknown_recommendation_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+            session_id = created["session"]["sessionId"]
+            with self.assertRaisesRegex(ValueError, "unknown recommendation ids"):
+                service.submit_session_job(
+                    session_id,
+                    selected_feature_ids=["recommendation_missing"],
+                    custom_request="",
+                    revision_of_version_id=None,
+                )
+
     def test_create_session_and_recommendations(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -1605,6 +1645,41 @@ class SessionBackendContractTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(result.get("status"), "completed")
                 self.assertIn("script", result)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_http_session_job_result_not_ready_returns_404(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            handler = service.make_http_handler()
+            server = MODULE.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_address[1]}"
+                _, created = self._json_request(
+                    f"{base}/v1/generation/sessions",
+                    method="POST",
+                    payload={"inspectionSnapshot": make_inspection_snapshot()},
+                )
+                session_id = created["session"]["sessionId"]
+                rec_id = created["recommendations"]["items"][0]["id"]
+                _, queued = self._json_request(
+                    f"{base}/v1/generation/sessions/{session_id}/jobs",
+                    method="POST",
+                    payload={
+                        "selectedFeatureIds": [rec_id],
+                        "customRequest": "Generate session utility",
+                    },
+                )
+                status, payload = self._json_request_allow_error(
+                    f"{base}/v1/generation/session-jobs/{queued['jobId']}/result"
+                )
+                self.assertIn(status, (200, 404))
+                if status == 404:
+                    self.assertEqual(payload.get("error"), "Session job result not ready")
             finally:
                 server.shutdown()
                 server.server_close()

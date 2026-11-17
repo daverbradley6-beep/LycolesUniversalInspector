@@ -1123,3 +1123,20 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Regression expectation after this milestone:
   - full pytest baseline increased to **1756 passed, 17 skipped**.
   - session endpoint and revision tests live in `tests/test_lycoles_generation_service.py` (`SessionBackendContractTests`).
+
+
+## Session notes — 2026-11-17 GUI-to-session backend integration (non-paid path)
+
+- `LycolesUniversalInspector.lua` now supports a built-in HTTP adapter (`buildHttpGenerationBackend`) driven by `_G.LycolesGenerationBackendConfig`.
+- Backend routing priority is now:
+  1) `_G.LycolesGenerationBackendProvider` contract object,
+  2) `_G.LycolesGenerationBackendConfig` HTTP adapter,
+  3) in-memory mock provider fallback.
+- Generator requests now submit recommendation IDs (`selectedFeatureIds`) instead of labels, matching server API contract.
+- Revision requests now pass `revisionOfVersionId` when available from generated version history.
+- Polling and transport reliability improvements:
+  - bounded retries with transient HTTP handling,
+  - polling timeout guard,
+  - surfaced backend diagnostics metadata in GUI and `_G.LycolesGenerationSession()`.
+- Security invariant retained: no client-side Anthropic secrets; paid API path remains disabled unless explicitly enabled server-side.
+- Potassium reproducible runbook recorded in `OPENHANDS_PROGRESS.md` under the 2026-11-17 non-paid integration update.

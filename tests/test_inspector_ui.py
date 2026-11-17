@@ -614,7 +614,12 @@ class InspectorUITests(unittest.TestCase):
 
     def test_external_generation_backend_contract_hook_exists(self):
         self.assertIn('local function hasExternalBackendContract(candidate)', SRC)
+        self.assertIn('local function buildHttpGenerationBackend(config)', SRC)
         self.assertIn('local externalBackend = _G.LycolesGenerationBackendProvider', SRC)
+        self.assertIn('local backendConfig = _G.LycolesGenerationBackendConfig', SRC)
+        self.assertIn('requestJson("POST", "/v1/generation/sessions"', SRC)
+        self.assertIn('requestJson("POST", "/v1/generation/sessions/"', SRC)
+        self.assertIn('requestJson("GET", "/v1/generation/session-jobs/"', SRC)
         self.assertIn('if hasExternalBackendContract(externalBackend) then', SRC)
         self.assertIn('backend = externalBackend', SRC)
         self.assertIn('backend.provider = "external-generation-provider"', SRC)
@@ -624,7 +629,7 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('Snapshot is partial. Run a complete scan before generation handoff.', SRC)
         self.assertIn('local function startGenerationHandoff()', SRC)
         self.assertIn('status.Text = "Finalizing inspection snapshot and transferring to generator..."', SRC)
-        self.assertIn('status.Text = "Generation handoff failed: snapshot preserved; retry after checking evidence readiness."', SRC)
+        self.assertIn('status.Text = "Generation handoff failed: " .. describeBackendError(payload)', SRC)
         self.assertIn('setWindowVisibility("generator")', SRC)
         self.assertIn('status.Text = "Inspection handoff complete. Generator window opened."', SRC)
         self.assertIn('send.MouseButton1Click:Connect(function()', SRC)
@@ -632,7 +637,10 @@ class InspectorUITests(unittest.TestCase):
 
     def test_generator_result_revision_and_history_controls_exist(self):
         self.assertIn('local function startGenerationRequest(isRevision)', SRC)
-        self.assertIn('backend:requestRevision(generatorSession.sessionId, selectedLabels, requestText, callback)', SRC)
+        self.assertIn('local selectedIds = collectSelectedFeatureIds()', SRC)
+        self.assertIn('backend:requestRevision(', SRC)
+        self.assertIn('activeRevisionVersionId()', SRC)
+        self.assertIn('backend:requestGeneration(generatorSession.sessionId, selectedIds, requestText, callback, nil)', SRC)
         self.assertIn('generatorSession.scripts[#generatorSession.scripts + 1] = {', SRC)
         self.assertIn('Name = "ResultPreviousVersion"', SRC)
         self.assertIn('Name = "ResultNextVersion"', SRC)
@@ -640,6 +648,16 @@ class InspectorUITests(unittest.TestCase):
         self.assertIn('Name = "ResultSave"', SRC)
         self.assertIn('resultStatus.Text = ok and "Script copied to clipboard" or "Copy failed"', SRC)
         self.assertIn('local filename = "LycolesGeneratedScript_" .. tostring(game.PlaceId) .. "_v" .. tostring(index) .. ".lua"', SRC)
+
+
+    def test_generation_polling_timeout_and_backend_diagnostics_exist(self):
+        self.assertIn('local function backendDiagnosticSuffix()', SRC)
+        self.assertIn('local function backendPollIntervalSeconds()', SRC)
+        self.assertIn('local function backendPollTimeoutSeconds()', SRC)
+        self.assertIn('if tick() - beganAt > backendPollTimeoutSeconds() then', SRC)
+        self.assertIn('"Generation status timed out after "', SRC)
+        self.assertIn('supportsBackendDiagnostics = type(backend.getDiagnostics) == "function"', SRC)
+        self.assertIn('diagnostics = diagnostics,', SRC)
 
     def test_rightshift_and_minimize_restore_use_shared_window_visibility(self):
         self.assertIn('if input.KeyCode ~= Enum.KeyCode.RightShift then return end', SRC)

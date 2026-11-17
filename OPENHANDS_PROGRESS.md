@@ -3375,3 +3375,87 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Paid Anthropic calls are intentionally disabled by default in this milestone.
 - Session backend architecture is now available for live secure server deployment, but no paid API execution is claimed in this environment.
 - Live Potassium/Roblox runtime validation still requires user-side execution.
+
+
+## Update — 2026-11-17 — GUI-to-session-backend integration without paid API calls
+
+### Scope
+
+- Connected Inspector GUI generation workflow to the new session backend contract while preserving mock fallback:
+  - Added built-in HTTP backend adapter in `LycolesUniversalInspector.lua` (`buildHttpGenerationBackend`) with the same callback interface as the mock provider.
+  - Adapter supports:
+    - inspection session creation,
+    - gameplay analysis retrieval,
+    - recommendation retrieval,
+    - generation submission,
+    - revision submission with `revisionOfVersionId`,
+    - job polling,
+    - generated-result retrieval.
+- Added runtime backend selection order:
+  1. explicit `_G.LycolesGenerationBackendProvider` (if contract-compliant),
+  2. `_G.LycolesGenerationBackendConfig` HTTP adapter,
+  3. existing in-memory deterministic mock backend.
+- Updated feature selection flow to submit stable recommendation IDs (`selectedFeatureIds`) instead of labels, while preserving label display.
+- Added robust reliability handling in GUI-side generation flow:
+  - retry-aware request path in adapter,
+  - transient HTTP status handling (`408/425/429/5xx`),
+  - polling timeout enforcement,
+  - backend diagnostics suffix in error surfaces,
+  - explicit failures for missing backend session/job IDs.
+- Added diagnostics exposure to client session/state metadata:
+  - `generationUi.backendContract.supportsBackendDiagnostics`,
+  - poll interval + timeout metadata,
+  - `_G.LycolesGenerationSession().diagnostics` when available.
+- Preserved security boundary:
+  - no Anthropic credential embedding in Lua,
+  - no paid Claude call activation,
+  - server-side backend remains credential boundary.
+
+### Automated validation
+
+- `python3 -m pytest -q tests/test_inspector_ui.py tests/test_lycoles_generation_service.py tests/test_lycoles_generation_service_provider.py`
+  **101 passed**
+- `python3 -m pytest -q`
+  **1760 passed, 17 skipped, 79 subtests passed**
+- `node --test tests/test_luau_syntax.mjs`
+  **4 passed**
+
+### Reproducible Potassium live procedure (non-paid)
+
+1. **Start backend service locally (deterministic mode, no paid APIs):**
+   - `python3 tools/lycoles_generation_service.py serve --output-root build/generation-jobs --host 127.0.0.1 --port 8787`
+2. **Configure inspector before executing script in Potassium:**
+   - set global config:
+     - `_G.LycolesGenerationBackendConfig = {`
+     - `  enabled = true,`
+     - `  baseUrl = "http://127.0.0.1:8787",`
+     - `  maxAttempts = 2,`
+     - `  timeoutSeconds = 15,`
+     - `  pollIntervalSeconds = 0.2,`
+     - `  pollTimeoutSeconds = 60,`
+     - `}`
+3. **Execute `LycolesUniversalInspector.lua` in Potassium.**
+4. **Run full scan and finish handoff:**
+   - click `SCAN`, wait for complete snapshot,
+   - click `FINISH INSPECTION & GENERATE SCRIPT`.
+5. **Verify session + recommendations:**
+   - Feature Selection window opens,
+   - recommendations populate,
+   - `OPEN GENERATOR` reopens the same active session without rescanning.
+6. **Generate test script:**
+   - select one or more recommendations or provide custom request,
+   - click `GENERATE SCRIPT`.
+7. **Verify result lifecycle:**
+   - status transitions `queued/running/completed`,
+   - generated script appears in Generated Script window,
+   - `COPY SCRIPT`, `SAVE SCRIPT`, `PREV/NEXT VERSION` work,
+   - second generation acts as revision path with retained session evidence.
+8. **Verify reliability controls:**
+   - temporarily stop backend to confirm error messages and timeout behavior,
+   - restore backend and regenerate without rescanning,
+   - confirm RightShift hide/restore and no duplicate GUI instances.
+
+### Notes
+
+- This integration milestone enables end-to-end workflow validation without requiring Anthropic credentials.
+- Live gameplay outcomes remain explicitly unverified until user-side in-game execution confirms behavior.
