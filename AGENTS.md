@@ -1166,3 +1166,4 @@ Do not stop merely because one implementation commit is complete; finish its tes
 - Optional API protection is available via `LYCOLES_BACKEND_SHARED_TOKEN`; backend requires `X-Lycoles-Backend-Token` when configured.
 - Backend manager supports `--shared-token` and forwards auth headers in health/smoke/network probes.
 - Windows host bridge setup script: `tools/windows_setup_lycoles_backend_bridge.ps1` (creates/replaces `lycoles-backend-proxy` sidecar and keeps `openhands-app` container unchanged).
+- End-to-end contract coverage now includes a live manager smoke lifecycle test against real `LycolesGenerationService` HTTP endpoints in shared-token mode (`tests/test_lycoles_backend_manager.py`).

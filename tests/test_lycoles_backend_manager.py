@@ -1,7 +1,9 @@
 import importlib.util
+import os
 import pathlib
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -10,6 +12,14 @@ SOURCE = ROOT / "tools" / "lycoles_backend_manager.py"
 SPEC = importlib.util.spec_from_file_location("lycoles_backend_manager", SOURCE)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
+
+SERVICE_SOURCE = ROOT / "tools" / "lycoles_generation_service.py"
+SERVICE_SPEC = importlib.util.spec_from_file_location("lycoles_generation_service", SERVICE_SOURCE)
+SERVICE_MODULE = importlib.util.module_from_spec(SERVICE_SPEC)
+assert SERVICE_SPEC and SERVICE_SPEC.loader
+sys.modules[SERVICE_SPEC.name] = SERVICE_MODULE
+SERVICE_SPEC.loader.exec_module(SERVICE_MODULE)
+
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
@@ -133,6 +143,40 @@ class BackendManagerTests(unittest.TestCase):
             self.assertEqual(result["jobId"], "job-1")
             self.assertEqual(result["sessionId"], "session-1")
 
+
+
+    def test_smoke_session_lifecycle_end_to_end_with_live_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            token = "integration-test-token"
+            with mock.patch.dict(os.environ, {"LYCOLES_BACKEND_SHARED_TOKEN": token}, clear=False):
+                service = SERVICE_MODULE.LycolesGenerationService(output_root=root / "jobs")
+            handler = service.make_http_handler()
+            server = SERVICE_MODULE.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config = MODULE.BackendConfig(
+                    host="127.0.0.1",
+                    port=int(server.server_address[1]),
+                    output_root=root / "jobs",
+                    runtime_dir=root / "runtime",
+                    startup_timeout=3.0,
+                    health_timeout=1.0,
+                    poll_interval=0.05,
+                    max_restarts=2,
+                    restart_window_seconds=30.0,
+                    restart_backoff_seconds=0.1,
+                    restart_backoff_max_seconds=0.5,
+                    shared_token=token,
+                )
+                result = MODULE._smoke_session_lifecycle(config, timeout_seconds=8.0)
+                self.assertEqual(result["status"], "completed")
+                self.assertTrue(result.get("jobId"))
+                self.assertTrue(result.get("sessionId"))
+            finally:
+                server.shutdown()
+                server.server_close()
 
     def test_network_report_includes_host_probes_and_docker_probe(self):
         with tempfile.TemporaryDirectory() as tmp:

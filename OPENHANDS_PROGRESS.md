@@ -3572,3 +3572,23 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
   - `python3 tools/lycoles_backend_manager.py deploy --shared-token integration-token` -> smoke `completed`
   - `python3 tools/lycoles_backend_manager.py network-report --shared-token integration-token` -> localhost reachable, token configured=true
   - `python3 tools/lycoles_backend_manager.py stop --shared-token integration-token` -> supervisor/service stopped cleanly
+
+
+### Follow-up — automated e2e expansion
+
+- Added a live end-to-end backend manager smoke test (`tests/test_lycoles_backend_manager.py`) that:
+  - starts `LycolesGenerationService` HTTP server,
+  - enforces shared-token auth,
+  - executes manager `_smoke_session_lifecycle` against real endpoints,
+  - validates completed session-job lifecycle.
+
+#### Updated validation
+
+- Targeted suites:
+  - `python3 -m pytest -q tests/test_lycoles_generation_service.py tests/test_lycoles_backend_manager.py tests/test_inspector_ui.py tests/test_windows_backend_bridge_script.py`
+    **112 passed**
+- Full regressions:
+  - `python3 -m pytest -q`
+    **1775 passed, 17 skipped, 79 subtests passed**
+  - `node --test tests/test_luau_syntax.mjs`
+    **4 passed**
