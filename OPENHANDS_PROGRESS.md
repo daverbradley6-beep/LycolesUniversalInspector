@@ -3532,3 +3532,43 @@ Earlier cycle gates also passed: 35 focused regression tests and complete 1,163-
 - Additional tests:
   - `python3 -m pytest -q tests/test_lycoles_backend_manager.py tests/test_lycoles_generation_service.py`
     **43 passed**
+
+
+### Follow-up — transport reliability, persistence recovery, and secure bridge setup
+
+- Hardened backend/GUI transport reliability in `LycolesUniversalInspector.lua` HTTP adapter:
+  - Added multi-endpoint failover support via `baseUrls` (with primary URL dedupe/normalization).
+  - Added per-endpoint diagnostics (`activeBaseUrl`, `baseUrlSwitches`, `attemptsByBaseUrl`, `lastBaseUrl`).
+  - Added transient result-race recovery by retrying `GET /session-jobs/{jobId}/result` on HTTP 404.
+  - Added optional shared-token header wiring from config (`sharedToken` / `backendSharedToken` -> `X-Lycoles-Backend-Token`).
+- Improved backend session/job persistence and restart recovery in `tools/lycoles_generation_service.py`:
+  - Added startup restore of persisted session-job records.
+  - Completed jobs/results now remain queryable after service restart.
+  - Interrupted jobs (`queued`/`running` at shutdown) are marked failed with `service-restarted-before-completion`.
+  - Added health metadata for restore counts and security mode (`sharedTokenRequired`).
+- Added optional API protection with shared token:
+  - Service now enforces `X-Lycoles-Backend-Token` when `LYCOLES_BACKEND_SHARED_TOKEN` is set.
+  - Backend manager now supports `--shared-token`, passes token into supervisor/service env, and sends auth headers for health/smoke/network probes.
+- Added Windows host-side bridge automation script (no Docker daemon access needed from sandbox):
+  - `tools/windows_setup_lycoles_backend_bridge.ps1`
+  - Safely keeps `openhands-app` untouched; creates/replaces sidecar proxy only (`lycoles-backend-proxy` using `alpine/socat`).
+  - Auto-discovers manager script path in container, ensures backend service, validates localhost health, and prints ready-to-use `_G.LycolesGenerationBackendConfig` snippet.
+- Added/expanded tests:
+  - Session restart persistence + interrupted-job recovery + HTTP shared-token auth tests.
+  - Backend manager shared-token header propagation and network-report security metadata tests.
+  - Windows bridge script regression tests.
+
+#### Validation executed
+
+- Targeted reliability/security suites:
+  - `python3 -m pytest -q tests/test_lycoles_generation_service.py tests/test_lycoles_backend_manager.py tests/test_inspector_ui.py tests/test_windows_backend_bridge_script.py`
+    **111 passed**
+- Full regressions:
+  - `python3 -m pytest -q`
+    **1774 passed, 17 skipped, 79 subtests passed**
+  - `node --test tests/test_luau_syntax.mjs`
+    **4 passed**
+- Runtime lifecycle validation (token-protected mode):
+  - `python3 tools/lycoles_backend_manager.py deploy --shared-token integration-token` -> smoke `completed`
+  - `python3 tools/lycoles_backend_manager.py network-report --shared-token integration-token` -> localhost reachable, token configured=true
+  - `python3 tools/lycoles_backend_manager.py stop --shared-token integration-token` -> supervisor/service stopped cleanly

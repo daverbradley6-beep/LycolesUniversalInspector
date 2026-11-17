@@ -1161,3 +1161,8 @@ Do not stop merely because one implementation commit is complete; finish its tes
   - `LYCOLES_LLM_PROVIDER=deterministic`.
 - Environment limitation: this sandbox lacks Docker daemon permissions (`docker ps` denied), so host-level port publication changes must be executed in a Docker-authorized context.
 - Network diagnostics command added: `python3 tools/lycoles_backend_manager.py network-report` (probes localhost/container-IP health reachability + Docker daemon access visibility).
+- HTTP generation adapter now supports `baseUrls` failover with per-endpoint diagnostics (`activeBaseUrl`, `baseUrlSwitches`, `attemptsByBaseUrl`) and retries 404 for session-job result fetch race windows.
+- Session-job persistence now restores on service startup; interrupted queued/running jobs are marked failed with `service-restarted-before-completion` and remain inspectable through session-job endpoints.
+- Optional API protection is available via `LYCOLES_BACKEND_SHARED_TOKEN`; backend requires `X-Lycoles-Backend-Token` when configured.
+- Backend manager supports `--shared-token` and forwards auth headers in health/smoke/network probes.
+- Windows host bridge setup script: `tools/windows_setup_lycoles_backend_bridge.ps1` (creates/replaces `lycoles-backend-proxy` sidecar and keeps `openhands-app` container unchanged).

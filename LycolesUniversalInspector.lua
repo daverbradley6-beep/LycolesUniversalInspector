@@ -2258,14 +2258,30 @@ do
         if type(config) ~= "table" then
             return nil, "backend config missing"
         end
-        local baseUrl = trim(config.baseUrl or config.endpoint or config.url or "")
-        if baseUrl == "" then
-            return nil, "backend baseUrl missing"
+        local primaryBaseUrl = trim(config.baseUrl or config.endpoint or config.url or "")
+        local baseUrls = {}
+        local baseUrlSeen = {}
+        local function appendBaseUrl(candidate)
+            if type(candidate) ~= "string" then return end
+            local value = trim(candidate)
+            if value == "" then return end
+            if not value:match("^https?://") then return end
+            value = value:gsub("/+$", "")
+            local key = string.lower(value)
+            if baseUrlSeen[key] then return end
+            baseUrlSeen[key] = true
+            baseUrls[#baseUrls + 1] = value
         end
-        if not baseUrl:match("^https?://") then
-            return nil, "backend baseUrl must begin with http:// or https://"
+        appendBaseUrl(primaryBaseUrl)
+        if type(config.baseUrls) == "table" then
+            for _, candidate in ipairs(config.baseUrls) do
+                appendBaseUrl(candidate)
+            end
         end
-        baseUrl = baseUrl:gsub("/+$", "")
+        if #baseUrls == 0 then
+            return nil, "backend baseUrl missing or invalid"
+        end
+        local activeBaseUrlIndex = 1
 
         local requestFn = config.requestFunction
         if type(requestFn) ~= "function" then
@@ -2281,14 +2297,19 @@ do
         local pollTimeoutSeconds = math.clamp(tonumber(config.pollTimeoutSeconds) or 60, 5, 300)
         local diagnostics = {
             provider = "session-backend-http-v1",
-            baseUrl = baseUrl,
+            baseUrl = baseUrls[1],
+            baseUrls = baseUrls,
+            activeBaseUrl = baseUrls[activeBaseUrlIndex],
+            baseUrlSwitches = 0,
             maxAttempts = maxAttempts,
             timeoutSeconds = timeoutSeconds,
             requests = 0,
             failures = 0,
+            attemptsByBaseUrl = {},
             lastRequest = nil,
             lastError = nil,
             lastStatusCode = nil,
+            lastBaseUrl = nil,
         }
 
         local function isTransientStatus(code)
@@ -2312,6 +2333,10 @@ do
             if sessionApiKey ~= "" then
                 headers["X-Session-API-Key"] = sessionApiKey
             end
+            local sharedToken = trim(config.sharedToken or config.backendSharedToken or "")
+            if sharedToken ~= "" then
+                headers["X-Lycoles-Backend-Token"] = sharedToken
+            end
             local authToken = trim(config.authToken or "")
             local authHeader = trim(config.authHeader or "Authorization")
             if authToken ~= "" and authHeader ~= "" then
@@ -2324,71 +2349,109 @@ do
             return headers
         end
 
-        local function requestJson(method, path, payload, callback)
+        local function requestJson(method, path, payload, callback, options)
             task.spawn(function()
-                local url = baseUrl .. path
                 local body = payload ~= nil and HttpService:JSONEncode(payload) or nil
+                local opts = type(options) == "table" and options or {}
+                local retryStatusCodes = type(opts.retryStatusCodes) == "table" and opts.retryStatusCodes or nil
                 local lastError = nil
+
+                local function shouldRetryStatus(statusCode)
+                    if isTransientStatus(statusCode) then return true end
+                    return retryStatusCodes and retryStatusCodes[statusCode] == true or false
+                end
+
                 for attempt = 1, maxAttempts do
-                    diagnostics.requests = diagnostics.requests + 1
-                    diagnostics.lastRequest = {
-                        method = method,
-                        path = path,
-                        attempt = attempt,
-                        at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-                    }
-                    local ok, response = pcall(requestFn, {
-                        Url = url,
-                        Method = method,
-                        Headers = buildHeaders(),
-                        Body = body,
-                        Timeout = timeoutSeconds,
-                    })
-                    if ok and type(response) == "table" then
-                        local statusCode = tonumber(response.StatusCode or response.Status or response.status_code)
-                        diagnostics.lastStatusCode = statusCode
-                        local rawBody = type(response.Body) == "string" and response.Body
-                            or (type(response.body) == "string" and response.body or "")
-                        local decoded = parseJsonResponseBody(rawBody)
-                        if statusCode and statusCode >= 200 and statusCode < 300 then
-                            callback(true, decoded or {})
-                            return
-                        end
-                        local transient = isTransientStatus(statusCode)
-                        local responseError = decoded and (decoded.error or decoded.message)
-                        lastError = {
-                            error = tostring(responseError or ("HTTP " .. tostring(statusCode or "request-error"))),
-                            statusCode = statusCode,
-                            transient = transient,
-                            attempt = attempt,
+                    local shouldBackoff = false
+                    local stopRetrying = false
+
+                    for offset = 0, #baseUrls - 1 do
+                        local baseIndex = ((activeBaseUrlIndex - 1 + offset) % #baseUrls) + 1
+                        local currentBaseUrl = baseUrls[baseIndex]
+                        local url = currentBaseUrl .. path
+
+                        diagnostics.requests = diagnostics.requests + 1
+                        diagnostics.attemptsByBaseUrl[currentBaseUrl] = (diagnostics.attemptsByBaseUrl[currentBaseUrl] or 0) + 1
+                        diagnostics.lastBaseUrl = currentBaseUrl
+                        diagnostics.lastRequest = {
+                            method = method,
                             path = path,
-                            provider = diagnostics.provider,
-                        }
-                        diagnostics.failures = diagnostics.failures + 1
-                        diagnostics.lastError = lastError
-                        if not transient then
-                            break
-                        end
-                    else
-                        local errorMessage = ok and "invalid-http-response" or tostring(response)
-                        lastError = {
-                            error = errorMessage,
-                            transient = true,
                             attempt = attempt,
-                            path = path,
-                            provider = diagnostics.provider,
+                            baseUrl = currentBaseUrl,
+                            baseIndex = baseIndex,
+                            at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
                         }
-                        diagnostics.failures = diagnostics.failures + 1
-                        diagnostics.lastError = lastError
+
+                        local ok, response = pcall(requestFn, {
+                            Url = url,
+                            Method = method,
+                            Headers = buildHeaders(),
+                            Body = body,
+                            Timeout = timeoutSeconds,
+                        })
+
+                        if ok and type(response) == "table" then
+                            local statusCode = tonumber(response.StatusCode or response.Status or response.status_code)
+                            diagnostics.lastStatusCode = statusCode
+                            local rawBody = type(response.Body) == "string" and response.Body
+                                or (type(response.body) == "string" and response.body or "")
+                            local decoded = parseJsonResponseBody(rawBody)
+
+                            if statusCode and statusCode >= 200 and statusCode < 300 then
+                                if baseIndex ~= activeBaseUrlIndex then
+                                    diagnostics.baseUrlSwitches = diagnostics.baseUrlSwitches + 1
+                                    activeBaseUrlIndex = baseIndex
+                                    diagnostics.activeBaseUrl = currentBaseUrl
+                                end
+                                callback(true, decoded or {})
+                                return
+                            end
+
+                            local transient = shouldRetryStatus(statusCode)
+                            local responseError = decoded and (decoded.error or decoded.message)
+                            lastError = {
+                                error = tostring(responseError or ("HTTP " .. tostring(statusCode or "request-error"))),
+                                statusCode = statusCode,
+                                transient = transient,
+                                attempt = attempt,
+                                path = path,
+                                baseUrl = currentBaseUrl,
+                                provider = diagnostics.provider,
+                            }
+                            diagnostics.failures = diagnostics.failures + 1
+                            diagnostics.lastError = lastError
+                            if not transient then
+                                stopRetrying = true
+                                break
+                            end
+                            shouldBackoff = true
+                        else
+                            local errorMessage = ok and "invalid-http-response" or tostring(response)
+                            lastError = {
+                                error = errorMessage,
+                                transient = true,
+                                attempt = attempt,
+                                path = path,
+                                baseUrl = currentBaseUrl,
+                                provider = diagnostics.provider,
+                            }
+                            diagnostics.failures = diagnostics.failures + 1
+                            diagnostics.lastError = lastError
+                            shouldBackoff = true
+                        end
                     end
-                    if attempt < maxAttempts then
+
+                    if stopRetrying then break end
+                    if shouldBackoff and attempt < maxAttempts then
                         task.wait(math.min(2, 0.2 * (2 ^ (attempt - 1))))
                     end
                 end
+
                 callback(false, lastError or {
                     error = "request-failed",
                     path = path,
                     provider = diagnostics.provider,
+                    baseUrl = diagnostics.lastBaseUrl,
                 })
             end)
         end
@@ -2537,7 +2600,8 @@ do
                         versionNumber = payload.versionNumber,
                         generationMetadata = payload.generationMetadata,
                     })
-                end)
+                end,
+                { retryStatusCodes = { [404] = true } })
         end
 
         function adapter:requestRevision(sessionId, selectedFeatures, customRequest, callback, revisionOfVersionId)

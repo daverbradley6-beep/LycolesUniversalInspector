@@ -39,6 +39,7 @@ class BackendManagerTests(unittest.TestCase):
             self.assertTrue(result["requiredFiles"]["inspectorScriptExists"])
             self.assertEqual(result["defaults"]["paidLlmEnabledDefault"], "false")
             self.assertEqual(result["defaults"]["providerDefault"], "deterministic")
+            self.assertFalse(result["defaults"]["sharedTokenConfigured"])
 
     def test_service_command_uses_generation_service_serve_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,6 +69,43 @@ class BackendManagerTests(unittest.TestCase):
             self.assertTrue(payload["healthy"])
             self.assertEqual(payload["contractStatusCode"], 200)
             self.assertEqual(payload["healthStatusCode"], 200)
+
+
+    def test_health_probe_passes_shared_token_header_when_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._config(pathlib.Path(tmp))
+            config = MODULE.BackendConfig(
+                host=base.host,
+                port=base.port,
+                output_root=base.output_root,
+                runtime_dir=base.runtime_dir,
+                startup_timeout=base.startup_timeout,
+                health_timeout=base.health_timeout,
+                poll_interval=base.poll_interval,
+                max_restarts=base.max_restarts,
+                restart_window_seconds=base.restart_window_seconds,
+                restart_backoff_seconds=base.restart_backoff_seconds,
+                restart_backoff_max_seconds=base.restart_backoff_max_seconds,
+                shared_token="token-123",
+            )
+
+            seen_headers = []
+            responses = [
+                (200, {"status": "ok"}),
+                (200, {"provider": {"name": "deterministic", "enabled": False}}),
+            ]
+
+            def fake_json_request(*_args, **kwargs):
+                seen_headers.append(kwargs.get("headers"))
+                return responses.pop(0)
+
+            with mock.patch.object(MODULE, "_json_request", side_effect=fake_json_request):
+                payload = MODULE._health_probe(config)
+
+            self.assertTrue(payload["healthy"])
+            self.assertEqual(seen_headers[0].get("X-Lycoles-Backend-Token"), "token-123")
+            self.assertEqual(seen_headers[1].get("X-Lycoles-Backend-Token"), "token-123")
+
 
     def test_smoke_session_lifecycle_completes_with_mocked_http_responses(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,6 +149,9 @@ class BackendManagerTests(unittest.TestCase):
             self.assertTrue(payload["localhostReachable"])
             self.assertEqual(len(payload["hostsProbed"]), 2)
             self.assertEqual(payload["dockerDaemon"]["reason"], "docker-daemon-unavailable")
+            self.assertIn("security", payload)
+            self.assertFalse(payload["security"]["sharedTokenConfigured"])
+            self.assertIsNone(payload["security"]["requiredHeader"])
 
     def test_start_dry_run_returns_supervisor_command(self):
         with tempfile.TemporaryDirectory() as tmp:

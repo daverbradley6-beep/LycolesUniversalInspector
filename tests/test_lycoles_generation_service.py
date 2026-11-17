@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -1491,18 +1492,22 @@ class SessionBackendContractTests(unittest.TestCase):
         return service.get_session_job(job_id)
 
     @staticmethod
-    def _json_request(url, method="GET", payload=None):
+    def _json_request(url, method="GET", payload=None, extra_headers=None):
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         headers = {"content-type": "application/json"}
+        if isinstance(extra_headers, dict):
+            headers.update({k: v for k, v in extra_headers.items() if isinstance(k, str) and isinstance(v, str)})
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
         with urllib.request.urlopen(request, timeout=8) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
 
 
     @staticmethod
-    def _json_request_allow_error(url, method="GET", payload=None):
+    def _json_request_allow_error(url, method="GET", payload=None, extra_headers=None):
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         headers = {"content-type": "application/json"}
+        if isinstance(extra_headers, dict):
+            headers.update({k: v for k, v in extra_headers.items() if isinstance(k, str) and isinstance(v, str)})
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
@@ -1597,6 +1602,103 @@ class SessionBackendContractTests(unittest.TestCase):
             versions = session_view.get("generatedVersions") or []
             self.assertEqual(len(versions), 2)
             self.assertEqual(versions[1]["revisionOfVersionId"], first_version)
+
+
+    def test_session_job_state_and_result_restore_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+            session_id = created["session"]["sessionId"]
+            rec_id = created["recommendations"]["items"][0]["id"]
+
+            queued = service.submit_session_job(
+                session_id,
+                selected_feature_ids=[rec_id],
+                custom_request="Persist generated version",
+                revision_of_version_id=None,
+            )
+            snapshot = self._wait_for_session_job(service, queued["jobId"])
+            self.assertIsNotNone(snapshot)
+            self.assertEqual(snapshot.get("status"), "completed")
+            result_before = service.get_session_job_result(queued["jobId"])
+            self.assertIsNotNone(result_before)
+
+            restarted = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            restored_snapshot = restarted.get_session_job(queued["jobId"])
+            self.assertIsNotNone(restored_snapshot)
+            self.assertEqual(restored_snapshot.get("status"), "completed")
+            restored_result = restarted.get_session_job_result(queued["jobId"])
+            self.assertIsNotNone(restored_result)
+            self.assertEqual(restored_result.get("versionId"), result_before.get("versionId"))
+
+            health = restarted._health_payload()
+            summary = health.get("sessionSummary") or {}
+            self.assertGreaterEqual(int(summary.get("restoredSessionJobs") or 0), 1)
+
+    def test_restart_marks_interrupted_session_job_failed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            created = service.create_session(make_inspection_snapshot())
+            session_id = created["session"]["sessionId"]
+            rec_id = created["recommendations"]["items"][0]["id"]
+            job_id = "session-job-interrupted-check"
+            job_path = root / "jobs" / "sessions" / session_id / f"{job_id}.json"
+            job_payload = {
+                "jobId": job_id,
+                "sessionId": session_id,
+                "status": "running",
+                "createdAt": time.time() - 5,
+                "startedAt": time.time() - 3,
+                "selectedFeatureIds": [rec_id],
+                "customRequest": "interrupted run",
+                "maxRetries": 1,
+                "retriesUsed": 0,
+            }
+            job_path.write_text(json.dumps(job_payload), encoding="utf-8")
+
+            restarted = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            restored = restarted.get_session_job(job_id)
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.get("status"), "failed")
+            self.assertIn("service-restarted-before-completion", str(restored.get("error") or ""))
+
+            health = restarted._health_payload()
+            summary = health.get("sessionSummary") or {}
+            self.assertEqual(int(summary.get("restoredInterruptedSessionJobs") or 0), 1)
+
+    def test_http_shared_token_auth_when_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            with mock.patch.dict(os.environ, {"LYCOLES_BACKEND_SHARED_TOKEN": "secret-token"}, clear=False):
+                service = MODULE.LycolesGenerationService(output_root=root / "jobs")
+            handler = service.make_http_handler()
+            server = MODULE.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_address[1]}"
+                status, payload = self._json_request_allow_error(f"{base}/v1/generation/health")
+                self.assertEqual(status, 401)
+                self.assertEqual(payload.get("error"), "Unauthorized")
+
+                status, payload = self._json_request_allow_error(
+                    f"{base}/v1/generation/health",
+                    extra_headers={"X-Lycoles-Backend-Token": "wrong"},
+                )
+                self.assertEqual(status, 401)
+
+                status, payload = self._json_request(
+                    f"{base}/v1/generation/health",
+                    extra_headers={"X-Lycoles-Backend-Token": "secret-token"},
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(payload.get("status"), "ok")
+                self.assertTrue((payload.get("security") or {}).get("sharedTokenRequired"))
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
     def test_http_health_endpoint_reports_provider_and_uptime(self):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -3115,6 +3116,9 @@ class LycolesGenerationService:
         self.output_root = Path(output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
         self._service_started_at = time.time()
+        self._service_shared_token = (os.environ.get("LYCOLES_BACKEND_SHARED_TOKEN") or "").strip()
+        self._restored_session_jobs = 0
+        self._restored_interrupted_session_jobs = 0
         self.model_routes = model_routes or ModelRouteConfig()
 
         if llm_provider is None:
@@ -3164,6 +3168,7 @@ class LycolesGenerationService:
         self._session_jobs_lock = threading.Lock()
         self._session_job_retries = max(0, int(_env_float("LYCOLES_SESSION_JOB_RETRIES", 1.0)))
         self._load_sessions()
+        self._load_session_jobs()
 
     def _output_dir_for(self, job_id: str) -> Path:
         return self.output_root / job_id
@@ -3215,6 +3220,9 @@ class LycolesGenerationService:
             "startedAt": self._service_started_at,
             "uptimeSeconds": max(0.0, round(time.time() - self._service_started_at, 3)),
             "outputRoot": str(self.output_root),
+            "security": {
+                "sharedTokenRequired": bool(self._service_shared_token),
+            },
             "provider": {
                 "name": self.provider_info.provider,
                 "enabled": self.provider_info.enabled,
@@ -3225,6 +3233,8 @@ class LycolesGenerationService:
                 "totalSessions": session_count,
                 "totalJobs": job_count,
                 "pendingJobs": pending_jobs,
+                "restoredSessionJobs": self._restored_session_jobs,
+                "restoredInterruptedSessionJobs": self._restored_interrupted_session_jobs,
             },
             "claims": dict(FALSE_CLAIMS),
         }
@@ -3281,6 +3291,117 @@ class LycolesGenerationService:
             )
         with self._sessions_lock:
             self._sessions = loaded
+
+
+    def _load_session_jobs(self) -> None:
+        loaded: dict[str, SessionJobRecord] = {}
+        recovered: list[SessionJobRecord] = []
+        interrupted_count = 0
+        now = time.time()
+
+        def as_float(value: Any, default: float) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def as_int(value: Any, default: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        for job_path in sorted(self._sessions_dir.glob("*/*.json")):
+            if job_path.name == "session.json":
+                continue
+            try:
+                payload = json.loads(job_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+
+            job_id = payload.get("jobId")
+            session_id = payload.get("sessionId")
+            if not isinstance(job_id, str) or not job_id or not isinstance(session_id, str) or not session_id:
+                continue
+            if session_id not in self._sessions:
+                continue
+
+            selected_feature_ids = _coerce_text_list(
+                payload.get("selectedFeatureIds"),
+                max_items=_MAX_SESSION_RECOMMENDATIONS,
+            )
+            custom_request = _sanitize_free_text(payload.get("customRequest"), max_len=_MAX_SESSION_CUSTOM_REQUEST) or ""
+            revision_of = payload.get("revisionOfVersionId")
+            revision_of_version_id = (
+                _sanitize_identifier(revision_of, max_len=120)
+                if isinstance(revision_of, str) and revision_of
+                else None
+            )
+
+            status_raw = str(payload.get("status") or "failed").strip().lower()
+            status = status_raw if status_raw in {"queued", "running", "completed", "failed"} else "failed"
+            created_at = as_float(payload.get("createdAt"), now)
+            started_at = as_float(payload.get("startedAt"), created_at) if payload.get("startedAt") is not None else None
+            finished_at = as_float(payload.get("finishedAt"), now) if payload.get("finishedAt") is not None else None
+            retries_used = max(0, as_int(payload.get("retriesUsed"), 0))
+            max_retries = max(0, as_int(payload.get("maxRetries"), self._session_job_retries))
+            error = payload.get("error") if isinstance(payload.get("error"), str) else None
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else None
+
+            persist_required = False
+            if status in {"queued", "running"}:
+                status = "failed"
+                interrupted_count += 1
+                marker = "service-restarted-before-completion"
+                if error:
+                    if marker not in error:
+                        error = error + "; " + marker
+                else:
+                    error = marker
+                finished_at = finished_at or now
+                persist_required = True
+
+            if status == "completed" and result is None:
+                status = "failed"
+                error = error or "completed-job-missing-result"
+                finished_at = finished_at or now
+                persist_required = True
+
+            if status in {"completed", "failed"} and finished_at is None:
+                finished_at = now
+                persist_required = True
+
+            record = SessionJobRecord(
+                job_id=job_id,
+                session_id=session_id,
+                selected_feature_ids=selected_feature_ids,
+                custom_request=custom_request,
+                revision_of_version_id=revision_of_version_id,
+                status=status,
+                created_at=created_at,
+                started_at=started_at,
+                finished_at=finished_at,
+                retries_used=retries_used,
+                max_retries=max_retries,
+                error=error,
+                result=result,
+            )
+
+            existing = loaded.get(job_id)
+            if existing is None or existing.created_at <= record.created_at:
+                loaded[job_id] = record
+                if persist_required:
+                    recovered.append(record)
+
+        with self._session_jobs_lock:
+            self._session_jobs = loaded
+            for record in recovered:
+                self._persist_session_job_locked(record)
+
+        self._restored_session_jobs = len(loaded)
+        self._restored_interrupted_session_jobs = interrupted_count
 
     def create_session(self, inspection_snapshot: dict[str, Any]) -> dict[str, Any]:
         sanitized = _sanitize_inspection_snapshot(inspection_snapshot)
@@ -4120,6 +4241,13 @@ class LycolesGenerationService:
                 raw = self.rfile.read(length)
                 return json.loads(raw.decode("utf-8")) if raw else {}
 
+            def _authorized(self) -> bool:
+                required = service._service_shared_token
+                if not required:
+                    return True
+                presented = self.headers.get("X-Lycoles-Backend-Token") or ""
+                return hmac.compare_digest(presented, required)
+
             def log_message(self, _format: str, *_args) -> None:
                 return
 
@@ -4127,6 +4255,9 @@ class LycolesGenerationService:
                 parsed = urlsplit(self.path)
                 query = parse_qs(parsed.query)
                 parts = [part for part in parsed.path.split("/") if part]
+
+                if not self._authorized():
+                    return self._json({"error": "Unauthorized", "requiredHeader": "X-Lycoles-Backend-Token"}, 401)
 
                 if parts == ["v1", "generation", "provider-contract"]:
                     return self._json(service._provider_contract_payload())
@@ -4191,6 +4322,9 @@ class LycolesGenerationService:
 
             def do_POST(self):  # noqa: N802
                 parts = [part for part in self.path.split("?")[0].split("/") if part]
+
+                if not self._authorized():
+                    return self._json({"error": "Unauthorized", "requiredHeader": "X-Lycoles-Backend-Token"}, 401)
 
                 if parts == ["v1", "generation", "sessions"]:
                     try:

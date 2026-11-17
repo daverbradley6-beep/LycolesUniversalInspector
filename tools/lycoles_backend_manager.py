@@ -41,6 +41,7 @@ DEFAULT_MAX_RESTARTS = int(os.environ.get("LYCOLES_BACKEND_MAX_RESTARTS", "5"))
 DEFAULT_RESTART_WINDOW = float(os.environ.get("LYCOLES_BACKEND_RESTART_WINDOW", "300"))
 DEFAULT_RESTART_BACKOFF = float(os.environ.get("LYCOLES_BACKEND_RESTART_BACKOFF", "1.0"))
 DEFAULT_RESTART_BACKOFF_MAX = float(os.environ.get("LYCOLES_BACKEND_RESTART_BACKOFF_MAX", "12.0"))
+DEFAULT_SHARED_TOKEN = (os.environ.get("LYCOLES_BACKEND_SHARED_TOKEN") or "").strip()
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class BackendConfig:
     restart_window_seconds: float
     restart_backoff_seconds: float
     restart_backoff_max_seconds: float
+    shared_token: str = ""
 
     @property
     def base_url(self) -> str:
@@ -129,13 +131,25 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _json_request(url: str, *, method: str = "GET", payload: Optional[dict[str, Any]] = None, timeout: float = 2.5) -> tuple[int, dict[str, Any]]:
+def _json_request(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: Optional[dict[str, Any]] = None,
+    timeout: float = 2.5,
+    headers: Optional[dict[str, str]] = None,
+) -> tuple[int, dict[str, Any]]:
     body = None if payload is None else json.dumps(payload).encode("utf-8")
+    request_headers = {"content-type": "application/json", "accept": "application/json"}
+    if isinstance(headers, dict):
+        for key, value in headers.items():
+            if isinstance(key, str) and key and isinstance(value, str):
+                request_headers[key] = value
     request = urllib.request.Request(
         url,
         data=body,
         method=method,
-        headers={"content-type": "application/json", "accept": "application/json"},
+        headers=request_headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -153,6 +167,12 @@ def _json_request(url: str, *, method: str = "GET", payload: Optional[dict[str, 
         return int(exc.code), decoded
 
 
+def _auth_headers(config: BackendConfig) -> dict[str, str]:
+    if not config.shared_token:
+        return {}
+    return {"X-Lycoles-Backend-Token": config.shared_token}
+
+
 def _health_probe(config: BackendConfig) -> dict[str, Any]:
     result: dict[str, Any] = {
         "reachable": False,
@@ -164,6 +184,7 @@ def _health_probe(config: BackendConfig) -> dict[str, Any]:
         health_status, health_payload = _json_request(
             f"{config.base_url}/v1/generation/health",
             timeout=config.health_timeout,
+            headers=_auth_headers(config),
         )
         result["healthStatusCode"] = health_status
         result["healthPayload"] = health_payload
@@ -175,6 +196,7 @@ def _health_probe(config: BackendConfig) -> dict[str, Any]:
         contract_status, contract_payload = _json_request(
             f"{config.base_url}/v1/generation/provider-contract",
             timeout=config.health_timeout,
+            headers=_auth_headers(config),
         )
     except Exception as exc:  # pylint: disable=broad-except
         result["error"] = str(exc)
@@ -196,7 +218,7 @@ def _health_probe(config: BackendConfig) -> dict[str, Any]:
 def _probe_health_host(config: BackendConfig, host: str) -> dict[str, Any]:
     url = f"http://{host}:{config.port}/v1/generation/health"
     try:
-        status, payload = _json_request(url, timeout=config.health_timeout)
+        status, payload = _json_request(url, timeout=config.health_timeout, headers=_auth_headers(config))
         return {
             "host": host,
             "reachable": status == 200,
@@ -268,11 +290,15 @@ def _network_report(config: BackendConfig) -> dict[str, Any]:
         "port": config.port,
         "hostsProbed": probes,
         "localhostReachable": bool(localhost_probe and localhost_probe.get("reachable") is True),
+        "security": {
+            "sharedTokenConfigured": bool(config.shared_token),
+            "requiredHeader": "X-Lycoles-Backend-Token" if config.shared_token else None,
+        },
         "dockerDaemon": _docker_daemon_access(),
         "notes": [
             "Roblox executor HTTP requests are not browser CORS-limited.",
-            "Backend currently requires no authentication headers.",
             "Windows host publish/route still depends on Docker Desktop port mapping.",
+            "When shared token is enabled, all probes require X-Lycoles-Backend-Token.",
         ],
     }
 
@@ -322,10 +348,13 @@ def _supervisor_command(config: BackendConfig) -> list[str]:
     ]
 
 
-def _set_deterministic_env(base_env: dict[str, str]) -> dict[str, str]:
+def _set_deterministic_env(base_env: dict[str, str], *, shared_token: str = "") -> dict[str, str]:
     env = dict(base_env)
     env.setdefault("LYCOLES_ENABLE_PAID_LLM", "false")
     env.setdefault("LYCOLES_LLM_PROVIDER", "deterministic")
+    token = (shared_token or "").strip()
+    if token:
+        env["LYCOLES_BACKEND_SHARED_TOKEN"] = token
     return env
 
 
@@ -404,7 +433,7 @@ def _start(config: BackendConfig, *, dry_run: bool = False) -> dict[str, Any]:
             "stdout": stream,
             "stderr": subprocess.STDOUT,
             "start_new_session": True,
-            "env": _set_deterministic_env(os.environ),
+            "env": _set_deterministic_env(os.environ, shared_token=config.shared_token),
         }
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
@@ -527,6 +556,7 @@ def _smoke_session_lifecycle(config: BackendConfig, *, timeout_seconds: float = 
         method="POST",
         payload={"inspectionSnapshot": snapshot},
         timeout=config.health_timeout,
+        headers=_auth_headers(config),
     )
     if session_status != 201:
         raise RuntimeError(f"session creation failed: HTTP {session_status} {created}")
@@ -547,6 +577,7 @@ def _smoke_session_lifecycle(config: BackendConfig, *, timeout_seconds: float = 
         method="POST",
         payload={"selectedFeatureIds": [recommendation_id], "customRequest": "smoke run"},
         timeout=config.health_timeout,
+        headers=_auth_headers(config),
     )
     if queued_status != 202:
         raise RuntimeError(f"job queue failed: HTTP {queued_status} {queued}")
@@ -561,6 +592,7 @@ def _smoke_session_lifecycle(config: BackendConfig, *, timeout_seconds: float = 
         poll_status, job_payload = _json_request(
             f"{config.base_url}/v1/generation/session-jobs/{job_id}",
             timeout=config.health_timeout,
+            headers=_auth_headers(config),
         )
         if poll_status != 200:
             raise RuntimeError(f"job poll failed: HTTP {poll_status} {job_payload}")
@@ -575,6 +607,7 @@ def _smoke_session_lifecycle(config: BackendConfig, *, timeout_seconds: float = 
     result_status, result_payload = _json_request(
         f"{config.base_url}/v1/generation/session-jobs/{job_id}/result",
         timeout=config.health_timeout,
+        headers=_auth_headers(config),
     )
     if result_status != 200:
         raise RuntimeError(f"job result failed: HTTP {result_status} {result_payload}")
@@ -622,8 +655,9 @@ def _setup_check(config: BackendConfig) -> dict[str, Any]:
             "inspectorScriptExists": INSPECTOR_SCRIPT.is_file(),
         },
         "defaults": {
-            "paidLlmEnabledDefault": _set_deterministic_env({}).get("LYCOLES_ENABLE_PAID_LLM"),
-            "providerDefault": _set_deterministic_env({}).get("LYCOLES_LLM_PROVIDER"),
+            "paidLlmEnabledDefault": _set_deterministic_env({}, shared_token=config.shared_token).get("LYCOLES_ENABLE_PAID_LLM"),
+            "providerDefault": _set_deterministic_env({}, shared_token=config.shared_token).get("LYCOLES_LLM_PROVIDER"),
+            "sharedTokenConfigured": bool(config.shared_token),
             "host": config.host,
             "port": config.port,
         },
@@ -653,7 +687,7 @@ def _supervise(config: BackendConfig) -> int:
 
     try:
         while not stop_flag["stop"]:
-            env = _set_deterministic_env(os.environ)
+            env = _set_deterministic_env(os.environ, shared_token=config.shared_token)
             with paths.service_log.open("a", encoding="utf-8") as service_log:
                 service_log.write(f"[{_now_iso()}] starting service process\n")
                 child = subprocess.Popen(
@@ -760,6 +794,7 @@ def _build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--restart-window-seconds", type=float, default=DEFAULT_RESTART_WINDOW)
         sub.add_argument("--restart-backoff-seconds", type=float, default=DEFAULT_RESTART_BACKOFF)
         sub.add_argument("--restart-backoff-max-seconds", type=float, default=DEFAULT_RESTART_BACKOFF_MAX)
+        sub.add_argument("--shared-token", default=DEFAULT_SHARED_TOKEN)
 
     for name in ("setup-check", "start", "stop", "status", "health", "network-report", "ensure", "deploy", "smoke", "_supervise"):
         command_parser = subparsers.add_parser(name)
@@ -783,6 +818,7 @@ def _config_from_args(args: argparse.Namespace) -> BackendConfig:
         restart_window_seconds=max(1.0, float(args.restart_window_seconds)),
         restart_backoff_seconds=max(0.1, float(args.restart_backoff_seconds)),
         restart_backoff_max_seconds=max(0.2, float(args.restart_backoff_max_seconds)),
+        shared_token=str(getattr(args, "shared_token", "") or "").strip(),
     )
 
 
